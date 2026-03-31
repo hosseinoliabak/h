@@ -1,44 +1,411 @@
 ---
 title: "Vector Algebra"
-date: "2025-01-05"
+date: "2026-04-03"
 order: 5
 categories: [linear-algebra]
 ---
 
-## Vectors
+So far you've been working with systems of equations and matrices, solving them by elimination, reducing them to row echelon form, and running Gaussian elimination. Now it's time to zoom in on the objects that live inside those matrices: **vectors**. You will learn what vectors are, how to add and multiply them, how to measure their size and direction, and how to project one onto another.
+
+In a way, vectors and matrices are a lot like numbers. Numbers can be added, multiplied, divided, and many of these operations carry over to vectors and matrices. You can add two vectors, take the product of two vectors, multiply a vector by a matrix, and even find the inverse of a matrix, under some conditions that you've actually seen before.
+
+## Why Vectors Matter in Machine Learning
+
+Before diving into vector operations, let's see how vectors and matrices appear in machine learning. Consider a dataset with $m$ training examples and $n$ features:
+
+| Example | Feature $x_1$ | Feature $x_2$ | $\cdots$ | Feature $x_n$ | Output $y$ |
+|:-------:|:-------------:|:-------------:|:--------:|:-------------:|:----------:|
+| $(1)$   | $x_1^{(1)}$   | $x_2^{(1)}$   | $\cdots$ | $x_n^{(1)}$   | $y^{(1)}$  |
+| $(2)$   | $x_1^{(2)}$   | $x_2^{(2)}$   | $\cdots$ | $x_n^{(2)}$   | $y^{(2)}$  |
+| $\vdots$| $\vdots$      | $\vdots$      | $\ddots$ | $\vdots$      | $\vdots$   |
+| $(m)$   | $x_1^{(m)}$   | $x_2^{(m)}$   | $\cdots$ | $x_n^{(m)}$   | $y^{(m)}$  |
+
+The idea with linear regression is that you come up with a set of weights $w_1, w_2, \ldots, w_n$, one for each feature, as well as a bias value $b$, that allow you to characterize this dataset as a system of linear equations. For each training example $i$:
+
+$$w_1 x_1^{(i)} + w_2 x_2^{(i)} + \cdots + w_n x_n^{(i)} + b = y^{(i)}$$
+
+To simplify, you can write $W$ to denote the vector of weights and $X$ to denote the matrix of feature values, and bundle everything into matrices and vectors:
+
+$$W = \begin{bmatrix} w_1 & w_2 & \cdots & w_n \end{bmatrix}, \quad X = \begin{bmatrix} x_1^{(1)} & x_1^{(2)} & \cdots & x_1^{(m)} \\ x_2^{(1)} & x_2^{(2)} & \cdots & x_2^{(m)} \\ \vdots & \vdots & \ddots & \vdots \\ x_n^{(1)} & x_n^{(2)} & \cdots & x_n^{(m)} \end{bmatrix}, \quad \hat{y} = \begin{bmatrix} y^{(1)} & y^{(2)} & \cdots & y^{(m)} \end{bmatrix}$$
+
+Multiplying $W$ by each column of $X$ and adding the bias gives the entire system in one compact expression:
+
+$$W \cdot X + b = \hat{y}$$
+
+Each column of $X$ is a **vector**: one training example. The weights $W$ form a vector. The predictions $\hat{y}$ form a vector. Everything in that equation is a vector or a matrix operation on vectors.
+
+::: {.callout-note}
+**Notation reference:**
+
+- $x_j^{(i)}$: feature $j$ of training example $i$
+- $w_j$: the weight for feature $j$
+- Capital letters ($A$, $B$, $X$): matrices. Lowercase bold ($\mathbf{u}$, $\mathbf{v}$, $\mathbf{w}$): vectors
+- $X \in \mathbb{R}^{n \times m}$: $n$ rows (features), $m$ columns (training examples)
+- $W$: weight row vector with $n$ entries, one per feature
+- $b \in \mathbb{R}$: a single number (the bias)
+- $y^{(i)}$: the observed target for training example $i$
+- $\hat{y}$: the predicted output vector; $\hat{y} = W \cdot X + b$
+:::
+
+## From Linear Regression to Neural Networks (Optional)
+
+Of course, real-world datasets are not typically systems you can solve analytically like you were doing in the previous notes. But the assumption that a dataset could be approximated as a system of linear equations turns out to be a reasonable one. Machine learning allows you to solve this system in an iterative fashion and make predictions of your target $y$ for any new set of $x$ values.
+
+It turns out, however, that you can only get so far by approximating real-world datasets with linear models, because in many cases the relationship between features and targets is nonlinear. One of the most powerful models for representing nonlinear systems is the **neural network**. And one of the most amazing things about neural networks is that under the hood, they are really just a large collection of linear models.
+
+You might have seen neural networks represented with vertically-oriented layers of so-called artificial neurons, all connected with lines:
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import matplotlib.pyplot as plt
+import numpy as np
+
+fig, ax = plt.subplots(figsize=(14, 7.5))
+ax.set_xlim(-1.5, 16.5)
+ax.set_ylim(-1.5, 7.5)
+ax.set_aspect('equal')
+ax.axis('off')
+
+r_in = 0.42
+r_h = 0.82
+r_out = 0.42
+
+layer_x = [1.0, 5.5, 10.5, 14.5]
+
+# top to bottom ordering
+input_ys  = [5.2, 3.7, 1.5]
+hidden_ys  = [6.0, 4.3, 2.6, 0.9]
+hidden2_ys = [4.7, 2.2]
+output_ys  = [3.45]
+
+radii = [r_in, r_h, r_h, r_out]
+
+positions = [
+    [(layer_x[0], y) for y in input_ys],
+    [(layer_x[1], y) for y in hidden_ys],
+    [(layer_x[2], y) for y in hidden2_ys],
+    [(layer_x[3], y) for y in output_ys],
+]
+
+node_colors = ['#87CEEB', '#FFB347', '#90EE90', '#F08080']
+
+# draw edges (start/end at circle borders)
+for l in range(len(positions) - 1):
+    rf = radii[l]
+    rt = radii[l + 1]
+    for (x1, y1) in positions[l]:
+        for (x2, y2) in positions[l + 1]:
+            dx, dy = x2 - x1, y2 - y1
+            d = np.sqrt(dx**2 + dy**2)
+            ux, uy = dx / d, dy / d
+            ax.plot([x1 + ux * rf, x2 - ux * rt],
+                    [y1 + uy * rf, y2 - uy * rt],
+                    color='#d0d0d0', lw=0.7, zorder=0)
+
+# draw nodes
+for l, layer in enumerate(positions):
+    for (x, y) in layer:
+        circle = plt.Circle((x, y), radii[l], color=node_colors[l],
+                            ec='white', lw=1.5, zorder=2)
+        ax.add_patch(circle)
+
+# --- Input layer: x1, x2, xn inside circles ---
+for i, (x, y) in enumerate(positions[0]):
+    ax.text(x, y, [r'$x_1$', r'$x_2$', r'$x_n$'][i], fontsize=16,
+            ha='center', va='center', color='black', zorder=3)
+ax.text(layer_x[0], (input_ys[1] + input_ys[2]) / 2,
+        r'$\vdots$', fontsize=20, ha='center', va='center', color='black')
+
+# --- Hidden layer 1: sigma(W.X+b) inside circles, output arrows ---
+h1_labels = [
+    r'$\sigma(\mathbf{W_1^{[1]}}\!\cdot\! X + \mathbf{b_1^{[1]}})$',
+    r'$\sigma(\mathbf{W_2^{[1]}}\!\cdot\! X + \mathbf{b_2^{[1]}})$',
+    r'$\sigma(\mathbf{W_3^{[1]}}\!\cdot\! X + \mathbf{b_3^{[1]}})$',
+    r'$\sigma(\mathbf{W_n^{[1]}}\!\cdot\! X + \mathbf{b_n^{[1]}})$',
+]
+h1_out = [r'$a_1^{[1]}$', r'$a_2^{[1]}$', r'$a_3^{[1]}$', r'$a_n^{[1]}$']
+
+for i, (x, y) in enumerate(positions[1]):
+    ax.text(x, y, h1_labels[i], fontsize=10, ha='center', va='center',
+            color='black', zorder=3)
+    ax.annotate('', xy=(x + r_h + 0.65, y), xytext=(x + r_h + 0.08, y),
+                arrowprops=dict(arrowstyle='->', color='#CC7000', lw=1.3), zorder=1)
+    ax.text(x + r_h + 0.36, y + 0.22, h1_out[i], fontsize=12,
+            ha='center', va='bottom', color='black', zorder=3)
+
+# --- Hidden layer 2: sigma(W.A+b) inside circles, output arrows ---
+h2_labels = [
+    r'$\sigma(\mathbf{W_1^{[2]}}\!\cdot\! A^{[1]} + \mathbf{b_1^{[2]}})$',
+    r'$\sigma(\mathbf{W_2^{[2]}}\!\cdot\! A^{[1]} + \mathbf{b_2^{[2]}})$',
+]
+h2_out = [r'$a_1^{[2]}$', r'$a_2^{[2]}$']
+
+for i, (x, y) in enumerate(positions[2]):
+    ax.text(x, y, h2_labels[i], fontsize=10, ha='center', va='center',
+            color='black', zorder=3)
+    ax.annotate('', xy=(x + r_h + 0.65, y), xytext=(x + r_h + 0.08, y),
+                arrowprops=dict(arrowstyle='->', color='#1E6B3E', lw=1.3), zorder=1)
+    ax.text(x + r_h + 0.36, y + 0.22, h2_out[i], fontsize=12,
+            ha='center', va='bottom', color='black', zorder=3)
+
+# --- Output layer ---
+ox, oy = positions[3][0]
+ax.text(ox, oy, r'$\hat{y}$', fontsize=16, ha='center', va='center',
+        color='black', zorder=3)
+
+# --- Layer titles ---
+for l, (x, title) in enumerate(zip(layer_x,
+        ['Input layer', 'Hidden layer $[1]$', 'Hidden layer $[2]$', 'Output'])):
+    ax.text(x, -1.0, title, fontsize=13, ha='center', va='top', color='black')
+
+plt.tight_layout()
+plt.show()
+```
+
+The way to think about it is:
+
+- The **input layer** on the left holds your features: $x_1, x_2, \ldots, x_n$
+- All those $x$ values get sent to each neuron in the next layer
+- Each neuron has its own weight vector $\mathbf{w}_i$ and bias $b_i$, and computes $\mathbf{w}_i \cdot \mathbf{x} + b_i$. That is a linear model, just like before, contained in one little neuron
+- The result gets passed through an **activation function** $\sigma$ to produce an output $\mathbf{a}_i$
+- Each neuron in the layer does the same thing but with different weights and biases, producing its own output vector $\mathbf{a}$
+
+To keep track of which layer you are in, you add a superscript in square brackets. So the weights, biases, and outputs in the first layer are $W^{[1]}$, $\mathbf{b}^{[1]}$, and $\mathbf{a}^{[1]}$. Then what happens next is that you pass these $\mathbf{a}^{[1]}$ values to the second layer and the process repeats. In the second layer, the inputs are the $\mathbf{a}^{[1]}$ values from the first layer, and you multiply by a whole new set of weights $W^{[2]}$, add a different bias $\mathbf{b}^{[2]}$, and generate new outputs $\mathbf{a}^{[2]}$.
+
+This repeats as you propagate forward through each layer of the network: multiply the outputs of the previous layer by a set of weights, add a bias term, and apply an activation function, until you get to your final output.
+
+The point here is not to worry about all the intricate details of how a neural network functions. The point is that there is nothing particularly fancy going on inside. It is really just a large collection of linear models that, taken together, can model highly nonlinear systems. Instead of writing down a zillion little linear equations, you represent the inputs and outputs of each layer as **vectors** and **matrices**, and apply linear algebra to operate on them. Understanding those operations is what this note is about.
+
+## What Is a Vector?
 
 A vector $\mathbf{v} \in \mathbb{R}^n$ is an ordered list of $n$ real numbers:
 
 $$\mathbf{v} = \begin{pmatrix} v_1 \\ v_2 \\ \vdots \\ v_n \end{pmatrix}$$
 
-## Basic Operations
+You can think of a vector in two ways:
 
-**Addition**: $\mathbf{u} + \mathbf{v} = \begin{pmatrix} u_1 + v_1 \\ \vdots \\ u_n + v_n \end{pmatrix}$
+- **Geometrically**: an arrow in space with a direction and a magnitude (length)
+- **Algebraically**: a column of numbers
 
-**Scalar multiplication**: $c\mathbf{v} = \begin{pmatrix} cv_1 \\ \vdots \\ cv_n \end{pmatrix}$
+A **scalar** is just a single number. A vector is a 1D array of numbers. When you arrange numbers in a 2D grid of rows and columns, you get a **matrix**. Stack multiple matrices along a third dimension and you get a **tensor**. Tensors generalize to any number of dimensions; the cube below is just the 3D case we can draw:
 
-## Dot Product
+```{python}
+#| echo: false
+#| fig-align: center
 
-$$\mathbf{u} \cdot \mathbf{v} = \sum_{i=1}^{n} u_i v_i = \|\mathbf{u}\|\|\mathbf{v}\|\cos\theta$$
+%config InlineBackend.figure_formats = ['svg']
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import numpy as np
 
-- $\mathbf{u} \cdot \mathbf{v} = 0 \Rightarrow$ vectors are **orthogonal**
-- Used to compute projections, angles, and similarity
+fig, axes = plt.subplots(1, 4, figsize=(14, 3.5))
 
-## Norms
+# --- Scalar: a single number ---
+ax = axes[0]
+ax.set_xlim(-0.5, 2)
+ax.set_ylim(-0.5, 4.5)
+ax.set_aspect('equal')
+ax.axis('off')
 
-The **Euclidean norm** (length) of $\mathbf{v}$:
+rect = patches.FancyBboxPatch((0.4, 1.6), 0.8, 0.7,
+        boxstyle='round,pad=0.05', fc='#D8BFD8', ec='#8B668B', lw=1.5)
+ax.add_patch(rect)
+ax.text(0.8, -0.3, r'Scalar ($c$)', fontsize=13, ha='center', va='top', color='black')
 
-$$\|\mathbf{v}\| = \sqrt{\mathbf{v} \cdot \mathbf{v}} = \sqrt{\sum_{i=1}^n v_i^2}$$
+# --- Vector: a single column ---
+ax = axes[1]
+ax.set_xlim(-0.5, 2)
+ax.set_ylim(-0.5, 4.5)
+ax.set_aspect('equal')
+ax.axis('off')
 
-A **unit vector**: $\hat{\mathbf{v}} = \dfrac{\mathbf{v}}{\|\mathbf{v}\|}$
+for i in range(4):
+    rect = patches.FancyBboxPatch((0.4, 3.2 - i * 0.9), 0.8, 0.7,
+            boxstyle='round,pad=0.05', fc='#87CEEB', ec='#4682B4', lw=1.5)
+    ax.add_patch(rect)
+ax.text(0.8, -0.3, r'Vector ($\vec{v}$)', fontsize=13, ha='center', va='top', color='black')
 
-## Linear Combination and Span
+# --- Matrix: a 2D grid ---
+ax = axes[2]
+ax.set_xlim(-0.5, 4.5)
+ax.set_ylim(-0.5, 4.5)
+ax.set_aspect('equal')
+ax.axis('off')
 
-A **linear combination** of vectors $\mathbf{v}_1, \ldots, \mathbf{v}_k$:
+for r in range(4):
+    for c in range(4):
+        rect = patches.FancyBboxPatch((c * 0.9 + 0.2, 3.2 - r * 0.9), 0.7, 0.7,
+                boxstyle='round,pad=0.05', fc='#FFB347', ec='#CC7000', lw=1.5)
+        ax.add_patch(rect)
+ax.text(2.0, -0.3, r'Matrix ($M$)', fontsize=13, ha='center', va='top', color='black')
 
-$$c_1\mathbf{v}_1 + c_2\mathbf{v}_2 + \cdots + c_k\mathbf{v}_k$$
+# --- Tensor: stacked grids (3D cube illusion) ---
+ax = axes[3]
+ax.set_xlim(-0.5, 5.5)
+ax.set_ylim(-0.5, 5.5)
+ax.set_aspect('equal')
+ax.axis('off')
 
-The **span** is the set of all possible linear combinations. Vectors are **linearly independent** if no vector in the set can be written as a linear combination of the others.
+layers = 3
+dx, dy = 0.45, 0.35
+for layer in range(layers - 1, -1, -1):
+    ox = layer * dx + 0.2
+    oy = layer * dy
+    for r in range(4):
+        for c in range(4):
+            alpha = 0.4 + 0.3 * (layer / (layers - 1))
+            rect = patches.FancyBboxPatch((c * 0.9 + ox, 3.2 - r * 0.9 + oy), 0.7, 0.7,
+                    boxstyle='round,pad=0.05', fc='#90EE90', ec='#2E8B57',
+                    lw=1.5, alpha=alpha)
+            ax.add_patch(rect)
+ax.text(2.5, -0.3, r'Tensor ($\mathcal{T}$)', fontsize=13, ha='center', va='top', color='black')
+
+plt.tight_layout()
+plt.show()
+```
+
+A vector is simply a tuple of numbers. It could be two numbers, three numbers, anything. The number of coordinates in the vector is the dimension of the space in which it lives. For example, the vector $(4, 3)$ lives in the plane and is the arrow that points at the point with horizontal coordinate 4 and vertical coordinate 3.
+
+A vector in $\mathbb{R}^2$ lives on a flat plane. A vector in $\mathbb{R}^3$ lives in 3D space. For example, the vector $(4, 3, 1)$ is the arrow pointing at the point with coordinates $(4, 3, 1)$ with respect to the $x$, $y$, and $z$ axes. A vector in $\mathbb{R}^n$ lives in $n$-dimensional space. You can't visualize it, but the math works the same way.
+
+A vector has two important components: its **magnitude** (size, or length) and its **direction**.
+
+### Notation
+
+There are many ways to write a vector. Vectors can be written horizontally as **row vectors** or vertically as **column vectors**:
+
+$$\mathbf{x} = \begin{pmatrix} x_1 & x_2 & \cdots & x_n \end{pmatrix} \quad \text{or} \quad \mathbf{x} = \begin{pmatrix} x_1 \\ x_2 \\ \vdots \\ x_n \end{pmatrix}$$
+
+The components are numbered with subscripts: the second component of $\mathbf{x}$ is $x_2$. In other resources, you may see vector names written with a little arrow ($\vec{x}$) or in bold ($\mathbf{x}$). Vectors can also be written with square brackets instead of parentheses:
+
+$$\mathbf{x} = \begin{bmatrix} x_1 \\ x_2 \\ \vdots \\ x_n \end{bmatrix}$$
+
+Square brackets can be a helpful reminder that a vector is part of a matrix, or is simply a small skinny matrix. There is no conceptual difference between these notations.
+
+## Norms: Measuring Length
+
+The magnitude of a vector can be defined in several ways, but all of them emulate the distances you use in real life.
+
+Imagine you live in a city with blocks formed by streets that are either horizontal or vertical. You need to go from home to the store, but you can only travel on the streets. If there are 4 blocks horizontally and 3 blocks vertically between your house and the store, the distance is $4 + 3 = 7$. No matter what route you take, you always walk 7 blocks. This is called the **taxicab distance**.
+
+The other option is to hop into a helicopter. The helicopter does not need to follow streets or corners; it flies directly. By the Pythagorean theorem, the shortest distance is $\sqrt{4^2 + 3^2} = 5$.
+
+Both of these give us ways to measure the size of a vector $(a, b)$:
+
+- The **$L^1$ norm** is the taxicab distance from the origin to $(a, b)$: the sum of the absolute values of the components. Absolute values because $a$ and $b$ can be negative, but the distance to walk is always positive:
+
+$$\|\mathbf{v}\|_1 = |v_1| + |v_2| + \cdots + |v_n|$$
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import numpy as np
+
+fig, ax = plt.subplots(figsize=(5, 5))
+
+for i in range(6):
+    for j in range(6):
+        rect = patches.Rectangle((i, j), 1, 1, linewidth=0.5,
+                edgecolor='#cccccc', facecolor='#f5f5f5')
+        ax.add_patch(rect)
+
+home = (0.5, 0.5)
+store = (4.5, 3.5)
+
+path_x = [0.5, 4.5, 4.5]
+path_y = [0.5, 0.5, 3.5]
+ax.plot(path_x, path_y, color='#E07020', lw=3, zorder=3, label=r'Taxicab: $|4|+|3|=7$')
+
+ax.plot(*home, 's', color='steelblue', markersize=14, zorder=4)
+ax.plot(*store, 's', color='#2E8B57', markersize=14, zorder=4)
+ax.text(home[0], home[1] - 0.4, 'Home', fontsize=11, ha='center', color='steelblue')
+ax.text(store[0], store[1] + 0.4, 'Store', fontsize=11, ha='center', color='#2E8B57')
+
+ax.text(2.5, 0.15, '4 blocks', fontsize=10, ha='center', color='#E07020')
+ax.text(4.9, 2.0, '3 blocks', fontsize=10, ha='left', color='#E07020')
+
+ax.set_xlim(-0.2, 6.2)
+ax.set_ylim(-0.8, 5.5)
+ax.set_aspect('equal')
+ax.axis('off')
+ax.legend(fontsize=11, loc='upper left')
+plt.tight_layout()
+plt.show()
+```
+
+- The **$L^2$ norm** (Euclidean norm) is the helicopter distance: the square root of the sum of the squares of the components:
+
+$$\|\mathbf{v}\|_2 = \sqrt{v_1^2 + v_2^2 + \cdots + v_n^2}$$
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import numpy as np
+
+fig, ax = plt.subplots(figsize=(5, 5))
+
+for i in range(6):
+    for j in range(6):
+        rect = patches.Rectangle((i, j), 1, 1, linewidth=0.5,
+                edgecolor='#cccccc', facecolor='#f5f5f5')
+        ax.add_patch(rect)
+
+home = (0.5, 0.5)
+store = (4.5, 3.5)
+
+ax.annotate('', xy=store, xytext=home,
+            arrowprops=dict(arrowstyle='->', color='steelblue', lw=3,
+                            mutation_scale=25), zorder=5)
+
+ax.plot([0.5, 4.5], [0.5, 0.5], '--', color='gray', lw=1.2, zorder=2)
+ax.plot([4.5, 4.5], [0.5, 3.5], '--', color='gray', lw=1.2, zorder=2)
+
+ax.plot(*home, 's', color='steelblue', markersize=14, zorder=3)
+ax.plot(*store, 's', color='#2E8B57', markersize=14, zorder=3)
+ax.text(home[0], home[1] - 0.4, 'Home', fontsize=11, ha='center', color='steelblue')
+ax.text(store[0], store[1] + 0.4, 'Store', fontsize=11, ha='center', color='#2E8B57')
+
+ax.text(2.5, 0.15, '4', fontsize=10, ha='center', color='gray')
+ax.text(4.9, 2.0, '3', fontsize=10, ha='left', color='gray')
+ax.text(2.0, 2.5, r'$\sqrt{4^2+3^2}=5$', fontsize=11, ha='center',
+        color='steelblue', rotation=37)
+
+ax.set_xlim(-0.2, 6.2)
+ax.set_ylim(-0.8, 5.5)
+ax.set_aspect('equal')
+ax.axis('off')
+plt.tight_layout()
+plt.show()
+```
+
+By default, when you don't specify which norm to use, we mean the $L^2$ norm, because it is the actual length of the arrow.
+
+For example, the length of $\begin{pmatrix} 3 \\ 4 \end{pmatrix}$ is $\sqrt{9 + 16} = 5$. You might recognize this as the Pythagorean theorem, and that's exactly what it is.
+
+### Direction
+
+The direction of a vector can be deduced from its coordinates. For the vector $(4, 3)$, if the angle with the horizontal axis is $\theta$, then $\tan\theta = 3/4$, so $\theta = \arctan(3/4) \approx 0.64$ radians, or about $36.87°$.
+
+Vectors can have different norms while pointing in the same direction. For example, $(2, 1.5)$ points in the same direction as $(4, 3)$ but has a smaller norm.
+
+### Unit Vectors
+
+A **unit vector** is a vector with length 1. You can turn any non-zero vector into a unit vector by dividing by its norm:
+
+$$\hat{\mathbf{v}} = \frac{\mathbf{v}}{\|\mathbf{v}\|}$$
+
+This process is called **normalization**. The unit vector $\hat{\mathbf{v}}$ points in the same direction as $\mathbf{v}$ but has length 1.
 
 ---
 
