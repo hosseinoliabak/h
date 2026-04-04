@@ -183,7 +183,7 @@ The point here is not to worry about all the intricate details of how a neural n
 
 A vector $\mathbf{v} \in \mathbb{R}^n$ is an ordered list of $n$ real numbers:
 
-$$\mathbf{v} = \begin{pmatrix} v_1 \\ v_2 \\ \vdots \\ v_n \end{pmatrix}$$
+$$\mathbf{v} = \begin{bmatrix} v_1 \\ v_2 \\ \vdots \\ v_n \end{bmatrix}$$
 
 You can think of a vector in two ways:
 
@@ -242,25 +242,55 @@ for r in range(4):
         ax.add_patch(rect)
 ax.text(2.0, -0.3, r'Matrix ($M$)', fontsize=13, ha='center', va='top', color='black')
 
-# --- Tensor: stacked grids (3D cube illusion) ---
+# --- Tensor: 3D cube with grid (Rubik's cube style) ---
 ax = axes[3]
 ax.set_xlim(-0.5, 5.5)
 ax.set_ylim(-0.5, 5.5)
 ax.set_aspect('equal')
 ax.axis('off')
 
-layers = 3
-dx, dy = 0.45, 0.35
-for layer in range(layers - 1, -1, -1):
-    ox = layer * dx + 0.2
-    oy = layer * dy
-    for r in range(4):
-        for c in range(4):
-            alpha = 0.4 + 0.3 * (layer / (layers - 1))
-            rect = patches.FancyBboxPatch((c * 0.9 + ox, 3.2 - r * 0.9 + oy), 0.7, 0.7,
+n = 4  # 4x4x4 grid
+s = 0.9  # cell stride (same as vector/matrix)
+cell = 0.7  # cell size (same as matrix)
+# isometric offsets for depth
+ddx, ddy = 0.4, 0.35
+
+# draw back-to-front so front face overlaps
+for layer in range(n):  # depth: back to front
+    ox = (n - 1 - layer) * ddx + 0.3
+    oy = (n - 1 - layer) * ddy + 0.5
+    alpha = 0.35 + 0.25 * (layer / (n - 1))
+    for r in range(n):
+        for c in range(n):
+            x = c * s + ox
+            y = (n - 1 - r) * s + oy
+            rect = patches.FancyBboxPatch((x, y), cell, cell,
                     boxstyle='round,pad=0.05', fc='#90EE90', ec='#2E8B57',
                     lw=1.5, alpha=alpha)
             ax.add_patch(rect)
+
+# draw connecting lines between front and back layers (edges of the cube)
+front_ox = (n - 1 - (n - 1)) * ddx + 0.3
+front_oy = (n - 1 - (n - 1)) * ddy + 0.5
+back_ox = (n - 1 - 0) * ddx + 0.3
+back_oy = (n - 1 - 0) * ddy + 0.5
+
+# top-right edges connecting front to back
+for c in range(n + 1):
+    x_f = c * s + front_ox
+    y_f = n * s + front_oy - (s - cell)
+    x_b = c * s + back_ox
+    y_b = n * s + back_oy - (s - cell)
+    ax.plot([x_f, x_b], [y_f, y_b], color='#2E8B57', lw=0.8, alpha=0.4)
+
+# right-side edges connecting front to back
+for r in range(n + 1):
+    x_f = n * s + front_ox - (s - cell)
+    y_f = r * s + front_oy
+    x_b = n * s + back_ox - (s - cell)
+    y_b = r * s + back_oy
+    ax.plot([x_f, x_b], [y_f, y_b], color='#2E8B57', lw=0.8, alpha=0.4)
+
 ax.text(2.5, -0.3, r'Tensor ($\mathcal{T}$)', fontsize=13, ha='center', va='top', color='black')
 
 plt.tight_layout()
@@ -277,7 +307,7 @@ A vector has two important components: its **magnitude** (size, or length) and i
 
 There are many ways to write a vector. Vectors can be written horizontally as **row vectors** or vertically as **column vectors**:
 
-$$\mathbf{x} = \begin{pmatrix} x_1 & x_2 & \cdots & x_n \end{pmatrix} \quad \text{or} \quad \mathbf{x} = \begin{pmatrix} x_1 \\ x_2 \\ \vdots \\ x_n \end{pmatrix}$$
+$$\mathbf{x} = \begin{bmatrix} x_1 & x_2 & \cdots & x_n \end{bmatrix} \quad \text{or} \quad \mathbf{x} = \begin{bmatrix} x_1 \\ x_2 \\ \vdots \\ x_n \end{bmatrix}$$
 
 The components are numbered with subscripts: the second component of $\mathbf{x}$ is $x_2$. In other resources, you may see vector names written with a little arrow ($\vec{x}$) or in bold ($\mathbf{x}$). Vectors can also be written with square brackets instead of parentheses:
 
@@ -391,7 +421,7 @@ plt.show()
 
 By default, when you don't specify which norm to use, we mean the $L^2$ norm, because it is the actual length of the arrow.
 
-For example, the length of $\begin{pmatrix} 3 \\ 4 \end{pmatrix}$ is $\sqrt{9 + 16} = 5$. You might recognize this as the Pythagorean theorem, and that's exactly what it is.
+For example, the length of $\begin{bmatrix} 3 \\ 4 \end{bmatrix}$ is $\sqrt{9 + 16} = 5$. You might recognize this as the Pythagorean theorem, and that's exactly what it is.
 
 ### Direction
 
@@ -406,6 +436,853 @@ A **unit vector** is a vector with length 1. You can turn any non-zero vector in
 $$\hat{\mathbf{v}} = \frac{\mathbf{v}}{\|\mathbf{v}\|}$$
 
 This process is called **normalization**. The unit vector $\hat{\mathbf{v}}$ points in the same direction as $\mathbf{v}$ but has length 1.
+
+## Vector Operations
+
+Just like numbers can be added and subtracted to obtain other numbers, vectors can also be added and subtracted to obtain other vectors. This can be done in a very natural way.
+
+### Addition
+
+If you'd like to add two vectors, all you do is add the coordinates. For example, the vectors $\mathbf{u} = \begin{bmatrix} 4 \\ 1 \end{bmatrix}$ and $\mathbf{v} = \begin{bmatrix} 1 \\ 3 \end{bmatrix}$ add up to:
+
+$$\mathbf{u} + \mathbf{v} = \begin{bmatrix} 4 + 1 \\ 1 + 3 \end{bmatrix} = \begin{bmatrix} 5 \\ 4 \end{bmatrix}$$
+
+Geometrically, the sum vector is precisely the diagonal of the parallelogram formed by $\mathbf{u}$ and $\mathbf{v}$:
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(6, 5))
+u = np.array([4, 1])
+v = np.array([1, 3])
+s = u + v
+
+# parallelogram
+ax.plot([0, u[0], s[0], v[0], 0], [0, u[1], s[1], v[1], 0],
+        '--', color='#cccccc', lw=1.2, zorder=0)
+
+# vectors
+ax.annotate('', xy=u, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='steelblue', lw=2.5))
+ax.annotate('', xy=v, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='darkorange', lw=2.5))
+ax.annotate('', xy=s, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='#2E8B57', lw=2.5))
+
+ax.text(2.3, 0.1, r'$\mathbf{u} = (4, 1)$', fontsize=12, color='steelblue')
+ax.text(-0.2, 1.8, r'$\mathbf{v} = (1, 3)$', fontsize=12, color='darkorange')
+ax.text(3.0, 2.8, r'$\mathbf{u}+\mathbf{v} = (5, 4)$', fontsize=12, color='#2E8B57')
+
+ax.set_xlim(-0.8, 6.5)
+ax.set_ylim(-0.8, 5)
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+plt.tight_layout()
+plt.show()
+```
+
+In general, for two $n$-dimensional vectors:
+
+$$\mathbf{x} + \mathbf{y} = \begin{bmatrix} x_1 + y_1 \\ x_2 + y_2 \\ \vdots \\ x_n + y_n \end{bmatrix}$$
+
+Notice that $\mathbf{x}$ and $\mathbf{y}$ must have the same number of components for this to make sense.
+
+### Subtraction
+
+Something similar happens with subtraction, except you get the other diagonal of the parallelogram. The difference is also taken component-wise:
+
+$$\mathbf{u} - \mathbf{v} = \begin{bmatrix} 4 - 1 \\ 1 - 3 \end{bmatrix} = \begin{bmatrix} 3 \\ -2 \end{bmatrix}$$
+
+This vector might not look like anything special at first, but if you translate it so that its tail sits at the tip of $\mathbf{v}$, it matches precisely with the arrow that joins the point $(1, 3)$ to the point $(4, 1)$:
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(6, 5))
+u = np.array([4, 1])
+v = np.array([1, 3])
+d = u - v
+
+# parallelogram
+ax.plot([0, u[0], u[0] + v[0], v[0], 0], [0, u[1], u[1] + v[1], v[1], 0],
+        '--', color='#cccccc', lw=1.2, zorder=0)
+
+# u and v
+ax.annotate('', xy=u, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='steelblue', lw=2.5))
+ax.annotate('', xy=v, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='darkorange', lw=2.5))
+
+# difference from origin
+ax.annotate('', xy=d, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='#CD5C5C', lw=2.5, linestyle='--'))
+
+# difference translated: from v to u
+ax.annotate('', xy=u, xytext=v,
+            arrowprops=dict(arrowstyle='->', color='#CD5C5C', lw=2.5))
+
+ax.text(2.5, 0.1, r'$\mathbf{u}$', fontsize=12, color='steelblue')
+ax.text(0.0, 2.0, r'$\mathbf{v}$', fontsize=12, color='darkorange')
+ax.text(1.8, -1.3, r'$\mathbf{u}-\mathbf{v} = (3, -2)$', fontsize=11, color='#CD5C5C')
+ax.text(2.9, 2.5, r'same vector, translated', fontsize=10, color='#CD5C5C', fontstyle='italic')
+
+ax.set_xlim(-1, 6.5)
+ax.set_ylim(-2.8, 5)
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+plt.tight_layout()
+plt.show()
+```
+
+In general:
+
+$$\mathbf{x} - \mathbf{y} = \begin{bmatrix} x_1 - y_1 \\ x_2 - y_2 \\ \vdots \\ x_n - y_n \end{bmatrix}$$
+
+### Distance Between Vectors
+
+The difference between two vectors is helpful to tell how far apart they are from each other. For example, how different is the vector $(1, 5)$ from the vector $(6, 2)$? Their difference is $(6 - 1, 2 - 5) = (5, -3)$.
+
+One way to measure the distance is the **$L^1$ distance**: the $L^1$ norm of the difference, which is the sum of the absolute values of the components:
+
+$$d_1 = |5| + |-3| = 8$$
+
+Another way is the **$L^2$ distance**: the $L^2$ norm of the difference:
+
+$$d_2 = \sqrt{5^2 + (-3)^2} = \sqrt{34} \approx 5.83$$
+
+In machine learning, it is very useful to know distances between vectors because many times you want to calculate similarities between data points, and these measures are exactly what you need.
+
+### Scalar Multiplication
+
+Another very useful and simple operation is multiplying a vector by a scalar. If the vector is $\begin{bmatrix} 1 \\ 2 \end{bmatrix}$ and you'd like to multiply it by the scalar $\lambda = 3$, then the result is the element-wise product:
+
+$$3 \begin{bmatrix} 1 \\ 2 \end{bmatrix} = \begin{bmatrix} 3 \\ 6 \end{bmatrix}$$
+
+Graphically, this means you stretch the vector by a factor of 3.
+
+What if the scalar is negative? The vector gets stretched by the factor but also reflected about the origin. For example, if the scalar is $-2$:
+
+$$-2 \begin{bmatrix} 1 \\ 2 \end{bmatrix} = \begin{bmatrix} -2 \\ -4 \end{bmatrix}$$
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(6, 5))
+v = np.array([1, 2])
+
+# original
+ax.annotate('', xy=v, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='steelblue', lw=2.5))
+# scaled by 3
+ax.annotate('', xy=3*v, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='#2E8B57', lw=2.5))
+# scaled by -2
+ax.annotate('', xy=-2*v, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='#CD5C5C', lw=2.5))
+
+ax.text(0.6, 1.5, r'$\mathbf{v} = (1, 2)$', fontsize=11, color='steelblue')
+ax.text(2.2, 4.8, r'$3\mathbf{v} = (3, 6)$', fontsize=11, color='#2E8B57')
+ax.text(-2.5, -3.0, r'$-2\mathbf{v} = (-2, -4)$', fontsize=11, color='#CD5C5C')
+
+ax.set_xlim(-3.5, 4.5)
+ax.set_ylim(-5.5, 7.5)
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+plt.tight_layout()
+plt.show()
+```
+
+In general, for an $n$-dimensional vector $\mathbf{x}$ and a scalar $\lambda$:
+
+$$\lambda \mathbf{x} = \begin{bmatrix} \lambda x_1 \\ \lambda x_2 \\ \vdots \\ \lambda x_n \end{bmatrix}$$
+
+To summarize:
+
+- If $\lambda > 1$: the vector gets stretched
+- If $0 < \lambda < 1$: the vector gets shrunk
+- If $\lambda < 0$: the vector gets stretched and reflected about the origin
+- If $\lambda = 0$: the result is the zero vector
+
+## The Dot Product
+
+You are now going to learn a very nice and compact way to combine two vectors into a single number. This operation is called the **dot product**, and it shows up everywhere in linear algebra and machine learning. In fact, you have already been doing dot products without knowing it. Every time you computed a weighted sum of features inside a neuron ($w_1 x_1 + w_2 x_2 + \cdots$), that was a dot product.
+
+Here is how it works. Imagine you buy some fruit: 2 apples, 4 bananas, and 1 cherry. Each apple costs \$3, each banana costs \$5, and each cherry costs \$2. How much does everything cost?
+
+The amounts can be expressed as a vector, and so can the prices:
+
+$$\mathbf{q} = \begin{bmatrix} 2 \\ 4 \\ 1 \end{bmatrix} \quad \text{(quantities)} \qquad \mathbf{p} = \begin{bmatrix} 3 \\ 5 \\ 2 \end{bmatrix} \quad \text{(prices)}$$
+
+To find the total cost, you multiply each quantity by its price and add them up:
+
+$$2 \times 3 + 4 \times 5 + 1 \times 2 = 6 + 20 + 2 = 28$$
+
+That is the dot product of $\mathbf{q}$ and $\mathbf{p}$. You multiply corresponding entries and sum the results.
+
+| Fruit | Quantity | | Price | | Cost |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| {{< iconify noto red-apple >}} Apple | 2 | $\times$ | \$3 | $=$ | \$6 |
+| {{< iconify noto banana >}} Banana | 4 | $\times$ | \$5 | $=$ | \$20 |
+| {{< iconify noto cherries >}} Cherry | 1 | $\times$ | \$2 | $=$ | \$2 |
+| | | | | **Total** | **\$28** |
+
+It is more common to write the first vector as a row and the second as a column:
+
+$$\begin{bmatrix} 2 & 4 & 1 \end{bmatrix} \cdot \begin{bmatrix} 3 \\ 5 \\ 2 \end{bmatrix} = 2 \cdot 3 + 4 \cdot 5 + 1 \cdot 2 = 28$$
+
+### Formal Definition
+
+Given two vectors $\mathbf{x}$ and $\mathbf{y}$ with the same number of components $n$, the dot product is:
+
+$$\mathbf{x} \cdot \mathbf{y} = x_1 y_1 + x_2 y_2 + \cdots + x_n y_n = \sum_{i=1}^{n} x_i y_i$$
+
+You may also see the dot product written with angle brackets: $\langle \mathbf{x}, \mathbf{y} \rangle$. Both notations mean the same thing.
+
+### Dot Product and the Norm
+
+There is a nice connection between the dot product and the norm. Recall the vector $(4, 3)$ whose $L^2$ norm was 5. Notice that $4^2 + 3^2$ is actually the dot product of the vector with itself:
+
+$$\begin{bmatrix} 4 \\ 3 \end{bmatrix} \cdot \begin{bmatrix} 4 \\ 3 \end{bmatrix} = 4 \cdot 4 + 3 \cdot 3 = 16 + 9 = 25$$
+
+This is always the case. The norm (length) of a vector is the square root of the dot product of the vector with itself:
+
+$$\|\mathbf{v}\| = \sqrt{\mathbf{v} \cdot \mathbf{v}}$$
+
+The double vertical lines $\|\mathbf{v}\|$ are read as "the $L^2$ norm of $\mathbf{v}$" and simply mean the length of the vector.
+
+### Vector Transpose
+
+In the dot product above, you saw the first vector written as a row and the second as a column. The operation that converts a column vector into a row vector (and vice versa) is called the **transpose**, denoted by a superscript $T$:
+
+$$\mathbf{x} = \begin{bmatrix} x_1 \\ x_2 \\ x_3 \end{bmatrix} \quad \Rightarrow \quad \mathbf{x}^T = \begin{bmatrix} x_1 & x_2 & x_3 \end{bmatrix}$$
+
+Applying the transpose to a row vector turns it back into a column vector. The transpose simply turns columns into rows.
+
+You can also transpose a matrix. If you start with a $3 \times 2$ matrix, transpose each column into a row:
+
+$$A = \begin{bmatrix} 1 & 4 \\ 2 & 5 \\ 3 & 6 \end{bmatrix} \quad \Rightarrow \quad A^T = \begin{bmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \end{bmatrix}$$
+
+Notice that the dimensions swap: a $3 \times 2$ matrix becomes a $2 \times 3$ matrix.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import numpy as np
+
+fig, axes = plt.subplots(1, 3, figsize=(13, 3.5))
+
+# --- Column vector -> Row vector ---
+ax = axes[0]
+ax.set_xlim(-0.5, 8)
+ax.set_ylim(-0.5, 4)
+ax.set_aspect('equal')
+ax.axis('off')
+
+vals = [2, 5, 7]
+for i, v in enumerate(vals):
+    r = patches.FancyBboxPatch((0.3, 2.5 - i * 1.0), 0.9, 0.8,
+            boxstyle='round,pad=0.05', fc='#87CEEB', ec='#4682B4', lw=1.5)
+    ax.add_patch(r)
+    ax.text(0.75, 2.9 - i * 1.0, str(v), fontsize=14, ha='center', va='center', fontweight='bold')
+
+ax.annotate('', xy=(2.4, 1.9), xytext=(1.6, 1.9),
+            arrowprops=dict(arrowstyle='->', color='gray', lw=1.5))
+ax.text(2.0, 2.25, 'T', fontsize=12, ha='center', va='bottom', color='gray', fontstyle='italic')
+
+for i, v in enumerate(vals):
+    r = patches.FancyBboxPatch((3.0 + i * 1.0, 1.5), 0.9, 0.8,
+            boxstyle='round,pad=0.05', fc='#FFB347', ec='#CC7000', lw=1.5)
+    ax.add_patch(r)
+    ax.text(3.45 + i * 1.0, 1.9, str(v), fontsize=14, ha='center', va='center', fontweight='bold')
+
+ax.text(0.75, 3.6, r'$\mathbf{x}$', fontsize=13, ha='center', color='#4682B4')
+ax.text(4.45, 2.6, r'$\mathbf{x}^T$', fontsize=13, ha='center', color='#CC7000')
+ax.set_title('Vector transpose', fontsize=11, color='gray', pad=8)
+
+# --- 3x2 matrix -> 2x3 matrix ---
+ax = axes[1]
+ax.set_xlim(-0.5, 9)
+ax.set_ylim(-0.5, 4.5)
+ax.set_aspect('equal')
+ax.axis('off')
+
+mat = [[1, 4], [2, 5], [3, 6]]
+colors_orig = ['#87CEEB', '#90EE90']
+for r_idx in range(3):
+    for c_idx in range(2):
+        r = patches.FancyBboxPatch((c_idx * 1.0 + 0.1, 2.8 - r_idx * 1.0), 0.8, 0.8,
+                boxstyle='round,pad=0.05', fc=colors_orig[c_idx],
+                ec='#555555', lw=1.2)
+        ax.add_patch(r)
+        ax.text(c_idx * 1.0 + 0.5, 3.2 - r_idx * 1.0, str(mat[r_idx][c_idx]),
+                fontsize=14, ha='center', va='center', fontweight='bold')
+
+ax.annotate('', xy=(3.4, 2.2), xytext=(2.4, 2.2),
+            arrowprops=dict(arrowstyle='->', color='gray', lw=1.5))
+ax.text(2.9, 2.55, 'T', fontsize=12, ha='center', va='bottom', color='gray', fontstyle='italic')
+
+mat_t = [[1, 2, 3], [4, 5, 6]]
+colors_t = ['#87CEEB', '#90EE90']
+for r_idx in range(2):
+    for c_idx in range(3):
+        r = patches.FancyBboxPatch((c_idx * 1.0 + 3.8, 2.3 - r_idx * 1.0), 0.8, 0.8,
+                boxstyle='round,pad=0.05', fc=colors_t[r_idx],
+                ec='#555555', lw=1.2)
+        ax.add_patch(r)
+        ax.text(c_idx * 1.0 + 4.2, 2.7 - r_idx * 1.0, str(mat_t[r_idx][c_idx]),
+                fontsize=14, ha='center', va='center', fontweight='bold')
+
+ax.text(1.1, 4.0, r'$A$  ($3 \times 2$)', fontsize=11, ha='center', color='gray')
+ax.text(5.2, 3.8, r'$A^T$  ($2 \times 3$)', fontsize=11, ha='center', color='gray')
+ax.set_title('Matrix transpose', fontsize=11, color='gray', pad=8)
+
+# --- Dot product as x^T y ---
+ax = axes[2]
+ax.set_xlim(-0.5, 9)
+ax.set_ylim(-0.5, 4)
+ax.set_aspect('equal')
+ax.axis('off')
+
+# row vector (transposed)
+row_vals = [2, 4, 1]
+for i, v in enumerate(row_vals):
+    r = patches.FancyBboxPatch((i * 1.0 + 0.1, 2.5), 0.8, 0.8,
+            boxstyle='round,pad=0.05', fc='#87CEEB', ec='#4682B4', lw=1.5)
+    ax.add_patch(r)
+    ax.text(i * 1.0 + 0.5, 2.9, str(v), fontsize=14, ha='center', va='center', fontweight='bold')
+
+ax.text(3.3, 2.9, r'$\cdot$', fontsize=20, ha='center', va='center')
+
+# column vector
+col_vals = [3, 5, 2]
+for i, v in enumerate(col_vals):
+    r = patches.FancyBboxPatch((3.8, 2.5 - i * 1.0 + 0.5), 0.8, 0.8,
+            boxstyle='round,pad=0.05', fc='#FFB347', ec='#CC7000', lw=1.5)
+    ax.add_patch(r)
+    ax.text(4.2, 2.9 - i * 1.0 + 0.5, str(v), fontsize=14, ha='center', va='center', fontweight='bold')
+
+ax.text(5.3, 2.0, r'$= 28$', fontsize=16, ha='left', va='center',
+        color='#2E8B57', fontweight='bold')
+
+ax.text(1.5, 3.6, r'$\mathbf{q}^T$', fontsize=12, ha='center', color='#4682B4')
+ax.text(4.2, 3.6, r'$\mathbf{p}$', fontsize=12, ha='center', color='#CC7000')
+ax.set_title(r'Dot product as $\mathbf{q}^T \mathbf{p}$', fontsize=11, color='gray', pad=8)
+
+plt.tight_layout()
+plt.show()
+```
+
+Using the transpose, the dot product can be written as a row vector times a column vector:
+
+$$\mathbf{x} \cdot \mathbf{y} = \mathbf{x}^T \mathbf{y}$$
+
+This notation is very common and you will see it throughout linear algebra and machine learning.
+
+### Geometric Interpretation
+
+The dot product has a deep geometric meaning. Let's build up to it step by step.
+
+#### Orthogonal Vectors
+
+Take a look at these two perpendicular (also called **orthogonal**) vectors: $\mathbf{u} = \begin{bmatrix} -1 \\ 3 \end{bmatrix}$ and $\mathbf{v} = \begin{bmatrix} 6 \\ 2 \end{bmatrix}$. Now take the dot product:
+
+$$\mathbf{u} \cdot \mathbf{v} = (-1)(6) + (3)(2) = -6 + 6 = 0$$
+
+This always happens. Two vectors are orthogonal if and only if their dot product is zero.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(5, 5))
+
+u = np.array([-1, 3])
+v = np.array([6, 2])
+
+ax.annotate('', xy=u, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='steelblue', lw=2.5))
+ax.annotate('', xy=v, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='darkorange', lw=2.5))
+
+# right angle marker
+scale = 0.4
+p1 = scale * u / np.linalg.norm(u)
+p2 = scale * v / np.linalg.norm(v)
+ax.plot([p1[0], p1[0]+p2[0], p2[0]], [p1[1], p1[1]+p2[1], p2[1]],
+        color='gray', lw=1.2)
+
+ax.text(-1.5, 2.0, r'$\mathbf{u} = (-1, 3)$', fontsize=11, color='steelblue')
+ax.text(3.5, 1.5, r'$\mathbf{v} = (6, 2)$', fontsize=11, color='darkorange')
+ax.text(2.5, 3.5, r'$\mathbf{u} \cdot \mathbf{v} = 0$', fontsize=13,
+        ha='center', color='#CD5C5C', fontweight='bold',
+        bbox=dict(boxstyle='round,pad=0.3', fc='#FFF0F0', ec='#CD5C5C', alpha=0.9))
+
+ax.set_xlim(-2.5, 7.5)
+ax.set_ylim(-1.5, 4.5)
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+plt.tight_layout()
+plt.show()
+```
+
+#### Building Up to the Formula
+
+Let's recap what you've seen so far:
+
+- The dot product of a vector with **itself** is the norm squared: $\mathbf{v} \cdot \mathbf{v} = \|\mathbf{v}\|^2$
+- The dot product of two **orthogonal** vectors is always 0
+
+What about the dot product between two arbitrary vectors $\mathbf{u}$ and $\mathbf{v}$?
+
+If $\mathbf{u}$ and $\mathbf{v}$ point in the **same direction**, the dot product is simply the product of their norms: $\mathbf{u} \cdot \mathbf{v} = \|\mathbf{u}\| \, \|\mathbf{v}\|$.
+
+But what if there is an angle between them? Then you need to project one vector onto the other. The **projection** of $\mathbf{u}$ onto $\mathbf{v}$ is the "shadow" that $\mathbf{u}$ casts on $\mathbf{v}$. Call this projection $\mathbf{u}'$. Then:
+
+$$\mathbf{u} \cdot \mathbf{v} = \|\mathbf{u}'\| \, \|\mathbf{v}\|$$
+
+For example, take $\mathbf{u} = (1, 3)$ and $\mathbf{v} = (6, 2)$. Their dot product is $1 \cdot 6 + 3 \cdot 2 = 12$.
+
+On the left, we project $\mathbf{u}$ onto $\mathbf{v}$. The shadow $\mathbf{u}'$ lands on the line of $\mathbf{v}$ and is much shorter than $\mathbf{v}$. The dot product is $\|\mathbf{u}'\| \times \|\mathbf{v}\| = 12$.
+
+On the right, we project $\mathbf{v}$ onto $\mathbf{u}$. Now $\mathbf{v}$ is long, so its shadow $\mathbf{v}'$ actually extends past the tip of $\mathbf{u}$. Notice the dashed extension of $\mathbf{u}$'s line so the perpendicular can land. The dot product is $\|\mathbf{u}\| \times \|\mathbf{v}'\| = 12$. Same answer.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+u = np.array([1, 3])
+v = np.array([6, 2])
+
+# projection of u onto v
+proj_uv = (np.dot(u, v) / np.dot(v, v)) * v  # (1.8, 0.6)
+# projection of v onto u
+proj_vu = (np.dot(v, u) / np.dot(u, u)) * u  # (1.2, 3.6)
+
+# --- Left: project u onto v ---
+ax = axes[0]
+ax.annotate('', xy=u, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='steelblue', lw=2.5))
+ax.annotate('', xy=v, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='darkorange', lw=2.5))
+ax.annotate('', xy=proj_uv, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='#2E8B57', lw=2.5))
+
+# dashed drop line from u to projection
+ax.plot([u[0], proj_uv[0]], [u[1], proj_uv[1]], '--', color='gray', lw=1.2)
+
+# right angle marker
+perp = u - proj_uv
+perp_hat = perp / np.linalg.norm(perp) * 0.3
+v_hat = v / np.linalg.norm(v) * 0.3
+ax.plot([proj_uv[0] + perp_hat[0], proj_uv[0] + perp_hat[0] - v_hat[0],
+         proj_uv[0] - v_hat[0]],
+        [proj_uv[1] + perp_hat[1], proj_uv[1] + perp_hat[1] - v_hat[1],
+         proj_uv[1] - v_hat[1]], color='gray', lw=1)
+
+# angle arc
+angle_u = np.arctan2(u[1], u[0])
+angle_v = np.arctan2(v[1], v[0])
+thetas = np.linspace(angle_v, angle_u, 30)
+arc_r = 1.0
+ax.plot(arc_r * np.cos(thetas), arc_r * np.sin(thetas), color='gray', lw=1)
+theta_mid = (angle_v + angle_u) / 2
+ax.text(1.3 * np.cos(theta_mid), 1.3 * np.sin(theta_mid), r'$\theta$',
+        fontsize=11, ha='center', va='center', color='gray')
+
+ax.text(-0.4, 1.8, r'$\mathbf{u}$', fontsize=13, color='steelblue')
+ax.text(3.5, 0.5, r'$\mathbf{v}$', fontsize=13, color='darkorange')
+ax.text(0.5, -0.4, r"$\mathbf{u}'$", fontsize=13, color='#2E8B57')
+ax.set_title(r'Project $\mathbf{u}$ onto $\mathbf{v}$',
+             fontsize=11, color='gray')
+
+ax.set_xlim(-1, 7.5)
+ax.set_ylim(-1.2, 5)
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+
+# --- Right: project v onto u ---
+ax = axes[1]
+ax.annotate('', xy=u, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='steelblue', lw=2.5))
+ax.annotate('', xy=v, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='darkorange', lw=2.5))
+ax.annotate('', xy=proj_vu, xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='#2E8B57', lw=2.5))
+
+# dashed extension of u's line (proj_vu extends past u)
+u_dir = u / np.linalg.norm(u)
+ext_end = u_dir * (np.linalg.norm(proj_vu) + 0.3)
+ax.plot([u[0], ext_end[0]], [u[1], ext_end[1]], '--', color='steelblue', lw=1, alpha=0.5)
+
+# dashed drop line from v to projection
+ax.plot([v[0], proj_vu[0]], [v[1], proj_vu[1]], '--', color='gray', lw=1.2)
+
+# right angle marker
+perp2 = v - proj_vu
+perp2_hat = perp2 / np.linalg.norm(perp2) * 0.3
+u_hat2 = u / np.linalg.norm(u) * 0.3
+ax.plot([proj_vu[0] + perp2_hat[0], proj_vu[0] + perp2_hat[0] - u_hat2[0],
+         proj_vu[0] - u_hat2[0]],
+        [proj_vu[1] + perp2_hat[1], proj_vu[1] + perp2_hat[1] - u_hat2[1],
+         proj_vu[1] - u_hat2[1]], color='gray', lw=1)
+
+ax.text(-0.4, 1.8, r'$\mathbf{u}$', fontsize=13, color='steelblue')
+ax.text(3.5, 0.5, r'$\mathbf{v}$', fontsize=13, color='darkorange')
+ax.text(1.5, 3.8, r"$\mathbf{v}'$", fontsize=13, color='#2E8B57')
+ax.set_title(r'Project $\mathbf{v}$ onto $\mathbf{u}$',
+             fontsize=11, color='gray')
+
+ax.set_xlim(-1, 7.5)
+ax.set_ylim(-1.2, 5)
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+
+plt.tight_layout()
+plt.show()
+```
+
+Both give the same dot product of 12, but the decomposition is different. On the left, you get a short shadow times a long vector. On the right, you get a long shadow times a short vector. It's like $2 \times 6 = 4 \times 3$: different ways to break down the same number.
+
+The shadow lengths are not the point. The point is *why* this works. The length of the shadow that $\mathbf{u}$ casts on $\mathbf{v}$ is $\|\mathbf{u}\| \cos\theta$, where $\theta$ is the angle between the two vectors. So the dot product becomes:
+
+$$\mathbf{u} \cdot \mathbf{v} = \underbrace{\|\mathbf{u}\| \cos\theta}_{\text{shadow length}} \times \|\mathbf{v}\| = \|\mathbf{u}\| \, \|\mathbf{v}\| \cos\theta$$
+
+What really matters is the **sign**. If the shadow falls in the same direction as the vector you're projecting onto, the dot product is positive. If the shadow falls in the opposite direction (angle greater than 90°), the dot product is negative. If the vectors are perpendicular, the shadow has zero length and the dot product is zero.
+
+#### Sign of the Dot Product
+
+Using what you now know, you can tell whether the dot product between two vectors is positive, negative, or zero. Take the vector $\mathbf{v} = (6, 2)$:
+
+- A vector **perpendicular** to it, such as $(-1, 3)$, has a dot product of **zero**
+- A vector on the **same side** (angle less than 90°), such as $(2, 4)$, has a **positive** dot product: $6 \cdot 2 + 2 \cdot 4 = 20$
+- A vector on the **opposite side** (angle greater than 90°), such as $(-4, 1)$, has a **negative** dot product: $6 \cdot (-4) + 2 \cdot 1 = -22$
+
+Why is the dot product with $(2, 4)$ positive? Because its projection onto $(6, 2)$ has positive length. Why is the dot product with $(-4, 1)$ negative? Because its projection onto $(6, 2)$ goes in the opposite direction, giving a negative length.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Wedge
+
+fig, ax = plt.subplots(figsize=(7, 6))
+
+v = np.array([6, 2])
+perp = np.array([-1, 3])
+pos = np.array([2, 4])
+neg = np.array([-4, 1])
+
+# shaded regions
+theta_v = np.degrees(np.arctan2(v[1], v[0]))
+theta_perp = np.degrees(np.arctan2(perp[1], perp[0]))
+theta_anti = theta_perp + 180
+
+wedge_pos = Wedge((0, 0), 8, theta_anti, theta_perp, alpha=0.08, fc='#2E8B57', ec='none')
+wedge_neg = Wedge((0, 0), 8, theta_perp, theta_anti, alpha=0.08, fc='#CD5C5C', ec='none')
+ax.add_patch(wedge_pos)
+ax.add_patch(wedge_neg)
+
+# perpendicular line (extended)
+t = np.linspace(-2, 4, 100)
+perp_dir = perp / np.linalg.norm(perp)
+ax.plot(t * perp_dir[0], t * perp_dir[1], '--', color='gray', lw=1, alpha=0.6)
+
+# vectors
+for vec, color, label, lpos in [
+    (v, 'darkorange', r'$\mathbf{v} = (6, 2)$', (5.0, 0.5)),
+    (perp, 'gray', r'$(-1, 3)$: dot $= 0$', (-2.2, 3.2)),
+    (pos, '#2E8B57', r'$(2, 4)$: dot $= 20$', (1.0, 4.2)),
+    (neg, '#CD5C5C', r'$(-4, 1)$: dot $= -22$', (-5.2, 1.3)),
+]:
+    ax.annotate('', xy=vec, xytext=(0, 0),
+                arrowprops=dict(arrowstyle='->', color=color, lw=2.5))
+    ax.text(lpos[0], lpos[1], label, fontsize=10, color=color, fontweight='bold')
+
+# region labels
+ax.text(3.5, 4.0, 'dot $> 0$', fontsize=12, color='#2E8B57', fontstyle='italic', alpha=0.7)
+ax.text(-4.5, -1.5, 'dot $< 0$', fontsize=12, color='#CD5C5C', fontstyle='italic', alpha=0.7)
+
+ax.set_xlim(-6, 8)
+ax.set_ylim(-3, 5.5)
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.3)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+plt.tight_layout()
+plt.show()
+```
+
+In general, for any vector $\mathbf{u}$:
+
+- The vectors with dot product **zero** are all the vectors perpendicular to $\mathbf{u}$
+- The vectors with **positive** dot product are on the same side as $\mathbf{u}$ (angle less than 90°)
+- The vectors with **negative** dot product are on the opposite side (angle greater than 90°)
+
+Remember the neuron from the neural network section? It computes $\mathbf{w} \cdot \mathbf{x} + b$. That is a dot product of the weight vector and the input vector, plus a bias. The dot product is the fundamental building block of every layer in a neural network.
+
+## Matrix-Vector Multiplication
+
+You now know how to take the dot product of two vectors. It turns out that multiplying a matrix by a vector is nothing more than stacking several dot products together. In fact, this is something you have already seen: it is precisely how a system of linear equations looks.
+
+### From Equations to Dot Products
+
+Recall that an equation like $2a + 4b + c = 28$ can be written as a dot product of a row vector of coefficients and a column vector of unknowns:
+
+$$\begin{bmatrix} 2 & 4 & 1 \end{bmatrix} \cdot \begin{bmatrix} a \\ b \\ c \end{bmatrix} = 28$$
+
+Now imagine you have a system of three equations:
+
+$$\begin{cases} a + b + c = 10 \\ a + 2b + c = 15 \\ a + b + 2c = 12 \end{cases}$$
+
+Each equation can be expressed as its own dot product:
+
+$$\begin{bmatrix} 1 & 1 & 1 \end{bmatrix} \cdot \begin{bmatrix} a \\ b \\ c \end{bmatrix} = 10 \qquad \begin{bmatrix} 1 & 2 & 1 \end{bmatrix} \cdot \begin{bmatrix} a \\ b \\ c \end{bmatrix} = 15 \qquad \begin{bmatrix} 1 & 1 & 2 \end{bmatrix} \cdot \begin{bmatrix} a \\ b \\ c \end{bmatrix} = 12$$
+
+### Stacking Dot Products into a Matrix
+
+Writing three separate dot products is clumsy. Notice that the column vector $\begin{bmatrix} a \\ b \\ c \end{bmatrix}$ is the same in all three. So you can stack the three row vectors into a matrix and write the entire system as a single matrix-vector product:
+
+$$\begin{bmatrix} 1 & 1 & 1 \\ 1 & 2 & 1 \\ 1 & 1 & 2 \end{bmatrix} \begin{bmatrix} a \\ b \\ c \end{bmatrix} = \begin{bmatrix} 10 \\ 15 \\ 12 \end{bmatrix}$$
+
+The product of a matrix and a vector is nothing more than dot products stacked together. Each row of the matrix gets dotted with the vector to produce one entry in the result:
+
+$$A\mathbf{x} = \begin{bmatrix} \text{row}_1 \cdot \mathbf{x} \\ \text{row}_2 \cdot \mathbf{x} \\ \vdots \\ \text{row}_m \cdot \mathbf{x} \end{bmatrix}$$
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import numpy as np
+
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.set_xlim(-0.5, 12)
+ax.set_ylim(-0.5, 4.5)
+ax.set_aspect('equal')
+ax.axis('off')
+
+# matrix
+mat = [[1, 1, 1], [1, 2, 1], [1, 1, 2]]
+row_colors = ['#87CEEB', '#FFB347', '#90EE90']
+for r in range(3):
+    for c in range(3):
+        rect = patches.FancyBboxPatch((c * 0.9 + 0.2, 2.8 - r * 1.1), 0.7, 0.8,
+                boxstyle='round,pad=0.05', fc=row_colors[r], ec='#555555', lw=1.2)
+        ax.add_patch(rect)
+        ax.text(c * 0.9 + 0.55, 3.2 - r * 1.1, str(mat[r][c]),
+                fontsize=14, ha='center', va='center', fontweight='bold')
+
+# multiply sign
+ax.text(3.3, 2.0, r'$\cdot$', fontsize=22, ha='center', va='center', color='gray')
+
+# vector
+vec = ['a', 'b', 'c']
+for i in range(3):
+    rect = patches.FancyBboxPatch((3.9, 2.8 - i * 1.1), 0.7, 0.8,
+            boxstyle='round,pad=0.05', fc='#D8BFD8', ec='#8B668B', lw=1.2)
+    ax.add_patch(rect)
+    ax.text(4.25, 3.2 - i * 1.1, vec[i],
+            fontsize=14, ha='center', va='center', fontweight='bold')
+
+# equals sign
+ax.text(5.2, 2.0, r'$=$', fontsize=18, ha='center', va='center', color='gray')
+
+# result with dot product expressions
+results = ['1a + 1b + 1c', '1a + 2b + 1c', '1a + 1b + 2c']
+result_vals = ['= 10', '= 15', '= 12']
+for i in range(3):
+    rect = patches.FancyBboxPatch((5.8, 2.8 - i * 1.1), 3.2, 0.8,
+            boxstyle='round,pad=0.05', fc=row_colors[i], ec='#555555', lw=1.2, alpha=0.4)
+    ax.add_patch(rect)
+    ax.text(7.4, 3.2 - i * 1.1, results[i] + '  ' + result_vals[i],
+            fontsize=11, ha='center', va='center', fontweight='bold')
+
+# labels
+ax.text(1.55, 4.2, 'Matrix', fontsize=11, ha='center', color='gray')
+ax.text(4.25, 4.2, 'Vector', fontsize=11, ha='center', color='gray')
+ax.text(7.4, 4.2, 'Dot products (one per row)', fontsize=11, ha='center', color='gray')
+
+plt.tight_layout()
+plt.show()
+```
+
+### Dimension Requirements
+
+For this multiplication to work, the number of **columns** in the matrix must equal the **length** of the vector. If they don't match, you are trying to take the dot product of vectors with different lengths, which is undefined.
+
+If the matrix is $m \times n$ (meaning $m$ rows and $n$ columns) and the vector has $n$ entries, the result is a vector with $m$ entries:
+
+$$\underbrace{A}_{m \times n} \; \underbrace{\mathbf{x}}_{n \times 1} = \underbrace{\mathbf{b}}_{m \times 1}$$
+
+The matrix does not have to be square. You could have a $4 \times 3$ matrix (four equations, three unknowns) multiplied by a vector of length 3, and the result would be a vector of length 4. The only rule is that the inner dimensions must match.
+
+For example:
+
+$$\begin{bmatrix} 2 & 1 \\ 0 & 3 \\ -1 & 4 \end{bmatrix} \begin{bmatrix} 5 \\ 2 \end{bmatrix} = \begin{bmatrix} 2 \cdot 5 + 1 \cdot 2 \\ 0 \cdot 5 + 3 \cdot 2 \\ -1 \cdot 5 + 4 \cdot 2 \end{bmatrix} = \begin{bmatrix} 12 \\ 6 \\ 3 \end{bmatrix}$$
+
+A $3 \times 2$ matrix times a vector of length 2 gives a vector of length 3.
+
+---
+
+## Lab: Vector Operations with NumPy
+
+Let's verify the concepts from this note with code.
+
+```{python}
+import numpy as np
+```
+
+### Vectors, Addition, and Scalar Multiplication
+
+```{python}
+u = np.array([1, 3])
+v = np.array([4, -1])
+
+print("u + v =", u + v)
+print("u - v =", u - v)
+print("3 * u =", 3 * u)
+```
+
+### Norm and Unit Vector
+
+```{python}
+w = np.array([3, 4])
+print(f"||w|| = {np.linalg.norm(w)}")
+print("Unit vector:", w / np.linalg.norm(w))
+```
+
+### Distance Between Vectors
+
+```{python}
+a = np.array([1, 5])
+b = np.array([6, 2])
+diff = b - a
+
+print("L1 distance:", np.sum(np.abs(diff)))
+print("L2 distance:", np.linalg.norm(diff))
+```
+
+### Dot Product
+
+NumPy gives you three ways to compute the dot product: `np.dot`, the `@` operator, and manual sum. All produce the same result:
+
+```{python}
+x = np.array([2, 4, 1])
+y = np.array([3, 5, 2])
+
+print("np.dot:", np.dot(x, y))
+print("@:     ", x @ y)
+print("manual:", np.sum(x * y))
+```
+
+### Angle Between Vectors
+
+Using $\cos\theta = \frac{\mathbf{u} \cdot \mathbf{v}}{\|\mathbf{u}\| \, \|\mathbf{v}\|}$:
+
+```{python}
+u = np.array([1, 3])
+v = np.array([6, 2])
+
+cos_theta = np.dot(u, v) / (np.linalg.norm(u) * np.linalg.norm(v))
+theta = np.arccos(np.clip(cos_theta, -1, 1))
+print(f"Angle: {np.degrees(theta):.2f} degrees")
+```
+
+Orthogonal vectors have a dot product of zero:
+
+```{python}
+u = np.array([-1, 3])
+v = np.array([6, 2])
+print(f"Dot product: {np.dot(u, v)} (orthogonal!)")
+```
+
+### Matrix-Vector Multiplication
+
+```{python}
+A = np.array([[1, 1, 1],
+              [1, 2, 1],
+              [1, 1, 2]])
+x = np.array([3, 5, 2])
+
+print("A @ x =", A @ x)
+```
+
+Each entry in the result is a dot product of a row of $A$ with $\mathbf{x}$. This is exactly how `np.linalg.solve` works under the hood when you solve $A\mathbf{x} = \mathbf{b}$.
+
+### Vectorized vs. Loop Speed
+
+In machine learning you work with vectors of thousands or millions of entries. NumPy's vectorized operations are dramatically faster than Python loops:
+
+```{python}
+import time
+
+a = np.random.rand(1_000_000)
+b = np.random.rand(1_000_000)
+
+# Loop version
+tic = time.time()
+s = 0
+for ai, bi in zip(a, b):
+    s += ai * bi
+loop_ms = 1000 * (time.time() - tic)
+
+# Vectorized version
+tic = time.time()
+s = np.dot(a, b)
+vec_ms = 1000 * (time.time() - tic)
+
+print(f"Loop:       {loop_ms:.1f} ms")
+print(f"Vectorized: {vec_ms:.2f} ms")
+print(f"Speedup:    {loop_ms / vec_ms:.0f}x")
+```
+
+This is why NumPy (and libraries built on it like TensorFlow and PyTorch) use vectorized operations for everything.
 
 ---
 
