@@ -1,7 +1,7 @@
 -- reading-time.lua
 -- Counts words and questions, injects reading time into the title block.
 -- WPM = 150 for technical/non-native readers.
--- Each review question (detected by callout-tip blocks) adds 1 minute.
+-- Each review question (callout-tip block in source) adds 1 minute.
 
 local WPM = 150
 
@@ -26,27 +26,37 @@ local function count_words(blocks)
   return n
 end
 
-local function count_questions(blocks)
-  local n = 0
-  for _, block in ipairs(blocks) do
-    if block.t == "Div" then
-      local classes = block.classes or {}
-      for _, cls in ipairs(classes) do
-        if cls == "callout-tip" then
-          n = n + 1
-          break
-        end
+local function count_questions_from_source()
+  -- Derive source .qmd path from output filename
+  local output = PANDOC_STATE and PANDOC_STATE.output_file or ""
+  -- output is like "layer-3-technologies.html", source is in networking/ccde-written/
+  local basename = output:match("([^/\\]+)%.html$")
+  if not basename then return 0 end
+
+  -- Try to find the source file relative to common paths
+  local candidates = {
+    "networking/ccde-written/" .. basename .. ".qmd",
+    basename .. ".qmd",
+  }
+
+  for _, path in ipairs(candidates) do
+    local f = io.open(path, "r")
+    if f then
+      local content = f:read("*all")
+      f:close()
+      local n = 0
+      for _ in content:gmatch("{%.callout%-tip") do
+        n = n + 1
       end
-      -- recurse into nested divs
-      n = n + count_questions(block.content)
+      return n
     end
   end
-  return n
+  return 0
 end
 
 function Pandoc(doc)
   local total = count_words(doc.blocks)
-  local questions = count_questions(doc.blocks)
+  local questions = count_questions_from_source()
   local minutes = math.ceil(total / WPM) + questions
   local label = "~" .. minutes .. " min read"
 
