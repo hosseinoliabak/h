@@ -1,52 +1,49 @@
 -- reading-time.lua
--- Counts words in the document and inserts estimated reading time.
--- WPM is set to 150 for technical/non-native readers.
+-- Counts words and injects reading time into the title block metadata area.
+-- WPM = 150 for technical/non-native readers.
 
 local WPM = 150
 
-local function count_words_in_blocks(blocks)
-  local count = 0
-  local function walk(el)
-    if el.t == "Str" then
-      count = count + 1
+local function count_words(blocks)
+  local text = ""
+  for _, block in ipairs(blocks) do
+    if block.t == "Para" or block.t == "Plain" or
+       block.t == "Header" or block.t == "BlockQuote" then
+      text = text .. " " .. pandoc.utils.stringify(block)
+    elseif block.t == "BulletList" or block.t == "OrderedList" then
+      for _, item in ipairs(block.content) do
+        text = text .. " " .. pandoc.utils.stringify(pandoc.Div(item))
+      end
+    elseif block.t == "Table" then
+      text = text .. " " .. pandoc.utils.stringify(block)
+    elseif block.t == "Div" then
+      text = text .. " " .. count_words(block.content)
     end
   end
-  for _, block in ipairs(blocks) do
-    pandoc.walk_block(block, { Str = walk })
-  end
-  return count
+  local n = 0
+  for _ in text:gmatch("%S+") do n = n + 1 end
+  return n
 end
 
 function Pandoc(doc)
-  local total_words = count_words_in_blocks(doc.blocks)
-  local minutes = math.ceil(total_words / WPM)
-  local label
+  local total = count_words(doc.blocks)
+  local minutes = math.ceil(total / WPM)
+  local label = "~" .. minutes .. " min read"
 
-  if minutes < 2 then
-    label = "~1 min read"
-  else
-    label = "~" .. minutes .. " min read"
-  end
-
-  local rt_inlines = {
-    pandoc.RawInline("html",
-      '<span style="font-size:0.85em; color:#888; font-style:italic;">&#128337; ' .. label .. '</span>'
-    )
+  -- Inject into the title block via a script that runs after DOM is ready
+  local script = pandoc.RawBlock("html", [[
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>]] .. label .. [[</p></div>';
+    meta.appendChild(div);
   }
+});
+</script>
+]])
 
-  local rt_para = pandoc.Para(rt_inlines)
-
-  -- Insert after the first Para block in the document
-  local inserted = false
-  local new_blocks = {}
-  for _, block in ipairs(doc.blocks) do
-    table.insert(new_blocks, block)
-    if not inserted and block.t == "Para" then
-      table.insert(new_blocks, rt_para)
-      inserted = true
-    end
-  end
-
-  doc.blocks = new_blocks
+  table.insert(doc.blocks, 1, script)
   return doc
 end
