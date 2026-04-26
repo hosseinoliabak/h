@@ -1,6 +1,7 @@
 -- reading-time.lua
--- Counts words and injects reading time into the title block metadata area.
+-- Counts words and questions, injects reading time into the title block.
 -- WPM = 150 for technical/non-native readers.
+-- Each review question (detected by callout-tip blocks) adds 1 minute.
 
 local WPM = 150
 
@@ -25,12 +26,30 @@ local function count_words(blocks)
   return n
 end
 
+local function count_questions(blocks)
+  local n = 0
+  for _, block in ipairs(blocks) do
+    if block.t == "Div" then
+      local classes = block.classes or {}
+      for _, cls in ipairs(classes) do
+        if cls == "callout-tip" then
+          n = n + 1
+          break
+        end
+      end
+      -- recurse into nested divs
+      n = n + count_questions(block.content)
+    end
+  end
+  return n
+end
+
 function Pandoc(doc)
   local total = count_words(doc.blocks)
-  local minutes = math.ceil(total / WPM)
+  local questions = count_questions(doc.blocks)
+  local minutes = math.ceil(total / WPM) + questions
   local label = "~" .. minutes .. " min read"
 
-  -- Inject into the title block via a script that runs after DOM is ready
   local script = pandoc.RawBlock("html", [[
 <script>
 document.addEventListener("DOMContentLoaded", function () {
