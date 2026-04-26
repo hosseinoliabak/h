@@ -18,4 +18,490 @@ figcaption { text-align: center; }
 
 ## Overview
 
-*Next: [Enterprise Internet Edge Architecture Design](enterprise-internet-edge-architecture-design.qmd)*
+A campus network is the portion of the enterprise network infrastructure that provides access to network communication services and resources to end users and devices spread over a single geographic location — a single building or a group of buildings. Enterprises typically own the physical wires deployed in the campus and design it to be optimized for the fastest functional architecture running on high-speed physical infrastructure (1/10/40/100 Gbps). Modern converged enterprise campus networks should leverage three core architectural principles:
+
+- **Hierarchy**
+- **Modularity**
+- **Resiliency**
+
+This chapter covers three main topics:
+
+- **Campus Hierarchical Design Models**: Campus hierarchical models and corresponding network design considerations
+- **Campus Layer 3 Routing Design Considerations**: Campus Layer 3 routing and corresponding network design considerations
+- **Campus Network Virtualization Design Considerations**: Campus network virtualization and corresponding network design considerations
+
+## Campus Hierarchical Design Models
+
+The hierarchical network design model breaks a complex flat network into multiple smaller and more manageable networks, with each tier focused on a specific set of roles. This approach gives network designers flexibility to select the right hardware, software, and features for each layer.
+
+A typical hierarchical enterprise campus network includes three layers:
+
+- **Core layer**: Provides optimal transport between sites and high-performance routing. Due to its criticality, the core must provide an appropriate level of resilience to recover quickly after any failure.
+- **Distribution layer**: Provides policy-based connectivity and boundary control between the access and core layers.
+- **Access layer**: Provides workgroup/user access to the network.
+
+The two primary hierarchical design architectures are the three-tier and two-tier models.
+
+### Three-Tier Model
+
+The three-tier model is typically used in large enterprise campus networks constructed of multiple functional distribution layer blocks.
+
+::: {#fig-three-tier}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Three-Tier Network Design Model Diagram -->
+</div>
+```
+
+Three-Tier Network Design Model
+:::
+
+### Two-Tier Model
+
+The two-tier model is more suitable for small to medium-size campus networks (ideally not more than three functional distribution blocks), where the core and distribution functions are combined into one layer — also known as collapsed core-distribution architecture.
+
+::: {.callout-note}
+The term *functional distribution block* refers to any block in the campus network that has its own distribution layer, such as a user access block, WAN block, or data center block.
+:::
+
+::: {#fig-two-tier}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Two-Tier Network Design Model Diagram -->
+</div>
+```
+
+Two-Tier Network Design Model
+:::
+
+### Campus Modularity
+
+Applying the hierarchical design model across multiple functional blocks of the enterprise campus network achieves a scalable and modular campus architecture (commonly referred to as building blocks). This modular approach promotes fault domain isolation and more deterministic traffic patterns, allowing network changes and upgrades to be performed in a controlled and staged manner.
+
+::: {#fig-modular-campus}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Typical Modular Enterprise Campus Architecture Diagram -->
+</div>
+```
+
+Typical Modular Enterprise Campus Architecture
+:::
+
+::: {.callout-note}
+Within each functional block of the modular enterprise architecture, the same hierarchical network design principle should be applied to achieve the optimal structured design.
+:::
+
+### When Is the Core Block Required?
+
+A separate core provides the capability to scale the campus network in a structured fashion that minimizes overall complexity as the number of distribution blocks and interconnections grows significantly — leading to physical and control plane complexities without a core.
+
+::: {#fig-core-vs-no-core}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Network Connectivity Without Core Versus with Core Diagram -->
+</div>
+```
+
+Network Connectivity Without Core Versus with Core
+:::
+
+One of the primary influencing factors for selecting two-tier versus three-tier architecture is the type of site:
+
+- A typical small to medium-size remote site rarely requires a three-tier architecture even with future growth
+- A regional HQ or secondary campus has high potential to grow significantly, making a core layer a feasible option
+
+The actual answer must always align with business goals and plans — projected organic growth, merger and acquisition plans, and design constraints such as cost. If the business priority is to reduce CAPEX, a collapsed two-tier architecture may be the design constraint even if it is not technically optimal. However, network designers should highlight to IT leaders the long-term OPEX cost of a network not designed for projected growth, as the additional CAPEX for a three-tier architecture may be justified in the long run.
+
+::: {.callout-note}
+Following the principle "build today with tomorrow in mind" can lead to gold-plating. For the CCDE exam, candidates should solve the problem at hand and no more, unless the scenario states otherwise.
+:::
+
+### Access-Distribution Design Model
+
+The main difference between access-distribution design models is where the Layer 2/Layer 3 boundary is placed and how Layer 3 gateway services are handled. The three primary models are:
+
+- **Multitier STP-based**: The classical model where access layer switches operate in Layer 2 only and distribution switches operate in both Layer 2 and Layer 3. Primary limitation is reliance on STP and FHRP.
+- **Routed access**: Access layer switches act as Layer 3 routing nodes. The Layer 2/Layer 3 demarcation moves from the distribution layer to the access layer, replacing Layer 2 trunk links with Layer 3 point-to-point routed links.
+- **Switch clustering**: Introduces switch clustering across functional modules, simplifying the design while providing higher node and path resiliency and significantly optimized convergence time. The cleanest way to extend Layer 2 without adding STP or FHRP.
+
+::: {#fig-routed-access}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Routed Access Layer Diagram (Classical STP-Based vs Routed Access) -->
+</div>
+```
+
+Rotued Access Layer
+:::
+
+The routed access model offers several advantages over the classical STP-based model:
+
+- Simpler to troubleshoot using standard routing techniques with fewer protocols to manage
+- Eliminates reliance on STP and FHRP; relies on ECMP to utilize all available uplinks
+- Minimizes convergence time during link or node failure
+
+::: {.callout-note}
+The routed access model does not support spanning Layer 2 VLANs across multiple access switches. Extending Layer 2 over routed infrastructure is achievable using overlay technologies but may add complexity or require features not supported on existing platforms.
+:::
+
+::: {#fig-switch-clustering}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Switch Clustering Concept Diagram (Physical and Logical Layout) -->
+</div>
+```
+
+Switch Clustering Concept
+:::
+
+| | Multitier STP-Based | Routed Access | Switch Clustering |
+|---|---|---|---|
+| **Design flexibility** | Limited (topology dependent) | Limited (spanning L2 across access switches requires overlay) | Flexible |
+| **Scalability** | Scale up, limited scale out | Scale up and scale out | Scale up, limited scale out (typically two distribution switches per cluster) |
+| **Layer 3 gateway** | Distribution layer (FHRP-based) | Access layer (Layer 3 routing) | Distribution layer (may or may not require FHRP*) |
+| **mLAG** | Not supported | Not supported (relies on L3 ECMP) | Supported |
+| **Convergence time** | Dependent on STP and FHRP timers (relatively slow) | IGP dependent, commonly fast | Fast |
+| **Operational complexity** | Complex (STP, FHRP) | Moderate (advanced routing expertise may be required) | Simple |
+
+: Table 15-2 Comparing Access-Distribution Connectivity Models {tbl-colwidths="[22,26,26,26]"}
+
+\* Some switch clustering technologies such as Cisco Nexus vPC use FHRP (HSRP). However, from a forwarding plane point of view, both upstream switches (vPC peers) do forward traffic, unlike the classical active-standby behavior.
+
+::: {.callout-note}
+All design models discussed in this section are valid options. The design choice must be driven by requirements and constraints such as cost — for example, an access switch with Layer 3 capabilities is more expensive than a Layer 2-only switch, which can be a valid tiebreaker if cost is a concern.
+:::
+
+### Review Questions {.unnumbered}
+
+**1. Which of the following are the benefits of a routed access design model over a classical STP-based access design model? (Choose two.)**
+
+a. Easier troubleshooting
+b. Flexibility to span Layer 2 natively
+c. Faster convergence time
+d. Potentially lower costs based on licensed features
+
+::: {.callout-tip collapse="true"}
+## Answer
+**a and c.** The routed access design model is easier to troubleshoot and has a faster convergence time than a classical STP-based access design by eliminating the reliance on STP and FHRP, and relying on ECMP for traffic load sharing.
+:::
+
+---
+
+**2. Which of the following is a technical network design limitation of a routed access design model?**
+
+a. More difficult troubleshooting
+b. Inability to span Layer 2 natively
+c. Slower convergence time
+d. Potentially higher costs based on licensed features
+
+::: {.callout-tip collapse="true"}
+## Answer
+**b.** One of the technical network design limitations of a routed access design model is the inability to span Layer 2 natively.
+:::
+
+---
+
+**3. Which of the following is a business network design limitation of a routed access design model?**
+
+a. More difficult troubleshooting
+b. Inability to span Layer 2 natively
+c. Slower convergence time
+d. Potentially higher costs based on licensed features
+
+::: {.callout-tip collapse="true"}
+## Answer
+**d.** A business network design limitation of the routed access design model is the higher monetary cost for routing capabilities on the switch infrastructure for the corresponding licensed features required for routing protocols.
+:::
+
+---
+
+**4. Which of the following is the best access-distribution connectivity model if a network design requires the most flexible design?**
+
+a. Multitier STP based
+b. Switch clustering
+c. Routed access
+d. Layer 2 access
+
+::: {.callout-tip collapse="true"}
+## Answer
+**b.** Switch clustering is the best access-distribution connectivity model for flexibility.
+:::
+
+---
+
+**5. Which of the following is the best access-distribution connectivity model if a network design requires the most scalable design, both scale up and scale out?**
+
+a. Multitier STP based
+b. Switch clustering
+c. Routed access
+d. Layer 2 access
+
+::: {.callout-tip collapse="true"}
+## Answer
+**c.** The routed access connectivity model supports both scale up and scale out.
+:::
+
+## Campus Layer 3 Routing Design Considerations
+
+The hierarchical enterprise campus architecture facilitates a structured hierarchical Layer 3 routing design — the key to achieving routing scalability in large networks. This reduces the number of Layer 3 nodes and adjacencies in any given routing domain within each tier.
+
+In a typical hierarchical campus, the distribution layer is the demarcation point between Layer 2 and Layer 3 domains. Layer 3 uplinks at the distribution layer participate in campus core routing using an IGP or BGP to interconnect multiple distribution blocks for end-to-end IP connectivity. With the routed access model, Layer 3 routing is extended to the access layer switches.
+
+Figure 15-7 illustrates a typical IGP design (OSPF) aligned with the hierarchical campus architecture across multiple functional modules. Route summarization to the core with OSPF can lead to suboptimal routing when links fail — a common trade-off in any design with summaries at multiple ABRs.
+
+::: {#fig-campus-l3-routing}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Campus Network: Layer 3 Routing Diagram -->
+</div>
+```
+
+Campus Network: Layer 3 Routing
+:::
+
+In some designs, the data center is interconnected over a WAN or dedicated fiber links, and other blocks such as Internet and WAN may be co-resident at the data center's physical location. In this case, the same IGP design concept applies — the WAN interconnect is treated as an external link, and the enterprise core routing (OSPF backbone area 0) can be extended over the WAN.
+
+::: {#fig-campus-l3-wan}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Campus Network: Layer 3 Design with WAN Core Diagram -->
+</div>
+```
+
+Campus Network: Layer 3 Design with WAN Core
+:::
+
+Each routing protocol has its own characteristics when applied to different network topologies:
+
+- **EIGRP** offers more flexible, scalable, and easier-to-control design over hub-and-spoke topologies. However, in large-scale campus networks, if EIGRP is not designed properly with regard to query scope containment (EIGRP stubs and summarization), any topology change may flood the network with EIGRP queries and increase the risk of stuck-in-active (SIA) impacts — long convergence times following a failure event.
+- **OSPF** is one of the most commonly implemented protocols in campus networks and has proven to be powerful, scalable, and reliable in multitier topologies, though the more tiers the network has, the less flexible the design can be without proper area design.
+
+Network designers must evaluate each design scenario and balance technical (protocol characteristics) and non-technical (business priorities, future plans, staff knowledge) aspects when making routing design decisions.
+
+| Design Consideration | EIGRP (DUAL) | Link State (Dijkstra) |
+|---|---|---|
+| **Architecture flexibility** | High (natively supports multitier architectures with route summarization) | High, with limitations (the more tiers, the less flexible without proper area design) |
+| **Scalability** | High with proper query domain containment via EIGRP stubs and summarization | High with proper OSPF area design and area type selection |
+| **Convergence time** | Fast (ideally with route summarization) | Fast (ideally with topology hiding, route summarization, and timer tuning) |
+| **MPLS-TE support** | No | Yes |
+
+: Table 15-3 Link State Versus EIGRP in the Campus {tbl-colwidths="[28,36,36]"}
+
+### Review Questions {.unnumbered}
+
+**6. Which of the following routing protocols for the campus has the highest architecture flexibility, proper route summarization, and no limitation to the number of tiers?**
+
+a. EIGRP
+b. OSPF
+c. RIP
+d. IS-IS
+
+::: {.callout-tip collapse="true"}
+## Answer
+**a.** EIGRP has the highest architecture flexibility without limitations to the number of tiers while including proper route summarization. OSPF and IS-IS have inherent limitations as the number of tiers increases. Note that BGP is technically the most flexible option but is not listed.
+:::
+
+---
+
+**7. Which of the following routing protocols for the campus supports MPLS-TE?**
+
+a. EIGRP
+b. OSPF
+c. RIP
+d. BGP
+
+::: {.callout-tip collapse="true"}
+## Answer
+**b.** Of the routing protocols listed, OSPF is the only IGP that supports MPLS Traffic Engineering (MPLS-TE).
+:::
+
+## Campus Network Virtualization Design Considerations
+
+Virtualization in IT refers to having two or more instances of a system component or function — such as an operating system, network services, control plane, or applications — represented logically instead of physically.
+
+Virtualization can be classified into two primary models:
+
+- **Many-to-one**: Multiple physical resources appear as a single logical unit. Examples: switch clustering, firewall clustering, FHRP with a single VIP fronting a pair of physical upstream nodes.
+- **One-to-many**: A single physical resource appears as many logical units. Examples: x86 server virtualization with a hypervisor hosting multiple VMs, network function virtualization (NFV).
+
+### Drivers to Consider Network Virtualization
+
+Network infrastructures need to move from classical basic interconnectivity architectures into more flexible, resilient, and adaptive architectures that can support and accelerate business initiatives — becoming a "business enabler." The primary drivers motivating enterprises to adopt network virtualization are:
+
+- **Cost efficiency and design flexibility**: Abstraction from the physical infrastructure allows multiple logical networks over one common physical infrastructure, reducing device complexity and count (lower CAPEX) and the number of devices to manage (lower OPEX).
+- **Simplified and flexible integrated security**: Separate security policies per logical entity allow users, groups, and services to be logically separated.
+- **Design and operational simplicity**: Simplifies provisioning of path and traffic isolation per application, group, service, or logical instance requiring end-to-end path isolation.
+
+::: {.callout-note}
+Network designers must understand the business drivers toward network virtualization along with the strengths and weaknesses of each design model. A design that does not address the business's functional requirements is a poor design — consider the "no gold plating" principle.
+:::
+
+::: {.callout-note}
+One of the main concerns about network virtualization is fate sharing — any failure in the physical network can cause failure of multiple virtual networks running over the same physical infrastructure. Additionally, in a multitenant environment where multiple virtual networks (VNs) with different traffic requirements share one physical infrastructure, inadequate bandwidth planning and QoS policies can cause one VN to overutilize the physical infrastructure, leading to congestion and degraded experience for all VNs.
+:::
+
+### Enterprise Network Virtualization Deployment Models
+
+Network virtualization can be categorized into three primary models, each with different techniques that serve different requirements:
+
+- **Device virtualization**
+- **Path isolation**
+- **Services virtualization**
+
+These techniques can be used individually or combined to achieve a cohesive end-to-end network virtualization solution.
+
+#### Device Virtualization
+
+Also known as device partitioning, device virtualization represents the ability to virtualize the data plane, control plane, or both on a network node. The primary techniques are:
+
+- **VLAN**: The most common Layer 2 network virtualization technique. A single switch is divided into multiple logical Layer 2 broadcast domains, each with its own MAC forwarding table and spanning-tree instance (PVST). VLANs are used at the network edge to place endpoints into a certain virtual network.
+- **VRF**: Conceptually similar to a VLAN but from a control plane and forwarding perspective on a Layer 3 device. Each VLAN over an 802.1Q trunk can be mapped to a different subinterface assigned to a unique VRF, where each VRF maintains its own forwarding and routing instance and can leverage different VRF-aware routing protocols.
+
+::: {#fig-vrf}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Virtual Routing and Forwarding Diagram -->
+</div>
+```
+
+Virtual Routing and Forwarding
+:::
+
+#### Path Isolation
+
+Path isolation maintains end-to-end logical path transport separation across the network. The two main design approaches are:
+
+**Hop by hop**: Deploys end-to-end VLANs + 802.1Q trunk links + VRFs per device in the traffic path. Offers a simple and reliable path separation solution but becomes complicated to manage at scale, with design scalability limitations.
+
+::: {#fig-hop-by-hop}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Hop-by-Hop Path Virtualization Diagram -->
+</div>
+```
+
+Hop-by-Hop Path Virtualization
+:::
+
+**Multihop**: Uses tunneling and overlay technologies to provide end-to-end path isolation:
+
+- **Tunneling (GRE/mGRE/DMVPN)**: Eliminates the reliance on end-to-end VRFs and 802.1Q trunks because virtualized traffic is carried over the tunnel. Offers higher scalability and simpler operation than hop-by-hop. Suitable for scenarios where only part of the network needs path isolation. For large-scale networks with many logical groups, mGRE can provide the same goal with lower design and operational complexity than point-to-point GRE.
+- **MPLS VPN**: Converts the enterprise core to be MPLS-enabled with distribution layer switches acting as PE devices, exchanging VPN routing over MP-BGP sessions. A route reflector (RR) can be introduced to reduce full-mesh MP-BGP complexity. L2VPN capabilities such as EoMPLS can extend Layer 2 communications across distribution blocks. This approach offers the highest scalability and simplest end-to-end virtualization.
+
+::: {#fig-mpls-vpn-path}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for MPLS VPN-Based Path Virtualization Diagram -->
+</div>
+```
+
+MPLS VPN-Based Path Virtualization
+:::
+
+::: {#fig-campus-nv-techniques}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Enterprise Campus Network Virtualization Techniques Diagram -->
+</div>
+```
+
+Enterprise Campus Network Virtualization Techniques
+:::
+
+| | VLANs + VRFs + 802.1Q (End to End) | VLANs + VRFs + GRE Tunnels | VLANs + VRFs + mGRE Tunnels | MPLS with MP-BGP |
+|---|---|---|---|---|
+| **Scalability** | Low | Low | Moderate | High |
+| **Design flexibility** | High | Moderate | Moderate | Moderate to high |
+| **Operational complexity** | Low | Moderate | Moderate | High |
+| **Architecture** | Per-hop end-to-end virtualization | P2P multihop end-to-end virtualization | P2MP multihop end-to-end virtualization | MPLS L3VPN-based virtualization |
+| **Operations staff routing expertise** | Basic | Medium | Medium | Advanced |
+
+: Table 15-4 Network Virtualization Techniques Comparison {tbl-colwidths="[22,20,20,20,18]"}
+
+### Review Questions {.unnumbered}
+
+**8. Which of the following network virtualization techniques would be the proper fit if the network design required a high level of scalability?**
+
+a. VLANs + 802.1Q + VRF
+b. VLANs + VRFs + GRE tunnels
+c. VLANs + VRFs + mGRE tunnels
+d. MPLS with MP-BGP
+
+::: {.callout-tip collapse="true"}
+## Answer
+**d.** The most scalable virtualization option is MPLS with MP-BGP. This also comes with high operational complexity and requires staff to have advanced routing experience.
+:::
+
+---
+
+**9. Which of the following designs would suit customers with a basic level of routing expertise?**
+
+a. VLAN + 802.1Q + VRF
+b. VLANs + VRFs + GRE tunnels
+c. VLANs + VRFs + mGRE tunnels
+d. MPLS with MP-BGP
+
+::: {.callout-tip collapse="true"}
+## Answer
+**a.** The design option that requires the least level of routing expertise is VLANs + 802.1Q + VRFs.
+:::
+
+#### Service Virtualization
+
+In multitenant environments, some services must be accessed by only certain groups while others are shared among all groups — such as a data center file server or Internet access. The network virtualization concept must be extended to the services access edge to maintain separation per virtual network.
+
+::: {#fig-e2e-services-virt}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for End-to-End Path and Services Virtualization Diagram -->
+</div>
+```
+
+End-to-End Path and Services Virtualization
+:::
+
+Firewalls can be virtualized to provide a separate virtual firewall instance per virtual network, facilitating access control between virtual user networks and virtualized services. In a typical multitenant campus with MPLS VPN at the core, inter-tenant traffic is routed via a firewalling service for security and control.
+
+::: {#fig-firewall-contexts}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Firewall Virtual Instances and Inter-Tenant Services Access Traffic Flow Diagrams -->
+</div>
+```
+
+Firewall Virtual Instances
+:::
+
+Common techniques for accessing shared applications and services in multitenant environments:
+
+- **VRF-Aware NAT**: Provides NAT per tenant without compromising path separation between virtual networks where private IP address overlapping is common. When multiple routing instances are combined into a single instance on a common device (with or without NAT), it is called fusion routing and the device is called a fusion router. VRF-Aware Services Infrastructure (VASI) uses virtual interface pairs to facilitate inter-VRF communication and feature application (such as encryption and NAT) internally within the same node.
+
+::: {#fig-vrf-aware-nat}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for VRF-Aware NAT Diagram -->
+</div>
+```
+
+VRF-Aware NAT
+:::
+
+- **NFV (Network Functions Virtualization)**: Virtualizes network functions that typically require dedicated physical hardware — such as firewalling, routing, and load balancing — abstracting them from purpose-built appliances. Benefits include:
+  - Reduced TCO by reducing the number and diversity of specialized appliances
+  - Lower OPEX (less power and space)
+  - Cost-effective capital investment
+  - Reduced integration and operational complexity
+  - Faster time to market for new services, especially in multitenant environments
+
+::: {.callout-note}
+NFV is commonly adopted by service provider networks but is equally applicable to enterprise and data center networks. In large-scale networks with very high traffic volumes (carrier-grade), hardware resource utilization and limits must be considered.
+:::
+
+## Summary
+
+The enterprise campus is a vital part of the modular enterprise network, connecting end users and endpoints to the enterprise network. A scalable and flexible campus design should be based on hierarchical and modular design principles that optimize fault isolation, simplicity, and convergence time, while offering flexibility to integrate other networks, new services, and future growth.
+
+Network virtualization enables enterprises to utilize the same physical infrastructure while maintaining access, path, and services isolation to meet business goals and functional security requirements — lowering CAPEX and OPEX and reducing provisioning time. Network designers must evaluate the different virtualization techniques along with their strengths and weaknesses, taking into account variables such as staff knowledge and hardware platform capabilities.
+
+*Previous: [Network Services and Management](network-services-and-management.qmd)* | *Next: [Enterprise Internet Edge Architecture Design](enterprise-internet-edge-architecture-design.qmd)*

@@ -15,7 +15,631 @@ figcaption { text-align: center; }
 </style>
 ```
 
-
 ## Overview
 
-*Next: [Network Services and Management](network-services-and-management.qmd)*
+The typical behavior of unicast traffic is to send a copy of each packet to each receiver in a given network segment. The more receivers in the network for any given application — such as streaming video — the more bandwidth consumed. In small networks, this impact is almost always acceptable because of the limited number of receivers. In large-scale enterprise networks, however, where there might be thousands or more receivers of applications such as IPTV streaming, this behavior wastes a large amount of bandwidth due to the unnecessary extra copies of unicast packets, ultimately leading to additional cost and overutilization of available bandwidth.
+
+Broadcast transmissions lead to even worse situations, because they forward data packets to all portions of the network, consuming bandwidth and hardware resources even when there are only a few intended recipients.
+
+To overcome these limitations, many applications and services today are developed to operate over multicast-enabled transport. With multicast, organizations can gain several advantages:
+
+- **Efficient and cost-effective transport**: More efficient network and bandwidth utilization helps reduce the cost of network resources.
+- **Optimized bandwidth and efficiency**: Reducing congestion caused by applications inefficiently transmitting unicast to groups of recipients allows the network to support a larger number of simultaneous recipients in a more efficient way.
+- **Access to new applications**: Many applications and services are developed to operate over multicast-enabled networks, including distributed multimedia business applications such as trading, market data, distance learning, and videoconferencing.
+- **New business opportunities**: Leveraging multicast opens new revenue-generating opportunities for both enterprises and service providers by offering innovative services not possible over unicast transport, such as real-time streaming services and IPTV.
+
+::: {.callout-note}
+The decision to enable multicast should ideally be driven by business application requirements. However, as a network architect or designer, you can sometimes suggest that the business migrate certain applications from unicast to multicast if the option exists and the transition will optimize network and application performance. For instance, MPEG high-bandwidth video applications usually consume a large amount of network bandwidth per stream. Enabling IP multicast allows you to send a single stream to multiple receivers simultaneously — a more cost-effective and bandwidth-efficient solution, especially when increased bandwidth utilization translates to increased cost (such as WAN bandwidth).
+:::
+
+## Multicast Switching
+
+More and more Layer 2 networks are requiring multicast switching in their design because the applications being leveraged by the business require multicast support. This section covers the different multicast switching protocols — Internet Group Management Protocol (IGMP) and Multicast Listener Discovery (MLD) — and the corresponding attributes network designers need to know to properly design a Layer 2 network to run multicast properly.
+
+### Multicast IP Address Mapping into Ethernet MAC Address
+
+In any IP multicast–enabled environment, hosts (receivers) are required to receive a single traffic stream that has a common destination MAC address mapping to a multicast channel or group. Therefore, a mapping of IP to MAC is required per multicast destination group IP.
+
+The range from 0100.5e00.0000 through 0100.5e7f.ffff is the available range of Ethernet MAC addresses for IPv4 multicast. Only half of these MAC addresses are available for use by IP multicast, where the IP-to-MAC mapping places the lower 23 bits of the IPv4 multicast group address into the available 23 bits in the MAC address.
+
+The first 4 bits of the IP multicast 32-bit address are always set to 1110 (Class D), leaving only 28 unique bits of IP multicast address information. Because these 28 bits cannot be mapped in a 1:1 manner to the available 23 bits of Layer 2 MAC address space, 5 bits of address information are lost in the mapping process. This results in what is known as a 32:1 address mapping — each Layer 2 multicast MAC address can potentially map to 32 IP multicast addresses. This 32:1 ratio is only true for IPv4; IPv6 has a much higher ratio.
+
+::: {#fig-ip-mac-mapping}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Multicast Group Layer 3 IP-to-Ethernet MAC Mapping Diagram -->
+</div>
+```
+
+Multicast Group Layer 3 IP-to-Ethernet MAC Mapping
+:::
+
+To illustrate this point, consider two IPTV channels streaming over different IP multicast group IDs — such as 239.1.1.1 and 239.2.2.2. Based on the mapping mechanism described above, hosts connected to a common Layer 2 switch and interested in receiving different IPTV channels will end up receiving both streams because both multicast group IPs map to the same multicast MAC address on the Layer 2 switch. In a large network with many IPTV receivers on the same Layer 2 switched network, this usually results in reduced efficiency.
+
+Similarly, with IPv6, the mapping is from 128-bit Layer 3 IPv6 multicast addresses to the 48-bit MAC address, where only the lower 32 bits of the Layer 3 address are preserved and 80 bits of information are lost during the mapping process. Like IPv4, there is a possibility that more than one IPv6 multicast address might map to the same 48-bit MAC address.
+
+Even though this might not always be an issue in LAN environments, it is still a critical point for network designers to consider with regard to IP multicast design over a switched network. This can be even more critical if the switched network is connecting two different multicast domains (interdomain multicast scenario).
+
+### IGMP Snooping
+
+Internet Group Management Protocol (IGMP) snooping offers a simple solution for Layer 2 switched networks by eliminating the flooding of multicast traffic to every single port (avoiding broadcast-style forwarding). With IGMP snooping, the switch intercepts IGMP packets as they are being flooded and uses the information in the IGMP packets to determine which host/port should receive packets directed to a multicast group address. Similarly, Multicast Listener Discovery (MLD) snooping must be considered in a Layer 2 switched network when IPv6 multicast is used.
+
+Nevertheless, even when multicast optimization protocols such as IGMP snooping are used, Layer 2 switches may flood all multicast traffic that belongs to the MAC address range of 0x0100.5E00.00xx — which belongs to the respective Layer 3 addresses in the link-local block (reserved for routing protocols and topology discovery protocols) — to all ports within the same Layer 2 segment. Therefore, IP multicast addresses that map to the MAC address range 0x0100.5E00.00xx should be avoided whenever possible.
+
+### IGMP Snooping Design Issue
+
+In scenarios where multiple Layer 3 routers are connected over a Layer 2 switch using one shared segment/VLAN, IGMP snooping cannot optimize multicast traffic flooding within the Layer 2 switch. This is because routers do not send IGMP membership reports for the desired multicast flows. Instead, the routers use routing protocol control messages among them, such as Protocol-Independent Multicast (PIM). As a result, there will be no IGMP messages for IGMP snooping to intercept, and the multicast video stream will be forwarded to all routers connected to the switch within the same VLAN.
+
+To optimize this design and overcome this issue, routers that are not supposed to receive the multicast stream can simply be placed in a different VLAN — such as the WAN router in the figure below. Alternatively, the IGMP multicast route (mroute) proxy feature may be used to convert PIM join messages back into IGMP membership reports.
+
+::: {#fig-igmp-snooping-design}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for IGMP Snooping Design Issue Diagram (Non-optimized vs Optimized) -->
+</div>
+```
+
+Design Issue: IGMP Snooping
+:::
+
+::: {.callout-note}
+Network designers must consider maintaining the existing Layer 3 unicast communication between the WAN router and other routers in this network after placing the WAN router in a different VLAN, such as adding Layer 3 VLAN interfaces or adding additional interfaces/subinterfaces from other routers within the same VLAN.
+:::
+
+::: {.callout-note}
+IGMP snooping may maintain forwarding tables based on either Ethernet MAC addresses or IP addresses. Because of the MAC-overlapping issues covered earlier with regard to mapping an IP multicast group address to Ethernet addresses, forwarding based on IP address is desirable if a switch supports both types of forwarding mechanisms.
+:::
+
+### Review Questions {.unnumbered}
+
+**1. Which multicast switching protocol should be used to limit the flooding of multicast IPv4 packets on a switch?**
+
+a. MLD snooping
+b. PIM
+c. IGMP snooping
+d. Auto-RP
+
+::: {.callout-tip collapse="true"}
+## Answer
+**c.** Internet Group Management Protocol (IGMP) snooping is a Layer 2 multicast protocol running on IPv4 networks that listens on multicast protocol packets between a Layer 3 multicast device and user hosts to maintain outbound interfaces of multicast packets. Multicasts may be filtered from the links that do not need them, conserving bandwidth on those links.
+:::
+
+---
+
+**2. Which multicast switching protocol should be used to limit the flooding of multicast IPv6 packets on a switch?**
+
+a. MLD snooping
+b. PIM
+c. IGMP snooping
+d. Auto-RP
+
+::: {.callout-tip collapse="true"}
+## Answer
+**a.** Multicast Listener Discovery (MLD) snooping is a Layer 2 multicast protocol running on IPv6 networks that listens on multicast protocol packets between a Layer 3 multicast device and user hosts to maintain outbound interfaces of multicast packets. MLD snooping manages and controls multicast packet forwarding at the data link layer. Think of MLD snooping as IGMP snooping but for IPv6.
+:::
+
+## Multicast Routing
+
+This section covers the key mechanism for successful multicast forwarding and the most common protocols used to route multicast traffic within and between multicast domains.
+
+### Reverse Path Forwarding
+
+Reverse path forwarding (RPF) is the mechanism used by Layer 3 nodes to optimally forward multicast datagrams. The RPF algorithm applies three rules to decide how to handle a multicast packet:
+
+::: {#fig-rpf-check}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Multicast RPF Check Rules Diagram -->
+</div>
+```
+
+Multicast RPF Check Rules
+:::
+
+- **Receiving**: If the multicast packet arrives on the RPF interface — the interface used to send unicast packets to the source subnet — the router accepts it.
+- **Forwarding**: If the packet arrives on the RPF interface, the router forwards it out the interfaces present in the outgoing interface list of the multicast routing table entry.
+- **Dropping**: If the packet does *not* arrive on the RPF interface, it is silently discarded to avoid multicast loops.
+
+A successful RPF check is a fundamental requirement for establishing multicast forwarding trees and passing multicast content from sources to receivers.
+
+::: {#fig-rpf-failure}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for RPF Check Failure Scenario Diagram -->
+</div>
+```
+
+RPF Check Failure Scenario
+:::
+
+Consider a scenario where multicast is enabled only on interface G0/1, while unicast routing prefers interface G0/0 to reach the multicast sender (192.168.1.10). Multicast traffic will not be received because of RPF check failure. This can be resolved by:
+
+- Aligning multicast-enabled interfaces with the unicast routing table
+- Using a static multicast route (mroute)
+- Using Multicast Border Gateway Protocol (MP-BGP)
+
+The primary goal is first to be aware of the RPF impact, then decide which mechanism is most feasible to avoid RPF check failure while minimizing control plane complexity. For example, if BGP is already the unicast control plane protocol, MP-BGP avoids adding extra complexity because one routing protocol controls both unicast and multicast routing. MP-BGP helps avoid RPF check failure over the desired multicast forwarding interface when unicast routing prefers a different path.
+
+### Multicast Routing Protocols
+
+Multicast traffic almost always traverses the network using existing unicast routing. However, for multicast receivers and senders to locate each other across the network, a multicast routing protocol is required. Each protocol has its own characteristics in terms of discovery and forwarding style (multicast trees).
+
+| Multicast Protocol | Type | IP Version | Multicast Trees | RP Required | Suitable Applications | IGMP/MLD Version | Scope |
+|---|---|---|---|---|---|---|---|
+| PIM-DM | Dense | 4 | Source tree only | No | Legacy | IGMP 1, 2, 3 | Intradomain |
+| PIM-SM | Sparse | 4/6 | Shared tree and source tree | Yes | One to many | IGMP 1, 2, 3; MLD 1, 2 | Intradomain and interdomain |
+| PIM-SSM | Source-Specific | 4/6 | Shortest-path tree (SPT) only | No | One to many | IGMP 3; MLDv2 | Intradomain and interdomain |
+| PIM-BIDIR | Bidirectional | 4/6 | Shared tree only | Yes | Many to many, many to one | IGMP 1, 2, 3; MLD 1, 2 | Intradomain |
+
+: Table 13-2 Comparison of Layer 3 Multicast Routing Protocols {tbl-colwidths="[12,10,8,15,8,12,15,20]"}
+
+::: {.callout-note}
+Although some PIM protocols in the table above technically support multicast interdomain routing, it is not common for them to be used for interdomain routing without other protocols such as Multicast Source Discovery Protocol (MSDP).
+:::
+
+Having multiple PIM flavors adds flexibility for environments with different types of multicast applications. For instance, PIM-SSM can be deployed for certain enterprise communication applications, PIM-BIDIR for financial applications, and PIM-SM for other general IP multicast communications.
+
+### RP Discovery Mechanisms
+
+Rendezvous Point (RP) discovery is one of the primary design aspects that must be considered during the planning and design phase of any IP multicast design. The following table summarizes the common mechanisms used to locate or discover the intended multicast RP within a domain.
+
+| | Manual/Static | Auto-RP | BSR | Embedded-RP |
+|---|---|---|---|---|
+| **Supported IP version** | IPv4/IPv6 | IPv4 | IPv4/IPv6 | IPv6 |
+| **Scalability** | Scalable, with potential increased operational overhead* | Scalable | Scalable | Scalable |
+| **Operational simplicity and flexibility** | Inflexible with management overhead in large deployments. Changing RP's IP requires all nodes to be updated. | Flexible with simplified operation.** Offers more filtering capabilities than BSR. | Flexible with simplified operation. Less traffic overhead (RP information encapsulated in PIM packets). | Flexible with simplified operation, dynamic. |
+
+: Table 13-3 Multicast RP Discovery Mechanisms {tbl-colwidths="[25,20,20,20,15]"}
+
+\* If static RP is used with a redundant RP mechanism such as Anycast-RP with MSDP or Anycast-RP PIM (RFC 4610), static RP can offer a scalable solution without significant increase in operational overhead.
+
+\*\* Taking into account traffic and processing overhead from the specific multicast groups used to propagate RP information; also special consideration in hub-and-spoke topology (NBMA) is required.
+
+Auto-RP is a Cisco-proprietary protocol. Bootstrap Router (BSR), in contrast, is the standards-body method of electing an RP (RFC 5059). BSR operates completely based on PIMv2 and PIM-SM, offering optimized bandwidth during flooding and discovery compared to Auto-RP. Auto-RP, however, can scope multiple RP addresses per domain and operate over either PIMv1 or PIMv2, with the ability to fall back to dense mode if required.
+
+As a general rule, network designers should avoid deploying BSR and Auto-RP within the same domain simultaneously. However, in scenarios where a PIMv2 domain that does not support Auto-RP (for example, non-Cisco nodes) needs to interoperate with a PIMv1 domain running Auto-RP, both functions are required. A simple solution is to deploy a node at the multicast domain boundary to perform both the Auto-RP mapping agent and BSR functions. This approach also applies to PIM migration scenarios between Version 1 and Version 2.
+
+::: {.callout-note}
+The RP is required to initiate new multicast sessions with sources and receivers. During these sessions, the RP and the first-hop router (FHR) may experience periodic increased processing overhead, which varies based on the multicast protocol in use. For instance, the RP with PIM-SM Version 2 requires less processing than PIM-SM Version 1, because sources only periodically register with the RP to create state. In contrast, the location of the RP is more critical in designs that rely on a shared tree where the RP must be in the forwarding path, such as PIM-BIDIR.
+:::
+
+### Review Questions {.unnumbered}
+
+**3. Which multicast technique is used to avoid multicast loops?**
+
+a. DF election
+b. RPF
+c. PIM-SSM
+d. PIM-BSR
+
+::: {.callout-tip collapse="true"}
+## Answer
+**b.** Reverse path forwarding (RPF) is the mechanism used by Layer 3 nodes in the network to optimally forward multicast datagrams without loops.
+:::
+
+---
+
+**4. Which multicast routing protocol would be best to use for an application that requires a many-to-many traffic pattern?**
+
+a. PIM-BIDIR
+b. RPF
+c. PIM-SSM
+d. PIM-BSR
+
+::: {.callout-tip collapse="true"}
+## Answer
+**a.** Protocol-Independent Multicast (PIM) Bidirectional (BIDIR) builds bidirectional shared trees connecting multicast sources and receivers. It never builds a shortest-path tree, so it scales well because it does not need a source-specific state. PIM-BIDIR is the best multicast routing protocol for many-to-many traffic pattern requirements.
+:::
+
+---
+
+**5. Which multicast routing protocol would be best to use if a network designer didn't want to include an RP in the network design?**
+
+a. PIM-BIDIR
+b. RPF
+c. PIM-SSM
+d. PIM-BSR
+
+::: {.callout-tip collapse="true"}
+## Answer
+**c.** PIM Source-Specific Multicast (PIM-SSM) builds trees that are rooted in just one source. SSM eliminates the requirement for rendezvous points (RPs) and shared trees of sparse mode and only builds a shortest-path tree (SPT).
+:::
+
+---
+
+**6. Which protocol would be best to use if a network design required a standards-based way to determine an RP in a multicast network?**
+
+a. PIM-BIDIR
+b. RPF
+c. PIM-SSM
+d. PIM-BSR
+
+::: {.callout-tip collapse="true"}
+## Answer
+**d.** PIM Bootstrap Router (PIM-BSR) is like Cisco's Auto-RP in that it is a protocol used to automatically find the rendezvous point (RP) in a multicast network. BSR is a standard included in PIMv2, unlike Auto-RP, which is a Cisco-proprietary protocol. BSR sends messages on a hop-by-hop basis to multicast address 224.0.0.13.
+:::
+
+### RP Placement
+
+The placement of a multicast RP is influenced primarily by:
+
+- The multicast protocol in use
+- The multicast tree model
+- Application multicast requirements (one to many versus many to many)
+- The targeted network between sources and receivers (LAN versus WAN)
+
+As a rule of thumb, when the source tree along with the shortest-path tree (SPT) is used, RP placement is not a major concern — though it is commonly recommended to place the RP closer to the multicast sources — because the RP is not necessarily required to be in the data forwarding path.
+
+However, in many-to-many multicast applications, receivers may also operate as senders using different multicast groups for receiving and sending. Even when SPT is enabled (where the last-hop router cuts over to the SPT source tree), the source tree is always created between the source and the RP first, creating an (S,G) state on all nodes between each source and its RP before the switchover to SPT takes place. This can cause nodes in the path between the many receivers/senders and the RP to hold a large number of (S,G) states — in trading environments, this can reach thousands of source feedback streams.
+
+::: {#fig-many-to-many-rp}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Many-to-Many Multicast Applications Using PIM-SM RP Diagram -->
+</div>
+```
+
+Many-to-Many Multicast Applications Using PIM-SM RP
+:::
+
+To reduce the number of (S,G) states on these nodes, you can add different RPs close to the receivers that need to send feedback, and introduce MSDP among the RPs to ensure all RPs for any given group are aware of other active sources. This MSDP-based design is limited to IPv4 only and is suitable for environments where receivers send feedback streams using a separate group from the data source group. Alternatively, PIM-SM can be migrated to PIM-BIDIR in this environment.
+
+::: {#fig-many-to-many-optimized}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Optimized Many-to-Many Multicast Applications Using PIM-SM RPs Diagram -->
+</div>
+```
+
+Optimized: Many-to-Many Multicast Applications Using PIM-SM RPs
+:::
+
+When the shared tree is used as the forwarding multicast tree — such as PIM-BIDIR where the RP is in the data path — network designers must carefully consider RP placement because all traffic flows through the RP. When multiple multicast streams are sourced from different senders distributed across the network, identifying which stream should be given priority is key to placing the RP optimally. Consider the following factors:
+
+- Application's criticality to the business
+- Bandwidth consumption of each application's stream
+- Number of sources and receivers of each application
+- The underlying transport and topology between sources and receivers (LAN versus WAN, hierarchical versus hub-and-spoke)
+
+::: {#fig-rp-placement-shared}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for RP Placement Consideration: Shared-Tree Multicast Diagram -->
+</div>
+```
+
+RP Placement Consideration: Shared-Tree Multicast
+:::
+
+For example, consider two hub nodes each connected to a different data center with multicast applications streaming over a shared tree. If hub 1 is directly connected to the business-critical high-bandwidth multicast application but hub 2 is defined as the RP, all multicast streams to remote receivers must traverse hub 2 — potentially congesting the data center interconnect (DCI) link and degrading application quality. Moving the RP function to hub 1 provides a more optimal path for the high-bandwidth streams sourced from DC-1 toward the remote receivers.
+
+::: {.callout-note}
+In both scenarios, the assumption is that the RPF check is considered based on the utilized path for multicast traffic.
+:::
+
+### Review Questions {.unnumbered}
+
+**7. When using PIM-BIDIR where the RP will be in the data path, where should a network designer place the RP?**
+
+a. Between the sources and receivers of the critical application
+b. Closest to the critical application
+c. Closest to the receivers
+d. Between the sources and receivers of the noncritical application
+
+::: {.callout-tip collapse="true"}
+## Answer
+**a.** With PIM-BIDIR, all traffic will follow the path through the RP, wherever in the network that RP is located. Because of this, a network designer will need to put the RP between the sources and receivers of the critical application.
+:::
+
+---
+
+**8. Which of the following are factors that should be considered when selecting the placement of a multicast RP? (Choose three.)**
+
+a. Application multicast requirements
+b. Embedded-RP
+c. Multicast protocol
+d. Multicast tree
+e. RPF
+f. Phantom RP
+
+::: {.callout-tip collapse="true"}
+## Answer
+**a, c, and d.** There are four factors that influence the placement of a multicast RP: the multicast protocol that is used, the multicast tree model, the application multicast requirements, and the targeted network segment between the sources and receivers (LAN versus WAN).
+:::
+
+### Interconnecting Multicast Islands
+
+A common multicast design challenge occurs when two or more multicast-enabled networks need to communicate over a unicast-only network. For example, a retail business planning to roll out a digital media signage solution across remote sites — where the media server streams content centrally from the data center — requires end-to-end multicast. If the WAN provider supports only unicast, the enterprise must either migrate to a multicast-capable WAN provider or use a tunneling mechanism such as GRE, L2TPv3, or DMVPN to transport IP multicast traffic over the unicast WAN.
+
+::: {#fig-multicast-islands}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Connecting Multicast Islands Diagram -->
+</div>
+```
+
+Connecting Multicast Islands
+:::
+
+If the network in the middle is MPLS-enabled, this may facilitate building a self-deployed L2VPN (such as point-to-point E-Line), on top of which multicast routing can be enabled.
+
+The best decision depends on the situation and requirements — timeframe, cost, and equipment support for the overlay technology. The most important influencing factor is the characteristics of the multicast application. IP tunneling such as GRE or DMVPN may introduce limited scalability for many-to-many multicast applications. For large-scale organizations, it may be more feasible to consider a core/WAN transport that supports multicast routing natively rather than a solution that may introduce future limitations.
+
+Another common scenario is when a device in the network path does not support multicast, such as a firewall. This device breaks the multicast network into two sub-domains, requiring IP tunneling to pass multicast traffic through it — assuming this approach does not breach the organization's security policy.
+
+::: {#fig-multicast-non-mc-node}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Connecting Multicast Islands over a Non-Multicast-Enabled Node Diagram -->
+</div>
+```
+
+Connecting Multicast Islands over a Non-Multicast-Enabled Node
+:::
+
+### Interdomain Multicast
+
+The multicast protocols discussed earlier focus mostly on handling multicast within a single domain. A *multicast domain* can be defined as an IGP domain, one BGP autonomous system (AS), or an administrative domain of a given organization. For example, one organization might have multiple multicast domains managed by different departments, or multiple domains may exist between service providers or after a merger/acquisition.
+
+It is important to maintain isolation between different multicast domains — not sharing streams and RP feeds — while offering the ability to share certain multicast feeds and RP information in a controlled manner.
+
+#### Multicast BGP
+
+Multicast Border Gateway Protocol (MP-BGP), based on RFC 2283, offers the ability to carry two sets of routes (NLRI sub-AFI): one for unicast routing and one for multicast routing. BGP multicast routes are used by multicast routing protocols to build data distribution trees and influence the RPF check. This allows service providers and enterprises to control which path multicast uses and which path unicast uses through one control plane protocol (BGP) with the same path selection attributes (AS-PATH, LOCAL_PREFERENCE, and so on).
+
+#### Multicast Source Discovery Protocol
+
+Multicast Source Discovery Protocol (MSDP) is most commonly used to provide RP redundancy along with Anycast-RP. It is the most common protocol for interconnecting multiple IPv4 PIM domains because of its controlled and simplified approach — allowing PIM domains to use an interdomain source tree instead of a common shared tree.
+
+With PIM, each RP is usually aware of multicast sources and receivers within its domain boundary. MSDP peers use TCP sessions and send Source Active (SA) messages to inform other MSDP peers about active sources within the local multicast domain.
+
+::: {#fig-msdp-interdomain}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Typical Interdomain Multicast Scenario with MSDP Diagram -->
+</div>
+```
+
+Typical Interdomain Multicast Scenario with MSDP
+:::
+
+Consequently, all MSDP peers (RPs) will be aware of all sources within the local domain and in other domains. RPF check remains a fundamental consideration. With MSDP, specific rules drive whether RPF check for SA messages is performed:
+
+| RPF Check Performed | RPF Check Not Performed |
+|---|---|
+| The sending MSDP peer is also an interior MP-BGP peer | The sending MSDP peer is the only MSDP peer (single or default peer configured) |
+| The sending MSDP peer is also an exterior MP-BGP peer | The sending MSDP peer is a member of a mesh group |
+| The sending MSDP peer is not an MP-BGP peer | The sending MSDP peer address is the RP address contained in the SA message* |
+
+: Table 13-4 Cisco MSDP RPF Check Rules {tbl-colwidths="[50,50]"}
+
+\* This table covers Cisco-specific MSDP RPF check rules. A standardized list of rules is available in RFC 3618.
+
+A common design issue with multidomain multicast using MSDP and BGP that leads to RPF failure is when the IP address of the interior MP-BGP peer differs from the MSDP IP — for example, BGP using the physical IP and MSDP using the loopback IP. Therefore, it is important that the address used for both MP-BGP and MSDP peering is the same.
+
+::: {#fig-msdp-rpf-failure}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Common RPF Check Failure with MSDP and BGP Diagram -->
+</div>
+```
+
+Common RPF Check Failure with MSDP and BGP
+:::
+
+To illustrate interdomain multicast design, consider a scenario where AS 500 provides transit connectivity to a content provider (AS 300) offering IPTV streaming. AS 500 has two inter-AS links with the following traffic engineering requirements:
+
+- Unicast traffic must use the 5-Gbps link as primary, failing over to the 10-Gbps link
+- Multicast traffic must use the 10-Gbps link, with no failover to the 5-Gbps link (to avoid impacting unicast quality)
+- Multicast group addresses in the 232/5 range must not be shared between the two domains
+- Only sources in AS 300 within the 225.1.1.0/24 range must be accepted by AS 500
+
+To achieve these requirements:
+
+- **MP-BGP** advertises multicast source IPs and filters them from being advertised/received over the 5-Gbps link, ensuring multicast flows over the 10-Gbps link without RPF check failure
+- **MSDP peering** between RPs of AS 300 and AS 500 exchanges SA messages about active sources within each domain
+- **PIM RP filtering and MSDP filtering** ensures RPs only send/accept sources within the 225.1.1.0/24 multicast group range
+
+::: {#fig-interdomain-scenario}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Interdomain Multicast Design Scenario Diagram -->
+</div>
+```
+
+Interdomain Multicast Design Scenario
+:::
+
+#### Embedded-RP
+
+Although PIM-SSM allows IPv6 multicast to communicate across different domains, it does not offer an efficient solution for many-to-few and many-to-many applications such as videoconferencing and multiuser games, where multicast sources between domains may need to be discovered. MSDP cannot be used for IPv6 interdomain multicast because it has deliberately not been specified for IPv6.
+
+The most common solution for interdomain IPv6 multicast is Embedded-RP (RFC 3306), where the RP address is encoded in the IPv6 multicast group address. It specifies a PIM-SM group-to-RP mapping that leverages and extends unicast-prefix-based addressing. Embedded-RP offers a simple solution for both interdomain and intradomain IPv6 Any-Source Multicast (ASM) applications without MSDP.
+
+However, network designers must consider:
+
+- Following an RP failure, multicast state will be lost after failover because there is no means of synchronizing states between RPs (unless synchronized via an out-of-band method, which is uncommon)
+- With MSDP, operators have more flexibility to filter based on multicast sources and groups between domains. Embedded-RP offers less filtering capability, and without other mechanisms such as infrastructure access lists, a rogue RP can be introduced to host multicast groups — potentially leading to service outage or information security risk
+
+## Multicast Design Considerations
+
+This section focuses on multicast design considerations for typical enterprise networks.
+
+### Application Multicast Requirements
+
+Designing IP multicast follows the same top-down approach as all other IP network designs — focusing first on business goals and needs while considering the characteristics of the applications to be used. Multicast applications can be categorized into three primary types:
+
+| Application Characteristic | Application Examples |
+|---|---|
+| One to many | Newsfeeds, push media, paging, announcements, some database updates |
+| Many to many | Multimedia conferencing, multiplayer games, concurrent processing |
+| Many to one | Data collection, polling, resource discovery |
+
+: Table 13-5 Multicast Application Types {tbl-colwidths="[30,70]"}
+
+Understanding the characteristics of the multicast applications at a high level is essential to determine which multicast protocol and design is appropriate.
+
+### Multicast Resiliency Design Considerations
+
+In modern converged networks, many business-critical applications run over multicast where packet or connectivity loss is highly undesirable — especially for core business applications such as financial services and trading, where minutes of disconnectivity can translate to the loss of hundreds of thousands of dollars. Similarly, for content providers such as IPTV, the quality and availability of multimedia is critical to maintaining reputation and meeting SLA requirements.
+
+IP multicast resiliency can be addressed at two levels:
+
+1. The underlying unicast IP infrastructure
+2. Core multicast components — such as RPs, redundant sources, multicast with path diversity, and FRR
+
+The availability of the RP in a PIM multicast domain is especially critical for PIM-BIDIR and PIM-SM.
+
+#### Anycast-RP
+
+Anycast-RP uses two or more RPs configured with the same IP address on their loopback interfaces (typically a /32 host address). From the downstream router's perspective, the Anycast IP is reachable via unicast IGP routing, which normally selects the topologically closest RP for each source and receiver.
+
+MSDP peering is required between the Anycast-RPs because sources may register with one RP while receivers join a different RP.
+
+::: {#fig-anycast-rp}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Anycast-RP with MSDP Diagram -->
+</div>
+```
+
+Anycast-RP with MSDP
+:::
+
+In the event of an Anycast-RP failure, IGP converges and one of the other Anycast-RPs becomes active. Sources and receivers fail over automatically, maintaining connectivity.
+
+::: {.callout-note}
+IPv6 does not support MSDP. Therefore, each RP must define other RPs in the network as a PIM RP set to maintain a full list of sources and receivers. Alternatively, Anycast-RP using PIM (RFC 4610) can be used to retain Anycast-RP functionality without MSDP.
+:::
+
+#### Anycast-RP Using PIM
+
+Anycast-RP using PIM (RFC 4610) enables both IPv4 and IPv6 to achieve the same goal as Anycast-RP with MSDP, but with fewer protocols — no MSDP peering sessions are required. Each RP sends copies of Register messages to the other peering RPs that it received from registered sources or the designated router (DR) attached to the multicast source LAN. Consequently, each RP maintains a list of sources for each multicast group registered with different RPs (S,G), allowing multicast streams from sources distributed across the PIM domain to reach all receivers even if they are associated with different RPs.
+
+The process works as follows:
+
+1. The closest RP (Anycast loopback IP) for each source and receiver is selected by the underlying unicast IGP
+2. When an RP receives a PIM Register message from a source via the DR, it decapsulates and forwards it across the shared tree toward joined receivers
+3. The receiving RP sends a copy of the Register message to all other Anycast-RP PIM peers
+4. The other RPs decapsulate the Register message and forward it down the shared tree to any interested receivers (or discard if none)
+5. If an RP fails, IGP routes multicast messages from the source toward the next closest Anycast-RP
+
+::: {#fig-anycast-rp-pim}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Anycast-RP PIM Diagram (Normal and RP Failure Scenarios) -->
+</div>
+```
+
+Anycast-RP PIM
+:::
+
+MSDP may still be required in IPv4 interdomain scenarios — for example, if internal sources need to be advertised to RPs outside the local PIM domain. MSDP also rides on TCP (guaranteed delivery) and offers higher operational flexibility with its SA cache and show commands for simplified troubleshooting.
+
+#### Phantom RP
+
+With PIM-BIDIR, all packets flow over the shared tree, making RP redundancy critical. The phantom RP concept is specifically used for PIM-BIDIR — the RP does not need to be a physical router. A routable IP subnet in the network can serve as the shared tree root.
+
+::: {#fig-phantom-rp}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Phantom RP Diagram -->
+</div>
+```
+
+Phantom RP
+:::
+
+By configuring two routers with the same IP address but different subnet masks, IGP controls the preferred path for the shared tree root based on longest match. The router with the shorter mask serves as backup if the primary fails, with failover relying on unicast IGP convergence. If Auto-RP is used as the dynamic RP discovery mechanism, a mapping agent is required for proper operation.
+
+### Review Questions {.unnumbered}
+
+**9. Which of the following is an RP resiliency technique where two or more RPs are configured with the same IP address and subnet mask?**
+
+a. Auto-RP
+b. Embedded-RP
+c. Anycast-RP
+d. Phantom RP
+
+::: {.callout-tip collapse="true"}
+## Answer
+**c.** Anycast-RP is based on using two or more RPs configured with the same IP address on their loopback addresses. Typically, the Anycast-RP loopback address is configured as a host IP address (32-bit mask). From the downstream router's point of view, the Anycast-RP will be reachable via the unicast IGP routing. MSDP peering and information sharing is also required between the Anycast-RPs because it is common for some sources to register with one RP and receivers to join a different RP.
+:::
+
+---
+
+**10. Which of the following is an RP resiliency technique specifically used for PIM-BIDIR where two RPs are configured with the same IP address but different subnet masks?**
+
+a. Auto-RP
+b. Embedded-RP
+c. Anycast-RP
+d. Phantom RP
+
+::: {.callout-tip collapse="true"}
+## Answer
+**d.** Phantom RP is a redundancy consideration for the RP in a PIM-BIDIR deployment. To create a phantom RP, two routers in a network segment are configured with the same IP address but different subnet masks. The interior gateway protocol controls the preferred path for the root (phantom RP) of a multicast shared tree based on the longest match (longest subnet mask). The other router with the shorter mask serves as backup if the primary router fails, with failover relying on unicast IGP convergence.
+:::
+
+#### Live-Live Streaming
+
+Live-live refers to using two simultaneous multicast streams through the network using either path separation or dedicated infrastructure and RPs per stream. The first stream (A) is sent to one set of multicast groups, and the second copy (B) uses a second set of groups.
+
+::: {#fig-live-live-separate}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Live-Live Stream over Separate Core Networks Diagram -->
+</div>
+```
+
+Live-Live Stream over Separate Core Networks
+:::
+
+Using completely separate physical infrastructure per stream offers the ultimate level of resiliency, catering for any failure in a server or network component along the path.
+
+Alternatively, a single MPLS-enabled core with MPLS Traffic Engineering (MPLS-TE) can steer streams over different paths. This offers server-side resiliency but may not provide full network resiliency since both streams use the same core infrastructure. However, if the MPLS provider addresses different failure scenarios (optical, node, link) with fast switchover (such as MPLS-TE FRR) and avoids shared risk link groups (SRLG) along the path, it can offer a reliable and cost-effective solution.
+
+::: {#fig-live-live-single}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Live-Live Stream over Single-Core Network Diagram -->
+</div>
+```
+
+Live-Live Stream over Single-Core Network
+:::
+
+The primary driver for live-live is the strict requirement of businesses — commonly in financial services where each millisecond is worth money — to aggressively minimize packet loss by adopting a reliable, low-latency multicast solution that avoids retransmissions.
+
+#### FHRP-Aware PIM
+
+In a shared LAN segment with a pair of Layer 3 gateways deployed with a First Hop Redundancy Protocol (FHRP) such as HSRP, the PIM designated router (DR) election is unaware of the FHRP deployment. As a result, the HSRP active router (AR) and the PIM DR will likely not be the same router because PIM operates independently of HSRP.
+
+HSRP-Aware PIM ensures that multicast traffic is forwarded via the HSRP AR, which also acts as the PIM DR for the LAN segment. When a device becomes HSRP active, PIM sends an additional Hello message using the HSRP virtual IP address as the source address. Downstream devices can then use a static route or default gateway pointing to the FHRP virtual IP (VIP) for simplified and reliable operation.
+
+::: {#fig-hsrp-aware-pim}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for HSRP-Aware PIM Diagram (Normal and Failure Scenarios) -->
+</div>
+```
+
+HSRP-Aware PIM
+:::
+
+Following an HSRP AR failover or recovery event, the newly elected HSRP AR assumes responsibility for routing and forwarding all traffic sent to the VIP. PIM tunes the DR priority based on HSRP state to maintain alignment of the HSRP AR and multicast DR functions on the same node.
+
+## Summary
+
+This chapter covered multicast design across switching, routing, and overall design considerations. Before considering any design recommendation, network designers should answer the following questions:
+
+- What is the targeted business or environment (enterprise versus service provider)?
+- Why is multicast required? Is it for a business-critical application, a transport network for customers, or a service such as IPTV?
+- What are the characteristics of the multicast application? Many to many versus one to many, IPv4 or IPv6? This helps decide the type of RP and its placement.
+- Is the targeted network under single or multiple administrative domains? If multiple, is interdomain multicast communication required?
+- What is the Layer 3 routing protocol in use, and what does the logical design look like? This helps determine RPF check failure considerations.
+- Is there any constraint related to enabling multicast across the network path (for example, a WAN provider that does not support multicast)?
+- Does any network device in the path not support multicast, such as firewalls?
+- Are there any staff knowledge limitations regarding certain IP multicast protocols?
+- Are there any high-availability requirements, such as redundant RPs?
+
+*Previous: [Automation](automation.qmd)* | *Next: [Network Services and Management](network-services-and-management.qmd)*

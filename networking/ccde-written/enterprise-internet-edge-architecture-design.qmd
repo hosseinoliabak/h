@@ -18,4 +18,319 @@ figcaption { text-align: center; }
 
 ## Overview
 
-*Next: [Enterprise WAN Architecture Design](enterprise-wan-architecture-design.qmd)*
+The enterprise Internet edge refers to the various enterprise network modules and components that facilitate efficient and secure communication to the Internet. This chapter covers different design options and considerations for the Internet edge module.
+
+The Internet edge is part of the enterprise edge module, acting as a gateway to the Internet for the enterprise network. Its design may significantly vary between organizations because it is typically driven by the security policy of the business. Large enterprises typically place the Internet edge either co-located within the campus network or within the data center — the location does not impact the module design itself, only the overall enterprise architecture and traffic flow. With the advent of SD-WAN, the Internet edge can also be at each branch location leveraging direct Internet access circuits.
+
+## Enterprise Internet Edge Design Considerations
+
+### Internet Edge Architecture Overview
+
+The Internet edge design varies significantly between networks based on the organization's security policy and industry type. Financial services organizations tend to have sophisticated multilayer Internet edge designs, while retail businesses typically have simpler designs.
+
+The Internet block should follow the same hierarchical design model principle as part of the modular enterprise building block architecture. The distribution layer in this block aggregates all communications within the block and between the enterprise core and the Internet block, providing a structured design and deterministic traffic flow.
+
+::: {#fig-internet-edge-arch}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Enterprise Internet Block Foundational Architecture Diagram -->
+</div>
+```
+
+Enterprise Internet Block Foundational Architecture
+:::
+
+This foundational architecture can be changed or expanded as needed. For example, the DMZ can be replicated into multiple DMZs to host different services requiring different security policies and physical separation. Some designs also place the VPN termination point in a separate DMZ for an additional layer of security and control.
+
+::: {.callout-note}
+The functions at each layer can vary from design to design. Not all functions are necessarily required — for example, NAT can be applied at only one layer instead of multiple layers.
+:::
+
+In scenarios where security requirements specify that all traffic passing through the external firewalls must be inspected and not tunneled, VPN tunnels can be terminated at the Internet edge router or in a separate VPN DMZ using a VPN concentrator or dedicated firewalls/routers. The decapsulated VPN traffic is then sent back to the Internet edge firewalls for inspection before reaching the internal network.
+
+### Enterprise Multihomed Internet Design Considerations
+
+#### Multihoming Design Concept and Drivers
+
+Multihoming refers to having two or more links to external networks using either one or more edge nodes. The most common business drivers for enterprises include:
+
+- Higher level of path and link redundancy
+- Increased service reliability
+- Optimize ROI of external links through traffic load-balancing and load-sharing
+- Cost control — expensive links dedicated to certain traffic types only
+- Increased overall bandwidth capacity to and from the Internet
+- End-to-end network and path separation with service differentiation (e.g., different Internet links for different business entities based on demand or security policy)
+
+Network designers need to consider two categories of questions to produce a business-driven multihoming design:
+
+**Path requirements:**
+- Is the business goal high availability only?
+- Is the goal to optimize ROI of existing external links?
+- Should available bandwidth be increased?
+- Should there be path and traffic isolation?
+
+**Traffic flow characteristics:**
+- Is the goal to host services within the enterprise accessible from the Internet?
+- Is the goal to access external services or host services in the cloud?
+- Or both (hybrid)?
+
+::: {.callout-note}
+BGP is the most flexible protocol for handling routing policies and the only protocol with powerful capabilities to reliably handle multiple peering with multiple autonomous systems (interdomain routing). Some designs may use an IGP or static routing with multihoming, but these eliminate all the flexibilities that BGP multihoming provides.
+:::
+
+#### BGP over Multihomed Internet Edge Planning Recommendations
+
+Primary considerations when planning a multihomed Internet edge design with BGP:
+
+- **Public vs private ASN**: Public ASNs offer more flexibility, especially with multihoming to different ISPs
+- **Provider-independent (PI) vs provider-assigned (PA) IP addresses**: PI addresses offer more flexibility and availability options, especially for enterprises hosting services accessible from the Internet across different ISPs
+- **Full Internet routing table**: Receiving the full table enables more detailed traffic engineering policies (e.g., specifying outbound traffic per geographical region based on IP prefixes and BGP community values)
+
+#### BGP Policy Control Attributes for Multihoming
+
+| Attribute | Usage Description |
+|---|---|
+| LOCAL_PREFERENCE (LP) | Influence outbound traffic flows |
+| AS-PATH prepend | Influence inbound and outbound traffic flows |
+| Community values + (LP, AS-PATH, or weight) | Influence inbound and outbound traffic flows within the customer AS and across the ISP's autonomous systems |
+| BGP weight | Influence local router decision for outbound traffic flows (Cisco proprietary) |
+
+: Table 16-2 Common BGP Attributes for Internet Multihoming {tbl-colwidths="[35,65]"}
+
+BGP community values act like a "route tag" that can be contained within one AS or propagated across multiple autonomous systems as a matching value to influence BGP path selection. For example, a global ISP can share standard BGP community values with customers to distinguish IP prefixes by geographic location (region or continent). An enterprise can then match the relevant community value and associate it with a BGP policy such as AS-PATH prepending.
+
+For example, an enterprise may want all outbound traffic to European IP prefixes to use Internet link 1, while all other traffic uses link 2. BGP community values can simplify achieving this goal dynamically.
+
+::: {#fig-bgp-community}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for BGP Community Value Usage Example Diagram -->
+</div>
+```
+
+BGP Community Value Usage Example
+:::
+
+### Common Internet Multihoming Traffic Engineering Techniques over BGP
+
+#### Scenario 1: Active-Standby
+
+This design uses one active link for both inbound and outbound traffic, with a second link as backup. It is the simplest design option, commonly used when the backup link is low-speed and only required during an outage of the primary link.
+
+::: {#fig-active-standby-models}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Internet Multihoming Active-Standby Connectivity Models Diagram -->
+</div>
+```
+
+Internet Multihoming Active-Standby Connectivity Models
+:::
+
+::: {#fig-active-standby-flow}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Internet Multihoming Active-Standby Traffic Flow Diagram -->
+</div>
+```
+
+Internet Multihoming Active-Standby Traffic Flow
+:::
+
+| Traffic Direction | BGP Policy |
+|---|---|
+| Ingress | Longest match over the preferred path, by dividing the prefix into two halves (e.g., advertise /16 as 2 × /17 over the preferred ingress path toward ISP A) |
+| Egress | Use LOCAL_PREFERENCE (set the preferred route/path with a higher value) |
+
+: Table 16-3 Internet Multihoming Active-Standby {tbl-colwidths="[20,80]"}
+
+Although AS-PATH prepending is a common technique to influence ingress traffic, ISPs typically allocate a higher LOCAL_PREFERENCE to prefixes learned from their own customers than from other peering ISPs. This means that even with AS-PATH prepending toward ISP B, ISP B's customers will still prefer the path over ISP B. By dividing the /16 into two /17s and advertising them only over ISP A, the longer match always wins — ISP B customers will never prefer the /16 advertised over ISP B.
+
+This behavior can be altered when ISPs allow customers to control BGP attributes within the ISP cloud using standard BGP community values. For example, assigning community value 300:110 toward ISP A sets LOCAL_PREFERENCE to 110 within that SP cloud, while assigning 500:70 toward ISP B combined with AS-PATH prepending (100 100 100) results in a lower LOCAL_PREFERENCE and longer AS-PATH within ISP B — making the path via ISP A always preferred.
+
+::: {#fig-bgp-isp-community}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Altering BGP Attributes Within the ISP Cloud Diagram -->
+</div>
+```
+
+Altering BGP Attributes Within the ISP Cloud
+:::
+
+Two limitations apply to this approach: not every ISP provides this flexibility to its clients, and the advertised prefixes must be provider-independent (PI) to avoid the upstream ISP aggregating the prefix and breaking the design.
+
+#### Scenario 2: Equal and Unequal Load Sharing
+
+These scenarios are used when two Internet links need to distribute traffic evenly (equal load sharing) or in a weighted manner proportional to their bandwidth (unequal load sharing).
+
+::: {#fig-load-sharing}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Internet Multihoming Equal and Unequal Load Sharing Diagram -->
+</div>
+```
+
+Internet Multihoming Equal and Unequal Load Sharing
+:::
+
+| Traffic Direction | BGP Policy |
+|---|---|
+| Ingress | Divide the PI address into two halves (e.g., IPv4 /16 into two /17s, IPv6 /48 into two /49s) and advertise each half over a different link, plus the aggregate over both links for failover. For unequal load sharing, advertise more specific subnets over the higher-capacity path. |
+| Egress | Receive the full Internet route from one ISP plus the default route from both. Accept only every other /4 for IPv4 (e.g., 0/4, 32/4) from one link; increase LOCAL_PREFERENCE for the default route from the other link. More specific routes use one link; filtered routes use the second link via the default route. For unequal load sharing, accept more subnets from the higher-capacity link. |
+
+: Table 16-4 Internet Multihoming Equal/Unequal Load Sharing {tbl-colwidths="[20,80]"}
+
+::: {.callout-note}
+ISPs usually deploy route filtering policies accepting only certain subnet lengths (e.g., no smaller than v4/24 or v6/64) to avoid propagating large numbers of small networks. The subnets presented here are hypothetical to simplify the explanation.
+:::
+
+These BGP mechanisms cannot guarantee truly equal load distribution because traffic load cannot be measured based solely on subnet size. For example, if a /24 is divided into two /25s and each advertised over a different link, a few high-traffic servers in one /25 will cause that link to carry significantly more traffic. Achieving true equal load distribution requires actual service utilization reports, not just IP subnetting. Alternatively, a specialized load-balancing appliance can distribute traffic flows based on real-time link utilization.
+
+The same principle applies to unequal load sharing (e.g., 70/30 distribution) — proper planning and utilization report analysis must be performed before designing BGP policies to determine which networks or services should be reachable over which link.
+
+#### Scenario 3: Equal and Unequal Load Sharing Using Two Edge Routers
+
+The ingress traffic engineering techniques from the previous scenarios apply here as well. For egress traffic, the approach depends on the LAN-side design behind the routers:
+
+- **Firewall with a Layer 2 switch between the firewall and routers**: Use multiple HSRP or VRRP groups for load sharing on the routers' side
+- **Layer 3 network node connecting directly to the edge routers**: Use IGP with ECMP
+
+::: {.callout-note}
+In both cases, ensure there is a link between the two Internet edge routers (physical or tunnel) with iBGP peering over this link, to avoid traffic black-holing in some failure scenarios.
+:::
+
+#### Asymmetrical Routing with Multihoming
+
+A typical asymmetrical routing issue arises in designs with two sites or data centers sharing a direct (backdoor) link, stateful firewalls behind the Internet edge routers with no state synchronization between sites, and both sites advertising the same PI/PA address range. Return traffic for a session originated from Site-1 may arrive over the Site-2 Internet link, where the Site-2 firewall has no state information and will block the traffic.
+
+::: {#fig-asymmetric}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Asymmetrical Routing Diagram -->
+</div>
+```
+
+Asymmetrical Routing
+:::
+
+::: {.callout-note}
+Asymmetric routing completely breaks traffic flows with stateful firewalls. Even in networks without firewalls, it consumes valuable bandwidth from unrelated sites and can be difficult to troubleshoot because traffic continues to flow despite the lurking problem.
+:::
+
+To overcome this, network designers should consider:
+
+- **iBGP peering between edge routers**: Connect both Internet edge routers directly (physical or GRE tunnel) with iBGP peering and BGP policies that make Site-1 internal prefixes more preferred over the Site-1 Internet link
+- **Organized IP addressing advertisement**: Each site advertises its own prefixes as more specific (longest match) in addition to the aggregate — for example, a /16 divided into two /17s per site
+- **NAT consideration**: If prefixes are translated by edge firewalls, form direct route peering between the distribution/core layer nodes and the Internet edge routers, allowing firewalls to perform NAT for passing traffic
+
+::: {#fig-optimized-multihoming}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Optimized Multihoming Design with Firewalls Diagram -->
+</div>
+```
+
+Optimized Multihoming Design with Firewalls
+:::
+
+::: {#fig-optimized-failure}
+```{=html}
+<div style="text-align:center">
+<!-- SVG placeholder for Optimized Multihoming Design: Failure Scenario Diagram -->
+</div>
+```
+
+Optimized Multihoming Design: Failure Scenario
+:::
+
+With these optimizations in place, if the Site-1 Internet link fails, traffic destined for Site-1 prefixes goes to the Site-2 Internet link (via the advertised /16 aggregate), then traverses the inter-site link to reach Site-1 — eliminating the firewall blocking issue even after an Internet link failure.
+
+| | Active/Standby | Equal and Unequal Load Sharing | Equal and Unequal Load Sharing with Two Edge Routers |
+|---|---|---|---|
+| **Design flexibility** | Least flexible | Flexible | Most flexible |
+| **Scalability** | Least scalable | Scalable | Most scalable |
+| **Monetary cost** | Low | Moderate | Very high |
+| **Operational efficiency** | Least efficient | Efficient | Most efficient |
+| **Operational complexity** | Simplest | Complex | Most complex |
+| **Design situation** | Backup link is low-speed and only needed during primary link outage | Traffic needs to be distributed across multiple links to increase bandwidth or handle different link capacities | Multiple data centers or sites with large campus environments needing internal routing information to determine the best Internet exit point |
+
+: Table 16-5 Comparing Internet Multihoming Models {tbl-colwidths="[18,27,27,28]"}
+
+### Review Questions {.unnumbered}
+
+**1. Which BGP attribute is applied inbound to influence traffic outbound and is carried throughout the AS in a multihoming design?**
+
+a. LOCAL_PREFERENCE (LP)
+b. AS-PATH prepend
+c. Community values + (LP, AS-PATH, or weight)
+d. BGP weight
+
+::: {.callout-tip collapse="true"}
+## Answer
+**a.** LOCAL_PREFERENCE is a BGP attribute applied as routes come into the network to influence outbound traffic and is carried throughout the local autonomous system (AS).
+:::
+
+---
+
+**2. Which BGP attribute is applied outbound to influence inbound traffic flows in a multihoming design?**
+
+a. LOCAL_PREFERENCE (LP)
+b. AS-PATH prepend
+c. MED
+d. BGP weight
+
+::: {.callout-tip collapse="true"}
+## Answer
+**b.** AS-PATH prepend is a BGP attribute applied as routes leave the network (outbound via one provider) to influence traffic taking a different deterministic path back into the network (inbound via another provider).
+:::
+
+---
+
+**3. Which of the following Internet multihoming options should be chosen if a business wants the most flexible option with limited monetary spending?**
+
+a. Equal and unequal load sharing
+b. Active/standby
+c. Equal and unequal load sharing with two edge routers
+d. Equal and unequal load sharing with four edge routers
+
+::: {.callout-tip collapse="true"}
+## Answer
+**a.** Equal and unequal load sharing provides flexibility with limited monetary spending.
+:::
+
+---
+
+**4. Which of the following Internet multihoming options should be chosen if a business just wants a backup option in case its primary Internet link suffers an outage?**
+
+a. Equal and unequal load sharing
+b. Active/standby
+c. Equal and unequal load sharing with two edge routers
+d. Equal and unequal load sharing with four edge routers
+
+::: {.callout-tip collapse="true"}
+## Answer
+**b.** Active/standby is used when a backup link is needed only as a requirement to survive an outage on the primary (active) link.
+:::
+
+---
+
+**5. Which of the following Internet multihoming options should be chosen if a business has two geographically disperse data centers with a large campus environment connected via a WAN and wants to make Internet routing decisions based on its internal routing information?**
+
+a. Equal and unequal load sharing
+b. Active/standby
+c. Equal and unequal load sharing with two edge routers
+d. Equal and unequal load sharing with four edge routers
+
+::: {.callout-tip collapse="true"}
+## Answer
+**c.** Equal and unequal load sharing with two edge routers is used when there are multiple data centers or sites with a large campus environment connected to the inside of the Internet edge architecture, with the need to leverage internal campus routing information to determine the best Internet exit point.
+:::
+
+## Summary
+
+The enterprise Internet edge architecture is one of the most vital modules within the modern modular enterprise architecture — it represents the gateway of the enterprise network to the Internet. Customers, businesses, and end users expect the Internet to always work, and network designers are responsible for making sure it does.
+
+Network designers must consider designs that provide common resource access to remote sites and users without compromising enterprise security requirements such as end-to-end path separation between user groups. Optimizing the Internet edge with business-driven multihoming designs enhances overall performance and design flexibility while maximizing the total ROI of available links.
+
+*Previous: [Scalable Enterprise Campus Architecture Design](scalable-enterprise-campus-architecture-design.qmd)* | *Next: [Enterprise WAN Architecture Design](enterprise-wan-architecture-design.qmd)*
