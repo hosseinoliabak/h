@@ -296,7 +296,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
 <p>Enter a room name to create or join a shared clipboard. Anyone using the same room name will see the same content in real time.</p>
 
-<p><strong>Note:</strong> This pastebin is ephemeral. Once all sessions are closed, the content is erased after 5 seconds. Nothing is stored permanently.</p>
+<p><strong>Note:</strong> This pastebin is ephemeral. Once all sessions are closed, the content is automatically erased. Nothing is stored permanently. For privacy, use a hard-to-guess room name.</p>
 
 <input type="text" id="room-input" placeholder="Enter room name...">
 
@@ -329,12 +329,10 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   let currentRoomName = null;
   let currentRef = null;
   let memberRef = null;
-  let membersRef = null;
-  let membersListener = null;
+  let roomRef = null;
   let isRemoteUpdate = false;
   let debounceTimer = null;
 
-  // Generate a unique session ID
   const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
 
   function sanitizeRoomName(name) {
@@ -346,21 +344,19 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
       currentRef.off();
       currentRef = null;
     }
-    if (membersListener && membersRef) {
-      membersRef.off('value', membersListener);
-      membersListener = null;
-      membersRef = null;
-    }
     if (memberRef) {
-      memberRef.remove();
       memberRef.onDisconnect().cancel();
+      memberRef.remove();
       memberRef = null;
+    }
+    if (roomRef) {
+      roomRef.child('cleanup').onDisconnect().cancel();
+      roomRef = null;
     }
     currentRoomName = null;
   }
 
   function connectToRoom(roomName) {
-    // Leave previous room
     leaveRoom();
 
     if (!roomName) {
@@ -375,45 +371,60 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     if (!sanitized) return;
 
     currentRoomName = sanitized;
-    const roomRef = db.ref('rooms/' + sanitized);
+    roomRef = db.ref('rooms/' + sanitized);
     currentRef = roomRef.child('content');
-    membersRef = roomRef.child('members');
+    var membersRef = roomRef.child('members');
     memberRef = membersRef.child(sessionId);
 
-    // Register presence
-    memberRef.set(true);
-    memberRef.onDisconnect().remove();
+    // Use Firebase .info/connected to ensure presence works reliably
+    var connectedRef = db.ref('.info/connected');
+    connectedRef.on('value', function(snap) {
+      if (snap.val() === true && memberRef) {
+        // Register this session
+        memberRef.set(true);
+        // When this client disconnects, remove its member entry
+        memberRef.onDisconnect().remove();
+        // When this client disconnects, set a cleanup timestamp
+        // Other clients will see this and know to check if room is empty
+        roomRef.child('lastDisconnect').onDisconnect().set(firebase.database.ServerValue.TIMESTAMP);
+      }
+    });
 
     pasteArea.disabled = false;
     status.textContent = 'Connected to room: ' + sanitized;
     status.className = 'connected';
 
-    // Watch member count. When it drops to zero, delete the room after a delay.
-    let cleanupTimer = null;
-    membersListener = membersRef.on('value', function(snapshot) {
-      const members = snapshot.val();
-      const count = members ? Object.keys(members).length : 0;
+    // Watch members to handle cleanup when we detect we are the only one
+    membersRef.on('value', function(snapshot) {
+      var members = snapshot.val();
+      var count = members ? Object.keys(members).length : 0;
+      // If this client sees zero members (meaning everyone else left and
+      // onDisconnect fired), clean up the room
+      if (count === 0 && currentRoomName === sanitized) {
+        roomRef.remove();
+      }
+    });
 
-      if (count === 0) {
-        // All sessions gone, schedule cleanup
-        cleanupTimer = setTimeout(function() {
-          roomRef.remove();
-        }, 5000);
-      } else {
-        // Someone is still here, cancel any pending cleanup
-        if (cleanupTimer) {
-          clearTimeout(cleanupTimer);
-          cleanupTimer = null;
-        }
+    // Also watch lastDisconnect - if it gets set and members is empty, clean up
+    roomRef.child('lastDisconnect').on('value', function(snapshot) {
+      if (snapshot.val()) {
+        // Check members count
+        membersRef.once('value', function(membersSnap) {
+          var members = membersSnap.val();
+          var count = members ? Object.keys(members).length : 0;
+          if (count === 0) {
+            roomRef.remove();
+          }
+        });
       }
     });
 
     // Listen for content changes
     currentRef.on('value', function(snapshot) {
-      const val = snapshot.val();
+      var val = snapshot.val();
       if (val !== null && val !== pasteArea.value) {
         isRemoteUpdate = true;
-        const cursorPos = pasteArea.selectionStart;
+        var cursorPos = pasteArea.selectionStart;
         pasteArea.value = val;
         pasteArea.selectionStart = cursorPos;
         pasteArea.selectionEnd = cursorPos;
@@ -427,7 +438,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   }
 
   // Room input handler
-  let roomDebounce = null;
+  var roomDebounce = null;
   roomInput.addEventListener('input', function() {
     clearTimeout(roomDebounce);
     roomDebounce = setTimeout(function() {
@@ -445,14 +456,13 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   // Paste area handler
   pasteArea.addEventListener('input', function() {
     if (isRemoteUpdate || !currentRef) return;
-
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(function() {
       currentRef.set(pasteArea.value);
     }, 150);
   });
 
-  // Clean up on page unload
+  // Best-effort cleanup on page close
   window.addEventListener('beforeunload', function() {
     if (memberRef) {
       memberRef.remove();
