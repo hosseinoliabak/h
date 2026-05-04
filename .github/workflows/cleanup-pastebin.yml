@@ -1,0 +1,58 @@
+name: Cleanup Pastebin Rooms
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Every hour
+  workflow_dispatch: {}   # Allow manual trigger
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete stale rooms
+        env:
+          FIREBASE_DB_URL: https://oliabak-paste-default-rtdb.firebaseio.com
+        run: |
+          ROOMS=$(curl -s "${FIREBASE_DB_URL}/rooms.json")
+
+          if [ "$ROOMS" = "null" ] || [ -z "$ROOMS" ]; then
+            echo "No rooms found. Nothing to clean."
+            exit 0
+          fi
+
+          echo "$ROOMS" | python3 -c "
+          import json, sys, time, urllib.request, os
+
+          data = json.load(sys.stdin)
+          db_url = os.environ['FIREBASE_DB_URL']
+          now_ms = int(time.time() * 1000)
+          one_hour_ms = 60 * 60 * 1000
+          deleted = 0
+
+          for room_name, room_data in data.items():
+              if not isinstance(room_data, dict):
+                  continue
+
+              members = room_data.get('members')
+              member_count = len(members) if isinstance(members, dict) else 0
+              last_disconnect = room_data.get('lastDisconnect', 0)
+
+              if member_count == 0:
+                  if last_disconnect and (now_ms - last_disconnect) > one_hour_ms:
+                      url = f'{db_url}/rooms/{room_name}.json'
+                      req = urllib.request.Request(url, method='DELETE')
+                      urllib.request.urlopen(req)
+                      print(f'Deleted stale room: {room_name} (idle {(now_ms - last_disconnect) // 60000} min)')
+                      deleted += 1
+                  elif not last_disconnect:
+                      url = f'{db_url}/rooms/{room_name}.json'
+                      req = urllib.request.Request(url, method='DELETE')
+                      urllib.request.urlopen(req)
+                      print(f'Deleted orphaned room: {room_name}')
+                      deleted += 1
+
+          if deleted == 0:
+              print('No stale rooms found.')
+          else:
+              print(f'Cleaned up {deleted} room(s).')
+          "
