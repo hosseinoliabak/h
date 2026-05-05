@@ -362,10 +362,16 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
 <div id="status">Enter a room name to connect.</div>
 <div id="limit-warning" style="display:none; color:#dc3545; font-size:14px; margin-top:6px; font-weight:600;">Content limit reached. Unable to save further changes.</div>
+<div id="content-qr" style="display:none; margin-top:16px; text-align:center;">
+  <canvas id="content-qr-canvas"></canvas>
+  <div id="qr-overflow" style="display:none; color:#e67e22; font-size:13px; margin-top:6px;">Content too long for QR code. Use copy instead.</div>
+  <div id="qr-label" style="font-size:12px; color:#888; margin-top:6px;">Scan to grab the text</div>
+</div>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 
 <script>
 (function() {
@@ -430,6 +436,8 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
       status.textContent = 'Enter a room name to connect.';
       status.className = '';
       updateActionButtons();
+      window.history.replaceState(null, '', window.location.pathname);
+      document.getElementById('content-qr').style.display = 'none';
       return;
     }
 
@@ -460,6 +468,10 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     status.textContent = 'Connected to room: ' + sanitized;
     status.className = 'connected';
     updateActionButtons();
+
+    // Update URL hash for sharing
+    window.history.replaceState(null, '', '#' + sanitized);
+    document.getElementById('content-qr').style.display = 'block';
 
     // Watch members to handle cleanup when we detect we are the only one
     membersRef.on('value', function(snapshot) {
@@ -496,10 +508,12 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
         pasteArea.selectionStart = cursorPos;
         pasteArea.selectionEnd = cursorPos;
         isRemoteUpdate = false;
+        updateContentQR(val);
       } else if (val === null) {
         isRemoteUpdate = true;
         pasteArea.value = '';
         isRemoteUpdate = false;
+        updateContentQR('');
       }
     });
   }
@@ -571,6 +585,54 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
       }
     });
   });
+
+  // QR code for content
+  function updateContentQR(text) {
+    var canvas = document.getElementById('content-qr-canvas');
+    var overflow = document.getElementById('qr-overflow');
+    var label = document.getElementById('qr-label');
+    if (!text || !text.trim()) {
+      canvas.style.display = 'none';
+      overflow.style.display = 'none';
+      label.style.display = 'none';
+      return;
+    }
+    // QR max is about 2953 bytes for binary at L error correction
+    if (text.length > 2900) {
+      canvas.style.display = 'none';
+      overflow.style.display = 'block';
+      label.style.display = 'none';
+      return;
+    }
+    overflow.style.display = 'none';
+    label.style.display = 'block';
+    canvas.style.display = 'block';
+    if (typeof QRCode !== 'undefined') {
+      QRCode.toCanvas(canvas, text, { width: 200, errorCorrectionLevel: 'L', margin: 1 }, function(err) {
+        if (err) {
+          canvas.style.display = 'none';
+          overflow.style.display = 'block';
+          label.style.display = 'none';
+        }
+      });
+    }
+  }
+
+  // Update QR when content changes (from remote or local)
+  var originalContentListener = pasteArea.oninput;
+  pasteArea.addEventListener('input', function() {
+    updateContentQR(pasteArea.value);
+  });
+
+  // Also update QR on remote changes - hook into the value listener
+  var origOnValue = null;
+
+  // Auto-connect from URL hash on page load
+  var hashRoom = window.location.hash.replace('#', '').trim();
+  if (hashRoom) {
+    roomInput.value = hashRoom;
+    connectToRoom(hashRoom);
+  }
 
   // Best-effort cleanup on page close
   window.addEventListener('beforeunload', function() {
