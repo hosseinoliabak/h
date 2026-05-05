@@ -12,19 +12,35 @@ jobs:
       - name: Delete stale rooms
         env:
           FIREBASE_DB_URL: https://oliabak-paste-default-rtdb.firebaseio.com
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          ROOMS=$(curl -s "${FIREBASE_DB_URL}/rooms.json")
+          pip install --quiet google-auth requests
 
-          if [ "$ROOMS" = "null" ] || [ -z "$ROOMS" ]; then
-            echo "No rooms found. Nothing to clean."
-            exit 0
-          fi
+          python3 -c "
+          import json, os, time, requests
+          from google.oauth2 import service_account
+          from google.auth.transport.requests import Request
 
-          echo "$ROOMS" | python3 -c "
-          import json, sys, time, urllib.request, os
+          # Authenticate with service account
+          sa_info = json.loads(os.environ['FIREBASE_SERVICE_ACCOUNT'])
+          credentials = service_account.Credentials.from_service_account_info(
+              sa_info,
+              scopes=['https://www.googleapis.com/auth/firebase.database', 'https://www.googleapis.com/auth/userinfo.email']
+          )
+          credentials.refresh(Request())
+          token = credentials.token
 
-          data = json.load(sys.stdin)
           db_url = os.environ['FIREBASE_DB_URL']
+          headers = {'Authorization': f'Bearer {token}'}
+
+          # Get all rooms
+          resp = requests.get(f'{db_url}/rooms.json', headers=headers)
+          data = resp.json()
+
+          if not data:
+              print('No rooms found. Nothing to clean.')
+              exit(0)
+
           now_ms = int(time.time() * 1000)
           one_hour_ms = 60 * 60 * 1000
           deleted = 0
@@ -39,15 +55,11 @@ jobs:
 
               if member_count == 0:
                   if last_disconnect and (now_ms - last_disconnect) > one_hour_ms:
-                      url = f'{db_url}/rooms/{room_name}.json'
-                      req = urllib.request.Request(url, method='DELETE')
-                      urllib.request.urlopen(req)
+                      requests.delete(f'{db_url}/rooms/{room_name}.json', headers=headers)
                       print(f'Deleted stale room: {room_name} (idle {(now_ms - last_disconnect) // 60000} min)')
                       deleted += 1
                   elif not last_disconnect:
-                      url = f'{db_url}/rooms/{room_name}.json'
-                      req = urllib.request.Request(url, method='DELETE')
-                      urllib.request.urlopen(req)
+                      requests.delete(f'{db_url}/rooms/{room_name}.json', headers=headers)
                       print(f'Deleted orphaned room: {room_name}')
                       deleted += 1
 
