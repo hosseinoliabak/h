@@ -351,16 +351,17 @@ ul.task-list li input[type="checkbox"] {
   <ul class="collapse">
   <li><a href="#device-hardening-techniques" id="toc-device-hardening-techniques" class="nav-link" data-scroll-target="#device-hardening-techniques">Device Hardening Techniques</a></li>
   <li><a href="#layer-2-security-considerations" id="toc-layer-2-security-considerations" class="nav-link" data-scroll-target="#layer-2-security-considerations">Layer 2 Security Considerations</a></li>
+  <li><a href="#ipv6-first-hop-security-fhs" id="toc-ipv6-first-hop-security-fhs" class="nav-link" data-scroll-target="#ipv6-first-hop-security-fhs">IPv6 First-Hop Security (FHS)</a></li>
   <li><a href="#layer-3-control-plane-security-considerations" id="toc-layer-3-control-plane-security-considerations" class="nav-link" data-scroll-target="#layer-3-control-plane-security-considerations">Layer 3 Control Plane Security Considerations</a></li>
   <li><a href="#remote-access-and-network-overlays-vpn-security-considerations" id="toc-remote-access-and-network-overlays-vpn-security-considerations" class="nav-link" data-scroll-target="#remote-access-and-network-overlays-vpn-security-considerations">Remote-Access and Network Overlays (VPN) Security Considerations</a></li>
   <li><a href="#wireless-security-considerations" id="toc-wireless-security-considerations" class="nav-link" data-scroll-target="#wireless-security-considerations">Wireless Security Considerations</a></li>
-  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
   </ul></li>
   <li><a href="#perimeter-security-and-intrusion-prevention" id="toc-perimeter-security-and-intrusion-prevention" class="nav-link" data-scroll-target="#perimeter-security-and-intrusion-prevention">Perimeter Security and Intrusion Prevention</a></li>
   <li><a href="#network-control-and-identity-management" id="toc-network-control-and-identity-management" class="nav-link" data-scroll-target="#network-control-and-identity-management">Network Control and Identity Management</a>
   <ul class="collapse">
   <li><a href="#authentication" id="toc-authentication" class="nav-link" data-scroll-target="#authentication">Authentication</a></li>
-  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
   <li><a href="#authorization" id="toc-authorization" class="nav-link" data-scroll-target="#authorization">Authorization</a></li>
   <li><a href="#visibility" id="toc-visibility" class="nav-link" data-scroll-target="#visibility">Visibility</a></li>
   </ul></li>
@@ -404,7 +405,7 @@ document.addEventListener("DOMContentLoaded", function () {
   var meta = document.querySelector(".quarto-title-meta");
   if (meta) {
     var div = document.createElement("div");
-    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~46 min read</p></div>';
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~51 min read</p></div>';
     meta.appendChild(div);
   }
 });
@@ -531,6 +532,60 @@ Figure&nbsp;3: Influencing Factors on Device-Level Security
 <li><strong>VLAN design</strong>: Layer 2 domains should be contained to a limited range within the network to create smaller failure domains and avoid ARP or unicast flooding. Private VLANs (PVLANs) offer a more advanced level of controlled traffic separation between VLANs and between endpoints within the same VLAN. VTP should be secured or set to transparent mode to avoid the risk of a rogue switch rewriting VLANs across the entire switched network.</li>
 <li><strong>Layer 2 control plane</strong>: STP provides protective mechanisms against Layer 2 loops but is a double-edged sword — with no reliable authentication built in, an attacker can attach a switch with better attributes to become the root bridge, causing instability and potential traffic black-holing. Protecting the root bridge by denying rogue switches from participating and filtering BPDU messages at the network edge is essential.</li>
 </ul>
+</section>
+<section id="ipv6-first-hop-security-fhs" class="level3">
+<h3 class="anchored" data-anchor-id="ipv6-first-hop-security-fhs">IPv6 First-Hop Security (FHS)</h3>
+<p>IPv6 introduces security concerns at the first hop that do not exist in IPv4. Because IPv6 relies heavily on Neighbor Discovery Protocol (NDP) for address resolution, router discovery, and address autoconfiguration, an attacker on the local segment can exploit these mechanisms to intercept traffic, redirect flows, or exhaust resources. Several features work together to mitigate these threats.</p>
+<p><strong>IPv6 RA Guard</strong> filters rogue Router Advertisement messages. Only authorized routers should be sending RAs on a segment. RA Guard blocks RAs arriving on ports that are not connected to legitimate routers, preventing attackers from injecting themselves as a default gateway.</p>
+<p><strong>DHCPv6 Guard</strong> blocks rogue DHCPv6 server responses. Similar to DHCP snooping in IPv4, it ensures that only authorized DHCPv6 servers can assign addresses and configuration to hosts on the segment.</p>
+<p><strong>IPv6 Source Guard</strong> validates that the source address of incoming packets matches the binding table (built from NDP snooping, DHCPv6 snooping, or static entries). If a packet arrives with a source address that is valid but on the wrong port (topologically incorrect), Source Guard drops it. This prevents address spoofing even when the attacker uses a legitimate address from elsewhere in the network.</p>
+<p><strong>IPv6 Destination Guard</strong> prevents the switch from sending Neighbor Solicitation messages for destination addresses that are not in the binding table. Without this, an attacker can send traffic to many nonexistent IPv6 addresses, forcing the switch to flood NS messages and potentially exhaust the neighbor cache (NDP table exhaustion attack).</p>
+<p><strong>IPv6 Prefix Guard</strong> is a variant of Source Guard that operates at the prefix level. Instead of validating exact addresses, it checks whether the source address belongs to a prefix that is authorized for that link (learned via RA or DHCPv6). This is useful when exact address bindings are impractical but prefix-level validation is sufficient.</p>
+<p><strong>IPv6 Snooping</strong> (also called IPv6 NDP Inspection) builds and maintains the binding table by monitoring NDP and DHCPv6 exchanges. It is the foundation that other FHS features (Source Guard, Destination Guard) rely on for their binding information.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>These features are complementary. A typical deployment enables IPv6 snooping to build the binding table, RA Guard and DHCPv6 Guard to block rogue infrastructure devices, and Source Guard or Destination Guard (or both) to validate traffic against the binding table.</p>
+</div>
+</div>
+<section id="review-questions" class="level4 unnumbered">
+<h4 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h4>
+<p><strong>Which two IPv6 security features are recommended for a company with these design requirements? (Choose two.)</strong></p>
+<ol type="1">
+<li>A switch or router must deny access to traffic from sources with addresses that are correct, but are topologically incorrect.</li>
+<li>Devices must block Neighbor Discovery Protocol resolutions for destination addresses that are not found in the binding table.</li>
+</ol>
+<ol type="a">
+<li>IPv6 Source Guard</li>
+<li>IPv6 Destination Guard</li>
+<li>IPv6 RA Guard</li>
+<li>IPv6 Prefix Guard</li>
+<li>IPv6 DHCP Guard</li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a and b.</strong> IPv6 Source Guard (a) validates that the source address of a packet is legitimate for the port it arrived on, dropping traffic from addresses that are correct but topologically incorrect. IPv6 Destination Guard (b) prevents the switch from resolving destination addresses not found in the binding table, blocking NDP exhaustion attacks. IPv6 Prefix Guard (d) is also a plausible answer for requirement 1 since it validates at the prefix level, but Source Guard is more precise for per-address topological validation.</p>
+</div>
+</div>
+</div>
+</section>
 </section>
 <section id="layer-3-control-plane-security-considerations" class="level3">
 <h3 class="anchored" data-anchor-id="layer-3-control-plane-security-considerations">Layer 3 Control Plane Security Considerations</h3>
@@ -733,55 +788,9 @@ Table&nbsp;3: Wireless Security Comparison
 </div>
 <p>WPA3 is the best option from both a security and performance standpoint. At the time of writing, not all wireless devices support WPA3, in which case WPA2 is the preferred option.</p>
 </section>
-<section id="review-questions" class="level3 unnumbered">
-<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
 <p><strong>1. Which of the following planes is responsible for controlling the fast-forwarding of traffic passing through a network device?</strong></p>
-<ol type="a">
-<li>Management plane</li>
-<li>Control plane</li>
-<li>Data plane</li>
-</ol>
-<div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-<span class="screen-reader-only">Tip</span>Answer
-</div>
-<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
-</div>
-<div id="callout-2" class="callout-2-contents callout-collapse collapse">
-<div class="callout-body-container callout-body">
-<p><strong>c.</strong> The data plane is responsible for controlling fast-forwarding of traffic passing through a network device.</p>
-</div>
-</div>
-</div>
-<hr>
-<p><strong>2. Which of the following planes is like the brain of the network device and usually controls and handles path selection functions?</strong></p>
-<ol type="a">
-<li>Management plane</li>
-<li>Control plane</li>
-<li>Data plane</li>
-</ol>
-<div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-<span class="screen-reader-only">Tip</span>Answer
-</div>
-<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
-</div>
-<div id="callout-3" class="callout-3-contents callout-collapse collapse">
-<div class="callout-body-container callout-body">
-<p><strong>b.</strong> The control plane is like the brain of the network node and usually controls and handles path selection functions.</p>
-</div>
-</div>
-</div>
-<hr>
-<p><strong>3. Which of the following planes focuses on how a device is accessed and monitored?</strong></p>
 <ol type="a">
 <li>Management plane</li>
 <li>Control plane</li>
@@ -799,17 +808,16 @@ Table&nbsp;3: Wireless Security Comparison
 </div>
 <div id="callout-4" class="callout-4-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p><strong>a.</strong> The management plane is the plane that is focused on the management traffic of the device, such as device access, configuration troubleshooting, and monitoring.</p>
+<p><strong>c.</strong> The data plane is responsible for controlling fast-forwarding of traffic passing through a network device.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>4. For which type of traffic does a network device make a typical routing and forwarding decision regarding whether to send the traffic over its interfaces to directly attached nodes?</strong></p>
+<p><strong>2. Which of the following planes is like the brain of the network device and usually controls and handles path selection functions?</strong></p>
 <ol type="a">
-<li>Non-IP traffic</li>
-<li>Receive IP traffic</li>
-<li>Transit IP traffic</li>
-<li>Exception IP traffic</li>
+<li>Management plane</li>
+<li>Control plane</li>
+<li>Data plane</li>
 </ol>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
@@ -823,17 +831,16 @@ Table&nbsp;3: Wireless Security Comparison
 </div>
 <div id="callout-5" class="callout-5-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p><strong>c.</strong> Transit IP traffic is traffic for which a network device makes a typical routing and forwarding decision regarding whether to send the traffic over its interfaces to directly attached nodes.</p>
+<p><strong>b.</strong> The control plane is like the brain of the network node and usually controls and handles path selection functions.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>5. Which of the following types of traffic carries nonstandard attributes, such as a transit IP packet with an expired TTL?</strong></p>
+<p><strong>3. Which of the following planes focuses on how a device is accessed and monitored?</strong></p>
 <ol type="a">
-<li>Non-IP traffic</li>
-<li>Receive IP traffic</li>
-<li>Transit IP traffic</li>
-<li>Exception IP traffic</li>
+<li>Management plane</li>
+<li>Control plane</li>
+<li>Data plane</li>
 </ol>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
@@ -847,12 +854,12 @@ Table&nbsp;3: Wireless Security Comparison
 </div>
 <div id="callout-6" class="callout-6-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p><strong>d.</strong> Exception IP traffic is any IP traffic carrying a nonstandard “exception” attribute, such as a transit IP packet with an expired TTL.</p>
+<p><strong>a.</strong> The management plane is the plane that is focused on the management traffic of the device, such as device access, configuration troubleshooting, and monitoring.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>6. Which of the following types of traffic is traffic destined to the network node itself?</strong></p>
+<p><strong>4. For which type of traffic does a network device make a typical routing and forwarding decision regarding whether to send the traffic over its interfaces to directly attached nodes?</strong></p>
 <ol type="a">
 <li>Non-IP traffic</li>
 <li>Receive IP traffic</li>
@@ -871,12 +878,12 @@ Table&nbsp;3: Wireless Security Comparison
 </div>
 <div id="callout-7" class="callout-7-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p><strong>b.</strong> Receive IP traffic is traffic destined to the network node itself, such as toward a router’s IP address, and requires CPU processing.</p>
+<p><strong>c.</strong> Transit IP traffic is traffic for which a network device makes a typical routing and forwarding decision regarding whether to send the traffic over its interfaces to directly attached nodes.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>7. Which of the following types of traffic would MPLS and CLNP be categorized into?</strong></p>
+<p><strong>5. Which of the following types of traffic carries nonstandard attributes, such as a transit IP packet with an expired TTL?</strong></p>
 <ol type="a">
 <li>Non-IP traffic</li>
 <li>Receive IP traffic</li>
@@ -895,17 +902,17 @@ Table&nbsp;3: Wireless Security Comparison
 </div>
 <div id="callout-8" class="callout-8-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p><strong>a.</strong> Non-IP traffic is typically related to non-IP packets and almost always is not forwarded, such as MPLS, IS-IS (CLNP), and Layer 2 keepalives.</p>
+<p><strong>d.</strong> Exception IP traffic is any IP traffic carrying a nonstandard “exception” attribute, such as a transit IP packet with an expired TTL.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>8. Which type of attack would a web application firewall (WAF) mitigate?</strong></p>
+<p><strong>6. Which of the following types of traffic is traffic destined to the network node itself?</strong></p>
 <ol type="a">
-<li>Network direct access</li>
-<li>Layer 2 attack</li>
-<li>Network DoS attack</li>
-<li>Application targeted attack</li>
+<li>Non-IP traffic</li>
+<li>Receive IP traffic</li>
+<li>Transit IP traffic</li>
+<li>Exception IP traffic</li>
 </ol>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
@@ -919,17 +926,17 @@ Table&nbsp;3: Wireless Security Comparison
 </div>
 <div id="callout-9" class="callout-9-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p><strong>d.</strong> Application targeted attacks are mitigated by web proxy/filtering, e-mail proxy/filtering, and a web application firewall (WAF).</p>
+<p><strong>b.</strong> Receive IP traffic is traffic destined to the network node itself, such as toward a router’s IP address, and requires CPU processing.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>9. Which of the following types of attack would an infrastructure ACL (iACL) mitigate? (Choose two.)</strong></p>
+<p><strong>7. Which of the following types of traffic would MPLS and CLNP be categorized into?</strong></p>
 <ol type="a">
-<li>Network direct access</li>
-<li>Layer 2 attack</li>
-<li>Network DoS attack</li>
-<li>Application targeted attack</li>
+<li>Non-IP traffic</li>
+<li>Receive IP traffic</li>
+<li>Transit IP traffic</li>
+<li>Exception IP traffic</li>
 </ol>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
@@ -943,12 +950,12 @@ Table&nbsp;3: Wireless Security Comparison
 </div>
 <div id="callout-10" class="callout-10-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p><strong>a and b.</strong> A network direct access attack is mitigated by a Layer 2 iACL, Layer 3 iACL, and a firewall. Layer 2 attacks are mitigated by iACL, CoPP, and system and topological redundancy.</p>
+<p><strong>a.</strong> Non-IP traffic is typically related to non-IP packets and almost always is not forwarded, such as MPLS, IS-IS (CLNP), and Layer 2 keepalives.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>10. Which type of attack would remotely triggered black hole (RTBH) mitigate?</strong></p>
+<p><strong>8. Which type of attack would a web application firewall (WAF) mitigate?</strong></p>
 <ol type="a">
 <li>Network direct access</li>
 <li>Layer 2 attack</li>
@@ -966,6 +973,54 @@ Table&nbsp;3: Wireless Security Comparison
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
 <div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>d.</strong> Application targeted attacks are mitigated by web proxy/filtering, e-mail proxy/filtering, and a web application firewall (WAF).</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>9. Which of the following types of attack would an infrastructure ACL (iACL) mitigate? (Choose two.)</strong></p>
+<ol type="a">
+<li>Network direct access</li>
+<li>Layer 2 attack</li>
+<li>Network DoS attack</li>
+<li>Application targeted attack</li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a and b.</strong> A network direct access attack is mitigated by a Layer 2 iACL, Layer 3 iACL, and a firewall. Layer 2 attacks are mitigated by iACL, CoPP, and system and topological redundancy.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>10. Which type of attack would remotely triggered black hole (RTBH) mitigate?</strong></p>
+<ol type="a">
+<li>Network direct access</li>
+<li>Layer 2 attack</li>
+<li>Network DoS attack</li>
+<li>Application targeted attack</li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <p><strong>c.</strong> A network DoS attack is mitigated by Layer 3 and Layer 2 network and device security considerations, and remotely triggered black hole (RTBH) anomaly-based IDS/IPS.</p>
 </div>
@@ -1181,8 +1236,8 @@ Table&nbsp;5: 802.1X EAP Types Comparison
 </div>
 <p>In some situations, there will be devices that do not support 802.1X authentication, in which case MAC Authentication Bypass (MAB) can be used. With MAB, the authenticator sends the MAC address of the client device to the authentication server to check if it permits the MAC address. MAB is a very insecure option but may be the only option for devices that have yet to adopt 802.1X support.</p>
 </section>
-<section id="review-questions-1" class="level3 unnumbered">
-<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
 <p><strong>11. Which of the following authentication options would be the best design choice if a business wanted the highest level of security?</strong></p>
 <ol type="a">
 <li>EAP-MD5</li>
@@ -1191,7 +1246,7 @@ Table&nbsp;5: 802.1X EAP Types Comparison
 <li>PEAP + EAP-MSCHAP</li>
 </ol>
 <div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon"></i>
 </div>
@@ -1200,7 +1255,7 @@ Table&nbsp;5: 802.1X EAP Types Comparison
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <p><strong>b.</strong> EAP Transport Layer Security (EAP-TLS) authentication provides certificate-based and mutual authentication of the client and the network. It relies on client-side certificates (identity certificates) and server-side certificates to perform authentication and can be used to dynamically generate user-based and session-based keys to secure future communications. It is the most secure EAP type because of the mutual authentication of the client and network.</p>
 </div>
@@ -1215,7 +1270,7 @@ Table&nbsp;5: 802.1X EAP Types Comparison
 <li>PEAP + EAP-MSCHAP</li>
 </ol>
 <div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-16-contents" aria-controls="callout-16" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon"></i>
 </div>
@@ -1224,7 +1279,7 @@ Table&nbsp;5: 802.1X EAP Types Comparison
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-14" class="callout-14-contents callout-collapse collapse">
+<div id="callout-16" class="callout-16-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <p><strong>a.</strong> EAP Message Digest Challenge (EAP-MD5) authentication provides a base level of EAP support and typically is not recommended for implementation because it may allow the user’s password to be derived. However, it is the easiest of the EAP types to deploy because there is no requirement for certificate management on either the client or server sides.</p>
 </div>
