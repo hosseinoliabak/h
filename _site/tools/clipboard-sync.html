@@ -577,7 +577,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     <input type="checkbox" id="auto-sync-checkbox">
     <label for="auto-sync-checkbox">Auto-Sync Clipboard</label>
   </div>
-  <div class="auto-sync-desc">Automatically shares anything you copy with all devices in the room. Your browser will ask for clipboard permission once.</div>
+  <div class="auto-sync-desc">Automatically sends anything you copy and receives clipboard entries from other devices. Your browser will ask for clipboard permission once.</div>
   <div id="auto-sync-status">✓ Syncing actively</div>
 </div>
 
@@ -645,6 +645,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   var knownEntryKeys = {};
   var syncInterval = null;
   var lastPushedText = '';
+  var autoReceiveEnabled = false;
   var isMobile = false;
   var sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
 
@@ -664,7 +665,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
       autoSyncPanel.style.display = 'none';
     } else {
       modeInfo.className = 'desktop-mode';
-      modeInfo.innerHTML = '💻 <strong>Desktop mode:</strong> Enable Auto-Sync to automatically share everything you copy. Your browser will ask for clipboard permission once.';
+      modeInfo.innerHTML = '💻 <strong>Desktop mode:</strong> Enable Auto-Sync to automatically send and receive clipboard content between devices.';
       mobileSyncPanel.style.display = 'none';
       autoSyncPanel.style.display = 'block';
     }
@@ -867,6 +868,21 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     var text = entry.text || '';
     content.textContent = text.length > 500 ? text.substring(0, 500) + '...' : text;
 
+    // Auto-receive: write to clipboard if from another device
+    if (autoReceiveEnabled && entry.sessionId !== sessionId) {
+      navigator.clipboard.writeText(entry.text).then(function() {
+        lastPushedText = entry.text; // Prevent re-sending what we just received
+        hint.textContent = 'auto-copied!';
+        div.classList.add('copied');
+        setTimeout(function() {
+          div.classList.remove('copied');
+          hint.textContent = 'tap to copy';
+        }, 2000);
+      }).catch(function() {
+        hint.textContent = 'tap to copy';
+      });
+    }
+
     div.addEventListener('click', function() {
       navigator.clipboard.writeText(entry.text).then(function() {
         div.classList.add('copied');
@@ -910,7 +926,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     });
   }
 
-  // Desktop: Auto-sync checkbox
+  // Desktop: Auto-sync checkbox (send + receive)
   autoSyncCheckbox.addEventListener('change', function() {
     if (memberRef) {
       memberRef.update({ autoSync: autoSyncCheckbox.checked });
@@ -918,9 +934,11 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
     if (autoSyncCheckbox.checked) {
       autoSyncStatus.style.display = 'block';
+      autoReceiveEnabled = true;
       pushCurrentClipboard().catch(function() {
         autoSyncCheckbox.checked = false;
         autoSyncStatus.style.display = 'none';
+        autoReceiveEnabled = false;
         if (memberRef) memberRef.update({ autoSync: false });
         alert('Clipboard permission was denied. Please allow clipboard access and try again.');
       });
@@ -929,6 +947,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
       }, 1500);
     } else {
       autoSyncStatus.style.display = 'none';
+      autoReceiveEnabled = false;
       if (syncInterval) { clearInterval(syncInterval); syncInterval = null; }
     }
   });
