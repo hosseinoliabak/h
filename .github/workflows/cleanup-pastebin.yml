@@ -33,35 +33,55 @@ jobs:
           db_url = os.environ['FIREBASE_DB_URL']
           headers = {'Authorization': f'Bearer {token}'}
 
-          # Get all rooms
+          # Clean up pastebin rooms
           resp = requests.get(f'{db_url}/rooms.json', headers=headers)
           data = resp.json()
-
-          if not data:
-              print('No rooms found. Nothing to clean.')
-              exit(0)
 
           now_ms = int(time.time() * 1000)
           one_hour_ms = 60 * 60 * 1000
           deleted = 0
 
-          for room_name, room_data in data.items():
-              if not isinstance(room_data, dict):
-                  continue
+          if data:
+              for room_name, room_data in data.items():
+                  if not isinstance(room_data, dict):
+                      continue
 
-              members = room_data.get('members')
-              member_count = len(members) if isinstance(members, dict) else 0
-              last_disconnect = room_data.get('lastDisconnect', 0)
+                  members = room_data.get('members')
+                  member_count = len(members) if isinstance(members, dict) else 0
+                  last_disconnect = room_data.get('lastDisconnect', 0)
 
-              if member_count == 0:
-                  if last_disconnect and (now_ms - last_disconnect) > one_hour_ms:
-                      requests.delete(f'{db_url}/rooms/{room_name}.json', headers=headers)
-                      print(f'Deleted stale room: {room_name} (idle {(now_ms - last_disconnect) // 60000} min)')
-                      deleted += 1
-                  elif not last_disconnect:
-                      requests.delete(f'{db_url}/rooms/{room_name}.json', headers=headers)
-                      print(f'Deleted orphaned room: {room_name}')
-                      deleted += 1
+                  if member_count == 0:
+                      if last_disconnect and (now_ms - last_disconnect) > one_hour_ms:
+                          requests.delete(f'{db_url}/rooms/{room_name}.json', headers=headers)
+                          print(f'Deleted stale pastebin room: {room_name} (idle {(now_ms - last_disconnect) // 60000} min)')
+                          deleted += 1
+                      elif not last_disconnect:
+                          requests.delete(f'{db_url}/rooms/{room_name}.json', headers=headers)
+                          print(f'Deleted orphaned pastebin room: {room_name}')
+                          deleted += 1
+
+          # Clean up clipboard-sync rooms
+          resp2 = requests.get(f'{db_url}/clipboard-rooms.json', headers=headers)
+          data2 = resp2.json()
+
+          if data2:
+              for room_name, room_data in data2.items():
+                  if not isinstance(room_data, dict):
+                      continue
+
+                  members = room_data.get('members')
+                  member_count = len(members) if isinstance(members, dict) else 0
+                  last_disconnect = room_data.get('lastDisconnect', 0)
+
+                  if member_count == 0:
+                      if last_disconnect and (now_ms - last_disconnect) > one_hour_ms:
+                          requests.delete(f'{db_url}/clipboard-rooms/{room_name}.json', headers=headers)
+                          print(f'Deleted stale clipboard room: {room_name} (idle {(now_ms - last_disconnect) // 60000} min)')
+                          deleted += 1
+                      elif not last_disconnect:
+                          requests.delete(f'{db_url}/clipboard-rooms/{room_name}.json', headers=headers)
+                          print(f'Deleted orphaned clipboard room: {room_name}')
+                          deleted += 1
 
           if deleted == 0:
               print('No stale rooms found.')
