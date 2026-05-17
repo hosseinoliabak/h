@@ -512,6 +512,48 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   border-left-color: #ffc107;
 }
 
+.log-entry.pending-copy {
+  border-left-color: #ff6b35;
+  background: #fff8f0;
+  animation: pulse-pending 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-pending {
+  0%, 100% { background: #fff8f0; }
+  50% { background: #ffe8d6; }
+}
+
+.log-entry .copy-failed-badge {
+  font-size: 10px;
+  background: #ff6b35;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+#notification-banner {
+  display: none;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: #fff3cd;
+  border: 1.5px solid #ffc107;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #856404;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+#notification-banner:hover {
+  background: #ffecb5;
+}
+
+#notification-banner strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
 .action-bar {
   display: flex;
   gap: 8px;
@@ -596,6 +638,11 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   </button>
 </div>
 
+<div id="notification-banner" onclick="window._clipSync.copyPending()">
+  <strong>📋 New clipboard entry received</strong>
+  <span id="notification-banner-text">Click here to copy it to your clipboard</span>
+</div>
+
 <div id="clipboard-log"></div>
 
 <div id="status">Enter a room name to connect.</div>
@@ -648,6 +695,67 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   var autoReceiveEnabled = false;
   var isMobile = false;
   var sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+  var pendingCopyText = null;
+  var pendingCopyDiv = null;
+  var notificationBanner = document.getElementById('notification-banner');
+  var notificationBannerText = document.getElementById('notification-banner-text');
+  var notificationsEnabled = false;
+
+  // Expose for banner onclick
+  window._clipSync = {
+    copyPending: function() {
+      if (pendingCopyText) {
+        navigator.clipboard.writeText(pendingCopyText).then(function() {
+          lastPushedText = pendingCopyText;
+          if (pendingCopyDiv) {
+            pendingCopyDiv.classList.remove('pending-copy');
+            pendingCopyDiv.classList.add('copied');
+            var hint = pendingCopyDiv.querySelector('.copy-hint');
+            if (hint) hint.textContent = 'copied!';
+            var badge = pendingCopyDiv.querySelector('.copy-failed-badge');
+            if (badge) badge.remove();
+            setTimeout(function() {
+              pendingCopyDiv.classList.remove('copied');
+              if (hint) hint.textContent = 'tap to copy';
+            }, 1500);
+          }
+          pendingCopyText = null;
+          pendingCopyDiv = null;
+          notificationBanner.style.display = 'none';
+        }).catch(function() {});
+      }
+    }
+  };
+
+  // Request notification permission
+  function requestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().then(function(perm) {
+        notificationsEnabled = (perm === 'granted');
+      });
+    } else if ('Notification' in window && Notification.permission === 'granted') {
+      notificationsEnabled = true;
+    }
+  }
+
+  function showNotification(text) {
+    if (!notificationsEnabled) return;
+    var preview = text.length > 80 ? text.substring(0, 80) + '...' : text;
+    var n = new Notification('Clipboard Sync', {
+      body: preview,
+      icon: '📋',
+      tag: 'clipboard-sync',
+      requireInteraction: false
+    });
+    n.onclick = function() {
+      window.focus();
+      setTimeout(function() {
+        window._clipSync.copyPending();
+      }, 100);
+      n.close();
+    };
+    setTimeout(function() { n.close(); }, 8000);
+  }
 
   // Detect if mobile
   function detectMobile() {
@@ -870,17 +978,27 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
     // Auto-receive: write to clipboard if from another device
     if (autoReceiveEnabled && entry.sessionId !== sessionId) {
-      navigator.clipboard.writeText(entry.text).then(function() {
-        lastPushedText = entry.text; // Prevent re-sending what we just received
-        hint.textContent = 'auto-copied!';
-        div.classList.add('copied');
-        setTimeout(function() {
-          div.classList.remove('copied');
-          hint.textContent = 'tap to copy';
-        }, 2000);
-      }).catch(function() {
-        hint.textContent = 'tap to copy';
-      });
+      var isPageFocused = document.hasFocus();
+
+      if (isPageFocused) {
+        // Page is focused — direct clipboard write should work
+        navigator.clipboard.writeText(entry.text).then(function() {
+          lastPushedText = entry.text;
+          hint.textContent = 'auto-copied!';
+          div.classList.add('copied');
+          setTimeout(function() {
+            div.classList.remove('copied');
+            hint.textContent = 'tap to copy';
+          }, 2000);
+        }).catch(function() {
+          // Focus but still failed — show pending state
+          markPendingCopy(div, hint, entry.text);
+        });
+      } else {
+        // Page is in background — clipboard write will fail
+        markPendingCopy(div, hint, entry.text);
+        showNotification(entry.text);
+      }
     }
 
     div.addEventListener('click', function() {
@@ -911,6 +1029,38 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     }
   }
 
+  function markPendingCopy(div, hint, text) {
+    div.classList.add('pending-copy');
+    hint.textContent = 'waiting for focus...';
+    var badge = document.createElement('span');
+    badge.className = 'copy-failed-badge';
+    badge.textContent = 'pending';
+    div.querySelector('.log-meta').appendChild(badge);
+
+    pendingCopyText = text;
+    pendingCopyDiv = div;
+    notificationBannerText.textContent = text.length > 60
+      ? '"' + text.substring(0, 60) + '..." — Click to copy'
+      : '"' + text + '" — Click to copy';
+    notificationBanner.style.display = 'block';
+  }
+
+  // When page regains focus, try to copy pending text
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden && pendingCopyText) {
+      setTimeout(function() {
+        window._clipSync.copyPending();
+      }, 100);
+    }
+  });
+  window.addEventListener('focus', function() {
+    if (pendingCopyText) {
+      setTimeout(function() {
+        window._clipSync.copyPending();
+      }, 100);
+    }
+  });
+
   function pushCurrentClipboard() {
     if (!clipboardRef) return;
     return navigator.clipboard.readText().then(function(text) {
@@ -935,6 +1085,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     if (autoSyncCheckbox.checked) {
       autoSyncStatus.style.display = 'block';
       autoReceiveEnabled = true;
+      requestNotificationPermission();
       pushCurrentClipboard().catch(function() {
         autoSyncCheckbox.checked = false;
         autoSyncStatus.style.display = 'none';
