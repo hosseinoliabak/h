@@ -583,7 +583,6 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
         // When this client disconnects, remove its member entry
         memberRef.onDisconnect().remove();
         // When this client disconnects, set a cleanup timestamp
-        // Other clients will see this and know to check if room is empty
         roomRef.child('lastDisconnect').onDisconnect().set(firebase.database.ServerValue.TIMESTAMP);
       }
     });
@@ -603,24 +602,21 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
       var members = snapshot.val();
       var count = members ? Object.keys(members).length : 0;
       renderDevices(members);
-      // If this client sees zero members (meaning everyone else left and
-      // onDisconnect fired), clean up the room
-      if (count === 0 && currentRoomName === sanitized) {
-        roomRef.remove();
-      }
     });
 
-    // Also watch lastDisconnect - if it gets set and members is empty, clean up
+    // Watch lastDisconnect - if it gets set and members is empty after a delay, clean up
     roomRef.child('lastDisconnect').on('value', function(snapshot) {
       if (snapshot.val()) {
-        // Check members count
-        membersRef.once('value', function(membersSnap) {
-          var members = membersSnap.val();
-          var count = members ? Object.keys(members).length : 0;
-          if (count === 0) {
-            roomRef.remove();
-          }
-        });
+        // Wait a moment for onDisconnect race conditions to settle
+        setTimeout(function() {
+          membersRef.once('value', function(membersSnap) {
+            var members = membersSnap.val();
+            var count = members ? Object.keys(members).length : 0;
+            if (count === 0) {
+              roomRef.remove();
+            }
+          });
+        }, 3000);
       }
     });
 
@@ -635,11 +631,18 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
         pasteArea.selectionEnd = cursorPos;
         isRemoteUpdate = false;
         updateContentQR(val);
-      } else if (val === null) {
-        isRemoteUpdate = true;
-        pasteArea.value = '';
-        isRemoteUpdate = false;
-        updateContentQR('');
+      } else if (val === null && pasteArea.value) {
+        // Content was deleted remotely. Only clear if we are not the ones typing.
+        // Preserve local content and re-push it to avoid accidental erasure.
+        var localContent = pasteArea.value;
+        if (localContent.trim()) {
+          currentRef.set(localContent);
+        } else {
+          isRemoteUpdate = true;
+          pasteArea.value = '';
+          isRemoteUpdate = false;
+          updateContentQR('');
+        }
       }
     });
   }
