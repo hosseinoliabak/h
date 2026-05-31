@@ -953,22 +953,32 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   // Copy image to clipboard
   copyImageBtn.addEventListener('click', function() {
     if (!sharedImage.src) return;
-    fetch(sharedImage.src)
-      .then(function(res) { return res.blob(); })
-      .then(function(blob) {
-        var item = new ClipboardItem({ [blob.type]: blob });
-        return navigator.clipboard.write([item]);
-      })
-      .then(function() {
-        copyImageBtn.querySelector('span').textContent = 'Copied!';
-        setTimeout(function() {
-          copyImageBtn.querySelector('span').textContent = 'Copy Image';
-        }, 1500);
-      })
-      .catch(function() {
-        // Fallback: open in new tab
-        window.open(sharedImage.src, '_blank');
-      });
+    // Convert to PNG blob via canvas (clipboard API requires image/png)
+    var img = new Image();
+    img.onload = function() {
+      var canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(function(blob) {
+        if (blob && navigator.clipboard && navigator.clipboard.write) {
+          var item = new ClipboardItem({ 'image/png': blob });
+          navigator.clipboard.write([item]).then(function() {
+            copyImageBtn.querySelector('span').textContent = 'Copied!';
+            setTimeout(function() {
+              copyImageBtn.querySelector('span').textContent = 'Copy Image';
+            }, 1500);
+          }).catch(function() {
+            copyImageBtn.querySelector('span').textContent = 'Failed';
+            setTimeout(function() {
+              copyImageBtn.querySelector('span').textContent = 'Copy Image';
+            }, 1500);
+          });
+        }
+      }, 'image/png');
+    };
+    img.src = sharedImage.src;
   });
 
   // Clear image
