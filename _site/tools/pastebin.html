@@ -243,7 +243,7 @@ document.addEventListener("DOMContentLoaded", function () {
   var meta = document.querySelector(".quarto-title-meta");
   if (meta) {
     var div = document.createElement("div");
-    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~3 min read</p></div>';
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~5 min read</p></div>';
     meta.appendChild(div);
   }
 });
@@ -385,6 +385,51 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   padding: 2px 6px;
   border-radius: 4px;
 }
+
+#image-panel {
+  display: none;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: #fafafa;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 8px;
+}
+
+#image-panel h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #555;
+  font-weight: 600;
+}
+
+#image-panel img {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  display: block;
+  margin-bottom: 8px;
+}
+
+#image-panel .image-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#image-panel .image-size {
+  font-size: 12px;
+  color: #888;
+  margin-left: auto;
+}
+
+#image-warning {
+  display: none;
+  color: #dc3545;
+  font-size: 13px;
+  margin-top: 6px;
+  font-weight: 600;
+}
 </style>
 
 <p>Enter a room name to create or join a shared clipboard. Anyone using the same room name will see the same content in real time.</p>
@@ -417,6 +462,23 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   <canvas id="content-qr-canvas"></canvas>
   <div id="qr-overflow" style="display:none; color:#e67e22; font-size:13px; margin-top:6px;">Content too long for QR code. Use copy instead.</div>
   <div id="qr-label" style="font-size:12px; color:#888; margin-top:6px;">Scan to grab the text</div>
+</div>
+
+<div id="image-panel">
+  <h3 class="anchored">🖼️ Shared Image</h3>
+  <img id="shared-image" alt="Shared image">
+  <div class="image-actions">
+    <button class="action-btn" id="copy-image-btn" title="Copy image to clipboard">
+      <svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+      <span>Copy Image</span>
+    </button>
+    <button class="action-btn" id="clear-image-btn" title="Remove image">
+      <svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      <span>Remove</span>
+    </button>
+    <span class="image-size" id="image-size-label"></span>
+  </div>
+  <div id="image-warning"></div>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -455,6 +517,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   let currentRef = null;
   let memberRef = null;
   let roomRef = null;
+  let imageRef = null;
   let isRemoteUpdate = false;
   let debounceTimer = null;
 
@@ -537,6 +600,10 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     if (currentRef) {
       currentRef.off();
       currentRef = null;
+    }
+    if (imageRef) {
+      imageRef.off();
+      imageRef = null;
     }
     if (memberRef) {
       memberRef.onDisconnect().cancel();
@@ -645,6 +712,9 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
         }
       }
     });
+
+    // Listen for image changes
+    setupImageListener();
   }
 
   // Room input handler
@@ -755,6 +825,158 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
   // Also update QR on remote changes - hook into the value listener
   var origOnValue = null;
+
+  // --- Image paste support ---
+  var imagePanel = document.getElementById('image-panel');
+  var sharedImage = document.getElementById('shared-image');
+  var copyImageBtn = document.getElementById('copy-image-btn');
+  var clearImageBtn = document.getElementById('clear-image-btn');
+  var imageSizeLabel = document.getElementById('image-size-label');
+  var imageWarning = document.getElementById('image-warning');
+  var MAX_IMAGE_BYTES = 700000; // ~500KB actual image
+
+  function compressImage(file, callback) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var img = new Image();
+      img.onload = function() {
+        var canvas = document.createElement('canvas');
+        var maxDim = 1920;
+        var w = img.width;
+        var h = img.height;
+
+        // Scale down if too large
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round(h * maxDim / w);
+            w = maxDim;
+          } else {
+            w = Math.round(w * maxDim / h);
+            h = maxDim;
+          }
+        }
+
+        canvas.width = w;
+        canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+
+        // Try JPEG first at quality 0.7, fall back to lower quality if too big
+        var quality = 0.7;
+        var dataUrl = canvas.toDataURL('image/jpeg', quality);
+
+        if (dataUrl.length > MAX_IMAGE_BYTES) {
+          quality = 0.5;
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+        if (dataUrl.length > MAX_IMAGE_BYTES) {
+          quality = 0.3;
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+
+        callback(dataUrl.length <= MAX_IMAGE_BYTES ? dataUrl : null);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function showImage(dataUrl) {
+    if (dataUrl) {
+      sharedImage.src = dataUrl;
+      imagePanel.style.display = 'block';
+      var sizeKB = Math.round(dataUrl.length * 3 / 4 / 1024);
+      imageSizeLabel.textContent = sizeKB + ' KB';
+      imageWarning.style.display = 'none';
+    } else {
+      sharedImage.src = '';
+      imagePanel.style.display = 'none';
+      imageSizeLabel.textContent = '';
+    }
+  }
+
+  function setupImageListener() {
+    if (imageRef) imageRef.off();
+    if (!roomRef) return;
+    imageRef = roomRef.child('image');
+    imageRef.on('value', function(snapshot) {
+      var val = snapshot.val();
+      showImage(val);
+    });
+  }
+
+  // Listen for paste events with images
+  document.addEventListener('paste', function(e) {
+    if (!roomRef) return;
+    var items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+
+    // Check if clipboard contains an image
+    var imageItem = null;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') > -1) {
+        imageItem = items[i];
+        break;
+      }
+    }
+
+    // Only handle if there's an image and no text content being pasted into textarea
+    if (!imageItem) return;
+
+    // If the user is focused on the textarea and clipboard also has text, let text paste through
+    if (document.activeElement === pasteArea) {
+      var hasText = false;
+      for (var j = 0; j < items.length; j++) {
+        if (items[j].type === 'text/plain') {
+          hasText = true;
+          break;
+        }
+      }
+      if (hasText) return;
+    }
+
+    e.preventDefault();
+    var file = imageItem.getAsFile();
+    if (!file) return;
+
+    imageWarning.style.display = 'none';
+    compressImage(file, function(dataUrl) {
+      if (dataUrl) {
+        roomRef.child('image').set(dataUrl);
+      } else {
+        imageWarning.textContent = 'Image too large even after compression. Try a smaller screenshot.';
+        imageWarning.style.display = 'block';
+      }
+    });
+  });
+
+  // Copy image to clipboard
+  copyImageBtn.addEventListener('click', function() {
+    if (!sharedImage.src) return;
+    fetch(sharedImage.src)
+      .then(function(res) { return res.blob(); })
+      .then(function(blob) {
+        var item = new ClipboardItem({ [blob.type]: blob });
+        return navigator.clipboard.write([item]);
+      })
+      .then(function() {
+        copyImageBtn.querySelector('span').textContent = 'Copied!';
+        setTimeout(function() {
+          copyImageBtn.querySelector('span').textContent = 'Copy Image';
+        }, 1500);
+      })
+      .catch(function() {
+        // Fallback: open in new tab
+        window.open(sharedImage.src, '_blank');
+      });
+  });
+
+  // Clear image
+  clearImageBtn.addEventListener('click', function() {
+    if (roomRef) {
+      roomRef.child('image').remove();
+    }
+  });
 
   // Auto-connect from URL hash on page load
   var hashRoom = window.location.hash.replace('#', '').trim();
