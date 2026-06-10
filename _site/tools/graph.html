@@ -410,6 +410,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/mathjs@11/lib/browser/math.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/function-plot@1/dist/function-plot.js"></script>
 
 <script>
@@ -454,7 +455,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     var reserved = ['sin','cos','tan','asin','acos','atan','sqrt','log','ln','exp','abs','ceil','floor','round','pi','e','x'];
     // Find all single lowercase letters used as identifiers
     var matches = expr.match(/\b([a-z])\b/g);
-    if (!matches) return expr;
+    if (!matches) return {expr: expr, varName: null};
     // Filter out reserved
     var vars = [];
     for (var i = 0; i < matches.length; i++) {
@@ -466,9 +467,9 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     if (vars.length === 1 && vars[0] !== 'x') {
       var v = vars[0];
       // Replace the variable with x (word boundary)
-      return expr.replace(new RegExp('\\b' + v + '\\b', 'g'), 'x');
+      return {expr: expr.replace(new RegExp('\\b' + v + '\\b', 'g'), 'x'), varName: v};
     }
-    return expr;
+    return {expr: expr, varName: null};
   }
 
   function render() {
@@ -494,12 +495,15 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     }
 
     var data = [];
+    var detectedVar = null;
     var rows = getRows();
     for (var i = 0; i < rows.length; i++) {
       var expr = rows[i].querySelector('input').value.trim();
       if (!expr) continue;
       // Auto-detect variable: find single-letter vars that aren't math functions
-      var plotExpr = normalizeVar(expr);
+      var result = normalizeVar(expr);
+      var plotExpr = result.expr;
+      if (result.varName) detectedVar = result.varName;
       var color = COLORS[i % COLORS.length];
       rows[i].querySelector('.color-dot').style.background = color;
       data.push({
@@ -514,11 +518,40 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     }
 
     try {
+      // Sample the first function to auto-detect y range
+      var yMin = Infinity, yMax = -Infinity;
+      try {
+        var mathScope = {};
+        var step = (xMax - xMin) / 200;
+        for (var s = xMin + step; s < xMax - step; s += step) {
+          for (var d = 0; d < data.length; d++) {
+            try {
+              var node = math.parse(data[d].fn);
+              var compiled = node.compile();
+              mathScope.x = s;
+              var val = compiled.evaluate(mathScope);
+              if (isFinite(val)) {
+                if (val < yMin) yMin = val;
+                if (val > yMax) yMax = val;
+              }
+            } catch(e2) {}
+          }
+        }
+      } catch(e3) {}
+      // Add padding
+      if (!isFinite(yMin) || !isFinite(yMax)) { yMin = -10; yMax = 10; }
+      var yPad = (yMax - yMin) * 0.1 || 1;
+      yMin -= yPad; yMax += yPad;
+
+      // Detect variable name for x-axis label
+      var axisLabel = detectedVar || 'x';
+
       functionPlot({
         target: '#graph-plot',
         width: plotEl.clientWidth || 800,
         height: 420,
-        xAxis: { domain: [xMin, xMax] },
+        xAxis: { domain: [xMin, xMax], label: axisLabel },
+        yAxis: { domain: [yMin, yMax] },
         grid: true,
         data: data
       });
