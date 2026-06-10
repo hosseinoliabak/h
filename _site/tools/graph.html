@@ -327,34 +327,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   background: #fff5f5;
 }
 
-.range-row {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-top: 10px;
-  flex-wrap: wrap;
-}
 
-.range-row label {
-  margin: 0;
-  font-size: 13px;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.range-row input {
-  width: 70px;
-  padding: 6px 8px;
-  font-size: 14px;
-  border: 1.5px solid #e0e0e0;
-  border-radius: 6px;
-  text-align: center;
-}
-
-.range-row input:focus {
-  outline: none;
-  border-color: #2c7be5;
-}
 
 .graph-actions {
   display: flex;
@@ -427,16 +400,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   <button id="btn-clear">Clear all</button>
 </div>
 
-<div class="range-row">
-  <label>x from</label>
-  <input type="number" id="x-min" value="-5" step="1">
-  <label>to</label>
-  <input type="number" id="x-max" value="5" step="1">
-  <label>y from</label>
-  <input type="number" id="y-min" value="-5" step="1">
-  <label>to</label>
-  <input type="number" id="y-max" value="5" step="1">
-</div>
+
 
 <p class="examples-hint">Try: <code>sin(x)</code> · <code>x^3 - 3*x</code> · <code>exp(-x^2)</code> · <code>1/x</code> · <code>tan(x)</code> · <code>log(x)</code></p>
 
@@ -484,24 +448,62 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     render();
   }
 
+  // Detect any single-letter variable (not x) and replace with x for plotting
+  function normalizeVar(expr) {
+    // Known function names and constants to exclude
+    var reserved = ['sin','cos','tan','asin','acos','atan','sqrt','log','ln','exp','abs','ceil','floor','round','pi','e','x'];
+    // Find all single lowercase letters used as identifiers
+    var matches = expr.match(/\b([a-z])\b/g);
+    if (!matches) return expr;
+    // Filter out reserved
+    var vars = [];
+    for (var i = 0; i < matches.length; i++) {
+      if (reserved.indexOf(matches[i]) === -1 && vars.indexOf(matches[i]) === -1) {
+        vars.push(matches[i]);
+      }
+    }
+    // If there's exactly one non-x variable, replace it with x
+    if (vars.length === 1 && vars[0] !== 'x') {
+      var v = vars[0];
+      // Replace the variable with x (word boundary)
+      return expr.replace(new RegExp('\\b' + v + '\\b', 'g'), 'x');
+    }
+    return expr;
+  }
+
   function render() {
     errorEl.classList.remove('visible');
     errorEl.textContent = '';
 
-    var xMin = parseFloat(document.getElementById('x-min').value) || -5;
-    var xMax = parseFloat(document.getElementById('x-max').value) || 5;
-    var yMin = parseFloat(document.getElementById('y-min').value) || -5;
-    var yMax = parseFloat(document.getElementById('y-max').value) || 5;
+    // Auto-detect sensible x-range based on the expressions
+    var allExprs = [];
+    var rows2 = getRows();
+    for (var j = 0; j < rows2.length; j++) {
+      var e = rows2[j].querySelector('input').value.trim();
+      if (e) allExprs.push(normalizeVar(e));
+    }
+    var joined = allExprs.join(' ');
+    var xMin = -10, xMax = 10;
+    // If expression contains ln(1-x) or log(1-x), domain is likely (0,1)
+    if ((joined.indexOf('ln(1-x)') !== -1 || joined.indexOf('log(1-x)') !== -1) && joined.indexOf('ln(x)') !== -1) {
+      xMin = 0.01; xMax = 0.99;
+    } else if (joined.indexOf('ln(x)') !== -1 || joined.indexOf('log(x)') !== -1 || joined.indexOf('sqrt(x)') !== -1) {
+      xMin = 0.01; xMax = 10;
+    } else if (joined.indexOf('1/x') !== -1) {
+      xMin = -10; xMax = 10;
+    }
 
     var data = [];
     var rows = getRows();
     for (var i = 0; i < rows.length; i++) {
       var expr = rows[i].querySelector('input').value.trim();
       if (!expr) continue;
+      // Auto-detect variable: find single-letter vars that aren't math functions
+      var plotExpr = normalizeVar(expr);
       var color = COLORS[i % COLORS.length];
       rows[i].querySelector('.color-dot').style.background = color;
       data.push({
-        fn: expr,
+        fn: plotExpr,
         color: color
       });
     }
@@ -517,7 +519,6 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
         width: plotEl.clientWidth || 800,
         height: 420,
         xAxis: { domain: [xMin, xMax] },
-        yAxis: { domain: [yMin, yMax] },
         grid: true,
         data: data
       });
@@ -555,10 +556,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     render();
   });
 
-  // Event: range changes
-  document.querySelectorAll('.range-row input').forEach(function(input) {
-    input.addEventListener('change', render);
-  });
+
 
   // Initial render
   setTimeout(render, 100);
