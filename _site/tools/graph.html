@@ -360,6 +360,55 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   min-height: 400px;
 }
 
+.slider-controls {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slider-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  width: 55px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.slider-row input[type="range"] {
+  flex: 1;
+  height: 6px;
+  accent-color: #4682B4;
+  cursor: pointer;
+}
+
+.zoom-btn {
+  width: 28px;
+  height: 28px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.zoom-btn:hover {
+  border-color: #4682B4;
+  background: #eef5ff;
+}
+
 .graph-error {
   margin-top: 8px;
   padding: 8px 12px;
@@ -407,6 +456,21 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 <div class="graph-error" id="graph-error"></div>
 
 <div id="graph-plot"></div>
+
+<div class="slider-controls">
+  <div class="slider-row">
+    <span class="slider-label">x range</span>
+    <button class="zoom-btn" id="x-out">−</button>
+    <input type="range" id="x-zoom" min="1" max="100" value="50">
+    <button class="zoom-btn" id="x-in">+</button>
+  </div>
+  <div class="slider-row">
+    <span class="slider-label">y range</span>
+    <button class="zoom-btn" id="y-out">−</button>
+    <input type="range" id="y-zoom" min="1" max="100" value="50">
+    <button class="zoom-btn" id="y-in">+</button>
+  </div>
+</div>
 
 </div>
 
@@ -555,6 +619,11 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
         grid: true,
         data: data
       });
+      // Save base ranges for slider zoom
+      baseXRange = [xMin, xMax];
+      baseYRange = [yMin, yMax];
+      xZoomSlider.value = 50;
+      yZoomSlider.value = 50;
     } catch (e) {
       errorEl.textContent = e.message || 'Invalid expression';
       errorEl.classList.add('visible');
@@ -590,6 +659,65 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   });
 
 
+
+  // Slider zoom controls
+  var xZoomSlider = document.getElementById('x-zoom');
+  var yZoomSlider = document.getElementById('y-zoom');
+  var baseXRange = null;
+  var baseYRange = null;
+
+  function applyZoom() {
+    if (!baseXRange || !baseYRange) return;
+    var xFactor = Math.pow(10, (xZoomSlider.value - 50) / 25);
+    var yFactor = Math.pow(10, (yZoomSlider.value - 50) / 25);
+    var xCenter = (baseXRange[0] + baseXRange[1]) / 2;
+    var yCenter = (baseYRange[0] + baseYRange[1]) / 2;
+    var xHalf = (baseXRange[1] - baseXRange[0]) / 2 / xFactor;
+    var yHalf = (baseYRange[1] - baseYRange[0]) / 2 / yFactor;
+
+    try {
+      var rows3 = getRows();
+      var data2 = [];
+      var detVar = null;
+      for (var i = 0; i < rows3.length; i++) {
+        var ex = rows3[i].querySelector('input').value.trim();
+        if (!ex) continue;
+        var res = normalizeVar(ex);
+        if (res.varName) detVar = res.varName;
+        data2.push({ fn: res.expr, color: COLORS[i % COLORS.length] });
+      }
+      if (data2.length === 0) return;
+      functionPlot({
+        target: '#graph-plot',
+        width: plotEl.clientWidth || 800,
+        height: 420,
+        xAxis: { domain: [xCenter - xHalf, xCenter + xHalf], label: detVar || 'x' },
+        yAxis: { domain: [yCenter - yHalf, yCenter + yHalf] },
+        grid: true,
+        data: data2
+      });
+    } catch(e) {}
+  }
+
+  xZoomSlider.addEventListener('input', applyZoom);
+  yZoomSlider.addEventListener('input', applyZoom);
+
+  document.getElementById('x-in').addEventListener('click', function() {
+    xZoomSlider.value = Math.min(100, parseInt(xZoomSlider.value) + 5);
+    applyZoom();
+  });
+  document.getElementById('x-out').addEventListener('click', function() {
+    xZoomSlider.value = Math.max(1, parseInt(xZoomSlider.value) - 5);
+    applyZoom();
+  });
+  document.getElementById('y-in').addEventListener('click', function() {
+    yZoomSlider.value = Math.min(100, parseInt(yZoomSlider.value) + 5);
+    applyZoom();
+  });
+  document.getElementById('y-out').addEventListener('click', function() {
+    yZoomSlider.value = Math.max(1, parseInt(yZoomSlider.value) - 5);
+    applyZoom();
+  });
 
   // Initial render
   setTimeout(render, 100);
