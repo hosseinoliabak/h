@@ -1,8 +1,35 @@
 (function() {
+  // Theme cycle: default -> warm -> midnight -> default
+  var themes = ['default', 'warm', 'midnight'];
+
   // Apply saved theme on load (before paint)
-  var saved = localStorage.getItem('site-theme');
+  var saved = localStorage.getItem('site-theme') || 'default';
   if (saved === 'warm') {
     document.documentElement.classList.add('theme-warm');
+  } else if (saved === 'midnight') {
+    document.documentElement.classList.add('theme-midnight');
+  }
+
+  // Map theme names to giscus theme URLs
+  function getGiscusTheme(theme) {
+    var base = window.location.origin;
+    if (theme === 'midnight') {
+      return base + '/giscus-theme-midnight.css';
+    } else if (theme === 'warm') {
+      return base + '/giscus-theme-warm.css';
+    }
+    return base + '/giscus-theme.css';
+  }
+
+  // Send theme to giscus iframe
+  function setGiscusTheme(theme) {
+    var iframe = document.querySelector('iframe.giscus-frame');
+    if (iframe) {
+      iframe.contentWindow.postMessage(
+        { giscus: { setConfig: { theme: getGiscusTheme(theme) } } },
+        'https://giscus.app'
+      );
+    }
   }
 
   // Create toggle button after DOM loads
@@ -21,10 +48,31 @@
     });
 
     btn.addEventListener('click', function() {
-      var isWarm = document.documentElement.classList.toggle('theme-warm');
-      localStorage.setItem('site-theme', isWarm ? 'warm' : 'default');
+      var current = localStorage.getItem('site-theme') || 'default';
+      var idx = themes.indexOf(current);
+      var next = themes[(idx + 1) % themes.length];
+
+      // Remove all theme classes
+      document.documentElement.classList.remove('theme-warm', 'theme-midnight');
+
+      // Apply next theme
+      if (next === 'warm') {
+        document.documentElement.classList.add('theme-warm');
+      } else if (next === 'midnight') {
+        document.documentElement.classList.add('theme-midnight');
+      }
+
+      localStorage.setItem('site-theme', next);
+
+      // Update giscus theme
+      setGiscusTheme(next);
     });
 
     document.body.appendChild(btn);
+
+    // Also set initial giscus theme after it loads
+    setTimeout(function() { setGiscusTheme(saved); }, 2000);
+    // Retry in case giscus loads slowly
+    setTimeout(function() { setGiscusTheme(saved); }, 4000);
   });
 })();
