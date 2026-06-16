@@ -1,9 +1,9 @@
 (function() {
   // Theme cycle: default -> warm -> midnight -> default
   var themes = ['default', 'warm', 'midnight'];
+  var saved = localStorage.getItem('site-theme') || 'default';
 
   // Apply saved theme on load (before paint)
-  var saved = localStorage.getItem('site-theme') || 'default';
   if (saved === 'warm') {
     document.documentElement.classList.add('theme-warm');
   } else if (saved === 'midnight') {
@@ -12,16 +12,20 @@
 
   // Map theme names to giscus theme URLs
   function getGiscusTheme(theme) {
-    var base = window.location.origin;
-    if (theme === 'midnight') {
-      return base + '/giscus-theme-midnight.css';
-    } else if (theme === 'warm') {
-      return base + '/giscus-theme-warm.css';
-    }
+    var base = 'https://h.oliabak.com';
+    if (theme === 'midnight') return base + '/giscus-theme-midnight.css';
+    if (theme === 'warm') return base + '/giscus-theme-warm.css';
     return base + '/giscus-theme.css';
   }
 
-  // Send theme to giscus iframe
+  // Override giscus hidden inputs so it loads with the correct theme
+  // This must run before loadGiscus() reads the value
+  var baseInput = document.getElementById('giscus-base-theme');
+  var altInput = document.getElementById('giscus-alt-theme');
+  if (baseInput) baseInput.value = getGiscusTheme(saved);
+  if (altInput) altInput.value = getGiscusTheme(saved);
+
+  // Send theme to giscus iframe (for live toggling)
   function setGiscusTheme(theme) {
     var iframe = document.querySelector('iframe.giscus-frame');
     if (iframe) {
@@ -63,16 +67,9 @@
       }
 
       localStorage.setItem('site-theme', next);
-
-      // Update giscus theme
       setGiscusTheme(next);
     });
 
     document.body.appendChild(btn);
-
-    // Also set initial giscus theme after it loads
-    setTimeout(function() { setGiscusTheme(saved); }, 2000);
-    // Retry in case giscus loads slowly
-    setTimeout(function() { setGiscusTheme(saved); }, 4000);
   });
 })();
