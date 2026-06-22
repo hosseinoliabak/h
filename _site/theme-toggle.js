@@ -36,6 +36,14 @@
     }
   }
 
+  // Once giscus iframe loads, send it the correct theme immediately
+  window.addEventListener('message', function(event) {
+    if (event.origin === 'https://giscus.app') {
+      var current = localStorage.getItem('site-theme') || 'default';
+      setGiscusTheme(current);
+    }
+  });
+
   // Create toggle button after DOM loads
   document.addEventListener('DOMContentLoaded', function() {
     var btn = document.createElement('button');
