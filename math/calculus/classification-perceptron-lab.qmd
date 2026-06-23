@@ -1,0 +1,306 @@
+---
+title: "Lab: Classification with a Perceptron"
+date: "2026-06-15"
+difficulty: 3
+order: 15
+categories: [calculus]
+---
+
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+In this lab, we will implement a single-perceptron neural network for binary classification. This is the companion lab to the [Classification with a Perceptron](classification-perceptron.qmd) theory page. We will reuse the same building blocks from the [Regression with a Perceptron lab](perceptron-regression-lab.qmd), but with two key changes: the sigmoid activation function and the log loss cost function.
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import colors
+from sklearn.datasets import make_blobs
+
+np.random.seed(3)
+```
+
+## Part 1. A Simple Classification Problem
+
+We start with a tiny dataset of 30 training examples. Each example has two binary features ($x_1, x_2 \in \{0, 1\}$). The classification rule is: the label is 1 (red class) if $x_1 = 0$ AND $x_2 = 1$. Otherwise, the label is 0 (blue class).
+
+```{python}
+m = 30
+
+X = np.random.randint(0, 2, (2, m))
+Y = np.logical_and(X[0] == 0, X[1] == 1).astype(int).reshape((1, m))
+
+print("Shape of X:", X.shape)
+print("Shape of Y:", Y.shape)
+print(f"We have m = {X.shape[1]} training examples.")
+print(f"Number of class 1 (red): {Y.sum()}")
+print(f"Number of class 0 (blue): {m - Y.sum()}")
+```
+
+Let us visualize the data. The blue points belong to class 0 and the red points belong to class 1.
+
+```{python}
+%config InlineBackend.figure_formats = ['svg']
+
+fig, ax = plt.subplots(figsize=(6, 5))
+
+# Plot each class
+for i in range(m):
+    color = '#CC0000' if Y[0, i] == 1 else '#4682B4'
+    ax.scatter(X[0, i], X[1, i], color=color, s=100, zorder=5)
+
+ax.set_xlabel(r'$x_1$', fontsize=12)
+ax.set_ylabel(r'$x_2$', fontsize=12)
+ax.set_title('Simple Binary Classification', fontsize=12, color='gray')
+ax.set_xlim([-0.2, 1.4])
+ax.set_ylim([-0.1, 1.1])
+ax.grid(linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+We can see that only the point at $(0, 1)$ is red. A good decision boundary would be a line that separates this point from the others. We will train a perceptron with sigmoid activation to find that line automatically.
+
+## Part 2. Defining the Sigmoid Activation
+
+The sigmoid function maps any real number to the interval $(0, 1)$.
+
+$$\sigma(z) = \frac{1}{1 + e^{-z}}$$
+
+```{python}
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+print("sigmoid(-2) =", sigmoid(-2))
+print("sigmoid(0) =", sigmoid(0))
+print("sigmoid(3.5) =", sigmoid(3.5))
+```
+
+It works element-wise on NumPy arrays, which makes it convenient for vectorized operations.
+
+## Part 3. Building the Neural Network
+
+The structure is identical to the regression perceptron, with one difference in forward propagation: after computing the linear combination $Z = WX + b$, we apply the sigmoid to get the output $A = \sigma(Z)$.
+
+### Defining Network Structure
+
+```{python}
+def layer_sizes(X, Y):
+    n_x = X.shape[0]
+    n_y = Y.shape[0]
+    return (n_x, n_y)
+
+(n_x, n_y) = layer_sizes(X, Y)
+print("Input layer size: n_x =", n_x)
+print("Output layer size: n_y =", n_y)
+```
+
+### Initializing Parameters
+
+```{python}
+def initialize_parameters(n_x, n_y):
+    W = np.random.randn(n_y, n_x) * 0.01
+    b = np.zeros((n_y, 1))
+    return {"W": W, "b": b}
+
+parameters = initialize_parameters(n_x, n_y)
+print("W =", parameters["W"])
+print("b =", parameters["b"])
+```
+
+### Forward Propagation (with Sigmoid)
+
+This is the key difference from the regression lab. Instead of outputting $Z$ directly, we pass it through the sigmoid.
+
+$$Z = WX + b$$
+$$A = \sigma(Z)$$
+
+```{python}
+def forward_propagation(X, parameters):
+    W = parameters["W"]
+    b = parameters["b"]
+    Z = np.matmul(W, X) + b
+    A = sigmoid(Z)
+    return A
+
+A = forward_propagation(X, parameters)
+print("First 5 outputs:", A[0, :5])
+```
+
+### Computing Cost (Log Loss)
+
+For classification, we use the log loss (binary cross-entropy) instead of squared error.
+
+$$\mathcal{L}(W, b) = -\frac{1}{m}\sum_{i=1}^{m}\left[y^{(i)}\ln(a^{(i)}) + (1 - y^{(i)})\ln(1 - a^{(i)})\right]$$
+
+```{python}
+def compute_cost(A, Y):
+    m = Y.shape[1]
+    logprobs = -np.multiply(np.log(A), Y) - np.multiply(np.log(1 - A), 1 - Y)
+    cost = (1 / m) * np.sum(logprobs)
+    return cost
+
+print("Initial cost:", compute_cost(A, Y))
+```
+
+### Backward Propagation
+
+As derived in the theory page, the gradients simplify beautifully thanks to the sigmoid and log loss working together:
+
+$$\frac{\partial \mathcal{L}}{\partial W} = \frac{1}{m}(A - Y)X^T$$
+
+$$\frac{\partial \mathcal{L}}{\partial b} = \frac{1}{m}\sum_{i=1}^{m}(a^{(i)} - y^{(i)})$$
+
+```{python}
+def backward_propagation(A, X, Y):
+    m = X.shape[1]
+    dZ = A - Y
+    dW = (1 / m) * np.dot(dZ, X.T)
+    db = (1 / m) * np.sum(dZ, axis=1, keepdims=True)
+    return {"dW": dW, "db": db}
+
+grads = backward_propagation(A, X, Y)
+print("dW =", grads["dW"])
+print("db =", grads["db"])
+```
+
+### Updating Parameters
+
+```{python}
+def update_parameters(parameters, grads, learning_rate=1.2):
+    W = parameters["W"]
+    b = parameters["b"]
+    dW = grads["dW"]
+    db = grads["db"]
+
+    W = W - learning_rate * dW
+    b = b - learning_rate * db
+
+    return {"W": W, "b": b}
+```
+
+### Putting It All Together
+
+```{python}
+def nn_model(X, Y, num_iterations=50, learning_rate=1.2, print_cost=False):
+    n_x, n_y = layer_sizes(X, Y)
+    parameters = initialize_parameters(n_x, n_y)
+
+    for i in range(num_iterations):
+        A = forward_propagation(X, parameters)
+        cost = compute_cost(A, Y)
+        grads = backward_propagation(A, X, Y)
+        parameters = update_parameters(parameters, grads, learning_rate)
+
+        if print_cost:
+            print(f"Cost after iteration {i}: {cost:.6f}")
+
+    return parameters
+```
+
+### Training
+
+```{python}
+parameters = nn_model(X, Y, num_iterations=50, learning_rate=1.2, print_cost=True)
+print("W =", parameters["W"])
+print("b =", parameters["b"])
+```
+
+The cost decreases steadily, which means the model is learning. After training, we can make predictions by thresholding the sigmoid output at 0.5.
+
+### Making Predictions
+
+```{python}
+def predict(X, parameters):
+    A = forward_propagation(X, parameters)
+    predictions = (A > 0.5).astype(int)
+    return predictions
+
+X_pred = np.array([[1, 1, 0, 0],
+                   [0, 1, 0, 1]])
+Y_pred = predict(X_pred, parameters)
+
+print(f"Inputs (columns):\n{X_pred}")
+print(f"Predictions:\n{Y_pred}")
+```
+
+The model correctly identifies that only the input $(0, 1)$ belongs to class 1.
+
+## Part 4. Performance on a Larger Dataset
+
+Now let us test our model on a more realistic dataset with many more points, generated using `make_blobs`.
+
+```{python}
+m_larger = 500
+X_larger, Y_larger_flat = make_blobs(n_samples=m_larger, centers=[[2, 2], [-2, -2]],
+                                      cluster_std=1.2, random_state=42)
+X_larger = X_larger.T
+Y_larger = Y_larger_flat.reshape((1, m_larger))
+
+print("Shape of X_larger:", X_larger.shape)
+print("Shape of Y_larger:", Y_larger.shape)
+```
+
+```{python}
+fig, ax = plt.subplots(figsize=(7, 6))
+scatter = ax.scatter(X_larger[0], X_larger[1], c=Y_larger_flat,
+                     cmap='coolwarm', alpha=0.7, edgecolors='none')
+ax.set_xlabel(r'$x_1$', fontsize=12)
+ax.set_ylabel(r'$x_2$', fontsize=12)
+ax.set_title('Larger Classification Dataset', fontsize=12, color='gray')
+ax.grid(linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+### Training on the Larger Dataset
+
+```{python}
+parameters_larger = nn_model(X_larger, Y_larger, num_iterations=100,
+                             learning_rate=0.5, print_cost=True)
+print("W =", parameters_larger["W"])
+print("b =", parameters_larger["b"])
+```
+
+### Visualizing the Decision Boundary
+
+```{python}
+fig, ax = plt.subplots(figsize=(7, 6))
+
+# Plot data points
+scatter = ax.scatter(X_larger[0], X_larger[1], c=Y_larger_flat,
+                     cmap='coolwarm', alpha=0.6, edgecolors='none')
+
+# Plot decision boundary: W[0]*x1 + W[1]*x2 + b = 0
+W = parameters_larger["W"]
+b_val = parameters_larger["b"][0, 0]
+x1_range = np.linspace(X_larger[0].min() - 1, X_larger[0].max() + 1, 100)
+# W[0,0]*x1 + W[0,1]*x2 + b = 0  =>  x2 = -(W[0,0]*x1 + b) / W[0,1]
+x2_boundary = -(W[0, 0] * x1_range + b_val) / W[0, 1]
+ax.plot(x1_range, x2_boundary, color='black', linewidth=2, label='Decision boundary')
+
+ax.set_xlabel(r'$x_1$', fontsize=12)
+ax.set_ylabel(r'$x_2$', fontsize=12)
+ax.set_title('Trained Classification Perceptron', fontsize=12, color='gray')
+ax.set_xlim([X_larger[0].min() - 1, X_larger[0].max() + 1])
+ax.set_ylim([X_larger[1].min() - 1, X_larger[1].max() + 1])
+ax.legend(fontsize=11)
+ax.grid(linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+### Accuracy
+
+```{python}
+predictions = predict(X_larger, parameters_larger)
+accuracy = np.mean(predictions == Y_larger) * 100
+print(f"Accuracy on training set: {accuracy:.1f}%")
+```
+
+With a single perceptron and gradient descent using log loss, we can solve linearly separable classification problems. The same architecture and code from the regression lab carries over with minimal changes: replace the identity activation with sigmoid, and replace squared error with log loss. The clean gradient formulas $(\hat{y} - y) \cdot x_i$ make implementation straightforward.

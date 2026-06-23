@@ -1,0 +1,634 @@
+---
+title: "Optimization Using Gradient Descent"
+date: "2026-06-12"
+difficulty: 3
+order: 10
+categories: [calculus]
+---
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+
+You may remember from the [Optimization](optimization.qmd) page that we solved a linear regression problem (the power lines example) analytically. We set the gradient to zero and solved a system of equations. But even with just two variables, this was cumbersome. Now let us solve the exact same problem using gradient descent, and see how much simpler it is.
+
+
+## Two Ways to Find a Minimum: A Simple Example
+
+Before jumping into linear regression, let us compare the two approaches on a simple function. Take $f(x) = x^2 - 4x + 7$ (from the [Optimization](optimization.qmd) page).
+
+### Using Derivatives
+
+Compute $f'(x) = 2x - 4$, set it to zero, and solve:
+
+$$
+2x - 4 = 0 \implies x = 2
+$$
+
+The minimum value is $f(2) = 4 - 8 + 7 = 3$.
+
+The left plot below shows the function with a flat tangent at the minimum. The right plot shows the derivative, which crosses zero exactly at $x = 2$.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+x = np.linspace(-1, 5, 200)
+f = x**2 - 4*x + 7
+df = 2*x - 4
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+# Left: f(x) with minimum marked
+ax = axes[0]
+ax.plot(x, f, color='#4682B4', linewidth=2.5, label=r'$f(x) = x^2 - 4x + 7$')
+ax.plot(2, 3, '*', color='#2E8B57', markersize=16, zorder=5)
+ax.plot([1, 3], [3, 3], '--', color='#CC0000', linewidth=2, label='Tangent (slope = 0)')
+ax.annotate('Minimum\n$x = 2$', xy=(2, 3), xytext=(2, 5),
+            fontsize=10, fontweight='bold', color='#2E8B57', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#2E8B57'))
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$f(x)$', fontsize=11)
+ax.set_title('The function', fontsize=11, color='gray')
+ax.legend(fontsize=10)
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(-1, 5)
+ax.set_ylim(0, 12)
+ax.set_xticks(range(-1, 6))
+ax.set_yticks(range(0, 13))
+
+# Right: f'(x) showing zero crossing
+ax = axes[1]
+ax.plot(x, df, color='#CC7000', linewidth=2.5, label=r"$f'(x) = 2x - 4$")
+ax.axhline(0, color='black', linewidth=0.8)
+ax.plot(2, 0, 'o', color='#2E8B57', markersize=10, zorder=5)
+ax.annotate("$f'(x) = 0$ here", xy=(2, 0), xytext=(2, 3),
+            fontsize=10, fontweight='bold', color='#2E8B57', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#2E8B57'))
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel("$f'(x)$", fontsize=11)
+ax.set_title('The derivative', fontsize=11, color='gray')
+ax.legend(fontsize=10)
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(-1, 5)
+ax.set_ylim(-6, 6)
+ax.set_xticks(range(-1, 6))
+ax.set_yticks(range(-6, 7))
+
+plt.tight_layout()
+plt.show()
+```
+
+### Using Gradient Descent
+
+Start at $x_0 = 5$ with learning rate $\alpha = 0.1$. The update rule is $x_{k+1} = x_k - \alpha \cdot f'(x_k) = x_k - 0.1(2x_k - 4)$.
+
+**Iteration 1:**
+$$x_1 = 5 - 0.1(2 \cdot 5 - 4) = 5 - 0.6 = 4.4$$
+
+**Iteration 2:**
+$$x_2 = 4.4 - 0.1(2 \cdot 4.4 - 4) = 4.4 - 0.48 = 3.92$$
+
+**Iteration 3:**
+$$x_3 = 3.92 - 0.1(2 \cdot 3.92 - 4) = 3.92 - 0.384 = 3.536$$
+
+Each step brings us closer to $x = 2$. After about 20 iterations, $x_k \approx 2.000$.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+x_plot = np.linspace(-1, 6, 200)
+f_plot = x_plot**2 - 4*x_plot + 7
+
+# Run GD
+alpha = 0.1
+xi = 5.0
+path = [(xi, xi**2 - 4*xi + 7)]
+for _ in range(20):
+    xi = xi - alpha * (2*xi - 4)
+    path.append((xi, xi**2 - 4*xi + 7))
+path = np.array(path)
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(x_plot, f_plot, color='#4682B4', linewidth=2.5, label=r'$f(x) = x^2 - 4x + 7$')
+
+for i in range(len(path)):
+    color = '#DAA520' if i == 0 else ('#2E8B57' if i == len(path)-1 else '#CC0000')
+    size = 8 if (i == 0 or i == len(path)-1) else 4
+    ax.plot(path[i, 0], path[i, 1], 'o', color=color, markersize=size, zorder=5)
+    if i < len(path) - 1:
+        ax.annotate('', xy=(path[i+1, 0], path[i+1, 1]), xytext=(path[i, 0], path[i, 1]),
+                    arrowprops=dict(arrowstyle='->', color='gray', lw=1))
+
+ax.annotate('Start ($x_0 = 5$)', xy=(path[0, 0], path[0, 1]),
+            xytext=(path[0, 0] - 0.8, path[0, 1]),
+            fontsize=9, fontweight='bold', color='#DAA520', ha='right', va='center',
+            arrowprops=dict(arrowstyle='->', color='#DAA520'))
+ax.annotate('Converged ($x \\approx 2$)', xy=(path[-1, 0], path[-1, 1]),
+            xytext=(path[-1, 0], path[-1, 1] + 2),
+            fontsize=9, fontweight='bold', color='#2E8B57', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#2E8B57'))
+
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$f(x)$', fontsize=11)
+ax.set_title('Gradient descent walks down the curve to the minimum', fontsize=11, color='gray')
+ax.legend(fontsize=10)
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(-1, 6)
+ax.set_ylim(0, 13)
+ax.set_xticks(range(-1, 7))
+ax.set_yticks(range(0, 14))
+plt.tight_layout()
+plt.show()
+```
+
+### Takeaway
+
+Both methods find the same minimum. The derivative approach solves one equation. Gradient descent evaluates the derivative repeatedly and steps downhill. They give the same answer, but gradient descent does not require you to solve anything. You only need to be able to evaluate $f'(x)$ at each point. This makes it powerful for functions where solving $f'(x) = 0$ is difficult or impossible.
+
+
+## Power Lines Problem Revisited
+
+Recall the setup from the [Gradients](gradients.qmd) page. Three power lines are at positions $(1, 2)$, $(2, 5)$, and $(3, 3)$. A fiber line $y = mx + b$ must minimize the total squared connection cost:
+
+$$
+E(m, b) = (m + b - 2)^2 + (2m + b - 5)^2 + (3m + b - 3)^2
+$$
+
+Analytically, we found the best-fit line $y = \frac{1}{2}x + \frac{7}{3}$, with minimum cost $E = 4.167$.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['png']
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+
+fig, ax = plt.subplots(figsize=(8, 7))
+
+# Grid
+ax.set_xlim(-0.5, 6)
+ax.set_ylim(-0.5, 7)
+ax.set_aspect('equal')
+ax.grid(True, linewidth=0.5, alpha=0.3)
+
+# Axes
+ax.axhline(0, color='#1155CC', linewidth=2.5)
+ax.axvline(0, color='#1155CC', linewidth=2.5)
+ax.annotate('x', xy=(5.8, -0.3), fontsize=14, fontweight='bold', color='#1155CC')
+ax.annotate('y', xy=(-0.4, 6.7), fontsize=14, fontweight='bold', color='#1155CC')
+
+# Arrow tips on axes
+ax.annotate('', xy=(6, 0), xytext=(5.7, 0),
+            arrowprops=dict(arrowstyle='->', color='#1155CC', lw=2.5))
+ax.annotate('', xy=(0, 7), xytext=(0, 6.7),
+            arrowprops=dict(arrowstyle='->', color='#1155CC', lw=2.5))
+
+# Best-fit line: y = 0.5x + 7/3
+m_val = 0.5
+b_val = 7/3
+x_line = np.linspace(-0.3, 5.5, 100)
+y_line = m_val * x_line + b_val
+ax.plot(x_line, y_line, 'k-', linewidth=4, zorder=3)
+ax.text(3.8, 5.15, r'$y = \frac{1}{2}x + \frac{7}{3}$', fontsize=16, fontstyle='italic', fontweight='bold')
+
+# Data points and squared-error boxes
+points = [(1, 2), (2, 5), (3, 3)]
+colors_pt = ['#4285F4', '#F5A623', '#0F9D58']
+colors_sq = ['#A4C2F4', '#FDDFA0', '#6ECF96']
+
+for i, (px, py) in enumerate(points):
+    py_hat = m_val * px + b_val
+    side = abs(py - py_hat)
+    y_bottom = min(py, py_hat)
+
+    rect = mpatches.Rectangle((px, y_bottom), side, side,
+                               facecolor=colors_sq[i], alpha=0.7,
+                               edgecolor='none', zorder=2)
+    ax.add_patch(rect)
+
+    ax.plot(px, py, 'o', color=colors_pt[i], markersize=12, zorder=5,
+            markeredgecolor='white', markeredgewidth=1)
+
+# Point labels
+ax.text(0.4, 1.6, r'$(1,2)$', fontsize=11, color='#1155CC', zorder=6)
+ax.text(1.55, 5.2, r'$(2, 5)$', fontsize=11, color='#CC7700', zorder=6)
+ax.text(2.55, 2.6, r'$(3,3)$', fontsize=11, color='#0F7D44', zorder=6)
+
+ax.set_xticks(range(0, 7))
+ax.set_yticks(range(0, 8))
+ax.tick_params(labelsize=10)
+ax.set_title('Best-fit line (solved analytically on the Gradients page)', fontsize=12, color='gray', pad=12)
+
+plt.tight_layout()
+plt.show()
+```
+
+With gradient descent, we do not need to solve any system of equations. We just need the gradient:
+
+$$
+\nabla E = \begin{bmatrix} \frac{\partial E}{\partial m} \\\\ \frac{\partial E}{\partial b} \end{bmatrix} = \begin{bmatrix} 28m + 12b - 42 \\\\ 12m + 6b - 20 \end{bmatrix}
+$$
+
+Then we start at some random point $(m_0, b_0)$ and iterate:
+
+$$
+\begin{bmatrix} m_{k+1} \\ b_{k+1} \end{bmatrix} = \begin{bmatrix} m_k \\ b_k \end{bmatrix} - \alpha \cdot \nabla E(m_k, b_k)
+$$
+
+After enough steps, we arrive at the minimum.
+
+
+### Connecting the Two Plots
+
+There is a nice way to visualize what gradient descent does for linear regression.
+
+On the **left**, you see the data points and the current line $y = mx + b$. On the **right**, you see the cost surface, where each point on the "floor" corresponds to a pair $(m, b)$ and the height is the error $E(m, b)$.
+
+- A good line (small error) sits near the bottom of the cost surface.
+- A bad line (large error) sits high up on the cost surface.
+
+As gradient descent moves down the cost surface, the line fit improves. The interactive tool below animates the process step by step.
+
+<!-- interactive-tool -->
+
+```{ojs}
+//| echo: false
+
+// Power lines cost function
+E_lr = (m, b) => (m + b - 2)**2 + (2*m + b - 5)**2 + (3*m + b - 3)**2
+dEdm_lr = (m, b) => 28*m + 12*b - 42
+dEdb_lr = (m, b) => 12*m + 6*b - 20
+
+dataPoints_lr = [{x:1, y:2}, {x:2, y:5}, {x:3, y:3}]
+```
+
+```{ojs}
+//| echo: false
+
+viewof m0_lr = Inputs.range([-2, 2], {label: "Initial m", value: 0, step: 0.1, width: 220})
+viewof b0_lr = Inputs.range([-2, 4], {label: "Initial b", value: 0, step: 0.1, width: 220})
+
+html`<div style="display:flex;gap:16px;align-items:end">
+  ${viewof m0_lr}
+  ${viewof b0_lr}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof lr_lr = Inputs.range([0.001, 0.05], {label: "Learning rate", value: 0.02, step: 0.001, width: 220})
+viewof iter_lr = Inputs.range([5, 500], {label: "Iterations", value: 500, step: 5, width: 220})
+viewof speed_lr = Inputs.range([5, 200], {label: "Step delay (ms)", value: 20, step: 5, width: 220})
+
+html`<div style="display:flex;gap:16px;align-items:end">
+  ${viewof lr_lr}
+  ${viewof iter_lr}
+  ${viewof speed_lr}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof runBtn_lr = {
+  const btn = html`<button style="background:linear-gradient(135deg,#4682B4,#5a9fd4);color:white;border:none;border-radius:6px;padding:8px 20px;font-size:14px;font-weight:600;cursor:pointer">▶ Run Gradient Descent</button>`;
+  let count = 0;
+  btn.value = count;
+  btn.onclick = () => { btn.value = ++count; btn.dispatchEvent(new Event("input", {bubbles:true})); };
+  return btn;
+}
+```
+
+```{ojs}
+//| echo: false
+
+gdPath_lr = {
+  const _trigger = runBtn_lr;
+  let m = m0_lr, b = b0_lr;
+  const path = [{m, b, E: E_lr(m, b)}];
+  for (let i = 0; i < iter_lr; i++) {
+    m = m - lr_lr * dEdm_lr(m, b);
+    b = b - lr_lr * dEdb_lr(m, b);
+    path.push({m, b, E: E_lr(m, b)});
+  }
+  return path;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Animated D3 dual-panel: line fit (left) + contour (right)
+{
+  const path = gdPath_lr;
+  const W = 800, H = 350;
+  const leftW = 350, rightW = W - leftW - 20;
+  const m_margin = {top: 25, right: 10, bottom: 35, left: 40};
+
+  const svg = d3.create("svg")
+    .attr("viewBox", [0, 0, W, H]).attr("width", W).attr("height", H)
+    .style("max-width", "100%").style("font-family", "'PT Sans', sans-serif");
+
+  // === LEFT PLOT: Line fit ===
+  const xS = d3.scaleLinear().domain([0, 5]).range([m_margin.left, leftW - m_margin.right]);
+  const yS = d3.scaleLinear().domain([0, 7]).range([H - m_margin.bottom, m_margin.top]);
+
+  svg.append("g").attr("transform", `translate(0,${H - m_margin.bottom})`)
+    .call(d3.axisBottom(xS).ticks(5).tickSize(-(H - m_margin.top - m_margin.bottom)).tickFormat(""))
+    .selectAll("line").attr("stroke", "#eee");
+  svg.append("g").attr("transform", `translate(${m_margin.left},0)`)
+    .call(d3.axisLeft(yS).ticks(7).tickSize(-(leftW - m_margin.left - m_margin.right)).tickFormat(""))
+    .selectAll("line").attr("stroke", "#eee");
+
+  svg.append("g").attr("transform", `translate(0,${H - m_margin.bottom})`).call(d3.axisBottom(xS).ticks(5));
+  svg.append("g").attr("transform", `translate(${m_margin.left},0)`).call(d3.axisLeft(yS).ticks(7));
+
+  const colors = ['#4285F4', '#F5A623', '#0F9D58'];
+  dataPoints_lr.forEach((p, i) => {
+    svg.append("circle").attr("cx", xS(p.x)).attr("cy", yS(p.y)).attr("r", 8).attr("fill", colors[i]);
+  });
+
+  const lineEl = svg.append("line")
+    .attr("x1", xS(0)).attr("y1", yS(path[0].m * 0 + path[0].b))
+    .attr("x2", xS(5)).attr("y2", yS(path[0].m * 5 + path[0].b))
+    .attr("stroke", "#2E8B57").attr("stroke-width", 2.5);
+
+  svg.append("text").attr("x", leftW/2).attr("y", 14).attr("text-anchor", "middle")
+    .attr("font-size", "11px").attr("fill", "gray").text("Line fit");
+
+  const eqLabel = svg.append("text").attr("x", leftW - m_margin.right - 5).attr("y", m_margin.top + 15)
+    .attr("text-anchor", "end").attr("font-size", "12px").attr("fill", "#2E8B57").attr("font-weight", "bold")
+    .text(`y = ${path[0].m.toFixed(2)}x + ${path[0].b.toFixed(2)}`);
+
+  // === RIGHT PLOT: Cost contour ===
+  const offset = leftW + 20;
+  const mS = d3.scaleLinear().domain([-1, 2]).range([offset + m_margin.left, W - m_margin.right]);
+  const bS = d3.scaleLinear().domain([-1, 4]).range([H - m_margin.bottom, m_margin.top]);
+
+  const res = 50;
+  const cellW = (W - m_margin.right - offset - m_margin.left) / res;
+  const cellH = (H - m_margin.top - m_margin.bottom) / res;
+  const colorScale = d3.scaleSequential(d3.interpolateYlOrRd).domain([0, 120]);
+
+  for (let i = 0; i < res; i++) {
+    for (let j = 0; j < res; j++) {
+      const cm = -1 + (i + 0.5) * 3 / res;
+      const cb = -1 + (j + 0.5) * 5 / res;
+      svg.append("rect")
+        .attr("x", offset + m_margin.left + i * cellW)
+        .attr("y", m_margin.top + (res - 1 - j) * cellH)
+        .attr("width", cellW + 0.5).attr("height", cellH + 0.5)
+        .attr("fill", colorScale(E_lr(cm, cb))).attr("opacity", 0.7);
+    }
+  }
+
+  svg.append("g").attr("transform", `translate(0,${H - m_margin.bottom})`).call(d3.axisBottom(mS).ticks(5))
+    .append("text").attr("x", W - m_margin.right).attr("y", -6).attr("fill", "black").attr("text-anchor", "end").attr("font-size", "11px").text("m");
+  svg.append("g").attr("transform", `translate(${offset + m_margin.left},0)`).call(d3.axisLeft(bS).ticks(5))
+    .append("text").attr("x", 6).attr("y", m_margin.top - 8).attr("fill", "black").attr("font-size", "11px").text("b");
+
+  svg.append("circle").attr("cx", mS(0.5)).attr("cy", bS(7/3)).attr("r", 5)
+    .attr("fill", "none").attr("stroke", "#2E8B57").attr("stroke-width", 2);
+
+  svg.append("text").attr("x", offset + (W - offset)/2).attr("y", 14).attr("text-anchor", "middle")
+    .attr("font-size", "11px").attr("fill", "gray").text("Cost surface E(m, b)");
+
+  const trailGroup = svg.append("g");
+  const dot = svg.append("circle").attr("cx", mS(path[0].m)).attr("cy", bS(path[0].b))
+    .attr("r", 5).attr("fill", "#CC0000");
+
+  const info = svg.append("text").attr("x", W - 5).attr("y", H - 5)
+    .attr("text-anchor", "end").attr("font-size", "10px").attr("fill", "#555");
+
+  let idx = 0;
+  function step() {
+    if (idx >= path.length) return;
+    const {m, b, E} = path[idx];
+
+    lineEl.attr("y1", yS(m * 0 + b)).attr("y2", yS(m * 5 + b));
+    eqLabel.text(`y = ${m.toFixed(2)}x + ${b.toFixed(2)}`);
+    dot.attr("cx", mS(m)).attr("cy", bS(b));
+
+    if (idx > 0) {
+      const prev = path[idx - 1];
+      trailGroup.append("line")
+        .attr("x1", mS(prev.m)).attr("y1", bS(prev.b))
+        .attr("x2", mS(m)).attr("y2", bS(b))
+        .attr("stroke", "#333").attr("stroke-width", 1);
+    }
+
+    info.text(`Step ${idx} | m=${m.toFixed(3)}, b=${b.toFixed(3)}, E=${E.toFixed(2)}`);
+    idx++;
+    if (idx < path.length) setTimeout(step, speed_lr);
+  }
+
+  setTimeout(step, 200);
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+// 3D Plotly surface (animates path step by step)
+{
+  const path = gdPath_lr;
+  const Plotly = await import("https://cdn.jsdelivr.net/npm/plotly.js-dist@2/+esm");
+
+  const res = 40;
+  const mVals = Array.from({length: res}, (_, i) => -1 + i * 3 / (res - 1));
+  const bVals = Array.from({length: res}, (_, i) => -1 + i * 5 / (res - 1));
+  const zData = bVals.map(b => mVals.map(m => E_lr(m, b)));
+
+  const div = document.createElement("div");
+  div.style.width = "100%";
+  div.style.maxWidth = "700px";
+
+  const surface = {
+    type: 'surface', x: mVals, y: bVals, z: zData,
+    colorscale: 'RdBu', opacity: 0.7, showscale: false
+  };
+
+  const pathTrace = {
+    type: 'scatter3d', mode: 'lines+markers',
+    x: [path[0].m], y: [path[0].b], z: [path[0].E],
+    line: {color: 'black', width: 4},
+    marker: {size: 3, color: 'black'}, showlegend: false
+  };
+
+  const currentPt = {
+    type: 'scatter3d', mode: 'markers',
+    x: [path[0].m], y: [path[0].b], z: [path[0].E],
+    marker: {size: 6, color: '#DAA520'}, showlegend: false
+  };
+
+  const layout = {
+    scene: {
+      xaxis: {title: 'm', range: [-1, 2]},
+      yaxis: {title: 'b', range: [-1, 4]},
+      zaxis: {title: 'E', range: [0, 130]},
+      camera: {eye: {x: 1.5, y: -1.8, z: 1.0}}
+    },
+    margin: {l: 0, r: 0, t: 10, b: 0},
+    height: 400
+  };
+
+  Plotly.default.newPlot(div, [surface, pathTrace, currentPt], layout, {responsive: true});
+
+  // Animate by extending the path trace incrementally
+  let idx = 1;
+  const stepSize = Math.max(1, Math.floor(path.length / 80));
+
+  function animateStep() {
+    if (idx >= path.length) return;
+
+    const endIdx = Math.min(idx + stepSize, path.length);
+    const pathM = path.slice(0, endIdx).map(p => p.m);
+    const pathB = path.slice(0, endIdx).map(p => p.b);
+    const pathE = path.slice(0, endIdx).map(p => p.E);
+
+    const lastPt = path[endIdx - 1];
+    const ptColor = endIdx >= path.length ? '#2E8B57' : '#CC0000';
+
+    Plotly.default.restyle(div, {
+      x: [pathM], y: [pathB], z: [pathE]
+    }, [1]);
+
+    Plotly.default.restyle(div, {
+      x: [[lastPt.m]], y: [[lastPt.b]], z: [[lastPt.E]],
+      'marker.color': [ptColor]
+    }, [2]);
+
+    idx = endIdx;
+    if (idx < path.length) setTimeout(animateStep, speed_lr);
+  }
+
+  setTimeout(animateStep, 500);
+  return div;
+}
+```
+
+
+## Formal Gradient Descent Algorithm for Linear Regression
+
+Now let us write the same idea in its most general form. Instead of 3 power lines, imagine you have $n$ data points $(x_1, y_1), (x_2, y_2), \ldots, (x_n, y_n)$, and you want to find the line $y = mx_N + b_N$ that best fits them. This is the same update rule you have been using, just written for any number of points.
+
+The loss function measures how far the line is from all the data points:
+
+$$
+\mathscr{L}(m, b) = \frac{1}{2n} \left[ (mx_1 + b - y_1)^2 + \cdots + (mx_n + b - y_n)^2 \right]
+$$
+
+The gradient descent update rule iterates from step $N-1$ to step $N$:
+
+$$
+\begin{bmatrix} m_N \\ b_N \end{bmatrix} = \begin{bmatrix} m_{N-1} \\ b_{N-1} \end{bmatrix} - \alpha \, \nabla \mathscr{L}(m_{N-1}, b_{N-1})
+$$
+
+where the gradient is:
+
+$$
+\nabla \mathscr{L} = \begin{bmatrix} \frac{1}{n} \sum_{i=1}^{n} (mx_i + b - y_i) \cdot x_i \\\\ \frac{1}{n} \sum_{i=1}^{n} (mx_i + b - y_i) \end{bmatrix}
+$$
+
+The algorithm:
+
+1. Start with some random $(m_0, b_0)$. This gives a random line that probably does not fit the data well.
+2. Compute the gradient $\nabla \mathscr{L}(m_0, b_0)$.
+3. Update to get $(m_1, b_1)$, which gives a slightly better line.
+4. Repeat $N$ times until the line fits well (that is, until the steps become negligibly small).
+
+::: {.callout-note}
+This is exactly how linear regression is trained in machine learning. Instead of solving a system of equations (which is expensive for millions of parameters), you iterate the gradient descent formula. It scales to any number of data points and any number of parameters.
+:::
+
+
+## Review Questions
+
+**1. About the Gradient Descent method, choose all that are true.**
+
+a. It always converges to a local minimum.
+b. The result may vary depending on the initial point.
+c. If it converges, then it converges to a global minimum.
+d. It only works for differentiable functions.
+
+::: {.callout-tip collapse="true"}
+## Answer
+
+**b and d.**
+
+- **b** is correct because if the function has several minima, the initial point will dictate to where the algorithm converges.
+- **d** is correct because gradient descent uses the gradient as its base, and the gradient is related to partial derivatives, so we must have differentiable functions to perform the algorithm.
+- **a** is wrong because with a bad learning rate, the algorithm may diverge and never converge.
+- **c** is wrong because gradient descent can get stuck in a local minimum that is not the global minimum.
+:::
+
+---
+
+**2. Let $f(x, y) = 2x^2 + 3y^2 - 2xy - 10x$. The minimum value of $f(x, y)$ is:**
+
+a. $-15$
+b. $3$
+c. $1$
+
+::: {.callout-tip collapse="true"}
+## Answer
+
+**a.** $-15$
+:::
+
+---
+
+**3. What are the parameters that the Gradient Descent algorithm has? (check all that apply)**
+
+a. Initial point
+b. Final point
+c. Learning rate
+d. Number of iterations
+
+::: {.callout-tip collapse="true"}
+## Answer
+
+**a, c, and d.**
+
+- **a** is correct because the gradient descent algorithm needs an initial point to start its path through the minimum.
+- **c** is correct because the learning rate is the size of each step.
+- **d** is correct because the number of iterations tells us how many times we will perform the calculations. Higher number of iterations will lead to more precise results but will take longer to perform the computations.
+- **b** is wrong because the final point is what we are trying to find, not a parameter we choose.
+:::
+
+---
+
+**4. Let $f(x, y) = x^2 + y^2 - 6x$ and $\nabla f(x, y) = \begin{bmatrix} 2x - 6 \\ 2y \end{bmatrix}$. Let the initial point be $x_0 = (0, 1)$. Performing gradient descent with learning rate $= 0.1$, the first iteration will lead us to the point $x_1$ which is:**
+
+a. $x_1 = (0.6, 0.8)$
+b. $x_1 = (-6, 2)$
+c. $x_1 = (6, -1)$
+d. $x_1 = (0, 1)$
+
+::: {.callout-tip collapse="true"}
+## Answer
+
+**a.** $x_1 = (0.6, 0.8)$
+
+The gradient at $(0, 1)$ is $\begin{bmatrix} 2(0) - 6 \\ 2(1) \end{bmatrix} = \begin{bmatrix} -6 \\ 2 \end{bmatrix}$.
+
+The update is $x_1 = (0, 1) - 0.1 \cdot (-6, 2) = (0 + 0.6,\; 1 - 0.2) = (0.6, 0.8)$.
+:::

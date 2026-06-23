@@ -1,0 +1,851 @@
+---
+title: "Probability Distributions (Continuous)"
+date: "2026-06-22"
+difficulty: 3
+order: 6
+categories: [probability]
+---
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+## Discrete vs. Continuous
+
+Now that you know about discrete distributions, let us talk about continuous ones. The key difference:
+
+- In **discrete** distributions, the possible values form a **list**. For example, if you toss a coin 3 times, you could get heads 0, 1, 2, or 3 times. You can always write them out: 0, 1, 2, 3.
+- In **continuous** distributions, the possible values form an **interval**. For example, the amount of time you wait on the phone could be 1 minute, 1.01 minutes, 1.2237 minutes, $\pi$ minutes. These values cannot be listed because between any two of them there are infinitely more.
+
+## Why Individual Probabilities are Zero
+
+Imagine you are on a call with tech support. How long will you wait? The call could take 1 minute, 2 minutes, 3 minutes, or any value in between.
+
+At first, you might try to assign probabilities the same way we did for discrete distributions: give each possible value a bar height. But there are infinitely many values the call could take. If each one had a positive probability, the sum would exceed 1 (since there are uncountably many values). So the individual bars would have to get smaller and smaller until they become zero.
+
+This leads to a surprising fact:
+
+::: {.callout-note}
+## Key Insight
+For a continuous random variable, the probability that it takes any **exact** value is zero. $P(X = 1.000\ldots) = 0$. There are simply too many possible values (an entire interval) for any single one to have positive probability.
+:::
+
+So how do we describe probabilities for continuous random variables?
+
+## Thinking in Windows (Intervals)
+
+Instead of asking "what is the probability the call takes exactly 1 minute?", we ask "what is the probability the call takes between 1 and 2 minutes?"
+
+Let us build this up step by step.
+
+**Step 1: Wide intervals (1 minute each)**
+
+Suppose the call never takes more than 5 minutes. We split the range into 1-minute intervals and assign a probability to each:
+
+```{python}
+#| echo: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import gamma
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 3.5))
+
+# Generate the "true" distribution for reference (peaks around 1.5-2 min)
+x_cont = np.linspace(0, 5, 200)
+pdf_vals = gamma.pdf(x_cont, a=3.5, scale=0.55)
+pdf_vals = pdf_vals / np.trapezoid(pdf_vals, x_cont)  # normalize over [0,5]
+
+# Step 1: 1-minute bins
+edges1 = np.arange(0, 6, 1)
+centers1 = (edges1[:-1] + edges1[1:]) / 2
+widths1 = np.diff(edges1)
+probs1 = np.array([np.trapezoid(pdf_vals[(x_cont >= edges1[i]) & (x_cont <= edges1[i+1])],
+                             x_cont[(x_cont >= edges1[i]) & (x_cont <= edges1[i+1])]) for i in range(len(edges1)-1)])
+axes[0].bar(centers1, probs1, width=widths1*0.9, color='#4682B4', edgecolor='white', alpha=0.8)
+axes[0].set_xticks(range(6))
+axes[0].set_xlabel('Call duration (minutes)', fontsize=11)
+axes[0].set_ylabel('Probability', fontsize=11)
+axes[0].set_title('1-minute intervals', fontsize=12, color='gray')
+axes[0].set_ylim(0, 0.5)
+axes[0].grid(linestyle='--', alpha=0.4, axis='y')
+
+# Step 2: 0.5-minute bins
+edges2 = np.arange(0, 5.5, 0.5)
+centers2 = (edges2[:-1] + edges2[1:]) / 2
+widths2 = np.diff(edges2)
+probs2 = np.array([np.trapezoid(pdf_vals[(x_cont >= edges2[i]) & (x_cont <= edges2[i+1])],
+                             x_cont[(x_cont >= edges2[i]) & (x_cont <= edges2[i+1])]) for i in range(len(edges2)-1)])
+axes[1].bar(centers2, probs2, width=widths2*0.9, color='#4682B4', edgecolor='white', alpha=0.8)
+axes[1].set_xticks(range(6))
+axes[1].set_xlabel('Call duration (minutes)', fontsize=11)
+axes[1].set_ylabel('Probability', fontsize=11)
+axes[1].set_title('30-second intervals', fontsize=12, color='gray')
+axes[1].set_ylim(0, 0.35)
+axes[1].grid(linestyle='--', alpha=0.4, axis='y')
+
+# Step 3: 0.25-minute bins
+edges3 = np.arange(0, 5.25, 0.25)
+centers3 = (edges3[:-1] + edges3[1:]) / 2
+widths3 = np.diff(edges3)
+probs3 = np.array([np.trapezoid(pdf_vals[(x_cont >= edges3[i]) & (x_cont <= edges3[i+1])],
+                             x_cont[(x_cont >= edges3[i]) & (x_cont <= edges3[i+1])]) for i in range(len(edges3)-1)])
+axes[2].bar(centers3, probs3, width=widths3*0.9, color='#4682B4', edgecolor='white', alpha=0.8)
+axes[2].set_xticks(range(6))
+axes[2].set_xlabel('Call duration (minutes)', fontsize=11)
+axes[2].set_ylabel('Probability', fontsize=11)
+axes[2].set_title('15-second intervals', fontsize=12, color='gray')
+axes[2].set_ylim(0, 0.2)
+axes[2].grid(linestyle='--', alpha=0.4, axis='y')
+
+plt.tight_layout()
+plt.show()
+```
+
+Notice that most calls take between 0 and 2 minutes, and very few go all the way to 5 minutes.
+
+**Step 2: Make the intervals smaller**
+
+If we want more detail, we can use 30-second intervals (middle plot) or 15-second intervals (right plot). Each time we split further, we get more bars but each bar is shorter (since the same total probability of 1 is spread across more intervals).
+
+**Step 3: Take it to the limit**
+
+If we keep splitting infinitely, the bars become infinitely thin and infinitely many. What we get is a smooth **curve**. This is the continuous probability distribution.
+
+```{python}
+#| echo: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import gamma
+
+fig, ax = plt.subplots(figsize=(8, 4))
+x = np.linspace(0, 5, 300)
+pdf = gamma.pdf(x, a=3.5, scale=0.55)
+pdf = pdf / np.trapezoid(pdf, x)
+
+ax.fill_between(x, pdf, alpha=0.3, color='#4682B4')
+ax.plot(x, pdf, color='#4682B4', linewidth=2.5)
+ax.set_xlabel('Call duration (minutes)', fontsize=12)
+ax.set_ylabel('Density', fontsize=12)
+ax.set_title('Continuous probability distribution', fontsize=12, color='gray')
+ax.set_xlim(0, 5)
+ax.set_ylim(0)
+ax.grid(linestyle='--', alpha=0.4)
+ax.annotate('Total shaded area = 1', xy=(1.8, 0.15), fontsize=12, ha='center',
+            color='#333', fontstyle='italic')
+plt.tight_layout()
+plt.show()
+```
+
+## From Sums to Areas
+
+In a discrete distribution, the probabilities (bar heights) must **sum** to 1.
+
+In a continuous distribution, we have the same requirement but expressed differently: the **area under the curve** must equal 1. The curve itself does not give you a probability directly. Instead, the probability that the random variable falls within an interval is the area under the curve over that interval.
+
+| | Discrete | Continuous |
+|:---|:---:|:---:|
+| Possible values | List (0, 1, 2, ...) | Interval (all reals in a range) |
+| Probability of exact value | Can be positive | Always zero |
+| Total must equal 1 | Sum of bar heights | Area under the curve |
+| Probability of a range | Sum of individual probabilities | Area under the curve in that range |
+
+### Review Questions {.unnumbered}
+
+**1. Why is $P(X = 2.5) = 0$ for a continuous random variable?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because a continuous random variable can take uncountably many values (an entire interval). If any single value had a positive probability, the total would exceed 1. So the probability of any exact value must be zero. Instead, we compute probabilities over intervals (ranges of values).
+:::
+
+---
+
+**2. In a continuous distribution, what must equal 1?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The total area under the curve must equal 1. This is the continuous equivalent of requiring that all bar heights sum to 1 in a discrete distribution.
+:::
+
+---
+
+**3. How do you find the probability that a continuous random variable falls between 2 and 3 minutes?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+You compute the area under the curve between $x = 2$ and $x = 3$. This area represents $P(2 \leq X \leq 3)$.
+:::
+
+---
+
+**4. What happens to the bar heights as we make the intervals smaller and smaller in our approximation?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The bar heights get smaller (since the same total probability is spread over more intervals), and the number of bars increases. In the limit, the bars become a smooth curve, and we transition from a discrete approximation to the true continuous distribution.
+:::
+
+---
+
+## Probability Density Function (PDF)
+
+In discrete distributions, each value has a probability given by the probability mass function (PMF). For continuous distributions, the equivalent is called the **probability density function** (PDF), denoted by a lowercase $f$ (or $f_X$ to specify which variable).
+
+### Uniform Example: Equal Probability Everywhere
+
+Let us start with a simple case. Suppose the call center answers with equal probability at any time between 0 and 5 minutes. If we divide this range into 5 equal parts, the probability of landing in any one part is the same.
+
+What is the probability that the call lasts between 2 and 3 minutes? Since there are 5 equal parts and the total probability is 1, each part has probability $\frac{1}{5} = 0.2$.
+
+```{python}
+#| echo: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 3.5))
+
+# 5 intervals of width 1
+edges1 = np.arange(0, 6, 1)
+height1 = 0.2  # each bar is 0.2 (probability = height * width = 0.2 * 1)
+axes[0].bar(edges1[:-1], height1, width=1, align='edge', color='#4682B4', edgecolor='white', alpha=0.8)
+axes[0].bar(edges1[2], height1, width=1, align='edge', color='#CC7000', edgecolor='white', alpha=0.9)
+axes[0].set_xticks(range(6))
+axes[0].set_xlabel('Call duration (minutes)', fontsize=11)
+axes[0].set_ylabel('Density', fontsize=11)
+axes[0].set_title('5 intervals (width = 1 min)', fontsize=12, color='gray')
+axes[0].set_ylim(0, 0.3)
+axes[0].grid(linestyle='--', alpha=0.4, axis='y')
+axes[0].annotate('P(2 < X < 3) = 0.2', xy=(2.5, 0.22), ha='center', fontsize=11, color='#CC7000', fontweight='bold')
+
+# 10 intervals of width 0.5
+edges2 = np.arange(0, 5.5, 0.5)
+height2 = 0.2  # density stays the same, probability = 0.2 * 0.5 = 0.1
+bars2 = axes[1].bar(edges2[:-1], height2, width=0.5, align='edge', color='#4682B4', edgecolor='white', alpha=0.8)
+axes[1].bar(edges2[4], height2, width=0.5, align='edge', color='#CC7000', edgecolor='white', alpha=0.9)
+axes[1].set_xticks(range(6))
+axes[1].set_xlabel('Call duration (minutes)', fontsize=11)
+axes[1].set_ylabel('Density', fontsize=11)
+axes[1].set_title('10 intervals (width = 0.5 min)', fontsize=12, color='gray')
+axes[1].set_ylim(0, 0.3)
+axes[1].grid(linestyle='--', alpha=0.4, axis='y')
+axes[1].annotate('P(2 < X < 2.5) = 0.1', xy=(2.25, 0.22), ha='center', fontsize=11, color='#CC7000', fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+```
+
+Notice something important: when we split into 10 intervals (right), the **height stays the same** (0.2), but the width is halved. The probability of landing in the highlighted interval is now $0.2 \times 0.5 = 0.1$, not 0.2.
+
+This is the key insight: **probability = height × width = area**. The height alone is not the probability. It is the *density* (probability per unit width).
+
+### Probability as Area
+
+For the non-uniform distribution (where calls are more likely to last 1-2 minutes):
+
+```{python}
+#| echo: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import gamma
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+x = np.linspace(0, 5, 300)
+pdf = gamma.pdf(x, a=3.5, scale=0.55)
+pdf = pdf / np.trapezoid(pdf, x)
+
+# Left: P(1 < X < 2)
+axes[0].plot(x, pdf, color='#4682B4', linewidth=2.5)
+axes[0].fill_between(x, pdf, where=(x >= 1) & (x <= 2), alpha=0.4, color='#CC7000')
+axes[0].fill_between(x, pdf, where=(x < 1) | (x > 2), alpha=0.15, color='#4682B4')
+axes[0].set_xlabel('Call duration (minutes)', fontsize=11)
+axes[0].set_ylabel('Density', fontsize=11)
+axes[0].set_title('P(1 < X < 2) = shaded area', fontsize=12, color='gray')
+axes[0].set_xlim(0, 5)
+axes[0].set_ylim(0)
+axes[0].grid(linestyle='--', alpha=0.4)
+
+# Right: P(2 < X < 3)
+axes[1].plot(x, pdf, color='#4682B4', linewidth=2.5)
+axes[1].fill_between(x, pdf, where=(x >= 2) & (x <= 3), alpha=0.4, color='#2E8B57')
+axes[1].fill_between(x, pdf, where=(x < 2) | (x > 3), alpha=0.15, color='#4682B4')
+axes[1].set_xlabel('Call duration (minutes)', fontsize=11)
+axes[1].set_ylabel('Density', fontsize=11)
+axes[1].set_title('P(2 < X < 3) = shaded area', fontsize=12, color='gray')
+axes[1].set_xlim(0, 5)
+axes[1].set_ylim(0)
+axes[1].grid(linestyle='--', alpha=0.4)
+
+plt.tight_layout()
+plt.show()
+```
+
+The probability of the call lasting between 1 and 2 minutes is the orange area on the left. The probability of lasting between 2 and 3 minutes is the green area on the right. You can see that the 1-2 interval has more area (higher probability) because the curve is taller there.
+
+What about the probability of the call lasting **exactly** 2 minutes? That would be the area of a line segment (zero width), which is zero. This is why $P(X = 2) = 0$ for continuous variables.
+
+### Requirements for a Valid PDF
+
+A function $f(x)$ is a valid probability density function if it satisfies:
+
+1. **Non-negativity**: $f(x) \geq 0$ for all $x$. The curve can never go below zero (otherwise it would imply negative probability).
+
+2. **Total area equals 1**: $\displaystyle\int_{-\infty}^{\infty} f(x) \, dx = 1$. The total area under the curve across all possible values must be 1.
+
+Note that $f(x)$ can be zero for many values (for example, negative call durations are impossible, so $f(x) = 0$ for $x < 0$). It can also be greater than 1 at some points, as long as the total area remains 1. The density is not a probability itself; only areas are.
+
+### PMF vs. PDF Summary
+
+| | Discrete (PMF) | Continuous (PDF) |
+|:---|:---:|:---:|
+| Notation | $p(x)$ or $p_X(x)$ | $f(x)$ or $f_X(x)$ |
+| Gives you | $P(X = x)$ directly | Density (probability per unit width) |
+| Probability of a value | $p(x)$ | $P(X = x) = 0 \;\; \forall x$ |
+| Probability of a range $[a, b]$ | $\sum_{x=a}^{b} p(x)$ | $\int_a^b f(x) \, dx$ (area) |
+| Must be $\geq 0$ | Yes | Yes |
+| Must sum/integrate to 1 | $\sum p(x) = 1$ | $\int f(x) \, dx = 1$ |
+
+The symbol $\forall$ means "for all." So the continuous column reads: "the probability that $X$ equals any specific value $x$ is always 0."
+
+### Review Questions {.unnumbered}
+
+**5. In the uniform example (equal probability between 0 and 5 minutes), what is the height of the PDF?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The height is $\frac{1}{5} = 0.2$. The total area must be 1, and the base is 5, so height $= \frac{1}{\text{base}} = \frac{1}{5}$.
+:::
+
+---
+
+**6. Can a PDF value be greater than 1? Why or why not?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Yes. The PDF gives density (probability per unit width), not probability itself. As long as the total area under the curve equals 1, individual heights can exceed 1. For example, a uniform distribution between 0 and 0.5 would have height 2, but the area is $2 \times 0.5 = 1$.
+:::
+
+---
+
+**7. What are the two requirements for a valid PDF?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+1. $f(x) \geq 0$ for all $x$ (non-negativity).
+2. $\int_{-\infty}^{\infty} f(x) \, dx = 1$ (total area under the curve equals 1).
+:::
+
+---
+
+**8. In the non-uniform call center example, why is $P(1 < X < 2)$ greater than $P(3 < X < 4)$?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because the PDF curve is taller between 1 and 2 minutes than between 3 and 4 minutes. Since probability equals area under the curve, a taller curve over the same width means more area, which means higher probability.
+:::
+
+---
+
+## Cumulative Distribution Function (CDF)
+
+So far, to find probabilities with the PDF you need to calculate areas under a curve. That is not always convenient. The **cumulative distribution function** (CDF) gives you a shortcut: it directly tells you the probability that the variable is less than or equal to some value.
+
+Unlike the PMF (discrete only) and PDF (continuous only), the CDF works for **both** discrete and continuous variables. The "D" stands for "distribution," not "density." It is a universal tool.
+
+$$
+F(x) = P(X \leq x)
+$$
+
+The CDF is denoted with a capital $F$ (or $F_X$ to specify the variable). Do not confuse it with lowercase $f$, which is the PDF.
+
+### Building the CDF from Discrete Bars
+
+Let us return to the call center with the discrete approximation (1-minute intervals). On the left we have the PMF (probability per interval). On the right we build the CDF by **accumulating** (adding up) probabilities from left to right:
+
+- $F(1)$ = probability the call is between 0 and 1 minute = first bar
+- $F(2)$ = probability the call is between 0 and 2 minutes = first bar + second bar
+- $F(3)$ = first + second + third bar
+- ...and so on until $F(5) = 1$ (all bars added)
+
+```{python}
+#| echo: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import gamma
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+# Generate discrete approximation
+x_cont = np.linspace(0, 5, 200)
+pdf_vals = gamma.pdf(x_cont, a=3.5, scale=0.55)
+pdf_vals = pdf_vals / np.trapezoid(pdf_vals, x_cont)
+
+edges = np.arange(0, 6, 1)
+probs = np.array([np.trapezoid(pdf_vals[(x_cont >= edges[i]) & (x_cont <= edges[i+1])],
+                             x_cont[(x_cont >= edges[i]) & (x_cont <= edges[i+1])]) for i in range(len(edges)-1)])
+
+# Left: PMF bars
+axes[0].bar(edges[:-1], probs, width=0.9, align='edge', color='#4682B4', edgecolor='white', alpha=0.8)
+axes[0].set_xticks(range(6))
+axes[0].set_xlabel('Call duration (minutes)', fontsize=11)
+axes[0].set_ylabel('Probability', fontsize=11)
+axes[0].set_title('PMF (probability per interval)', fontsize=12, color='gray')
+axes[0].set_ylim(0, 1.1)
+axes[0].grid(linestyle='--', alpha=0.4, axis='y')
+
+# Right: CDF (staircase) - jumps at left edge of each interval
+cdf_vals = np.cumsum(probs)
+cdf_vals[-1] = 1.0  # ensure last value is exactly 1
+
+# Build staircase: jump at left edge of each bin, flat until next
+stair_x = [-0.2, 0]  # flat at 0 before x=0
+stair_y = [0, 0]
+for i in range(len(probs)):
+    stair_x.append(edges[i])    # jump point
+    stair_y.append(cdf_vals[i]) # jump up
+    stair_x.append(edges[i+1])  # flat until next edge
+    stair_y.append(cdf_vals[i])
+
+axes[1].plot(stair_x, stair_y, color='#CC0000', linewidth=2.5)
+axes[1].set_xticks(range(6))
+axes[1].set_xlabel('Call duration (minutes)', fontsize=11)
+axes[1].set_ylabel('Cumulative probability', fontsize=11)
+axes[1].set_title('CDF (accumulated probability)', fontsize=12, color='gray')
+axes[1].set_ylim(0, 1.1)
+axes[1].axhline(1, linestyle='--', color='gray', alpha=0.5)
+axes[1].grid(linestyle='--', alpha=0.4, axis='y')
+
+plt.tight_layout()
+plt.show()
+```
+
+Notice two things about the CDF:
+
+- It **starts at 0** (no probability has been accumulated yet).
+- It **ends at 1** (all probability has been accumulated).
+
+### Continuous CDF
+
+For the continuous distribution, the idea is the same. Instead of summing bar heights, you accumulate area under the PDF curve from left to right. At any point $x$, the CDF value $F(x)$ equals the total area under the PDF from the beginning up to $x$.
+
+```{python}
+#| echo: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import gamma
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+x = np.linspace(0, 5, 300)
+pdf = gamma.pdf(x, a=3.5, scale=0.55)
+pdf = pdf / np.trapezoid(pdf, x)
+
+# Left: PDF with shaded area up to x=2
+axes[0].plot(x, pdf, color='#4682B4', linewidth=2.5)
+axes[0].fill_between(x, pdf, where=(x <= 2), alpha=0.4, color='#4682B4')
+axes[0].axvline(2, color='#333', linestyle='--', alpha=0.7)
+axes[0].set_xlabel('Call duration (minutes)', fontsize=11)
+axes[0].set_ylabel('Density', fontsize=11)
+axes[0].set_title('PDF: shaded area = F(2) = P(X ≤ 2)', fontsize=12, color='gray')
+axes[0].set_xlim(0, 5)
+axes[0].set_ylim(0)
+axes[0].grid(linestyle='--', alpha=0.4)
+axes[0].annotate('F(2)', xy=(1, 0.15), fontsize=13, ha='center', fontweight='bold', color='#333')
+
+# Right: CDF curve
+cdf = np.cumsum(pdf) * (x[1] - x[0])
+cdf = cdf / cdf[-1]  # ensure ends at 1
+axes[1].plot(x, cdf, color='#CC0000', linewidth=2.5)
+axes[1].axhline(1, linestyle='--', color='gray', alpha=0.5)
+axes[1].axhline(0, linestyle='--', color='gray', alpha=0.5)
+axes[1].plot(2, np.interp(2, x, cdf), 'o', color='#CC0000', markersize=8)
+axes[1].axvline(2, color='#333', linestyle='--', alpha=0.4)
+axes[1].axhline(np.interp(2, x, cdf), color='#333', linestyle='--', alpha=0.4, xmax=0.4)
+axes[1].set_xlabel('Call duration (minutes)', fontsize=11)
+axes[1].set_ylabel('Cumulative probability F(x)', fontsize=11)
+axes[1].set_title('CDF: read probabilities directly', fontsize=12, color='gray')
+axes[1].set_xlim(0, 5)
+axes[1].set_ylim(0, 1.1)
+axes[1].grid(linestyle='--', alpha=0.4)
+axes[1].annotate(f'F(2) ≈ {np.interp(2, x, cdf):.2f}', xy=(2.2, np.interp(2, x, cdf) - 0.05),
+                fontsize=11, color='#CC0000', fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+```
+
+On the left, the shaded area under the PDF up to $x = 2$ is the probability $P(X \leq 2)$. On the right, you simply read that value off the CDF curve at $x = 2$. No area calculation needed.
+
+### Properties of the CDF
+
+Every CDF must satisfy these properties:
+
+1. **Starts at 0**: $F(-\infty) = 0$ (or $F$ at the leftmost possible value is 0).
+2. **Ends at 1**: $F(\infty) = 1$ (or $F$ at the rightmost possible value is 1).
+3. **Never decreases**: Since you are accumulating probability, and probability cannot be negative, the CDF can only go up or stay flat. It never goes down.
+4. **Values between 0 and 1**: Since it represents a probability, $0 \leq F(x) \leq 1$ for all $x$.
+
+### Discrete vs. Continuous CDF
+
+For a **discrete** variable, the CDF has jumps (staircase shape). Each jump corresponds to a value that has positive probability. The height of the jump equals the probability of that value.
+
+For a **continuous** variable, the CDF is a smooth curve. There are no jumps because no single point has probability mass on its own.
+
+### PDF and CDF Give the Same Information
+
+The PDF and CDF contain the same information, just written differently:
+
+- With the **PDF**, you calculate areas to find probabilities.
+- With the **CDF**, you read heights directly.
+
+You can always go from one to the other. The CDF is the accumulated area of the PDF, and the PDF is the rate of change (slope) of the CDF.
+
+### Review Questions {.unnumbered}
+
+**9. What does $F(3) = 0.85$ mean in plain language?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+It means there is an 85% probability that the call lasts 3 minutes or less. In other words, $P(X \leq 3) = 0.85$.
+:::
+
+---
+
+**10. How can you compute $P(2 < X < 4)$ using the CDF?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+$P(2 < X < 4) = F(4) - F(2)$. The CDF at 4 gives the total probability up to 4, and subtracting the CDF at 2 removes the probability below 2, leaving just the probability between 2 and 4.
+:::
+
+---
+
+**11. Why does the CDF of a discrete variable have jumps, but the CDF of a continuous variable is smooth?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+In a discrete variable, specific values have positive probability (mass), which causes sudden jumps in accumulated probability. In a continuous variable, no single point has mass ($P(X = x) = 0$), so probability accumulates gradually without any sudden jumps.
+:::
+
+---
+
+**12. What are the four properties every CDF must satisfy?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+1. Starts at 0 (left limit is 0).
+2. Ends at 1 (right limit is 1).
+3. Never decreases (non-decreasing).
+4. All values are between 0 and 1.
+:::
+
+---
+
+## Interactive Tool: PMF/PDF and CDF Explorer
+
+Use this tool to explore the relationship between the PMF/PDF and CDF. Choose a distribution, adjust its parameters, and run experiments to compare theoretical and observed results. Toggle "Show CDF" to overlay the cumulative distribution function.
+
+- **Discrete - Binomial**: Toss a coin $n$ times with probability of heads $p$. The variable $X$ counts the number of heads. Run experiments to simulate many rounds of $n$ tosses.
+- **Continuous - Uniform**: A random number is picked with equal probability anywhere between $a$ and $b$. Think of it as a spinner that lands uniformly on an interval.
+- **Continuous - Normal**: Values cluster around the mean $\mu$ with spread controlled by $\sigma$. Most values fall within a few $\sigma$ of the mean. Think of it as measuring heights, temperatures, or measurement errors.
+
+<!-- interactive-tool -->
+
+```{ojs}
+//| echo: false
+
+html`<style>
+.pmfcdf-tool {
+  border: 2px solid #ddd; border-radius: 8px; padding: 20px; margin: 1em 0; background: #fafafa;
+  font-family: 'PT Sans', sans-serif;
+}
+.pmfcdf-tool .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 12px; }
+.pmfcdf-tool label { font-weight: 600; margin-right: 4px; }
+.pmfcdf-tool select, .pmfcdf-tool input[type="number"] {
+  padding: 5px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em;
+}
+.pmfcdf-tool input[type="number"] { width: 65px; }
+.pmfcdf-tool .chart { border: 1px solid #ddd; border-radius: 6px; padding: 10px; background: #fff; margin: 12px 0; }
+.pmfcdf-tool .btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.pmfcdf-tool button {
+  padding: 7px 16px; border: 1px solid #22176F; background: #fff; color: #22176F;
+  border-radius: 4px; font-size: 0.9em; font-weight: 600; cursor: pointer;
+}
+.pmfcdf-tool button:hover { background: #22176F; color: #fff; }
+.pmfcdf-tool .legend { font-size: 0.9em; color: #555; margin-top: 6px; }
+.pmfcdf-tool .stats { font-size: 0.9em; margin-top: 8px; color: #333; }
+</style>`
+```
+
+```{ojs}
+//| echo: false
+
+{
+  const Plot = await import("https://esm.sh/@observablehq/plot@0.6");
+  let experiments = [];
+  let lastX = null;
+
+  const container = html`<div class="pmfcdf-tool">
+    <div class="row">
+      <div><label>Choose distribution:</label>
+        <select id="it-dist">
+          <option value="binomial">Discrete - Binomial</option>
+          <option value="uniform">Continuous - Uniform</option>
+          <option value="normal">Continuous - Normal</option>
+        </select>
+      </div>
+      <div id="it-params"></div>
+      <div><label><input type="checkbox" id="it-cdf"> Show CDF</label></div>
+    </div>
+    <div id="it-chart" style="min-height:320px;"></div>
+    <div class="btn-row">
+      <strong>Run the experiment:</strong>
+      <button id="it-1">one time</button>
+      <button id="it-10">10 times</button>
+      <button id="it-50">50 times</button>
+      <button id="it-100">100 times</button>
+      <button id="it-refresh">Refresh</button>
+    </div>
+    <div id="it-stats" style="font-size:0.9em;margin-top:8px;color:#333;"></div>
+    <div id="it-results" style="font-size:0.82em;color:#666;margin-top:4px;max-height:55px;overflow-y:auto;word-break:break-all;"></div>
+    <div class="legend" style="font-size:0.85em;color:#555;margin-top:10px;">
+      <strong style="color:#333;">●/━</strong> PMF/PDF &nbsp;&nbsp;
+      <strong style="color:#CC0000;">━</strong> CDF &nbsp;&nbsp;
+      <strong style="color:#CC7000;">█</strong> Experiment histogram
+    </div>
+  </div>`;
+
+  const distEl = container.querySelector('#it-dist');
+  const paramsEl = container.querySelector('#it-params');
+  const chartEl = container.querySelector('#it-chart');
+  const cdfCheck = container.querySelector('#it-cdf');
+  const statsEl = container.querySelector('#it-stats');
+  const resultsEl = container.querySelector('#it-results');
+
+  function getParams() {
+    const d = distEl.value;
+    if (d === "binomial") {
+      return {dist: d, n: parseInt(container.querySelector('#it-n')?.value || 10),
+              p: parseFloat(container.querySelector('#it-p')?.value || 0.3)};
+    } else if (d === "uniform") {
+      return {dist: d, a: parseFloat(container.querySelector('#it-a')?.value || 0),
+              b: parseFloat(container.querySelector('#it-b')?.value || 5)};
+    } else {
+      return {dist: d, mu: parseFloat(container.querySelector('#it-mu')?.value || 0),
+              sigma: parseFloat(container.querySelector('#it-sigma')?.value || 1)};
+    }
+  }
+
+  function updateParamsUI() {
+    const d = distEl.value;
+    if (d === "binomial") {
+      paramsEl.innerHTML = `<label>n =</label><input type="number" id="it-n" value="10" min="1" max="50" style="width:55px;">
+        <label style="margin-left:12px;">p =</label><input type="number" id="it-p" value="0.3" min="0.01" max="0.99" step="0.05" style="width:60px;">`;
+    } else if (d === "uniform") {
+      paramsEl.innerHTML = `<label>a =</label><input type="number" id="it-a" value="0" step="0.5" style="width:55px;">
+        <label style="margin-left:12px;">b =</label><input type="number" id="it-b" value="5" step="0.5" style="width:55px;">`;
+    } else {
+      paramsEl.innerHTML = `<label>μ =</label><input type="number" id="it-mu" value="0" step="0.1" style="width:55px;">
+        <label style="margin-left:12px;">σ =</label><input type="number" id="it-sigma" value="1" min="0.1" step="0.1" style="width:55px;">`;
+    }
+    paramsEl.querySelectorAll('input').forEach(inp => inp.addEventListener('change', () => { experiments = []; lastX = null; render(); }));
+  }
+
+  function binomCoeff(n, k) {
+    if (k < 0 || k > n) return 0;
+    let c = 1;
+    for (let i = 0; i < k; i++) c = c * (n - i) / (i + 1);
+    return c;
+  }
+
+  function sampleOne(params) {
+    if (params.dist === "binomial") {
+      let s = 0;
+      for (let i = 0; i < params.n; i++) if (Math.random() < params.p) s++;
+      return s;
+    } else if (params.dist === "uniform") {
+      return params.a + Math.random() * (params.b - params.a);
+    } else {
+      const u1 = Math.random(), u2 = Math.random();
+      return params.mu + params.sigma * Math.sqrt(-2*Math.log(u1)) * Math.cos(2*Math.PI*u2);
+    }
+  }
+
+  function render() {
+    const params = getParams();
+    const showC = cdfCheck.checked;
+    const plotWidth = chartEl.clientWidth || 720;
+    let marks = [];
+
+    if (params.dist === "binomial") {
+      const {n, p} = params;
+      const xs = Array.from({length: n+1}, (_, i) => i);
+      const pmf = xs.map(k => binomCoeff(n, k) * Math.pow(p, k) * Math.pow(1-p, n-k));
+
+      // Experiment histogram (behind)
+      if (experiments.length > 0) {
+        const counts = new Array(n+1).fill(0);
+        experiments.forEach(v => { if (v >= 0 && v <= n) counts[Math.round(v)]++; });
+        const histData = xs.map((x, i) => ({x1: x - 0.4, x2: x + 0.4, y: counts[i] / experiments.length}));
+        marks.push(Plot.rectY(histData, {x1: "x1", x2: "x2", y1: 0, y2: "y", fill: "#CC7000", fillOpacity: 0.5}));
+      }
+
+      // PMF lollipops (on top)
+      const pmfData = xs.map((x, i) => ({x, y: pmf[i]}));
+      marks.push(Plot.ruleX(pmfData, {x: "x", y1: 0, y2: "y", stroke: "#333", strokeWidth: 2}));
+      marks.push(Plot.dot(pmfData, {x: "x", y: "y", fill: "#333", r: 5}));
+
+      if (showC) {
+        const cdf = []; let cum = 0;
+        for (const v of pmf) { cum += v; cdf.push(cum); }
+        const cdfSteps = [{x: -1, y: 0}];
+        for (let i = 0; i < xs.length; i++) {
+          cdfSteps.push({x: xs[i], y: i > 0 ? cdf[i-1] : 0});
+          cdfSteps.push({x: xs[i], y: cdf[i]});
+          if (i < xs.length-1) cdfSteps.push({x: xs[i+1], y: cdf[i]});
+          else cdfSteps.push({x: n+1, y: cdf[i]});
+        }
+        marks.push(Plot.line(cdfSteps, {x: "x", y: "y", stroke: "#CC0000", strokeWidth: 2}));
+      }
+
+      marks.push(Plot.ruleY([0]));
+      chartEl.innerHTML = '';
+      chartEl.appendChild(Plot.plot({
+        width: plotWidth, height: 300, marginLeft: 45,
+        x: {domain: [-0.5, n + 0.5], label: "x"},
+        y: {domain: [0, showC ? 1.05 : Math.max(...pmf) * 1.4], label: "f"},
+        marks
+      }));
+
+    } else {
+      let xMin, xMax;
+      if (params.dist === "uniform") {
+        const {a, b} = params;
+        xMin = a - 1.5; xMax = b + 1.5;
+        if (a >= b) { xMin = a - 2; xMax = a + 2; }
+        const h = (b > a) ? 1/(b - a) : 0;
+        const maxPdfEst = Math.max(h, 0.01);
+
+        // Experiment dots + histogram (only within [a, b])
+        if (experiments.length > 0) {
+          const nBins = Math.max(Math.round((b - a) * 5), 10);
+          const binW = (b - a) / nBins;
+          const bins = new Array(nBins).fill(0);
+          experiments.forEach(v => {
+            const idx = Math.floor((v - a) / binW);
+            if (idx >= 0 && idx < nBins) bins[idx]++;
+          });
+          const histData = bins.map((c, i) => ({x1: a + i*binW, x2: a + (i+1)*binW, y: c / (experiments.length * binW)}));
+          marks.push(Plot.rectY(histData, {x1: "x1", x2: "x2", y1: 0, y2: "y", fill: "#CC7000", fillOpacity: 0.45}));
+          const dotData = experiments.map(v => ({x: v, y: -0.02 * maxPdfEst + Math.random() * 0.04 * maxPdfEst}));
+          marks.push(Plot.dot(dotData, {x: "x", y: "y", fill: "#CC7000", r: 3.5, fillOpacity: 0.6}));
+        }
+
+        // PDF: flat line between a and b, zero line outside, circles at endpoints on the x-axis
+        marks.push(Plot.line([{x: xMin, y: 0}, {x: a, y: 0}], {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
+        marks.push(Plot.line([{x: a, y: h}, {x: b, y: h}], {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
+        marks.push(Plot.line([{x: b, y: 0}, {x: xMax, y: 0}], {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
+        marks.push(Plot.dot([{x: a, y: 0}, {x: b, y: 0}], {x: "x", y: "y", fill: "#333", r: 6}));
+
+        if (showC) {
+          const cdfSteps = [{x: xMin, y: 0}, {x: a, y: 0}, {x: b, y: 1}, {x: xMax, y: 1}];
+          marks.push(Plot.line(cdfSteps, {x: "x", y: "y", stroke: "#CC0000", strokeWidth: 2}));
+        }
+
+        marks.push(Plot.ruleY([0]));
+        chartEl.innerHTML = '';
+        chartEl.appendChild(Plot.plot({
+          width: plotWidth, height: 300, marginLeft: 45,
+          x: {domain: [xMin, xMax], label: "x"},
+          y: {domain: [0, showC ? Math.max(maxPdfEst * 1.2, 1.05) : maxPdfEst * 1.5], label: "f"},
+          marks
+        }));
+
+      } else {
+        // Normal distribution
+        xMin = params.mu - 4*params.sigma; xMax = params.mu + 4*params.sigma;
+        const pdfFn = x => (1/(params.sigma*Math.sqrt(2*Math.PI))) * Math.exp(-0.5*((x-params.mu)/params.sigma)**2);
+
+        const step = (xMax - xMin) / 300;
+        const xs = Array.from({length: 301}, (_, i) => xMin + i*step);
+        const pdfData = xs.map(x => ({x, y: pdfFn(x)}));
+        const maxPdfEst = Math.max(...pdfData.map(d => d.y), 0.01);
+
+        // Experiment dots on x-axis + histogram (behind)
+        if (experiments.length > 0) {
+          const nBins = 30;
+          const binW = (xMax - xMin) / nBins;
+          const bins = new Array(nBins).fill(0);
+          experiments.forEach(v => {
+            const idx = Math.floor((v - xMin) / binW);
+            if (idx >= 0 && idx < nBins) bins[idx]++;
+          });
+          const histData = bins.map((c, i) => ({x1: xMin + i*binW, x2: xMin + (i+1)*binW, y: c / (experiments.length * binW)}));
+          marks.push(Plot.rectY(histData, {x1: "x1", x2: "x2", y1: 0, y2: "y", fill: "#CC7000", fillOpacity: 0.45}));
+          const dotData = experiments.map(v => ({x: v, y: -0.02 * maxPdfEst + Math.random() * 0.08 * maxPdfEst}));
+          marks.push(Plot.dot(dotData, {x: "x", y: "y", fill: "#CC7000", r: 3.5, fillOpacity: 0.6}));
+        }
+
+        // PDF curve (on top)
+        marks.push(Plot.line(pdfData, {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
+
+        if (showC) {
+          let cum = 0;
+          const cdfData = xs.map(x => { cum += pdfFn(x) * step; return {x, y: Math.min(cum, 1)}; });
+          marks.push(Plot.line(cdfData, {x: "x", y: "y", stroke: "#CC0000", strokeWidth: 2}));
+        }
+
+        marks.push(Plot.ruleY([0]));
+        chartEl.innerHTML = '';
+        chartEl.appendChild(Plot.plot({
+          width: plotWidth, height: 300, marginLeft: 45,
+          x: {domain: [xMin, xMax], label: "x"},
+          y: {domain: [0, showC ? Math.max(maxPdfEst * 1.2, 1.05) : maxPdfEst * 1.4], label: "f"},
+          marks
+        }));
+      }
+    }
+
+    // Update stats
+    if (experiments.length > 0) {
+      statsEl.innerHTML = `<strong>x = </strong>${lastX !== null ? (typeof lastX === 'number' ? lastX.toFixed(2) : lastX) : ''} &nbsp;&nbsp;&nbsp; <strong>Total experiments = </strong>${experiments.length}`;
+      const shown = experiments.slice(-100).map(v => typeof v === 'number' ? v.toFixed(2) : v).join('  ');
+      resultsEl.textContent = shown + (experiments.length > 100 ? ' ... (showing last 100)' : '');
+    } else {
+      statsEl.textContent = '';
+      resultsEl.textContent = '';
+    }
+  }
+
+  function runExp(count) {
+    const params = getParams();
+    for (let i = 0; i < count; i++) {
+      const v = sampleOne(params);
+      experiments.push(v);
+      lastX = v;
+    }
+    render();
+  }
+
+  distEl.addEventListener('change', () => { updateParamsUI(); experiments = []; lastX = null; render(); });
+  cdfCheck.addEventListener('change', render);
+  container.querySelector('#it-1').addEventListener('click', () => runExp(1));
+  container.querySelector('#it-10').addEventListener('click', () => runExp(10));
+  container.querySelector('#it-50').addEventListener('click', () => runExp(50));
+  container.querySelector('#it-100').addEventListener('click', () => runExp(100));
+  container.querySelector('#it-refresh').addEventListener('click', () => { experiments = []; lastX = null; render(); });
+
+  updateParamsUI();
+  setTimeout(render, 150);
+  return container;
+}
+```

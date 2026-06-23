@@ -1,0 +1,203 @@
+---
+title: "Asynchronous Python (asyncio)"
+date: "2026-05-07"
+difficulty: 3
+order: 3
+categories: [agentic, python, async]
+---
+
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+```{=html}
+<div class="ai-generated-badge"><span class="needs-review-pill">Needs further review</span>This is an AI-Generated Content (Claude, Anthropic) with minimal fact-check and SME supervision</div>
+```
+
+## Why Every Agent Framework Uses asyncio
+
+Every major agentic AI framework (OpenAI Agents SDK, LangGraph, CrewAI, AutoGen, and others) makes use of asynchronous Python. The reason is straightforward. When you are running LLM requests against paid APIs like OpenAI, most of the time is spent *waiting* for responses to come back from a model running in the cloud. That is network-bound waiting, also called IO-bound waiting. If your code just sits idle during that wait, you are wasting time that could be spent running other tasks.
+
+In a multi-agent system where potentially dozens of agents are hitting different APIs, the waste compounds. Asynchronous code lets all of those agents make progress without blocking each other.
+
+## The Short Version
+
+If you just want to get by with minimal understanding, here are the two rules.
+
+1. Any function that might run concurrently gets the `async` keyword before `def`.
+2. When you call that function, you put `await` before the call.
+
+```python
+async def do_some_processing() -> str:
+    # ... some work ...
+    return "done"
+
+# Calling it
+result = await do_some_processing()
+```
+
+That is enough to follow along with agent framework code. But understanding *why* these keywords exist makes everything click, and saves you from confusion when things go wrong.
+
+## What asyncio Actually Is
+
+The `asyncio` module is a lightweight alternative to multithreading and multiprocessing for concurrent execution in Python. It was introduced in Python 3.4, with the `async`/`await` syntax arriving in Python 3.5.
+
+Here is how it differs from the alternatives.
+
+| Approach | Managed by | Overhead | Best for |
+|----------|-----------|----------|----------|
+| Multithreading | OS kernel | Medium | CPU-light tasks with shared memory |
+| Multiprocessing | OS (separate processes) | Heavy | CPU-intensive parallel work |
+| asyncio | Python event loop | Minimal | IO-bound tasks (network, disk) |
+
+Because asyncio is so lightweight, you can have thousands or tens of thousands of concurrent tasks without consuming significant resources. That makes it ideal for agent systems where many LLM calls are in flight at once.
+
+Multithreading is implemented at the operating system level. The OS manages CPU scheduling to switch between threads and treat them as if they are running simultaneously. Multiprocessing spawns entirely separate Python processes, each with its own memory space. Both carry significant overhead.
+
+asyncio takes a different approach entirely. It runs in a single thread, in a single process, and achieves concurrency through cooperative scheduling. Coroutines voluntarily give up control when they are waiting on IO, allowing other coroutines to run. This is why it is so lightweight and why you can scale to tens of thousands of concurrent tasks without resource pressure.
+
+## Coroutines, Not Functions
+
+When you define a function with `async def`, it is no longer a regular function. It becomes a **coroutine**. A coroutine is something Python can pause and resume.
+
+```{mermaid}
+%%| fig-cap: "Regular function vs coroutine. Calling a coroutine does not execute it. You must await it to schedule execution."
+sequenceDiagram
+    participant Caller
+    participant RegFunc as Regular Function
+    participant Coro as Coroutine
+    participant EL as Event Loop
+
+    Note over Caller, RegFunc: Regular function call
+    Caller->>RegFunc: result = do_work()
+    RegFunc-->>Caller: Executes immediately, returns result
+
+    Note over Caller, EL: Coroutine call
+    Caller->>Coro: coro = async_work()
+    Coro-->>Caller: Returns coroutine object (nothing runs)
+    Caller->>EL: result = await coro
+    EL->>Coro: Schedules and executes
+    Coro-->>EL: Returns result
+    EL-->>Caller: Result delivered
+```
+
+This is the fundamental difference from regular functions. A regular function runs immediately when called. A coroutine just creates an object that *can* be run later. To actually execute it, you must `await` it. The `await` keyword hands the coroutine object to the event loop, which schedules it for execution and blocks (from the caller's perspective) until the result is ready.
+
+Most people still use the word "function" informally, but strictly speaking, anything defined with `async def` is a coroutine. Understanding this distinction matters because it explains why forgetting `await` does not produce an error but also does not do what you expect. You just get a coroutine object sitting in a variable, unexecuted.
+
+## The Event Loop
+
+The event loop is the engine that drives asyncio. It is a loop (literally a `while` loop inside the `asyncio` library) that manages and schedules coroutines.
+
+```{mermaid}
+%%| fig-cap: "The event loop schedules coroutines. When one blocks on IO, the loop switches to another that is ready to run."
+stateDiagram-v2
+    [*] --> Running: Schedule coroutine
+    Running --> Waiting: Hits IO (e.g. API call)
+    Waiting --> Ready: IO completes
+    Ready --> Running: Event loop resumes it
+    Running --> Done: Returns result
+    Done --> [*]
+
+    note right of Waiting
+        While this coroutine waits,
+        the event loop runs others
+    end note
+```
+
+Here is what happens step by step.
+
+1. You schedule a coroutine by awaiting it.
+2. The event loop starts executing that coroutine.
+3. If the coroutine hits an IO operation (like waiting for an OpenAI API response), it *yields* control back to the event loop.
+4. The event loop picks up another coroutine that is ready to run.
+5. When the IO completes, the original coroutine becomes ready again and the event loop resumes it.
+
+The event loop can only execute **one coroutine at a time**. This is not true parallelism. It is cooperative multitasking. Coroutines voluntarily yield when they are waiting, and the event loop takes advantage of those pauses to make progress on other work.
+
+Think of it as a manual, code-level implementation of multithreading. Instead of the operating system deciding when to switch between threads, the coroutines themselves signal when they are idle. This makes the system predictable and eliminates race conditions.
+
+::: {.callout-note}
+Because only one coroutine runs at a time, you do not need locks or mutexes like you would with real multithreading. This eliminates an entire class of concurrency bugs.
+:::
+
+## Running Coroutines Concurrently with gather
+
+If all you ever do is `await` one coroutine after another, there is no concurrency. Each one blocks until it finishes before the next starts. To actually run things concurrently, you use `asyncio.gather()`.
+
+You pass multiple coroutine objects into `asyncio.gather()`, and the event loop schedules all of them. As soon as one is blocking on IO, the others start running. When all of them complete, the results come back as a list in the same order you passed them in.
+
+```{mermaid}
+%%| fig-cap: "Sequential vs concurrent execution. With asyncio.gather, IO-bound tasks overlap instead of running one after another."
+gantt
+    title Sequential vs Concurrent Execution
+    dateFormat X
+    axisFormat %s
+
+    section Sequential
+    Agent A calls LLM      :a1, 0, 2
+    Agent B calls LLM      :a2, 2, 4
+    Agent C calls LLM      :a3, 4, 6
+
+    section Concurrent (gather)
+    Agent A calls LLM      :b1, 0, 2
+    Agent B calls LLM      :b2, 0, 2
+    Agent C calls LLM      :b3, 0, 2
+```
+
+Without `gather`, three sequential API calls that each take 2 seconds would take 6 seconds total. With `gather`, all three start at once, and since they are all just waiting on IO, the total time is about 2 seconds. This is the power of asyncio for agent systems. You get near-linear speedup for IO-bound work without any of the complexity of threads or processes.
+
+## The Entry Point
+
+You cannot use `await` at the top level of a regular Python script (outside of an `async` function). You need an entry point that starts the event loop. The `asyncio.run()` function serves this purpose. It creates a new event loop, runs the given coroutine to completion, and then closes the loop. You typically call it once at the top level of your program.
+
+::: {.callout-note}
+In Jupyter notebooks, an event loop is already running. You can use `await` directly in cells without needing `asyncio.run()`. This is why agent framework examples in notebooks often just write `await agent.run()` at the top level.
+:::
+
+## How This Connects to Agent Frameworks
+
+In frameworks like the OpenAI Agents SDK, the main runner method is a coroutine. Under the hood, it is making API calls to OpenAI, waiting for responses, potentially running multiple tool calls, and coordinating handoffs between agents. All of that waiting is IO-bound, which is exactly where asyncio shines.
+
+When you have multiple agents that need to work in parallel (for example, a research agent and a writing agent that can operate independently), the framework can use `asyncio.gather()` internally to run them concurrently.
+
+```{mermaid}
+%%| fig-cap: "In a multi-agent system, asyncio allows multiple agents to make API calls concurrently. While Agent A waits for its LLM response, Agent B can be processing its own request."
+sequenceDiagram
+    participant EL as Event Loop
+    participant A as Agent A
+    participant B as Agent B
+    participant API as LLM API
+
+    EL->>A: Start execution
+    A->>API: Send prompt (non-blocking)
+    Note over A: Yields to event loop
+    EL->>B: Start execution
+    B->>API: Send prompt (non-blocking)
+    Note over B: Yields to event loop
+    API-->>A: Response ready
+    EL->>A: Resume with response
+    API-->>B: Response ready
+    EL->>B: Resume with response
+```
+
+This is why you see `async` and `await` everywhere in agent code. It is not ceremony for its own sake. It is the mechanism that allows a multi-agent system to efficiently share a single thread across many concurrent LLM interactions.
+
+## Summary
+
+The key concepts to remember are listed below.
+
+| Concept | What it means |
+|---------|--------------|
+| `async def` | Defines a coroutine (not a regular function) |
+| `await` | Schedules a coroutine for execution and waits for its result |
+| Coroutine | A pausable/resumable unit of work that yields during IO waits |
+| Event loop | The scheduler that runs coroutines and switches between them |
+| `asyncio.gather()` | Runs multiple coroutines concurrently |
+| `asyncio.run()` | Entry point that starts the event loop |
+
+The reason all agent frameworks use asyncio is simple. Agents spend most of their time waiting on network IO (LLM API calls, tool executions, web requests). Asyncio lets them do useful work during those waits instead of sitting idle, and it does so with minimal overhead and no threading complexity.

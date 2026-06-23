@@ -1,0 +1,698 @@
+---
+title: "Derivatives and Their Intuition"
+date: "2026-06-08"
+difficulty: 2
+order: 1
+categories: [calculus]
+---
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+
+## Why Calculus Matters in Machine Learning
+
+Before jumping into the mathematics, let's understand why calculus is so important in machine learning. The short answer: **derivatives are used to optimize functions**, which means finding the maximum or minimum value of a function. When you want to find the model that fits your data in the best possible way, you calculate a **loss function** and minimize it. Derivatives tell you exactly how to do that.
+
+### Example 1: Predicting Sales from TV Advertising (Linear Regression)
+
+Imagine you work at a company and you have data on how much money was spent on TV advertising and how many units were sold. You want to predict future sales based on the advertising budget. Here are a few rows from the dataset (the full dataset is available on [Kaggle](https://www.kaggle.com/datasets/devzohaib/tvmarketingcsv) or you can [download it here](/media/tvmarketing.csv)):
+
+| TV Advertising Budget (\$k) | Sales (units) |
+|:---:|:---:|
+| 230.1 | 22.1 |
+| 44.5 | 10.4 |
+| 17.2 | 9.3 |
+| 151.5 | 18.5 |
+| 180.8 | 12.9 |
+
+You decide to build a machine learning model to predict sales. A model, in this case, is simply a line that passes as close as possible to all the data points. The model has parameters (a slope $w$ and an intercept $b$) and predicts $\hat{y} = wx + b$. When training begins, the model starts with any random line, then tweaks it to get a better fit.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+df = pd.read_csv('../../media/tvmarketing.csv')
+tv = df['TV'].values
+sales = df['Sales'].values
+
+# Fit a line (linear regression)
+m, b = np.polyfit(tv, sales, 1)
+x_line = np.linspace(0, 300, 100)
+y_line = m * x_line + b
+
+fig, ax = plt.subplots(figsize=(8, 5))
+
+# Plot data points
+ax.scatter(tv, sales, color='#4682B4', s=30, alpha=0.6, zorder=5, label='Data points')
+
+# Plot the fitted line
+ax.plot(x_line, y_line, color='#CC7000', linewidth=2, label=f'Model: $\\hat{{y}} = {m:.4f}x + {b:.2f}$')
+
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.set_xlabel('TV Advertising Budget (\\$k)', fontsize=11)
+ax.set_ylabel('Sales (units)', fontsize=11)
+ax.set_title('Linear Regression: Predicting Sales from TV Advertising', fontsize=12, color='gray')
+ax.legend(fontsize=10)
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(0, 310)
+ax.set_ylim(0, 28)
+
+plt.tight_layout()
+plt.show()
+```
+
+This is called a **linear regression** problem. But how does the model know which line is best? It defines a **loss function** that measures how far the predictions are from the actual sales numbers, and then it minimizes that loss. Derivatives are the tool that tell us *which direction* to adjust $w$ and $b$ to make the loss smaller. By computing the derivative of the loss with respect to each parameter, we know exactly how to tweak the model to improve it.
+
+You will see the full details of this process in later pages. Specifically, in [Optimization in Neural Networks](optimization-in-neural-networks.qmd) we build this up from the perceptron all the way to gradient descent on the loss function.
+
+### Example 2: Classifying Alien Moods (Classification)
+
+Now consider a different problem. Suppose you travel to a distant planet and meet some aliens. You observe:
+
+| Sentence | "aack" count | "beep" count | Mood |
+|:---|:---:|:---:|:---:|
+| aack aack aack | 3 | 0 | Happy |
+| beep beep | 0 | 2 | Sad |
+| aack beep aack | 2 | 1 | Happy |
+| aack beep beep beep | 1 | 3 | Sad |
+
+You want to tell if an alien is happy or sad based on the sentence. If you plot each sentence as a point (x = number of "aack", y = number of "beep"), you notice that happy and sad points cluster in different regions. The model here is a line that separates the happy region from the sad region. Training that line requires, once again, derivatives.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
+
+fig, ax = plt.subplots(figsize=(7, 5.5))
+
+# Data points
+happy_x = [3, 2]
+happy_y = [0, 1]
+sad_x = [0, 1]
+sad_y = [2, 3]
+
+# Decision boundary: a line with positive slope separating the two classes
+# Line: y = x + 1 (sad above, happy below)
+x_line = np.linspace(-0.5, 4, 100)
+y_line = x_line + 1
+
+# Shaded regions
+# Sad region (above the line)
+sad_region = Polygon([(-0.5, 0.5), (3.5, 4.5), (-0.5, 4.5)],
+                     closed=True, alpha=0.15, color='#4682B4')
+# Happy region (below the line)
+happy_region = Polygon([(-0.5, 0.5), (3.5, 4.5), (4, 4.5), (4, -0.5), (-0.5, -0.5)],
+                       closed=True, alpha=0.15, color='#DAA520')
+
+# Clip to visible area
+from matplotlib.patches import Rectangle
+clip_rect = Rectangle((-0.5, -0.5), 4.5, 5, transform=ax.transData)
+
+sad_patch = ax.add_patch(sad_region)
+happy_patch = ax.add_patch(happy_region)
+
+# Decision boundary
+ax.plot(x_line, y_line, color='#5C0000', linewidth=2.5, label='Decision boundary')
+
+# Plot points
+ax.scatter(happy_x, happy_y, color='#DAA520', s=150, zorder=5, marker='o')
+ax.scatter(sad_x, sad_y, color='#4682B4', s=150, zorder=5, marker='o')
+
+# Emoji-style labels
+ax.annotate('😊', xy=(3, 0), fontsize=18, ha='center', va='center')
+ax.annotate('😊', xy=(2, 1), fontsize=18, ha='center', va='center')
+ax.annotate('😢', xy=(0, 2), fontsize=18, ha='center', va='center')
+ax.annotate('😢', xy=(1, 3), fontsize=18, ha='center', va='center')
+
+# Region labels (horizontal, placed in empty space away from data points)
+ax.text(1.8, 4.0, 'Sad region', fontsize=11, fontweight='bold', color='#4682B4', ha='center')
+ax.text(2.8, 2.0, 'Happy region', fontsize=11, fontweight='bold', color='#DAA520', ha='center')
+
+ax.set_xlabel('Aack count', fontsize=12, fontweight='bold')
+ax.set_ylabel('Beep count', fontsize=12, fontweight='bold')
+ax.set_title('Classification: Separating Happy from Sad', fontsize=12, color='gray')
+ax.set_xlim(-0.5, 4)
+ax.set_ylim(-0.5, 4.5)
+ax.set_xticks(range(0, 4))
+ax.set_yticks(range(0, 5))
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.legend(fontsize=10, loc='upper right')
+
+plt.tight_layout()
+plt.show()
+```
+
+This is called a **classification** problem. Specifically, since you are classifying mood (happy or sad), it is a **sentiment analysis** model.
+
+### Common Thread
+
+Both problems (and many others in machine learning, including neural networks) rely on the same mathematical machinery:
+
+- **Loss/cost functions** that measure how far off your model is
+- **Derivatives** that tell you which direction to adjust the model
+- **Optimization** (gradient descent) that iteratively improves the model
+
+In this course, you will learn about derivatives, optimization, and how they power model training.
+
+
+## Derivative as Instantaneous Rate of Change
+
+When you think of a derivative, think of **velocity**. If you drive 100 km in one hour, your average velocity is 100 km/h. But maybe you started fast, then slowed down, stopped at a light, sped up again, and even reversed at some point. Your velocity was not constant. The question is: at a given instant, what was your velocity?
+
+That is called the **instantaneous velocity**, and it is precisely what a derivative is. A derivative is the instantaneous rate of change of a function. In this case, the function is distance and its derivative is velocity.
+
+## Speedometer Example
+
+Let's add numbers to this idea. Imagine you are driving on a straight road. You have a speedometer, but it breaks. Fortunately, you have an app that records the distance you have traveled, and you take measurements every 5 seconds for one minute.
+
+| Time (s) | Distance (m) |
+|:---:|:---:|
+| 0 | 0 |
+| 5 | 36 |
+| 10 | 122 |
+| 15 | 202 |
+| 20 | 265 |
+| 25 | 351 |
+| 30 | 441 |
+| 35 | 551 |
+| 40 | 591 |
+| 45 | 716 |
+| 50 | 816 |
+| 55 | 900 |
+| 60 | 1000 |
+
+### Is the car moving at constant speed?
+
+Look at the distance values. Between 10 and 15 seconds (a 5-second interval), the car traveled $202 - 122 = 80$ meters. Between 15 and 20 seconds (also 5 seconds), the car traveled $265 - 202 = 63$ meters. Since the car covered different distances in equal time intervals, it was not moving at constant speed.
+
+### Can we find the velocity at exactly $t = 12.5$ seconds?
+
+Not exactly. With only data every 5 seconds, we can find the **average velocity** in an interval, but not the exact velocity at a specific instant within that interval. At $t = 12.5$, the car might have been going faster or slower than the interval average.
+
+However, we can compute the average velocity between $t = 10$ and $t = 15$.
+
+### Average Velocity as Slope
+
+The average velocity over an interval is the same as the **slope** of the line connecting two points on a distance-time graph.
+
+$$
+\text{Average velocity} = \frac{\text{change in distance}}{\text{change in time}} = \frac{\Delta d}{\Delta t}
+$$
+
+This is the "rise over run" formula for slope. For the interval from $t = 10$ to $t = 15$:
+
+$$
+v_{\text{avg}} = \frac{202 - 122}{15 - 10} = \frac{80}{5} = 16 \text{ m/s}
+$$
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.interpolate import CubicSpline
+
+fig, ax = plt.subplots(figsize=(8, 5))
+
+# Data points (sparse, every 5 seconds)
+t_sparse = np.array([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60])
+d_sparse = np.array([0, 36, 122, 202, 265, 351, 441, 551, 591, 716, 816, 900, 1000])
+
+# Smooth curve through the data
+cs = CubicSpline(t_sparse, d_sparse)
+t_smooth = np.linspace(0, 60, 300)
+d_smooth = cs(t_smooth)
+
+ax.plot(t_smooth, d_smooth, color='#4682B4', linewidth=2, label='Distance curve')
+ax.plot(t_sparse, d_sparse, 'o', color='#4682B4', markersize=6, zorder=5)
+
+# Highlight the interval [10, 15]
+ax.plot([10, 15], [122, 202], 'o-', color='#CC0000', linewidth=2.5, markersize=9, zorder=5)
+
+# Rise and run annotations
+ax.plot([10, 15], [122, 122], '--', color='#2E8B57', linewidth=1.5)
+ax.plot([15, 15], [122, 202], '--', color='#2E8B57', linewidth=1.5)
+ax.annotate('', xy=(15, 122), xytext=(10, 122),
+            arrowprops=dict(arrowstyle='<->', color='#2E8B57', lw=1.5))
+ax.text(12.5, 95, r'$\Delta t = 5$', fontsize=11, ha='center', color='#2E8B57', fontweight='bold')
+ax.annotate('', xy=(15, 202), xytext=(15, 122),
+            arrowprops=dict(arrowstyle='<->', color='#CC7000', lw=1.5))
+ax.text(15.5, 162, r'$\Delta d = 80$', fontsize=11, ha='left', color='#CC7000', fontweight='bold')
+
+# Labels for the two highlighted points
+ax.annotate('$(10, 122)$', xy=(10, 122), xytext=(3, 145), fontsize=10, fontweight='bold',
+            arrowprops=dict(arrowstyle='->', color='#CC0000'))
+ax.annotate('$(15, 202)$', xy=(15, 202), xytext=(17, 220), fontsize=10, fontweight='bold',
+            arrowprops=dict(arrowstyle='->', color='#CC0000'))
+
+# Slope label
+ax.text(30, 50, r'Slope $= \frac{80}{5} = 16$ m/s', fontsize=12, color='#CC0000',
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='#fff0f0', edgecolor='#CC0000'))
+
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.set_xlabel('Time (s)', fontsize=11)
+ax.set_ylabel('Distance (m)', fontsize=11)
+ax.set_title('Average Velocity = Slope of Secant Line', fontsize=12, color='gray')
+ax.legend(fontsize=10)
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(-2, 62)
+ax.set_ylim(-20, 580)
+
+plt.tight_layout()
+plt.show()
+```
+
+The slope of the line joining $(10, 122)$ and $(15, 202)$ is 16, which means the average velocity between those two points is 16 m/s.
+
+
+## Getting a Better Estimate: Finer Intervals
+
+While 16 m/s is a reasonable estimate for the velocity at $t = 12.5$ seconds, we can do better if we have more data. Suppose we take measurements every 1 second instead of every 5 seconds:
+
+| Time (s) | Distance (m) |
+|:---:|:---:|
+| 10 | 122 |
+| 11 | 138 |
+| 12 | 155 |
+| 13 | 170 |
+| 14 | 186 |
+| 15 | 202 |
+| 16 | 218 |
+| 17 | 234 |
+| 18 | 250 |
+| 19 | 265 |
+| 20 | 265 |
+
+Now we can compute the average velocity over the smaller interval from $t = 12$ to $t = 13$:
+
+$$
+v_{\text{avg}} = \frac{170 - 155}{13 - 12} = \frac{15}{1} = 15 \text{ m/s}
+$$
+
+This is a much better estimate for the instantaneous velocity at $t = 12.5$ than the 16 m/s we computed over the 5-second window.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+# Data every 1 second from t=10 to t=20
+t_fine = np.array([10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
+d_fine = np.array([122, 138, 155, 170, 186, 202, 218, 234, 250, 265, 265])
+
+# Left: wide interval [10, 15]
+axes[0].plot(t_fine, d_fine, 'o-', color='#4682B4', linewidth=1.5, markersize=6)
+axes[0].plot([10, 15], [122, 202], 'o-', color='#CC0000', linewidth=2.5, markersize=9, zorder=5)
+axes[0].fill_between([10, 15], 0, 280, alpha=0.08, color='#CC0000')
+axes[0].text(12.5, 240, r'Slope $= \frac{80}{5} = 16$ m/s', fontsize=11, ha='center',
+             color='#CC0000', fontweight='bold',
+             bbox=dict(boxstyle='round,pad=0.3', facecolor='#fff0f0', edgecolor='#CC0000'))
+axes[0].axhline(0, color='black', linewidth=0.8)
+axes[0].axvline(0, color='black', linewidth=0.8)
+axes[0].set_xlabel('Time (s)', fontsize=11)
+axes[0].set_ylabel('Distance (m)', fontsize=11)
+axes[0].set_title('Wide interval: [10, 15]', fontsize=12, color='gray')
+axes[0].grid(True, linestyle='--', alpha=0.4)
+axes[0].set_xlim(9, 21)
+axes[0].set_ylim(100, 280)
+axes[0].set_xticks(range(10, 21))
+
+# Right: narrow interval [12, 13]
+axes[1].plot(t_fine, d_fine, 'o-', color='#4682B4', linewidth=1.5, markersize=6)
+axes[1].plot([12, 13], [155, 170], 'o-', color='#CC7000', linewidth=2.5, markersize=9, zorder=5)
+axes[1].fill_between([12, 13], 0, 280, alpha=0.08, color='#CC7000')
+axes[1].text(14.5, 240, r'Slope $= \frac{15}{1} = 15$ m/s', fontsize=11, ha='center',
+             color='#CC7000', fontweight='bold',
+             bbox=dict(boxstyle='round,pad=0.3', facecolor='#fff8f0', edgecolor='#CC7000'))
+axes[1].axhline(0, color='black', linewidth=0.8)
+axes[1].axvline(0, color='black', linewidth=0.8)
+axes[1].set_xlabel('Time (s)', fontsize=11)
+axes[1].set_ylabel('Distance (m)', fontsize=11)
+axes[1].set_title('Narrow interval: [12, 13]', fontsize=12, color='gray')
+axes[1].grid(True, linestyle='--', alpha=0.4)
+axes[1].set_xlim(9, 21)
+axes[1].set_ylim(100, 280)
+axes[1].set_xticks(range(10, 21))
+
+plt.tight_layout()
+plt.show()
+```
+
+
+## From Average Velocity to the Derivative
+
+Notice the pattern. We still do not have the exact velocity at $t = 12.5$. But the finer the interval we use, the better our estimate becomes. If we could shrink the interval to be infinitely small, we would get the exact instantaneous velocity. That process of shrinking the interval to zero is exactly what a **derivative** is. You will see the formal definition soon.
+
+
+## Derivative as a Tangent Line
+
+Let's revisit the point $t = 12.5$. Calculating the exact instantaneous velocity here is hard, but we can estimate it by picking a second point to the right and computing the slope of the line joining them. That line is called a **secant line**.
+
+Now imagine moving that second point closer and closer to $t = 12.5$. Each time, the secant line tilts slightly, and the slope changes. When the second point gets infinitely close, the secant line becomes the **tangent line** at $t = 12.5$. The slope of that tangent line is the derivative.
+
+:::: {.panel-tabset}
+#### Static
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.interpolate import CubicSpline
+
+fig, ax = plt.subplots(figsize=(9, 5.5))
+
+# Full car data: combine 5-second data with 1-second data for t=10-20
+t_5s = np.array([0, 5, 25, 30, 35, 40, 45, 50, 55, 60])
+d_5s = np.array([0, 36, 351, 441, 551, 591, 716, 816, 900, 1000])
+t_1s = np.array([10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
+d_1s = np.array([122, 138, 155, 170, 186, 202, 218, 234, 250, 265, 265])
+
+t_all = np.concatenate([t_5s[:2], t_1s, t_5s[2:]])
+d_all = np.concatenate([d_5s[:2], d_1s, d_5s[2:]])
+
+cs = CubicSpline(t_all, d_all)
+t_smooth = np.linspace(0, 45, 400)
+d_smooth = cs(t_smooth)
+
+t0 = 12.5
+d0 = float(cs(t0))
+slope_tangent = float(cs(t0, 1))
+
+ax.plot(t_smooth, d_smooth, color='#4682B4', linewidth=2.5, label='Distance curve $d(t)$')
+
+secant_points = [35, 25, 18, 15]
+alphas = [0.3, 0.5, 0.7, 0.9]
+for tp, a in zip(secant_points, alphas):
+    dp = float(cs(tp))
+    slope = (dp - d0) / (tp - t0)
+    t_sec = np.linspace(t0 - 4, min(tp + 3, 45), 50)
+    d_sec = d0 + slope * (t_sec - t0)
+    mask = (d_sec >= -30) & (d_sec <= 600)
+    ax.plot(t_sec[mask], d_sec[mask], '--', color='#CC7000', linewidth=1.8, alpha=a)
+    ax.plot(tp, dp, 'o', color='#CC7000', markersize=7, alpha=a, zorder=4)
+
+t_tan = np.linspace(t0 - 5, t0 + 12, 50)
+d_tan = d0 + slope_tangent * (t_tan - t0)
+ax.plot(t_tan, d_tan, '-', color='#CC0000', linewidth=2.5, label='Tangent line (derivative)')
+
+ax.plot(t0, d0, 'o', color='#CC0000', markersize=12, zorder=6)
+ax.annotate('Point of tangency\n$t = 12.5$ s, $d \\approx 162$ m', xy=(t0, d0), xytext=(t0 + 5, d0 - 60),
+            fontsize=11, fontweight='bold', color='#CC0000',
+            arrowprops=dict(arrowstyle='->', color='#CC0000', lw=1.5))
+
+ax.text(30, 500, 'Secant lines\n(getting closer)', fontsize=10, color='#CC7000',
+        ha='center', fontweight='bold', style='italic')
+
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.set_xlabel('Time (s)', fontsize=11)
+ax.set_ylabel('Distance (m)', fontsize=11)
+ax.set_title('Secant lines converge to the tangent at $t = 12.5$', fontsize=12, color='gray')
+ax.legend(fontsize=10, loc='upper left')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(-2, 45)
+ax.set_ylim(-30, 600)
+
+plt.tight_layout()
+plt.show()
+```
+
+#### Interactive
+```{python}
+#| echo: false
+#| fig-align: center
+
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from scipy.interpolate import CubicSpline
+
+# Build the same spline curve
+t_5s = np.array([0, 5, 25, 30, 35, 40, 45, 50, 55, 60])
+d_5s = np.array([0, 36, 351, 441, 551, 591, 716, 816, 900, 1000])
+t_1s = np.array([10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
+d_1s = np.array([122, 138, 155, 170, 186, 202, 218, 234, 250, 265, 265])
+t_all = np.concatenate([t_5s[:2], t_1s, t_5s[2:]])
+d_all = np.concatenate([d_5s[:2], d_1s, d_5s[2:]])
+cs = CubicSpline(t_all, d_all)
+
+t_smooth = np.linspace(0, 55, 500)
+d_smooth = cs(t_smooth)
+v_smooth = cs(t_smooth, 1)
+
+# Two subplots: distance (top) and velocity (bottom)
+fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.12,
+                    subplot_titles=('Distance d(t)', "Velocity v(t) = d'(t)"))
+
+# Distance curve (trace 0)
+fig.add_trace(go.Scatter(x=t_smooth, y=d_smooth, mode='lines',
+    line=dict(color='#4682B4', width=3), name='d(t)'), row=1, col=1)
+
+# Velocity curve (trace 1)
+fig.add_trace(go.Scatter(x=t_smooth, y=v_smooth, mode='lines',
+    line=dict(color='#2E8B57', width=3), name="v(t) = d'(t)"), row=2, col=1)
+
+# Initial slider position
+t0_init = 12.5
+d0_init = float(cs(t0_init))
+v0_init = float(cs(t0_init, 1))
+t_tan_init = np.linspace(max(0, t0_init - 8), min(55, t0_init + 8), 50)
+d_tan_init = d0_init + v0_init * (t_tan_init - t0_init)
+
+# Tangent line (trace 2)
+fig.add_trace(go.Scatter(x=t_tan_init, y=d_tan_init, mode='lines',
+    line=dict(color='#CC0000', width=2.5, dash='dash'), name='Tangent line'), row=1, col=1)
+
+# Point on distance curve (trace 3)
+fig.add_trace(go.Scatter(x=[t0_init], y=[d0_init], mode='markers',
+    marker=dict(color='#CC0000', size=12), showlegend=False), row=1, col=1)
+
+# Point on velocity curve (trace 4)
+fig.add_trace(go.Scatter(x=[t0_init], y=[v0_init], mode='markers',
+    marker=dict(color='#CC0000', size=12), showlegend=False), row=2, col=1)
+
+# Vertical dashed line on velocity plot (trace 5)
+fig.add_trace(go.Scatter(x=[t0_init, t0_init], y=[0, v0_init], mode='lines',
+    line=dict(color='#CC0000', width=1, dash='dot'), showlegend=False), row=2, col=1)
+
+# Horizontal dashed line on velocity plot (trace 6)
+fig.add_trace(go.Scatter(x=[0, t0_init], y=[v0_init, v0_init], mode='lines',
+    line=dict(color='#CC0000', width=1, dash='dot'), showlegend=False), row=2, col=1)
+
+# Build slider frames
+t_values = np.linspace(2, 53, 50)
+frames = []
+slider_steps = []
+
+for t0 in t_values:
+    d0 = float(cs(t0))
+    v0 = float(cs(t0, 1))
+    t_tan_f = np.linspace(max(0, t0 - 8), min(55, t0 + 8), 50)
+    d_tan_f = d0 + v0 * (t_tan_f - t0)
+    mask = (d_tan_f >= -50) & (d_tan_f <= 1100)
+
+    frames.append(go.Frame(
+        data=[
+            go.Scatter(x=t_smooth, y=d_smooth),
+            go.Scatter(x=t_smooth, y=v_smooth),
+            go.Scatter(x=t_tan_f[mask], y=d_tan_f[mask]),
+            go.Scatter(x=[t0], y=[d0]),
+            go.Scatter(x=[t0], y=[v0]),
+            go.Scatter(x=[t0, t0], y=[0, v0]),
+            go.Scatter(x=[0, t0], y=[v0, v0]),
+        ],
+        layout=go.Layout(annotations=[
+            dict(x=t0, y=d0, text=f"slope = {v0:.1f} m/s", showarrow=True,
+                 arrowhead=2, ax=40, ay=-40, font=dict(size=12, color='#CC0000'),
+                 xref='x', yref='y'),
+        ]),
+        name=f"{t0:.1f}"
+    ))
+    slider_steps.append(dict(
+        args=[[f"{t0:.1f}"], dict(mode="immediate", frame=dict(duration=0, redraw=True))],
+        label=f"{t0:.0f}",
+        method="animate"
+    ))
+
+fig.frames = frames
+
+fig.update_layout(
+    sliders=[dict(
+        active=int(len(t_values) * 0.2),
+        currentvalue=dict(prefix="t = ", suffix=" s", font=dict(size=14)),
+        pad=dict(b=10, t=40),
+        len=0.9, x=0.05,
+        steps=slider_steps
+    )],
+    template='none',
+    paper_bgcolor='white',
+    font=dict(family='sans-serif', size=11, color='black'),
+    height=700, width=800,
+    margin=dict(l=60, r=30, t=60, b=60),
+    showlegend=True, legend=dict(x=0.02, y=0.98),
+    annotations=[
+        dict(x=t0_init, y=d0_init, text=f"slope = {v0_init:.1f} m/s", showarrow=True,
+             arrowhead=2, ax=40, ay=-40, font=dict(size=12, color='#CC0000'),
+             xref='x', yref='y'),
+    ]
+)
+
+fig.update_xaxes(title_text='Time (s)', row=2, col=1)
+fig.update_yaxes(title_text='Distance (m)', row=1, col=1)
+fig.update_yaxes(title_text='Velocity (m/s)', row=2, col=1)
+fig.update_xaxes(range=[-2, 58], row=1, col=1)
+fig.update_xaxes(range=[-2, 58], row=2, col=1)
+fig.update_yaxes(range=[-50, 1100], row=1, col=1)
+fig.update_yaxes(range=[-5, 30], row=2, col=1)
+
+fig.show()
+```
+::::
+
+In notation: imagine a tiny change in distance $dx$ happening over a tiny interval $dt$. The ratio $\frac{dx}{dt}$ is the instantaneous rate of change, which is the derivative.
+
+::: {.callout-note}
+The derivative of a function at a point is precisely the slope of the tangent line at that point.
+:::
+
+
+## Slopes, Maxima and Minima
+
+Let's go back to the 1-second data table. Notice that at $t = 19$ the distance is 265 m, and at $t = 20$ the distance is also 265 m. The car did not move in that interval. The line connecting those two points is horizontal, and a horizontal line has a slope of zero:
+
+$$
+\text{slope} = \frac{265 - 265}{20 - 19} = \frac{0}{1} = 0 \text{ m/s}
+$$
+
+Now consider a more general trajectory where a car goes forward, stops, goes backward, stops again, and so on. At what points is the velocity zero? Exactly at the points where the tangent line is horizontal (slope = 0). These are the points where the car momentarily stops.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(9, 5))
+
+# A trajectory with multiple stops (local maxima and minima)
+t = np.linspace(0, 10, 300)
+# Custom trajectory: car goes forward, stops, reverses, stops, forward, etc.
+d = 10 * np.sin(0.8 * t) + 5 * np.sin(1.6 * t) + 15 * t / 10
+
+# Derivative (numerical)
+dt = t[1] - t[0]
+dd = np.gradient(d, dt)
+
+# Find zero-crossings of derivative (where velocity = 0)
+zero_crossings = []
+for i in range(1, len(dd)):
+    if dd[i-1] * dd[i] < 0:
+        # Linear interpolation
+        t_zero = t[i-1] - dd[i-1] * (t[i] - t[i-1]) / (dd[i] - dd[i-1])
+        d_zero = np.interp(t_zero, t, d)
+        zero_crossings.append((t_zero, d_zero))
+
+ax.plot(t, d, color='#4682B4', linewidth=2.5, label='Distance $d(t)$')
+
+# Mark zero-derivative points with horizontal tangent lines
+for tz, dz in zero_crossings:
+    ax.plot(tz, dz, 'o', color='#CC0000', markersize=10, zorder=5)
+    ax.plot([tz - 0.6, tz + 0.6], [dz, dz], '-', color='#CC0000', linewidth=2, zorder=4)
+
+# Mark the maximum
+max_idx = np.argmax([dz for _, dz in zero_crossings])
+tz_max, dz_max = zero_crossings[max_idx]
+ax.annotate('Maximum distance', xy=(tz_max, dz_max), xytext=(tz_max + 1, dz_max + 2),
+            fontsize=10, fontweight='bold', color='#CC0000',
+            arrowprops=dict(arrowstyle='->', color='#CC0000'))
+
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.set_xlabel('Time (s)', fontsize=11)
+ax.set_ylabel('Distance (m)', fontsize=11)
+ax.set_title('Velocity = 0 where the tangent line is horizontal', fontsize=12, color='gray')
+ax.legend(fontsize=10)
+ax.grid(True, linestyle='--', alpha=0.4)
+
+plt.tight_layout()
+plt.show()
+```
+
+Here is the key insight: **the maximum (or minimum) of a function occurs at a point where the derivative is zero.** Why? Because if the car is still moving (derivative is not zero), it could go further. Only when it stops (derivative equals zero) can it be at its farthest point.
+
+This fact is enormously useful. If you want to find the maximum or minimum value of a function, look for the points where the derivative equals zero. In machine learning, this is exactly how we minimize loss functions: find where the derivative is zero.
+
+
+### Review Questions {.unnumbered}
+
+**1. What is the derivative of a function, in your own words?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The derivative is the instantaneous rate of change of a function at a specific point. Geometrically, it is the slope of the tangent line to the curve at that point. In the velocity example, the derivative of the distance function gives you the exact speed at any instant.
+:::
+
+---
+
+**2. A car travels 200 meters between $t = 5$ s and $t = 10$ s. What is its average velocity over that interval?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Average velocity $= \frac{200}{10 - 5} = \frac{200}{5} = 40$ m/s.
+:::
+
+---
+
+**3. Why can't we determine the exact velocity at $t = 7$ s from only knowing the distances at $t = 5$ and $t = 10$?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because we only know what happened at the endpoints of the interval, not what happened in between. The car could have been speeding up, slowing down, or even stopped momentarily at $t = 7$. All we can compute is the average over the full 5-second window.
+:::
+
+---
+
+**4. Why does the maximum or minimum of a function occur where the derivative is zero?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+If the function is still increasing or decreasing (derivative not zero), it has not yet reached its highest or lowest point. Only when the function momentarily stops changing (derivative equals zero, tangent is horizontal) can it be at a maximum or minimum.
+:::
+
+---
+
+**5. How does calculus help in machine learning?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Machine learning models are trained by minimizing a loss function that measures how far off the model's predictions are. Derivatives (and gradients, their multi-variable generalization) tell the training algorithm which direction to adjust the model parameters to reduce the loss. This iterative process is called gradient descent.
+:::

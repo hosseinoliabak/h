@@ -1,0 +1,189 @@
+---
+title: "Lab: Linear Regression with Gradient Descent"
+date: "2026-06-13"
+difficulty: 3
+order: 11
+categories: [calculus]
+---
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+
+In this lab, you will build a linear regression model to predict sales based on TV marketing expenses. You will implement gradient descent from scratch and see it converge to the same answer that analytical methods give. The dataset is a simple [Kaggle dataset](https://www.kaggle.com/code/devzohaib/simple-linear-regression/notebook) with two columns: TV marketing budget and sales amount.
+
+
+## Loading the Data
+
+```{python}
+import numpy as np
+import pandas as pd
+
+# Load the TV marketing dataset
+adv = pd.read_csv('../../media/tvmarketing.csv')
+adv.head()
+```
+
+```{python}
+X = np.array(adv['TV'])
+Y = np.array(adv['Sales'])
+print(f"Number of data points: {len(X)}")
+print(f"TV advertising budget range: {X.min():.1f} to {X.max():.1f}")
+print(f"Sales range: {Y.min():.1f} to {Y.max():.1f}")
+```
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.scatter(X, Y, color='#4682B4', s=20, alpha=0.7)
+ax.set_xlabel('TV Advertising Budget', fontsize=11)
+ax.set_ylabel('Sales', fontsize=11)
+ax.set_title('TV Marketing Budget vs Sales', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+The goal is to find the line $y = mx + b$ that best predicts sales from the TV advertising budget.
+
+
+## Normalization
+
+The TV advertising budget values range from 0.7 to 296.4, while sales range from 1.6 to 27.0. These numbers are on very different scales. If we run gradient descent directly, we would need an extremely tiny learning rate (around 0.000001) and thousands of iterations.
+
+A simple fix is **normalization**. For each array, we subtract the mean and divide by the standard deviation. This brings both arrays to roughly the same scale (centered at zero, spread of about 1).
+
+```{python}
+X_norm = (X - np.mean(X)) / np.std(X)
+Y_norm = (Y - np.mean(Y)) / np.std(Y)
+
+print(f"X_norm range: {X_norm.min():.2f} to {X_norm.max():.2f}")
+print(f"Y_norm range: {Y_norm.min():.2f} to {Y_norm.max():.2f}")
+```
+
+After gradient descent finds the best $m$ and $b$ for the normalized data, we can convert back to original units.
+
+
+## Cost Function and Gradient
+
+The cost function (from the [previous page](optimization-using-gd.qmd)):
+
+$$
+E(m, b) = \frac{1}{2n} \sum_{i=1}^{n} (mx_i + b - y_i)^2
+$$
+
+The partial derivatives:
+
+```{python}
+def cost(m, b, X, Y):
+    n = len(Y)
+    return 1/(2*n) * np.sum((m*X + b - Y)**2)
+
+def dEdm(m, b, X, Y):
+    n = len(X)
+    return 1/n * np.dot(m*X + b - Y, X)
+
+def dEdb(m, b, X, Y):
+    n = len(X)
+    return 1/n * np.sum(m*X + b - Y)
+```
+
+
+## Gradient Descent Implementation
+
+```{python}
+def gradient_descent(X, Y, learning_rate=0.01, num_iterations=100):
+    m, b = 0.0, 0.0
+    history = [(m, b, cost(m, b, X, Y))]
+
+    for i in range(num_iterations):
+        m = m - learning_rate * dEdm(m, b, X, Y)
+        b = b - learning_rate * dEdb(m, b, X, Y)
+        history.append((m, b, cost(m, b, X, Y)))
+
+    return m, b, history
+```
+
+Run gradient descent on the normalized data:
+
+```{python}
+m_gd, b_gd, history = gradient_descent(X_norm, Y_norm, learning_rate=0.01, num_iterations=200)
+print(f"After 200 iterations (normalized):")
+print(f"  m = {m_gd:.6f}")
+print(f"  b = {b_gd:.6f}")
+print(f"  Cost = {history[-1][2]:.8f}")
+```
+
+
+## Converting Back to Original Units
+
+```{python}
+# Convert normalized slope/intercept back to original scale
+m_original = m_gd * np.std(Y) / np.std(X)
+b_original = np.mean(Y) - m_original * np.mean(X) + b_gd * np.std(Y)
+
+print(f"In original units:")
+print(f"  Slope (m) = {m_original:.8f}")
+print(f"  Intercept (b) = {b_original:.8f}")
+print(f"  Best-fit line: Sales = {m_original:.4f} * TV + {b_original:.2f}")
+```
+
+
+## Verifying with NumPy
+
+```{python}
+# NumPy's polyfit gives the exact analytical solution
+m_exact, b_exact = np.polyfit(X, Y, 1)
+print(f"Exact solution (NumPy polyfit):")
+print(f"  Slope = {m_exact:.8f}")
+print(f"  Intercept = {b_exact:.8f}")
+print(f"\nDifference from gradient descent:")
+print(f"  Slope error = {abs(m_original - m_exact):.10f}")
+print(f"  Intercept error = {abs(b_original - b_exact):.10f}")
+```
+
+The gradient descent result matches the analytical solution.
+
+
+## Visualizing the Result
+
+```{python}
+#| fig-align: center
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+# Left: data with best-fit line
+ax = axes[0]
+ax.scatter(X, Y, color='#4682B4', s=20, alpha=0.7)
+x_line = np.linspace(0, 300, 100)
+ax.plot(x_line, m_original * x_line + b_original, color='#2E8B57', linewidth=2.5,
+        label=f'y = {m_original:.4f}x + {b_original:.2f}')
+ax.set_xlabel('TV Advertising Budget', fontsize=11)
+ax.set_ylabel('Sales', fontsize=11)
+ax.set_title('Best-fit line found by gradient descent', fontsize=11, color='gray')
+ax.legend(fontsize=10)
+ax.grid(True, linestyle='--', alpha=0.4)
+
+# Right: cost over iterations
+ax = axes[1]
+costs = [h[2] for h in history]
+ax.plot(range(len(costs)), costs, color='#CC0000', linewidth=2)
+ax.set_xlabel('Iteration', fontsize=11)
+ax.set_ylabel('Cost E(m, b)', fontsize=11)
+ax.set_title('Cost decreasing over iterations', fontsize=11, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+
+plt.tight_layout()
+plt.show()
+```
+
+The cost drops rapidly in the first few iterations and then flattens out as gradient descent converges to the minimum.

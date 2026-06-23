@@ -1,0 +1,313 @@
+---
+title: "Lab: Eigenvalues in Action (Webpage Navigation and PCA)"
+date: "2026-06-06"
+difficulty: 4
+order: 12
+categories: [linear-algebra]
+---
+
+In this lab you will apply eigenvalues and eigenvectors to two real-world problems: modeling how users navigate between webpages (Markov chains), and reducing the dimensionality of image data using PCA.
+
+## Setup
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+
+%config InlineBackend.figure_formats = ['png']
+np.random.seed(42)
+```
+
+## Part 1: Navigating Webpages with Markov Chains
+
+Consider a small internet with 5 pages. Each page links to some others, and a user clicks links randomly. The probability of moving from page $j$ to page $i$ is stored in a **transition matrix** $P$ where each column sums to 1.
+
+### Building the Transition Matrix
+
+```{python}
+P = np.array([
+    [0,    0.75, 0.35, 0.25, 0.85],
+    [0.15, 0,    0.35, 0.25, 0.05],
+    [0.15, 0.15, 0,    0.25, 0.05],
+    [0.15, 0.05, 0.05, 0,    0.05],
+    [0.55, 0.05, 0.25, 0.25, 0]
+])
+
+print("Transition matrix P:")
+print(P)
+print(f"\nColumn sums (should all be 1): {P.sum(axis=0)}")
+```
+
+Each column represents "if the user is on page $j$, what are the probabilities of going to each page next?" For example, column 1 says: from page 1, there's a 75% chance of going to page 2, 15% to page 3, etc.
+
+### One Step of Navigation
+
+If the user starts on page 1 with certainty, the initial state is:
+
+```{python}
+X0 = np.array([[1], [0], [0], [0], [0]])
+print("Initial state (on page 1):")
+print(X0.flatten())
+
+# After one click:
+X1 = P @ X0
+print(f"\nAfter 1 step:\n{X1.flatten()}")
+```
+
+### Many Steps: Converging to Equilibrium
+
+Let's iterate many times and watch the state vector stabilize:
+
+```{python}
+#| fig-align: center
+X = X0.copy()
+history = [X.flatten()]
+
+for i in range(30):
+    X = P @ X
+    history.append(X.flatten())
+
+history = np.array(history)
+
+fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+for page in range(5):
+    ax.plot(history[:, page], '-o', markersize=3, label=f'Page {page+1}')
+ax.set_xlabel('Steps', fontsize=11)
+ax.set_ylabel('Probability', fontsize=11)
+ax.set_title('State vector converges to equilibrium', fontsize=12, color='gray')
+ax.legend(fontsize=10)
+ax.grid(True, linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+After enough steps, the probabilities stabilize. This is the **equilibrium state**.
+
+### Finding the Equilibrium with Eigenvalues
+
+The equilibrium state is the eigenvector of $P$ with eigenvalue 1:
+
+```{python}
+eigenvalues, eigenvectors = np.linalg.eig(P)
+
+print("Eigenvalues:")
+for i, val in enumerate(eigenvalues):
+    print(f"  λ_{i+1} = {val:.4f}")
+```
+
+```{python}
+# Find the eigenvector with eigenvalue closest to 1
+idx = np.argmin(np.abs(eigenvalues - 1.0))
+X_inf = eigenvectors[:, idx].real
+
+# Normalize so entries sum to 1 (probability distribution)
+X_inf = X_inf / X_inf.sum()
+
+print(f"Equilibrium state (eigenvector with λ=1, normalized):")
+for i, p in enumerate(X_inf):
+    print(f"  Page {i+1}: {p:.4f} ({p*100:.1f}%)")
+```
+
+### Verification
+
+Let's verify: multiplying the equilibrium vector by $P$ should give back the same vector:
+
+```{python}
+X_check = P @ X_inf.reshape(-1, 1)
+print("P @ X_inf:")
+print(X_check.flatten().round(4))
+print(f"\nX_inf:")
+print(X_inf.round(4))
+print(f"\nDifference (should be ~0): {np.abs(X_check.flatten() - X_inf).max():.2e}")
+```
+
+The page with the highest equilibrium probability gets the most long-term traffic. This is the core idea behind Google's PageRank algorithm.
+
+---
+
+## Part 2: PCA on Image Data
+
+Now let's apply PCA to reduce the dimensionality of image data. We'll work with 55 grayscale cat photos (64×64 pixels each).
+
+### Load the Images
+
+```{python}
+from PIL import Image
+import os
+
+# Load cat images, convert to grayscale, resize to 64x64
+img_dir = '../../media/cats/'
+img_size = 64
+
+filenames = sorted([f for f in os.listdir(img_dir) if f.endswith('.jpg')],
+                   key=lambda x: int(x.split('(')[1].split(')')[0]))
+
+imgs = []
+for fname in filenames:
+    img = Image.open(os.path.join(img_dir, fname)).convert('L').resize((img_size, img_size))
+    imgs.append(np.array(img))
+
+imgs = np.array(imgs)
+print(f"Dataset: {imgs.shape[0]} images, each {imgs.shape[1]}×{imgs.shape[2]} pixels")
+```
+
+```{python}
+#| fig-align: center
+# Display a few sample images
+fig, axes = plt.subplots(2, 5, figsize=(12, 5))
+for i, ax in enumerate(axes.flat):
+    ax.imshow(imgs[i], cmap='gray')
+    ax.set_title(f'Cat {i+1}', fontsize=9)
+    ax.axis('off')
+plt.suptitle('Sample cat images from the dataset', fontsize=12, color='gray')
+plt.tight_layout()
+plt.show()
+```
+
+### Step 1: Flatten the Images
+
+Each 64×64 image becomes a single row vector of length 4096:
+
+```{python}
+n_images = imgs.shape[0]
+imgs_flatten = imgs.reshape(n_images, -1).astype(float)
+print(f"Flattened shape: {imgs_flatten.shape}")
+print(f"Each image is now a vector of {imgs_flatten.shape[1]} pixel values")
+```
+
+### Step 2: Center the Data
+
+Subtract the mean of each pixel (column) across all images:
+
+```{python}
+mean_img = imgs_flatten.mean(axis=0)
+X = imgs_flatten - mean_img
+
+print(f"Centered data shape: {X.shape}")
+print(f"Column means after centering (should be ~0): {X.mean(axis=0)[:5].round(10)}")
+```
+
+### Step 3: Compute the Covariance Matrix
+
+```{python}
+n = X.shape[0]
+C = (X.T @ X) / (n - 1)
+print(f"Covariance matrix shape: {C.shape}")
+```
+
+### Step 4: Find Eigenvalues and Eigenvectors
+
+For large matrices, we use `scipy.sparse.linalg.eigs` which efficiently finds only the top $k$ eigenvalues:
+
+```{python}
+from scipy.sparse.linalg import eigs
+
+# Find top 10 eigenvalues/eigenvectors
+k = 10
+eigenvalues, eigenvectors = eigs(C, k=k)
+eigenvalues = eigenvalues.real
+eigenvectors = eigenvectors.real
+
+# Sort by eigenvalue (largest first)
+idx = np.argsort(-eigenvalues)
+eigenvalues = eigenvalues[idx]
+eigenvectors = eigenvectors[:, idx]
+
+print("Top 10 eigenvalues:")
+for i, val in enumerate(eigenvalues):
+    print(f"  PC{i+1}: λ = {val:.1f} ({val/eigenvalues.sum()*100:.1f}% of top-10 variance)")
+```
+
+### Step 5: Visualize Principal Components
+
+Each eigenvector (principal component) is itself a 4096-length vector that can be reshaped back into a 64×64 image:
+
+```{python}
+#| fig-align: center
+fig, axes = plt.subplots(2, 5, figsize=(12, 5))
+for i, ax in enumerate(axes.flat):
+    pc_img = eigenvectors[:, i].reshape(img_size, img_size)
+    ax.imshow(pc_img, cmap='gray')
+    ax.set_title(f'PC{i+1}', fontsize=9)
+    ax.axis('off')
+plt.suptitle('Top 10 principal components (eigenvectors as images)', fontsize=12, color='gray')
+plt.tight_layout()
+plt.show()
+```
+
+### Step 6: Project and Reduce Dimensions
+
+Project all images onto the top 2 principal components:
+
+```{python}
+def pca_transform(X, eigenvectors, n_components):
+    """Project centered data onto top n principal components."""
+    V = eigenvectors[:, :n_components]
+    return X @ V
+
+# Reduce to 2 dimensions
+X_2d = pca_transform(X, eigenvectors, 2)
+print(f"Original: {X.shape[1]} dimensions → Reduced: {X_2d.shape[1]} dimensions")
+```
+
+```{python}
+#| fig-align: center
+fig, ax = plt.subplots(1, 1, figsize=(7, 6))
+ax.scatter(X_2d[:, 0], X_2d[:, 1], s=40, color='#4682B4', alpha=0.7)
+for i in range(n_images):
+    ax.annotate(str(i+1), (X_2d[i, 0]+0.5, X_2d[i, 1]+0.5), fontsize=7, alpha=0.6)
+ax.set_xlabel('PC1', fontsize=11)
+ax.set_ylabel('PC2', fontsize=11)
+ax.set_title('All images projected onto 2 principal components', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+Images that appear close together in this 2D plot are similar in the original 4096-dimensional space.
+
+### Step 7: Reconstruction
+
+You can approximately reconstruct an image from its reduced representation:
+
+```{python}
+#| fig-align: center
+fig, axes = plt.subplots(2, 4, figsize=(12, 6))
+components_list = [1, 2, 5, 10]
+img_idx = 0
+
+for i, n_comp in enumerate(components_list):
+    V = eigenvectors[:, :n_comp]
+    projected = X[img_idx] @ V        # reduce
+    reconstructed = projected @ V.T    # reconstruct
+    reconstructed += mean_img          # add mean back
+
+    axes[0, i].imshow(reconstructed.reshape(img_size, img_size), cmap='gray')
+    axes[0, i].set_title(f'{n_comp} components', fontsize=10)
+    axes[0, i].axis('off')
+
+axes[1, 0].imshow(imgs[img_idx], cmap='gray')
+axes[1, 0].set_title('Original', fontsize=10)
+axes[1, 0].axis('off')
+for ax in axes[1, 1:]:
+    ax.axis('off')
+
+plt.suptitle(f'Reconstructing image {img_idx+1} with different numbers of components', fontsize=12, color='gray')
+plt.tight_layout()
+plt.show()
+```
+
+With more principal components, the reconstruction gets closer to the original. Even a few components capture the main structure.
+
+### Key Takeaway
+
+The full PCA pipeline:
+
+1. Flatten images to vectors (64×64 → 4096)
+2. Center the data (subtract mean)
+3. Compute covariance matrix ($4096 \times 4096$)
+4. Find top $k$ eigenvectors
+5. Project: $X_{\text{reduced}} = X \cdot V_k$ (4096 → $k$ dimensions)
+6. Reconstruct: $X_{\text{approx}} = X_{\text{reduced}} \cdot V_k^T + \mu$
+
+You reduced 4096 pixel values to just a handful of numbers, while keeping the essential structure of each image.
