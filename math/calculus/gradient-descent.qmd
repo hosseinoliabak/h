@@ -1,0 +1,848 @@
+---
+title: "Gradient Descent"
+date: "2026-06-12"
+difficulty: 3
+order: 8
+categories: [calculus]
+---
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+
+So far you have learned how to solve optimization problems using derivatives and gradients. For a function of one variable, you take the derivative, set it to zero, and solve for the variable. For a function of $n$ variables, you take the partial derivative with respect to each variable (holding the others constant), set each to zero, and solve the resulting system of $n$ equations in $n$ unknowns. When $n = 2$ this is manageable, but in real machine learning problems $n$ can be in the millions. Solving a system of millions of equations is extremely expensive, and often the equations themselves have no clean analytical solution.
+
+In this section, you will see a method that is **iterative** and powerful for minimizing (or maximizing) functions, especially in many variables. The method is called **gradient descent**.
+
+Let us start with gradient descent in one variable, and then work our way up to several variables.
+
+
+## Why We Need an Iterative Method
+
+Consider the function:
+
+$$
+f(x) = e^x - \ln(x)
+$$
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+x = np.linspace(0.1, 2.5, 300)
+f = np.exp(x) - np.log(x)
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(x, f, color='#4682B4', linewidth=2.5, label=r'$f(x) = e^x - \ln(x)$')
+
+# Mark the approximate minimum (omega constant ≈ 0.5671)
+omega = 0.5671
+f_min = np.exp(omega) - np.log(omega)
+ax.plot(omega, f_min, '*', color='#2E8B57', markersize=18, zorder=5)
+ax.annotate(f'Minimum\n$x \\approx 0.567$', xy=(omega, f_min), xytext=(omega, f_min + 1.0),
+            fontsize=10, fontweight='bold', color='#2E8B57', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#2E8B57'))
+
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$f(x)$', fontsize=11)
+ax.set_title('A function whose minimum is hard to find analytically', fontsize=12, color='gray')
+ax.legend(fontsize=11)
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(0, 2.5)
+plt.tight_layout()
+plt.show()
+```
+
+To find the minimum, you would compute $f'(x) = e^x - \frac{1}{x}$ and set it to zero:
+
+$$
+e^x - \frac{1}{x} = 0 \quad \Longleftrightarrow \quad e^x = \frac{1}{x}
+$$
+
+Try solving this. It is actually quite hard to do analytically. The solution is $x \approx 0.5671$ (the Omega constant). The fact that this is hard to solve should not stop us from finding a good answer.
+
+
+## The "Try Both Directions" Method
+
+Here is a simple idea. Pick a random starting point and try moving left and right by a small step. Keep whichever direction gives a smaller function value, and repeat.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+x = np.linspace(0.1, 2.5, 300)
+f_vals = np.exp(x) - np.log(x)
+
+# Simulate the "try both directions" method
+np.random.seed(42)
+start = 1.8
+step = 0.3
+path = [start]
+
+current = start
+for _ in range(6):
+    left = current - step
+    right = current + step
+    f_left = np.exp(left) - np.log(left) if left > 0 else np.inf
+    f_right = np.exp(right) - np.log(right)
+    f_current = np.exp(current) - np.log(current)
+
+    if f_left < f_current and f_left <= f_right:
+        current = left
+    elif f_right < f_current and f_right < f_left:
+        current = right
+    else:
+        break
+    path.append(current)
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(x, f_vals, color='#4682B4', linewidth=2.5)
+
+# Show the "tried right" point at the first step (rejected direction)
+right_try_x = start + step
+right_try_f = np.exp(right_try_x) - np.log(right_try_x)
+ax.plot(right_try_x, right_try_f, 'x', color='#CC0000', markersize=10, markeredgewidth=2.5, zorder=5)
+ax.annotate('', xy=(right_try_x, right_try_f), xytext=(start, np.exp(start) - np.log(start)),
+            arrowprops=dict(arrowstyle='->', color='gray', lw=1.5, linestyle='dashed'))
+ax.annotate('Tried right\n(worse)', xy=(right_try_x, right_try_f),
+            xytext=(right_try_x, right_try_f + 0.8),
+            fontsize=9, fontweight='bold', color='#CC0000', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#CC0000'))
+
+# Plot the path
+for i, xi in enumerate(path):
+    fi = np.exp(xi) - np.log(xi)
+    color = '#DAA520' if i == 0 else ('#2E8B57' if i == len(path)-1 else 'gray')
+    size = 11 if i == 0 or i == len(path)-1 else 7
+    ax.plot(xi, fi, 'o', color=color, markersize=size, zorder=5)
+
+    if i < len(path) - 1:
+        xi_next = path[i+1]
+        fi_next = np.exp(xi_next) - np.log(xi_next)
+        ax.annotate('', xy=(xi_next, fi_next), xytext=(xi, fi),
+                    arrowprops=dict(arrowstyle='->', color='gray', lw=1.5))
+
+ax.annotate('Start', xy=(path[0], np.exp(path[0]) - np.log(path[0])),
+            xytext=(path[0], np.exp(path[0]) - np.log(path[0]) + 0.8),
+            fontsize=10, fontweight='bold', color='#DAA520', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#DAA520'))
+
+ax.annotate('Settled here', xy=(path[-1], np.exp(path[-1]) - np.log(path[-1])),
+            xytext=(path[-1], np.exp(path[-1]) - np.log(path[-1]) + 0.8),
+            fontsize=10, fontweight='bold', color='#2E8B57', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#2E8B57'))
+
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$f(x)$', fontsize=11)
+ax.set_title('Try both directions: pick the one that decreases $f$', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(0, 2.5)
+plt.tight_layout()
+plt.show()
+```
+
+The method works like this:
+
+1. **Start** at some random point.
+2. **Try left** (subtract a small step) and **try right** (add a small step).
+3. **Move** to whichever neighbor has a smaller function value.
+4. **Repeat** until neither direction improves the result.
+
+The point you end up at may not be the exact minimum, but it is close. And this method does not require solving any equations analytically.
+
+::: {.callout-note}
+**The limitation:** This approach works, but it is wasteful. You are trying both directions blindly each time. Can we do better? Yes. The derivative already tells us *which direction* leads downhill. That is the key idea behind gradient descent, which we will develop next.
+:::
+
+
+## Using the Derivative to Choose Direction
+
+In the previous method, you tried both directions and picked the better one. But there is something smarter you can do. Look at the derivative at your current point.
+
+- If you are to the **left** of the minimum, the slope is **negative**. You want to move right (add to $x$).
+- If you are to the **right** of the minimum, the slope is **positive**. You want to move left (subtract from $x$).
+
+In both cases, the correct move is to **subtract the slope** from your current position.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+x = np.linspace(0.1, 2.5, 300)
+f = np.exp(x) - np.log(x)
+df = np.exp(x) - 1/x
+
+omega = 0.5671
+f_min = np.exp(omega) - np.log(omega)
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(x, f, color='#4682B4', linewidth=2.5)
+ax.plot(omega, f_min, '*', color='#2E8B57', markersize=14, zorder=5)
+
+# Point to the left of minimum (negative slope, move right)
+x_left = 0.25
+f_left = np.exp(x_left) - np.log(x_left)
+slope_left = np.exp(x_left) - 1/x_left
+tang_t = np.linspace(x_left - 0.15, x_left + 0.15, 50)
+ax.plot(tang_t, f_left + slope_left*(tang_t - x_left), '--', color='#CC0000', linewidth=2)
+ax.plot(x_left, f_left, 'o', color='#CC0000', markersize=9, zorder=5)
+ax.annotate('slope < 0\nmove right', xy=(x_left, f_left),
+            xytext=(x_left, f_left + 1.2),
+            fontsize=9, fontweight='bold', color='#CC0000', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#CC0000'))
+
+# Point to the right of minimum (positive slope, move left)
+x_right = 1.5
+f_right = np.exp(x_right) - np.log(x_right)
+slope_right = np.exp(x_right) - 1/x_right
+tang_t2 = np.linspace(x_right - 0.15, x_right + 0.15, 50)
+ax.plot(tang_t2, f_right + slope_right*(tang_t2 - x_right), '--', color='#CC7000', linewidth=2)
+ax.plot(x_right, f_right, 'o', color='#CC7000', markersize=9, zorder=5)
+ax.annotate('slope > 0\nmove left', xy=(x_right, f_right),
+            xytext=(x_right, f_right + 1.2),
+            fontsize=9, fontweight='bold', color='#CC7000', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#CC7000'))
+
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$f(x)$', fontsize=11)
+ax.set_title('The sign of the slope tells you which direction to go', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(0, 2.5)
+plt.tight_layout()
+plt.show()
+```
+
+The formula is simple. If your current point is $x_0$, your new point is:
+
+$$
+x_1 = x_0 - f'(x_0)
+$$
+
+Why does this work?
+
+- If $f'(x_0) < 0$ (left of minimum), you subtract a negative number, so you move **right**.
+- If $f'(x_0) > 0$ (right of minimum), you subtract a positive number, so you move **left**.
+
+
+## Learning Rate
+
+There is a problem with the raw formula $x_1 = x_0 - f'(x_0)$. If you are at a very steep part of the curve, the derivative is large, and you take a huge jump. Large jumps are chaotic. You might overshoot the minimum entirely and end up far away.
+
+The fix is to multiply the derivative by a small number before subtracting. This small number is called the **learning rate**, denoted $\alpha$ (alpha):
+
+$$
+x_1 = x_0 - \alpha \cdot f'(x_0)
+$$
+
+The learning rate ($\alpha$) controls your step size. There is a whole science behind choosing good learning rates, but for now, think of it as a dial between "cautious" (small $\alpha$) and "aggressive" (large $\alpha$).
+
+This formula also has a built-in bonus. When you are far from the minimum (steep region), the derivative is large, so your step is relatively big. When you are close to the minimum (flat region), the derivative is small, so your step is tiny and precise. It is like golf: you hit hard when you are far from the hole, but use precision when you are close.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+x = np.linspace(0.1, 2.5, 300)
+f = np.exp(x) - np.log(x)
+
+omega = 0.5671
+f_min = np.exp(omega) - np.log(omega)
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+# Left: far from minimum (big step)
+ax = axes[0]
+ax.plot(x, f, color='#4682B4', linewidth=2.5)
+x_far = 2.0
+f_far = np.exp(x_far) - np.log(x_far)
+slope_far = np.exp(x_far) - 1/x_far
+ax.plot(x_far, f_far, 'o', color='#CC7000', markersize=10, zorder=5)
+
+# Tangent line showing steep slope
+tang_t = np.linspace(x_far - 0.3, x_far + 0.3, 50)
+ax.plot(tang_t, f_far + slope_far*(tang_t - x_far), '--', color='#CC7000', linewidth=2)
+
+ax.annotate('Steep slope\nbig step', xy=(x_far, f_far),
+            xytext=(x_far, f_far + 1.2),
+            fontsize=10, fontweight='bold', color='#CC7000', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#CC7000'))
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$f(x)$', fontsize=11)
+ax.set_title('Far from minimum', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(0, 2.5)
+
+# Right: close to minimum (small step)
+ax = axes[1]
+ax.plot(x, f, color='#4682B4', linewidth=2.5)
+x_close = 0.7
+f_close = np.exp(x_close) - np.log(x_close)
+slope_close = np.exp(x_close) - 1/x_close
+ax.plot(x_close, f_close, 'o', color='#2E8B57', markersize=10, zorder=5)
+
+# Tangent line showing gentle slope
+tang_t2 = np.linspace(x_close - 0.3, x_close + 0.3, 50)
+ax.plot(tang_t2, f_close + slope_close*(tang_t2 - x_close), '--', color='#2E8B57', linewidth=2)
+
+ax.annotate('Gentle slope\nsmall step', xy=(x_close, f_close),
+            xytext=(x_close, f_close + 1.2),
+            fontsize=10, fontweight='bold', color='#2E8B57', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#2E8B57'))
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$f(x)$', fontsize=11)
+ax.set_title('Close to minimum', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(0, 2.5)
+
+plt.tight_layout()
+plt.show()
+```
+
+
+## Gradient Descent Algorithm
+
+Putting it all together, the algorithm is:
+
+1. Choose a **learning rate** $\alpha$ (a small positive number).
+2. Choose a **starting point** $x_0$.
+3. **Update** using the rule: $x_k = x_{k-1} - \alpha \cdot f'(x_{k-1})$
+4. **Repeat** step 3 until the steps become negligibly small (you are close enough to the minimum).
+
+::: {.callout-note}
+**Key insight:** You never need to solve $f'(x) = 0$. You only need to *evaluate* the derivative at your current point and apply the update formula. This is a huge improvement over the analytical approach.
+:::
+
+
+## Example: Gradient Descent on $f(x) = e^x - \ln(x)$
+
+Let us try a few iterations by hand with starting point $x_0 = 0.05$ and learning rate $\alpha = 0.005$.
+
+Recall that $f'(x) = e^x - \frac{1}{x}$.
+
+**Iteration 1:**
+
+$$
+f'(0.05) = e^{0.05} - \frac{1}{0.05} = 1.051 - 20 = -18.949
+$$
+
+$$
+x_1 = 0.05 - 0.005 \times (-18.949) = 0.05 + 0.0947 = 0.1447
+$$
+
+**Iteration 2:**
+
+$$
+f'(0.1447) = e^{0.1447} - \frac{1}{0.1447} = 1.156 - 6.911 = -5.755
+$$
+
+$$
+x_2 = 0.1447 - 0.005 \times (-5.755) = 0.1447 + 0.0288 = 0.1735
+$$
+
+Each iteration brings us closer to the minimum at $x \approx 0.5671$. After many iterations, we converge.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+x_plot = np.linspace(0.01, 1.5, 300)
+f_plot = np.exp(x_plot) - np.log(x_plot)
+
+# Run gradient descent
+alpha = 0.005
+x_gd = [0.05]
+for _ in range(200):
+    xi = x_gd[-1]
+    dfi = np.exp(xi) - 1/xi
+    x_new = xi - alpha * dfi
+    if x_new <= 0:
+        break
+    x_gd.append(x_new)
+
+x_gd = np.array(x_gd)
+f_gd = np.exp(x_gd) - np.log(x_gd)
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(x_plot, f_plot, color='#4682B4', linewidth=2.5, label=r'$f(x) = e^x - \ln(x)$')
+
+# Show first several steps
+n_show = 8
+for i in range(n_show):
+    ax.plot(x_gd[i], f_gd[i], 'o', color='gray' if i > 0 else '#DAA520',
+            markersize=8 if i == 0 else 6, zorder=5)
+    if i < n_show - 1:
+        ax.annotate('', xy=(x_gd[i+1], f_gd[i+1]), xytext=(x_gd[i], f_gd[i]),
+                    arrowprops=dict(arrowstyle='->', color='gray', lw=1.5))
+
+# Show final converged point
+ax.plot(x_gd[-1], f_gd[-1], '*', color='#2E8B57', markersize=16, zorder=5)
+ax.annotate('Converged', xy=(x_gd[-1], f_gd[-1]),
+            xytext=(x_gd[-1], f_gd[-1] + 0.8),
+            fontsize=10, fontweight='bold', color='#2E8B57', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#2E8B57'))
+
+ax.annotate('Start', xy=(x_gd[0], f_gd[0]),
+            xytext=(x_gd[0], f_gd[0] + 0.8),
+            fontsize=10, fontweight='bold', color='#DAA520', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#DAA520'))
+
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$f(x)$', fontsize=11)
+ax.set_title('Gradient descent converging to the minimum', fontsize=12, color='gray')
+ax.legend(fontsize=11)
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(0, 1.5)
+plt.tight_layout()
+plt.show()
+```
+
+Notice that the early steps are large (steep region, large derivative) and the later steps become tiny (flat region near the minimum). The algorithm naturally slows down as it approaches the answer.
+
+
+## What Is a Good Learning Rate?
+
+The learning rate $\alpha$ is a big deal in machine learning. Finding a good learning rate can be difficult, and it strongly influences how well your model performs.
+
+**Too large:** If $\alpha$ is too big, you overshoot the minimum and may never find it because your steps keep jumping past it.
+
+**Too small:** If $\alpha$ is too tiny, you take forever to reach the minimum, or perhaps never reach it in a practical number of steps.
+
+**Just right:** You want a learning rate that balances speed and stability.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+x_plot = np.linspace(0.01, 2.0, 300)
+f_plot = np.exp(x_plot) - np.log(x_plot)
+
+fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
+
+# --- Too large (bouncing back and forth, overshooting) ---
+ax = axes[0]
+ax.plot(x_plot, f_plot, color='#4682B4', linewidth=2.5)
+
+# Manually place points that bounce across the minimum (0.567)
+# to clearly show overshooting behavior
+x_gd = [1.85, 0.10, 1.95, 0.04]
+for i in range(len(x_gd)):
+    fi = np.exp(x_gd[i]) - np.log(x_gd[i])
+    ax.plot(x_gd[i], fi, 'o', color='#CC0000', markersize=8, zorder=5)
+    if i == 0:
+        ax.annotate('Start', xy=(x_gd[0], fi),
+                    xytext=(x_gd[0], fi - 1.0),
+                    fontsize=9, fontweight='bold', color='#CC0000', ha='center',
+                    arrowprops=dict(arrowstyle='->', color='#CC0000'))
+    if i < len(x_gd) - 1:
+        fi_next = np.exp(x_gd[i+1]) - np.log(x_gd[i+1])
+        if x_gd[i+1] > x_gd[i]:
+            rad = -0.3
+        else:
+            rad = 0.3
+        ax.annotate('', xy=(x_gd[i+1], fi_next), xytext=(x_gd[i], fi),
+                    arrowprops=dict(arrowstyle='->', color='#CC0000', lw=1.5,
+                                    connectionstyle=f'arc3,rad={rad}'))
+
+ax.set_title(r'$\alpha$ too large', fontsize=12, color='#CC0000', fontweight='bold')
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$f(x)$', fontsize=11)
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(0, 2.0)
+
+# --- Too small (starting far from minimum, barely moving) ---
+ax = axes[1]
+ax.plot(x_plot, f_plot, color='#4682B4', linewidth=2.5)
+
+alpha_small = 0.001
+x_gd = [1.85]
+for _ in range(8):
+    xi = x_gd[-1]
+    dfi = np.exp(xi) - 1/xi
+    x_new = xi - alpha_small * dfi
+    x_gd.append(x_new)
+
+for i in range(len(x_gd)):
+    fi = np.exp(x_gd[i]) - np.log(x_gd[i])
+    ax.plot(x_gd[i], fi, 'o', color='#4682B4', markersize=8, zorder=5)
+    if i == 0:
+        ax.annotate('Start', xy=(x_gd[0], fi),
+                    xytext=(x_gd[0] - 0.3, fi + 0.8),
+                    fontsize=9, fontweight='bold', color='#4682B4', ha='center',
+                    arrowprops=dict(arrowstyle='->', color='#4682B4'))
+    if i < len(x_gd) - 1:
+        fi_next = np.exp(x_gd[i+1]) - np.log(x_gd[i+1])
+        ax.annotate('', xy=(x_gd[i+1], fi_next), xytext=(x_gd[i], fi),
+                    arrowprops=dict(arrowstyle='->', color='#4682B4', lw=1.5))
+
+ax.set_title(r'$\alpha$ too small', fontsize=12, color='#4682B4', fontweight='bold')
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$f(x)$', fontsize=11)
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(0, 2.0)
+
+# --- Just right (same starting point as too small) ---
+ax = axes[2]
+ax.plot(x_plot, f_plot, color='#4682B4', linewidth=2.5)
+
+alpha_good = 0.02
+x_gd = [1.85]
+for _ in range(200):
+    xi = x_gd[-1]
+    dfi = np.exp(xi) - 1/xi
+    x_new = xi - alpha_good * dfi
+    if x_new <= 0:
+        break
+    x_gd.append(x_new)
+
+n_show = min(10, len(x_gd))
+for i in range(n_show):
+    fi = np.exp(x_gd[i]) - np.log(x_gd[i])
+    ax.plot(x_gd[i], fi, 'o', color='#2E8B57', markersize=8, zorder=5)
+    if i == 0:
+        ax.annotate('Start', xy=(x_gd[0], fi),
+                    xytext=(x_gd[0], fi - 1.0),
+                    fontsize=9, fontweight='bold', color='#2E8B57', ha='center',
+                    arrowprops=dict(arrowstyle='->', color='#2E8B57'))
+    if i < n_show - 1:
+        fi_next = np.exp(x_gd[i+1]) - np.log(x_gd[i+1])
+        ax.annotate('', xy=(x_gd[i+1], fi_next), xytext=(x_gd[i], fi),
+                    arrowprops=dict(arrowstyle='->', color='#2E8B57', lw=1.5))
+
+ax.plot(x_gd[-1], np.exp(x_gd[-1]) - np.log(x_gd[-1]), '*', color='#2E8B57', markersize=14, zorder=5)
+ax.set_title(r'$\alpha$ just right', fontsize=12, color='#2E8B57', fontweight='bold')
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$f(x)$', fontsize=11)
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlim(0, 2.0)
+
+plt.tight_layout()
+plt.show()
+```
+
+Finding the perfect learning rate is actually an active research problem. There are adaptive methods that adjust $\alpha$ during training, but there is no single formula that works for every problem.
+
+
+## Local Minimum Problem
+
+There is another issue with gradient descent. If the function has multiple minima, gradient descent will take you to whichever minimum is closest to your starting point, not necessarily the **global** minimum.
+
+Consider the function $f(x) = (e^x - \ln x) \cdot \sin(2\pi x)$. It has several local minima:
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+x = np.linspace(0.1, 2.5, 500)
+f = (np.exp(x) - np.log(x)) * np.sin(np.pi * x * 2)
+
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(x, f, color='#4682B4', linewidth=2.5)
+
+# Find local minima numerically
+df = np.gradient(f, x)
+sign_changes = np.where(np.diff(np.sign(df)))[0]
+d2f = np.gradient(df, x)
+minima = [(x[i], f[i]) for i in sign_changes if d2f[i] > 0]
+
+# Sort by f value to identify global vs local
+minima_sorted = sorted(minima, key=lambda p: p[1])
+
+if len(minima_sorted) >= 2:
+    gx, gf = minima_sorted[0]
+    ax.plot(gx, gf, '*', color='#2E8B57', markersize=16, zorder=5)
+    ax.annotate('Global\nminimum', xy=(gx, gf), xytext=(gx, gf - 3.0),
+                fontsize=10, fontweight='bold', color='#2E8B57', ha='center',
+                arrowprops=dict(arrowstyle='->', color='#2E8B57'))
+
+    for i in range(1, min(3, len(minima_sorted))):
+        lx, lf = minima_sorted[i]
+        ax.plot(lx, lf, 'o', color='#CC7000', markersize=10, zorder=5)
+        ax.annotate('Local\nminimum', xy=(lx, lf), xytext=(lx, lf - 3.0),
+                    fontsize=9, fontweight='bold', color='#CC7000', ha='center',
+                    arrowprops=dict(arrowstyle='->', color='#CC7000'))
+
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$f(x)$', fontsize=11)
+ax.set_title(r'$f(x) = (e^x - \ln x)\,\sin(2\pi x)$ has multiple minima', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+There is no guaranteed way to overcome this problem. But a practical approach is to run gradient descent **multiple times with different starting points**. If you try enough starting points, chances are one of them will land you at (or near) the global minimum.
+
+
+## Interactive Lab: Gradient Descent
+
+<!-- interactive-tool -->
+
+::: {.callout-note}
+This is an interactive tool to experiment with gradient descent on $f(x) = e^x - \ln(x)$. Adjust the learning rate, number of iterations, and starting point, then click **▶ Run** to watch the algorithm step toward the minimum.
+:::
+
+```{ojs}
+//| echo: false
+
+// ── Functions ───────────────────────────────────────────────────────────────────
+
+f1 = (x) => Math.exp(x) - Math.log(x)
+df1 = (x) => Math.exp(x) - 1/x
+
+f2 = (x) => (Math.exp(x) - Math.log(x)) * Math.sin(Math.PI * x * 2)
+df2 = (x) => (Math.exp(x) - 1/x) * Math.sin(Math.PI * x * 2) + (Math.exp(x) - Math.log(x)) * Math.cos(Math.PI * x * 2) * 2 * Math.PI
+
+functions = new Map([
+  ["f(x) = eˣ − ln(x)", {f: f1, df: df1, xRange: [0.01, 2.5], yRange: [2, 12], defaultLr: 0.1}],
+  ["f(x) = (eˣ − ln(x))·sin(2πx)", {f: f2, df: df2, xRange: [0.15, 2.5], yRange: [-12, 12], defaultLr: 0.003}],
+])
+```
+
+```{ojs}
+//| echo: false
+
+viewof fnSelect = Inputs.select([...functions.keys()], {label: "Function", width: 500})
+```
+
+```{ojs}
+//| echo: false
+
+viewof x0 = Inputs.range([0.15, 2.4], {label: "Starting point", value: 1.6, step: 0.01, width: 280})
+viewof lr = {
+  const defaultLr = functions.get(fnSelect).defaultLr;
+  return Inputs.range([0.001, 0.5], {label: "Learning rate", value: defaultLr, step: 0.001, width: 280});
+}
+
+html`<div style="display:flex;gap:16px;align-items:end">
+  ${viewof x0}
+  ${viewof lr}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof numIter = Inputs.range([1, 100], {label: "Iterations", value: 10, step: 1, width: 200})
+viewof animSpeed = Inputs.range([20, 2000], {label: "Step delay (ms)", value: 300, step: 10, width: 200})
+viewof runBtn = {
+  const btn = html`<button style="background:linear-gradient(135deg,#4682B4,#5a9fd4);color:white;border:none;border-radius:6px;padding:8px 20px;font-size:14px;font-weight:600;cursor:pointer">▶ Run Gradient Descent</button>`;
+  let count = 0;
+  btn.value = count;
+  btn.onclick = () => { btn.value = ++count; btn.dispatchEvent(new Event("input", {bubbles:true})); };
+  return btn;
+}
+
+html`<div style="display:flex;gap:16px;align-items:end">
+  ${viewof numIter}
+  ${viewof animSpeed}
+  ${viewof runBtn}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+gdPath = {
+  const _trigger = runBtn;
+  const _lr = lr;
+  const _x0 = x0;
+  const _numIter = numIter;
+  const {f, df, xRange} = functions.get(fnSelect);
+  const startY = f(_x0);
+  if (!isFinite(startY)) return [{x: _x0, y: 0}];
+  const path = [{x: _x0, y: startY}];
+  let xi = _x0;
+  for (let i = 0; i < _numIter; i++) {
+    const grad = df(xi);
+    if (!isFinite(grad)) break;
+    const xNew = xi - _lr * grad;
+    if (xNew <= 0.01 || xNew > 5 || !isFinite(xNew)) break;
+    const yNew = f(xNew);
+    if (!isFinite(yNew)) break;
+    xi = xNew;
+    path.push({x: xi, y: yNew});
+  }
+  return path;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Animated SVG plot
+{
+  const {f, xRange, yRange} = functions.get(fnSelect);
+  const path = gdPath;
+  const W = 700, H = 400;
+  const m = {top: 30, right: 20, bottom: 40, left: 55};
+
+  const svg = d3.create("svg")
+    .attr("viewBox", [0, 0, W, H]).attr("width", W).attr("height", H)
+    .style("max-width", "100%").style("font-family", "'PT Sans', sans-serif");
+
+  const xS = d3.scaleLinear().domain(xRange).range([m.left, W - m.right]);
+  const yS = d3.scaleLinear().domain(yRange).range([H - m.bottom, m.top]);
+
+  // Grid
+  svg.append("g").attr("transform", `translate(0,${H - m.bottom})`)
+    .call(d3.axisBottom(xS).ticks(8).tickSize(-(H - m.top - m.bottom)).tickFormat(""))
+    .selectAll("line").attr("stroke", "#eee").attr("stroke-dasharray", "3,3");
+  svg.append("g").attr("transform", `translate(${m.left},0)`)
+    .call(d3.axisLeft(yS).ticks(6).tickSize(-(W - m.left - m.right)).tickFormat(""))
+    .selectAll("line").attr("stroke", "#eee").attr("stroke-dasharray", "3,3");
+
+  // Axes
+  svg.append("g").attr("transform", `translate(0,${H - m.bottom})`).call(d3.axisBottom(xS).ticks(8))
+    .append("text").attr("x", W - m.right).attr("y", -6).attr("fill", "black").attr("text-anchor", "end").attr("font-size", "12px").text("x");
+  svg.append("g").attr("transform", `translate(${m.left},0)`).call(d3.axisLeft(yS).ticks(6))
+    .append("text").attr("x", 6).attr("y", m.top - 10).attr("fill", "black").attr("font-size", "12px").text("f(x)");
+
+  // Curve
+  const pts = [];
+  const nPts = 500;
+  for (let i = 0; i <= nPts; i++) {
+    const cx = xRange[0] + i * (xRange[1] - xRange[0]) / nPts;
+    const cy = f(cx);
+    if (isFinite(cy) && cy >= yRange[0] - 2 && cy <= yRange[1] + 2) pts.push([cx, cy]);
+  }
+  svg.append("path").datum(pts)
+    .attr("d", d3.line().x(d => xS(d[0])).y(d => yS(d[1])))
+    .attr("fill", "none").attr("stroke", "#4682B4").attr("stroke-width", 2.5);
+
+  // Arrowhead
+  svg.append("defs").append("marker").attr("id", "ah").attr("viewBox", "0 0 10 10")
+    .attr("refX", 8).attr("refY", 5).attr("markerWidth", 5).attr("markerHeight", 5).attr("orient", "auto")
+    .append("path").attr("d", "M0,0 L10,5 L0,10 Z").attr("fill", "gray");
+
+  // Info text
+  const info = svg.append("text").attr("x", W - m.right - 5).attr("y", m.top + 12)
+    .attr("text-anchor", "end").attr("font-size", "11px").attr("fill", "#555");
+
+  // Animate steps
+  const gPoints = svg.append("g");
+  const gArrows = svg.append("g");
+  let idx = 0;
+  const delay = animSpeed;
+
+  function step() {
+    if (idx >= path.length) return;
+    const {x: xi, y: fi} = path[idx];
+    const clampedY = Math.max(yRange[0], Math.min(yRange[1], fi));
+
+    const color = idx === 0 ? "#DAA520" : (idx === path.length - 1 ? "#2E8B57" : "#CC0000");
+    const r = (idx === 0 || idx === path.length - 1) ? 6 : 4;
+
+    gPoints.append("circle").attr("cx", xS(xi)).attr("cy", yS(clampedY)).attr("r", 0).attr("fill", color)
+      .transition().duration(150).attr("r", r);
+
+    if (idx > 0) {
+      const prev = path[idx - 1];
+      const prevY = Math.max(yRange[0], Math.min(yRange[1], prev.y));
+      gArrows.append("line")
+        .attr("x1", xS(prev.x)).attr("y1", yS(prevY))
+        .attr("x2", xS(prev.x)).attr("y2", yS(prevY))
+        .attr("stroke", "gray").attr("stroke-width", 1.2).attr("marker-end", "url(#ah)")
+        .transition().duration(150).attr("x2", xS(xi)).attr("y2", yS(clampedY));
+    }
+
+    const label = idx === 0 ? "Start" : (idx === path.length - 1 ? `Done (step ${idx})` : `Step ${idx}`);
+    info.text(`${label} | x = ${xi.toFixed(4)}, f(x) = ${fi.toFixed(4)}`);
+
+    idx++;
+    if (idx < path.length) setTimeout(step, delay);
+  }
+
+  setTimeout(step, 200);
+  return svg.node();
+}
+```
+
+**How to use this tool:**
+
+1. Set starting point, learning rate, and number of iterations.
+2. Click **▶ Run Gradient Descent** to watch the algorithm animate step by step.
+
+**Things to explore:**
+
+- Try `learning_rate = 0.5` and see the algorithm overshoot.
+- Try `learning_rate = 0.04` with only 25 iterations. Does it converge?
+- Start at `x₀ = 0.2` (steep region). What happens with `learning_rate = 0.1`?
+
+
+### Python Implementation
+
+The gradient descent function is remarkably simple:
+
+```{python}
+import numpy as np
+
+def gradient_descent(dfdx, x, learning_rate=0.1, num_iterations=100):
+    for iteration in range(num_iterations):
+        x = x - learning_rate * dfdx(x)
+    return x
+```
+
+Define $f(x) = e^x - \ln(x)$ and its derivative:
+
+```{python}
+def f(x):
+    return np.exp(x) - np.log(x)
+
+def dfdx(x):
+    return np.exp(x) - 1/x
+```
+
+Run gradient descent with `learning_rate = 0.1`, starting at `x = 1.6`:
+
+```{python}
+x_min = gradient_descent(dfdx, x=1.6, learning_rate=0.1, num_iterations=25)
+print(f"Gradient descent result: x_min = {x_min:.10f}")
+print(f"f(x_min) = {f(x_min):.10f}")
+```
+
+Try different learning rates to see the effect:
+
+```{python}
+for lr in [0.04, 0.1, 0.3]:
+    result = gradient_descent(dfdx, x=1.6, learning_rate=lr, num_iterations=25)
+    print(f"lr = {lr:.2f}  →  x = {result:.6f},  f(x) = {f(result):.6f}")
+```
+
+Try different starting points:
+
+```{python}
+for x0 in [0.05, 0.5, 1.6, 2.0]:
+    result = gradient_descent(dfdx, x=x0, learning_rate=0.1, num_iterations=25)
+    print(f"x₀ = {x0:.2f}  →  x = {result:.6f},  f(x) = {f(result):.6f}")
+```

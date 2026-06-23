@@ -1,0 +1,766 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"Lab: Linear Transformations and Neural Networks\"\n",
+        "date: \"2026-05-23\"\n",
+        "difficulty: 2\n",
+        "order: 7\n",
+        "categories: [linear-algebra]\n",
+        "---\n",
+        "\n",
+        "In the previous notes you learned that matrices represent linear transformations. In this lab, you will build transformation functions step by step, see what they do to basis vectors, and then apply them to a real image (a leaf made of 329,076 points). Finally, you will see how the exact same matrix multiplication powers a simple neural network.\n",
+        "\n",
+        "## Setup"
+      ],
+      "id": "0363adb7"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "\n",
+        "%config InlineBackend.figure_formats = ['png']"
+      ],
+      "id": "9ab56186",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Part 1: Linear Transformations\n",
+        "\n",
+        "### Loading the Image\n",
+        "\n",
+        "An image in the plane is just a collection of points. We store it as a $2 \\times n$ matrix where each column is a point $\\begin{bmatrix}x\\\\y\\end{bmatrix}$."
+      ],
+      "id": "5c9e2fca"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "img = np.loadtxt('../../media/image.txt')\n",
+        "print(f'Shape: {img.shape}  →  {img.shape[1]:,} points in the plane')"
+      ],
+      "id": "6aa2c8a6",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "fig, ax = plt.subplots(1, 1, figsize=(5, 6))\n",
+        "ax.scatter(img[0], img[1], s=0.01, color='#2E8B57')\n",
+        "ax.set_aspect('equal')\n",
+        "ax.set_title('Original leaf', fontsize=12, color='gray')\n",
+        "ax.axis('off')\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "b7ed3e68",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### A Helper Function\n",
+        "\n",
+        "Every transformation we build will take a matrix of vectors and return the transformed matrix. To see what a transformation does to the standard basis vectors $e_1 = \\begin{bmatrix}1\\\\0\\end{bmatrix}$ and $e_2 = \\begin{bmatrix}0\\\\1\\end{bmatrix}$, we use this helper:"
+      ],
+      "id": "0bda2daf"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def transform_vectors(T, v1, v2):\n",
+        "    \"\"\"Apply transformation T to vectors v1 and v2, return results side by side.\"\"\"\n",
+        "    V = np.hstack((v1, v2))\n",
+        "    W = T(V)\n",
+        "    return W\n",
+        "\n",
+        "e1 = np.array([[1], [0]])\n",
+        "e2 = np.array([[0], [1]])"
+      ],
+      "id": "4d54fad0",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "And a plotting function to visualize how basis vectors change (this is a helper utility, you can skip reviewing the implementation and just look at the outputs below):\n",
+        "\n",
+        "::: {.callout-note collapse=\"true\"}\n",
+        "## `plot_transformation` helper (expand to see implementation)"
+      ],
+      "id": "a3bb3705"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def plot_transformation(T, e1, e2):\n",
+        "    \"\"\"Plot original and transformed basis vectors.\"\"\"\n",
+        "    original = np.hstack((e1, e2))\n",
+        "    transformed = T(original)\n",
+        "\n",
+        "    fig, ax = plt.subplots(1, 1, figsize=(6, 6))\n",
+        "\n",
+        "    # Original basis vectors (solid)\n",
+        "    ax.quiver(0, 0, e1[0,0], e1[1,0], angles='xy', scale_units='xy', scale=1,\n",
+        "              color='#4682B4', width=0.015, zorder=5)\n",
+        "    ax.quiver(0, 0, e2[0,0], e2[1,0], angles='xy', scale_units='xy', scale=1,\n",
+        "              color='#2E8B57', width=0.015, zorder=5)\n",
+        "\n",
+        "    # Transformed basis vectors (faded)\n",
+        "    ax.quiver(0, 0, transformed[0,0], transformed[1,0], angles='xy', scale_units='xy', scale=1,\n",
+        "              color='#4682B4', width=0.015, alpha=0.4, zorder=4)\n",
+        "    ax.quiver(0, 0, transformed[0,1], transformed[1,1], angles='xy', scale_units='xy', scale=1,\n",
+        "              color='#2E8B57', width=0.015, alpha=0.4, zorder=4)\n",
+        "\n",
+        "    # Labels\n",
+        "    ax.text(e1[0,0]+0.1, e1[1,0]+0.1, '$e_1$', fontsize=11, fontweight='bold', color='#4682B4')\n",
+        "    ax.text(e2[0,0]+0.1, e2[1,0]+0.1, '$e_2$', fontsize=11, fontweight='bold', color='#2E8B57')\n",
+        "    ax.text(transformed[0,0]+0.1, transformed[1,0]+0.1,\n",
+        "            f'$T(e_1)$', fontsize=10, color='#4682B4', alpha=0.7)\n",
+        "    ax.text(transformed[0,1]+0.1, transformed[1,1]+0.1,\n",
+        "            f'$T(e_2)$', fontsize=10, color='#2E8B57', alpha=0.7)\n",
+        "\n",
+        "    ax.set_xlim(-3, 3)\n",
+        "    ax.set_ylim(-3, 3)\n",
+        "    ax.set_xticks(range(-3, 4))\n",
+        "    ax.set_yticks(range(-3, 4))\n",
+        "    ax.set_aspect('equal')\n",
+        "    ax.grid(True, linestyle='--', alpha=0.4)\n",
+        "    ax.axhline(0, color='black', linewidth=0.8)\n",
+        "    ax.axvline(0, color='black', linewidth=0.8)\n",
+        "    plt.tight_layout()\n",
+        "    plt.show()"
+      ],
+      "id": "71872898",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        ":::\n",
+        "\n",
+        "Now let's build transformations one by one.\n",
+        "\n",
+        "### 1. Horizontal Scaling (Dilation)\n",
+        "\n",
+        "Horizontal scaling by factor 2 stretches the $x$-coordinate while leaving $y$ unchanged. The matrix is:\n",
+        "\n",
+        "$$A = \\begin{bmatrix}2 & 0\\\\0 & 1\\end{bmatrix}$$\n",
+        "\n",
+        "$e_1 = (1,0)$ maps to $(2, 0)$, and $e_2 = (0,1)$ stays at $(0, 1)$."
+      ],
+      "id": "0c4a2ae4"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def T_hscaling(v):\n",
+        "    A = np.array([[2, 0], [0, 1]])\n",
+        "    return A @ v\n",
+        "\n",
+        "# What happens to the basis vectors?\n",
+        "print(\"Transformation matrix:\\n\", np.array([[2, 0], [0, 1]]))\n",
+        "print(\"\\nT(e1) =\", T_hscaling(e1).flatten())\n",
+        "print(\"T(e2) =\", T_hscaling(e2).flatten())"
+      ],
+      "id": "ee7064f6",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "plot_transformation(T_hscaling, e1, e2)"
+      ],
+      "id": "cf5aabea",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Now apply to the full leaf image:"
+      ],
+      "id": "1a2f45d9"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "fig, ax = plt.subplots(1, 1, figsize=(8, 6))\n",
+        "ax.scatter(img[0], img[1], s=0.01, color='#2E8B57', label='Original')\n",
+        "transformed = T_hscaling(img)\n",
+        "ax.scatter(transformed[0], transformed[1], s=0.01, color='gray', label='Scaled ×2 horizontally')\n",
+        "ax.set_aspect('equal')\n",
+        "ax.legend(markerscale=30, fontsize=10)\n",
+        "ax.set_title('Horizontal scaling applied to the leaf', fontsize=12, color='gray')\n",
+        "ax.axis('off')\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "3089af45",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 2. Reflection About the $y$-axis\n",
+        "\n",
+        "Reflection negates the $x$-coordinate:\n",
+        "\n",
+        "$$A = \\begin{bmatrix}-1 & 0\\\\0 & 1\\end{bmatrix}$$"
+      ],
+      "id": "2bee8247"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def T_reflection_yaxis(v):\n",
+        "    A = np.array([[-1, 0], [0, 1]])\n",
+        "    return A @ v\n",
+        "\n",
+        "print(\"T(e1) =\", T_reflection_yaxis(e1).flatten())\n",
+        "print(\"T(e2) =\", T_reflection_yaxis(e2).flatten())"
+      ],
+      "id": "35283224",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "plot_transformation(T_reflection_yaxis, e1, e2)"
+      ],
+      "id": "3f42be98",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "fig, ax = plt.subplots(1, 1, figsize=(8, 6))\n",
+        "ax.scatter(img[0], img[1], s=0.01, color='#2E8B57', label='Original')\n",
+        "transformed = T_reflection_yaxis(img)\n",
+        "ax.scatter(transformed[0], transformed[1], s=0.01, color='gray', label='Reflected')\n",
+        "ax.set_aspect('equal')\n",
+        "ax.legend(markerscale=30, fontsize=10)\n",
+        "ax.set_title('Reflection applied to the leaf', fontsize=12, color='gray')\n",
+        "ax.axis('off')\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "0f123ec8",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3. Stretching by a Scalar\n",
+        "\n",
+        "Uniform stretching by factor $a$ scales both coordinates equally:\n",
+        "\n",
+        "$$A = \\begin{bmatrix}a & 0\\\\0 & a\\end{bmatrix} = aI$$\n",
+        "\n",
+        "This is the same as multiplying every vector by $a$."
+      ],
+      "id": "f063b2eb"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def T_stretch(a, v):\n",
+        "    A = np.array([[a, 0], [0, a]])\n",
+        "    return A @ v\n",
+        "\n",
+        "# With a = 0.5 (shrink)\n",
+        "print(\"T_stretch(0.5, e1) =\", T_stretch(0.5, e1).flatten())\n",
+        "print(\"T_stretch(0.5, e2) =\", T_stretch(0.5, e2).flatten())"
+      ],
+      "id": "8106be17",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "fig, ax = plt.subplots(1, 1, figsize=(8, 6))\n",
+        "ax.scatter(img[0], img[1], s=0.01, color='#2E8B57', label='Original')\n",
+        "ax.scatter(T_stretch(0.5, img)[0], T_stretch(0.5, img)[1], s=0.01, color='gray', label='Stretched ×0.5 (shrunk)')\n",
+        "ax.set_aspect('equal')\n",
+        "ax.legend(markerscale=30, fontsize=10)\n",
+        "ax.set_title('Uniform stretch (factor 0.5)', fontsize=12, color='gray')\n",
+        "ax.axis('off')\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "63ae88ef",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 4. Horizontal Shear\n",
+        "\n",
+        "A horizontal shear with parameter $m$ maps $(x, y)$ to $(x + my, y)$:\n",
+        "\n",
+        "$$A = \\begin{bmatrix}1 & m\\\\0 & 1\\end{bmatrix}$$\n",
+        "\n",
+        "Notice that $e_1$ is unchanged, but $e_2 = (0, 1)$ maps to $(m, 1)$. The $y$-axis tilts."
+      ],
+      "id": "e233ee19"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def T_hshear(m, v):\n",
+        "    A = np.array([[1, m], [0, 1]])\n",
+        "    return A @ v\n",
+        "\n",
+        "print(\"With m = 0.5:\")\n",
+        "print(\"T(e1) =\", T_hshear(0.5, e1).flatten())\n",
+        "print(\"T(e2) =\", T_hshear(0.5, e2).flatten(), \" ← e2 shifted horizontally!\")"
+      ],
+      "id": "0bcba714",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "plot_transformation(lambda v: T_hshear(0.5, v), e1, e2)"
+      ],
+      "id": "53b2d459",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "fig, ax = plt.subplots(1, 1, figsize=(8, 6))\n",
+        "ax.scatter(img[0], img[1], s=0.01, color='#2E8B57', label='Original')\n",
+        "transformed = T_hshear(0.5, img)\n",
+        "ax.scatter(transformed[0], transformed[1], s=0.01, color='gray', label='Sheared ($m = 0.5$)')\n",
+        "ax.set_aspect('equal')\n",
+        "ax.legend(markerscale=30, fontsize=10)\n",
+        "ax.set_title('Horizontal shear applied to the leaf', fontsize=12, color='gray')\n",
+        "ax.axis('off')\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "3a9645ca",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 5. Rotation\n",
+        "\n",
+        "Rotation by angle $\\theta$ counterclockwise:\n",
+        "\n",
+        "$$A = \\begin{bmatrix}\\cos\\theta & -\\sin\\theta\\\\\\sin\\theta & \\cos\\theta\\end{bmatrix}$$"
+      ],
+      "id": "76e45f37"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def T_rotation(theta, v):\n",
+        "    A = np.array([[np.cos(theta), -np.sin(theta)],\n",
+        "                  [np.sin(theta),  np.cos(theta)]])\n",
+        "    return A @ v\n",
+        "\n",
+        "# Rotate 45 degrees\n",
+        "theta = np.pi / 4\n",
+        "print(f\"Rotation by {np.degrees(theta):.0f}°:\")\n",
+        "print(\"T(e1) =\", T_rotation(theta, e1).flatten().round(3))\n",
+        "print(\"T(e2) =\", T_rotation(theta, e2).flatten().round(3))"
+      ],
+      "id": "c111b822",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "plot_transformation(lambda v: T_rotation(np.pi/4, v), e1, e2)"
+      ],
+      "id": "5a73b3c0",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "fig, ax = plt.subplots(1, 1, figsize=(8, 6))\n",
+        "ax.scatter(img[0], img[1], s=0.01, color='#2E8B57', label='Original')\n",
+        "transformed = T_rotation(np.pi/4, img)\n",
+        "ax.scatter(transformed[0], transformed[1], s=0.01, color='gray', label='Rotated 45°')\n",
+        "ax.set_aspect('equal')\n",
+        "ax.legend(markerscale=30, fontsize=10)\n",
+        "ax.set_title('Rotation by $\\\\pi/4$ (45°)', fontsize=12, color='gray')\n",
+        "ax.axis('off')\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "642a0656",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 6. Combining Transformations\n",
+        "\n",
+        "Since applying two transformations in sequence is matrix multiplication ($B(Av) = (BA)v$), you can compose them. Let's rotate by 30° AND stretch by 1.5:"
+      ],
+      "id": "6e805ba6"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def T_rotation_and_stretch(theta, a, v):\n",
+        "    R = np.array([[np.cos(theta), -np.sin(theta)],\n",
+        "                  [np.sin(theta),  np.cos(theta)]])\n",
+        "    S = np.array([[a, 0], [0, a]])\n",
+        "    # First stretch, then rotate: R @ S @ v\n",
+        "    return R @ S @ v\n",
+        "\n",
+        "print(\"Combined matrix (rotate 30° then stretch 1.5):\")\n",
+        "theta = np.pi/6\n",
+        "R = np.array([[np.cos(theta), -np.sin(theta)],\n",
+        "              [np.sin(theta),  np.cos(theta)]])\n",
+        "S = np.array([[1.5, 0], [0, 1.5]])\n",
+        "print(R @ S)"
+      ],
+      "id": "ded020a6",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "fig, ax = plt.subplots(1, 1, figsize=(8, 6))\n",
+        "ax.scatter(img[0], img[1], s=0.01, color='#2E8B57', label='Original')\n",
+        "transformed = T_rotation_and_stretch(np.pi/6, 1.5, img)\n",
+        "ax.scatter(transformed[0], transformed[1], s=0.01, color='gray', label='Rotated 30° + stretched ×1.5')\n",
+        "ax.set_aspect('equal')\n",
+        "ax.legend(markerscale=30, fontsize=10)\n",
+        "ax.set_title('Combined: rotation + stretch', fontsize=12, color='gray')\n",
+        "ax.axis('off')\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "837a34bb",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Does Order Matter?\n",
+        "\n",
+        "Let's apply shear then rotate, and compare with rotate then shear:"
+      ],
+      "id": "4d2b4b04"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "fig, axes = plt.subplots(1, 2, figsize=(12, 5))\n",
+        "\n",
+        "# Shear first, then rotate\n",
+        "sheared = T_hshear(0.5, img)\n",
+        "shear_then_rotate = T_rotation(np.pi/4, sheared)\n",
+        "\n",
+        "ax = axes[0]\n",
+        "ax.scatter(shear_then_rotate[0], shear_then_rotate[1], s=0.01, color='#CC7000')\n",
+        "ax.set_aspect('equal')\n",
+        "ax.set_title('Shear first, then rotate', fontsize=12, color='gray')\n",
+        "ax.axis('off')\n",
+        "\n",
+        "# Rotate first, then shear\n",
+        "rotated = T_rotation(np.pi/4, img)\n",
+        "rotate_then_shear = T_hshear(0.5, rotated)\n",
+        "\n",
+        "ax = axes[1]\n",
+        "ax.scatter(rotate_then_shear[0], rotate_then_shear[1], s=0.01, color='#4682B4')\n",
+        "ax.set_aspect('equal')\n",
+        "ax.set_title('Rotate first, then shear', fontsize=12, color='gray')\n",
+        "ax.axis('off')\n",
+        "\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "f7191fc9",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The results are different. Matrix multiplication is not commutative: $BA \\neq AB$ in general.\n",
+        "\n",
+        "---\n",
+        "\n",
+        "## Part 2: Neural Networks\n",
+        "\n",
+        "Everything you just did was matrix multiplication: $w = Av$. A neural network does the same thing, with a different purpose. Instead of transforming images, it transforms input features into predictions.\n",
+        "\n",
+        "### Linear Regression as Matrix Multiplication\n",
+        "\n",
+        "A linear regression model with two inputs $x_1, x_2$ predicts:\n",
+        "\n",
+        "$$\\hat{y} = w_1 x_1 + w_2 x_2 + b = Wx + b$$\n",
+        "\n",
+        "where $W = \\begin{bmatrix}w_1 & w_2\\end{bmatrix}$ is a $1 \\times 2$ weight matrix, $x = \\begin{bmatrix}x_1\\\\x_2\\end{bmatrix}$ is the input, and $b$ is a bias.\n",
+        "\n",
+        "### A Single-Perceptron Neural Network\n",
+        "\n",
+        "For $m$ training examples at once, store all inputs in a $2 \\times m$ matrix $X$. The network computes:\n",
+        "\n",
+        "$$Z = WX + b$$\n",
+        "\n",
+        "The output $Z$ is $1 \\times m$ (one prediction per example). This is one matrix multiplication plus a bias.\n",
+        "\n",
+        "### Implementation"
+      ],
+      "id": "5053948f"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def initialize_parameters():\n",
+        "    \"\"\"Initialize weights and bias with small random values.\"\"\"\n",
+        "    W = np.random.randn(1, 2) * 0.01\n",
+        "    b = np.zeros((1, 1))\n",
+        "    return {'W': W, 'b': b}\n",
+        "\n",
+        "def forward_propagation(X, parameters):\n",
+        "    \"\"\"Forward pass: Z = WX + b\"\"\"\n",
+        "    W = parameters['W']\n",
+        "    b = parameters['b']\n",
+        "    Z = W @ X + b\n",
+        "    return Z\n",
+        "\n",
+        "def compute_cost(Y_hat, Y):\n",
+        "    \"\"\"Mean squared error: (1/2m) * sum((y_hat - y)^2)\"\"\"\n",
+        "    m = Y.shape[1]\n",
+        "    cost = (1 / (2 * m)) * np.sum((Y_hat - Y) ** 2)\n",
+        "    return cost"
+      ],
+      "id": "6c54c1b9",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Training with Gradient Descent\n",
+        "\n",
+        "The network learns by adjusting $W$ and $b$ to minimize the cost. The gradients for MSE are:\n",
+        "\n",
+        "$$\\frac{\\partial \\mathcal{L}}{\\partial W} = \\frac{1}{m}(Z - Y)X^T \\qquad \\frac{\\partial \\mathcal{L}}{\\partial b} = \\frac{1}{m}\\sum(Z - Y)$$"
+      ],
+      "id": "3b701688"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def nn_model(X, Y, num_iterations=1000, learning_rate=0.01, print_cost=False):\n",
+        "    \"\"\"Train a single-perceptron neural network.\"\"\"\n",
+        "    parameters = initialize_parameters()\n",
+        "\n",
+        "    for i in range(num_iterations):\n",
+        "        # Forward propagation\n",
+        "        Y_hat = forward_propagation(X, parameters)\n",
+        "\n",
+        "        # Cost\n",
+        "        cost = compute_cost(Y_hat, Y)\n",
+        "\n",
+        "        # Gradients\n",
+        "        m = X.shape[1]\n",
+        "        dW = (1/m) * (Y_hat - Y) @ X.T\n",
+        "        db = (1/m) * np.sum(Y_hat - Y)\n",
+        "\n",
+        "        # Update parameters\n",
+        "        parameters['W'] -= learning_rate * dW\n",
+        "        parameters['b'] -= learning_rate * db\n",
+        "\n",
+        "        if print_cost and i % 200 == 0:\n",
+        "            print(f'  Iteration {i:4d}: cost = {cost:.6f}')\n",
+        "\n",
+        "    return parameters"
+      ],
+      "id": "816d46b0",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Training on Synthetic Data\n",
+        "\n",
+        "Let's generate data from a known relationship $y = 3x_1 - 2x_2 + 1$ and see if the network can learn it:"
+      ],
+      "id": "2ecb5be1"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "np.random.seed(42)\n",
+        "\n",
+        "# True relationship: y = 3*x1 - 2*x2 + 1 + noise\n",
+        "m = 50\n",
+        "X_train = np.random.randn(2, m)\n",
+        "Y_train = 3 * X_train[0:1] - 2 * X_train[1:2] + 1 + 0.1 * np.random.randn(1, m)\n",
+        "\n",
+        "print(f\"Training data: X is {X_train.shape}, Y is {Y_train.shape}\")\n",
+        "print(f\"True parameters: W = [3, -2], b = 1\\n\")\n",
+        "\n",
+        "parameters = nn_model(X_train, Y_train, num_iterations=2000, learning_rate=0.1, print_cost=True)\n",
+        "\n",
+        "print(f\"\\nLearned: W = {parameters['W'].round(4)}, b = {parameters['b'].round(4)}\")"
+      ],
+      "id": "d522567f",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The network learned weights close to $[3, -2]$ and bias close to 1.\n",
+        "\n",
+        "### Predictions vs Actual"
+      ],
+      "id": "f1ee6d9d"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "def predict(X, parameters):\n",
+        "    \"\"\"Make predictions using learned parameters.\"\"\"\n",
+        "    return parameters['W'] @ X + parameters['b']\n",
+        "\n",
+        "Y_pred = predict(X_train, parameters)\n",
+        "\n",
+        "fig, ax = plt.subplots(1, 1, figsize=(6, 6))\n",
+        "ax.scatter(Y_train.flatten(), Y_pred.flatten(), s=20, color='#4682B4', alpha=0.7)\n",
+        "ax.plot([-8, 8], [-8, 8], '--', color='#CC0000', lw=1.5, label='Perfect prediction')\n",
+        "ax.set_xlabel('Actual $y$', fontsize=11)\n",
+        "ax.set_ylabel('Predicted $\\\\hat{y}$', fontsize=11)\n",
+        "ax.set_title('Predictions vs actual values', fontsize=12, color='gray')\n",
+        "ax.legend(fontsize=10)\n",
+        "ax.grid(True, linestyle='--', alpha=0.4)\n",
+        "ax.set_aspect('equal')\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "5dadb523",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Points close to the red dashed line means accurate predictions. The network learned the linear relationship through gradient descent, using nothing but matrix multiplication at each step.\n",
+        "\n",
+        "### Key Takeaway\n",
+        "\n",
+        "Forward propagation in a neural network is the same operation as applying a linear transformation:\n",
+        "\n",
+        "| Linear Transformation | Neural Network |\n",
+        "|:---:|:---:|\n",
+        "| $w = Av$ | $Z = WX + b$ |\n",
+        "| Matrix $A$ defines the transformation | Weights $W$ and bias $b$ define the model |\n",
+        "| You choose $A$ | The network *learns* $W$ and $b$ from data |\n",
+        "\n",
+        "The difference: in transformations you design the matrix by hand. In a neural network, the matrix is learned from data through optimization.\n",
+        "\n",
+        "---\n",
+        "\n",
+        "*Previous: [Linear Transformations](linear-transformations.qmd)* | *Next: [Determinants In-depth](determinants.qmd)*"
+      ],
+      "id": "26e07bad"
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3 (ipykernel)",
+      "path": "/home/parallels/website/.venv/share/jupyter/kernels/python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}

@@ -1,0 +1,419 @@
+---
+title: "Newton's Method"
+date: "2026-06-17"
+difficulty: 3
+order: 17
+categories: [calculus]
+---
+
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+So far we have used gradient descent to find the minimum of a function. It works, but it can be slow — you take many small steps, and the learning rate needs careful tuning. Newton's method is an alternative that often converges much faster. It uses the second derivative to take smarter steps.
+
+The idea behind Newton's method is simple: it was originally designed to find the **zeros** (roots) of a function. But since finding the minimum of a function is equivalent to finding the zeros of its derivative, we can repurpose it for optimization.
+
+## Finding Zero of a Function
+
+Suppose we have a function $f(x)$ and we want to find the point where $f(x) = 0$.
+
+### Geometric Idea
+
+1. Start at some initial guess $x_0$.
+2. Draw the tangent line to $f$ at the point $(x_0, f(x_0))$.
+3. Find where that tangent line crosses the $x$-axis. Call that point $x_1$.
+4. Repeat: draw the tangent at $x_1$, find where it crosses the axis to get $x_2$, and so on.
+
+Each new point is typically much closer to the true zero than the previous one. The method converges very quickly, often in just a few iterations.
+
+### Example
+
+Let us use $f(x) = e^{x-2} - 1$. This function has its zero at $x = 2$ (since $e^0 - 1 = 0$). We start at the initial guess $x_0 = 3.5$ and watch how Newton's method converges.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Define the function and its derivative
+def f(x):
+    return np.exp(x - 2) - 1
+
+def f_prime(x):
+    return np.exp(x - 2)
+
+# Newton's method iterations starting at x0 = 3.5
+x0 = 3.5
+x_iters = [x0]
+for i in range(2):
+    xk = x_iters[-1]
+    x_next = xk - f(xk) / f_prime(xk)
+    x_iters.append(x_next)
+
+x0_val, x1_val, x2_val = x_iters
+
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# Plot the function
+x = np.linspace(0.3, 4.5, 300)
+ax.plot(x, f(x), 'k', linewidth=2.5, label=r'$f(x) = e^{x-2} - 1$')
+
+# Plot x-axis
+ax.axhline(0, color='#4169E1', linewidth=1.5, alpha=0.7)
+
+# Colors
+c0, c1, c2 = '#00CED1', '#FF8C00', '#FF69B4'
+
+# --- Tangent at x0 -> x1 ---
+slope0 = f_prime(x0_val)
+x_tang0 = np.linspace(x1_val - 0.3, x0_val + 0.3, 100)
+y_tang0 = f(x0_val) + slope0 * (x_tang0 - x0_val)
+ax.plot(x_tang0, y_tang0, color=c0, linewidth=2, label=r'Tangent at $x_0$')
+ax.plot([x0_val, x0_val], [0, f(x0_val)], '--', color=c0, linewidth=1.2)
+ax.plot(x0_val, f(x0_val), 's', color=c0, markersize=8, zorder=5)
+
+# --- Tangent at x1 -> x2 ---
+slope1 = f_prime(x1_val)
+x_tang1 = np.linspace(x2_val - 0.2, x1_val + 0.4, 100)
+y_tang1 = f(x1_val) + slope1 * (x_tang1 - x1_val)
+ax.plot(x_tang1, y_tang1, color=c1, linewidth=2, label=r'Tangent at $x_1$')
+ax.plot([x1_val, x1_val], [0, f(x1_val)], '--', color=c1, linewidth=1.2)
+ax.plot(x1_val, f(x1_val), 's', color=c1, markersize=8, zorder=5)
+
+# --- Tangent at x2 (showing it lands on the zero) ---
+slope2 = f_prime(x2_val)
+x3_val = x2_val - f(x2_val) / f_prime(x2_val)
+x_tang2 = np.linspace(x3_val - 0.1, x2_val + 0.3, 100)
+y_tang2 = f(x2_val) + slope2 * (x_tang2 - x2_val)
+ax.plot(x_tang2, y_tang2, color='#9ACD32', linewidth=2, label=r'Tangent at $x_2$')
+ax.plot([x2_val, x2_val], [0, f(x2_val)], '--', color='#9ACD32', linewidth=1.2)
+ax.plot(x2_val, f(x2_val), 's', color='#9ACD32', markersize=8, zorder=5)
+
+# --- Mark points on x-axis ---
+ax.plot(x0_val, 0, 'o', color=c0, markersize=9, zorder=5)
+ax.plot(x1_val, 0, 'o', color=c1, markersize=9, zorder=5)
+ax.plot(x2_val, 0, 'o', color='#9ACD32', markersize=9, zorder=5)
+ax.plot(2.0, 0, 'o', color=c2, markersize=12, zorder=5)
+
+# Labels on x-axis
+ax.annotate(r'$x_0$', xy=(x0_val, 0), xytext=(x0_val, -0.4),
+            fontsize=14, color=c0, ha='center', fontweight='bold')
+ax.annotate(r'$x_1$', xy=(x1_val, 0), xytext=(x1_val, -0.4),
+            fontsize=14, color=c1, ha='center', fontweight='bold')
+ax.annotate(r'$x_2$', xy=(x2_val, 0), xytext=(x2_val, -0.4),
+            fontsize=14, color='#9ACD32', ha='center', fontweight='bold')
+
+# Annotation for the zero
+ax.annotate(r'Found the zero at $x = 2$', xy=(2.0, 0.05), xytext=(0.8, 4.5),
+            fontsize=13, color=c2, fontweight='bold',
+            arrowprops=dict(arrowstyle='->', color=c2, lw=1.5,
+                            connectionstyle='arc3,rad=-0.3'))
+
+ax.set_xlabel('x', fontsize=12)
+ax.set_xlim(0.3, 4.5)
+ax.set_ylim(-1.2, 7)
+ax.set_title(r"Newton's Method: finding the zero of $f(x) = e^{x-2} - 1$", fontsize=12, color='gray')
+ax.legend(fontsize=11, loc='upper left')
+ax.grid(linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+Starting at $x_0 = 3.5$, the tangent line crosses the $x$-axis at $x_1$, already much closer to the true zero. One more iteration gives $x_2$, nearly on top of $x = 2$. Two steps and we have essentially found the root.
+
+### Deriving the Update Rule
+
+The tangent line at the current point $x_k$ has slope $f'(x_k)$. The geometry gives us rise over run:
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+def f(x):
+    return np.exp(x - 2) - 1
+
+def f_prime(x):
+    return np.exp(x - 2)
+
+# Pick xk = 3.0 for a clean illustration
+xk = 3.0
+fk = f(xk)
+fpk = f_prime(xk)
+xk1 = xk - fk / fpk  # x_{k+1}
+
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# Plot the function
+x = np.linspace(0.3, 4.5, 300)
+ax.plot(x, f(x), 'k', linewidth=2.5)
+
+# x-axis
+ax.axhline(0, color='#4169E1', linewidth=1.5, alpha=0.7)
+
+# Tangent line at xk
+col = '#CC0066'
+x_tang = np.linspace(xk1 - 0.3, xk + 0.6, 100)
+y_tang = fk + fpk * (x_tang - xk)
+ax.plot(x_tang, y_tang, color=col, linewidth=2)
+
+# Vertical dashed line: height = f(xk)
+ax.plot([xk, xk], [0, fk], '--', color=col, linewidth=1.5)
+
+# Horizontal brace: x_k - x_{k+1}
+brace_y = -0.45
+ax.annotate('', xy=(xk1, brace_y), xytext=(xk, brace_y),
+            arrowprops=dict(arrowstyle='<->', color=col, lw=1.5))
+ax.text((xk + xk1) / 2, brace_y - 0.25, r'$x_k - x_{k+1}$',
+        fontsize=13, color=col, ha='center')
+
+# Label f(xk) on right side of vertical line
+ax.annotate(r'$f(x_k)$', xy=(xk + 0.05, fk / 2), xytext=(xk + 0.25, fk / 2),
+            fontsize=13, color=col, va='center',
+            arrowprops=dict(arrowstyle='-', color=col, lw=1))
+
+# Label slope
+ax.text(xk + 0.3, fk + 0.5, r"Slope $= f'(x_k)$",
+        fontsize=13, color=col, fontweight='bold')
+
+# Mark points
+ax.plot(xk, fk, 's', color=col, markersize=9, zorder=5)
+ax.plot(xk, 0, 'o', color=col, markersize=8, zorder=5)
+ax.plot(xk1, 0, 'o', color=col, markersize=8, zorder=5)
+
+# Labels
+ax.text(xk, -0.3, r'$x_k$', fontsize=13, color=col, ha='center')
+ax.text(xk1, -0.3, r'$x_{k+1}$', fontsize=13, color=col, ha='center')
+
+# Formula in top-left
+ax.text(0.6, 5.5, r"$x_{k+1} = x_k - \dfrac{f(x_k)}{f'(x_k)}$",
+        fontsize=18, color=col, fontweight='bold',
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='none', alpha=0.8))
+
+ax.set_xlabel('x', fontsize=12)
+ax.set_xlim(0.3, 4.5)
+ax.set_ylim(-1.0, 7)
+ax.grid(linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+$$f'(x_0) = \frac{f(x_0)}{x_0 - x_1}$$
+
+The "rise" is the height $f(x_0)$ (how far we are from zero vertically), and the "run" is the horizontal distance $x_0 - x_1$ (how far we step). Solving for $x_1$:
+
+$$x_1 = x_0 - \frac{f(x_0)}{f'(x_0)}$$
+
+This is the Newton's method update. In general, at iteration $k$:
+
+$$\boxed{x_{k+1} = x_k - \frac{f(x_k)}{f'(x_k)}}$$
+
+At each step, we evaluate the function and its derivative at the current point, then jump to where the tangent line hits zero.
+
+## From Root-Finding to Optimization
+
+Newton's method finds the zeros of a function. But we want to find the **minimum** of a function. How do we connect the two?
+
+Recall from the [Optimization](optimization.qmd) page: the minimum of a function $g(x)$ occurs where its derivative equals zero:
+
+$$g'(x) = 0$$
+
+So if we apply Newton's method to find the zeros of $g'(x)$ (instead of $f(x)$), we are finding the critical points of $g$ — the candidates for its minimum.
+
+### Substitution
+
+Let $f(x) = g'(x)$. Then:
+
+- $f(x) = g'(x)$ — the function whose zero we seek
+- $f'(x) = g''(x)$ — the second derivative of $g$
+
+Substituting into the Newton's method formula:
+
+$$x_{k+1} = x_k - \frac{g'(x_k)}{g''(x_k)}$$
+
+This is **Newton's method for optimization**. Instead of dividing by the first derivative (as in root-finding), we divide the first derivative by the second derivative.
+
+## Side by Side: Root-Finding vs Optimization
+
+| | Newton's Method (Root-Finding) | Newton's Method (Optimization) |
+|---|---|---|
+| **Goal** | Find a zero of $f(x)$ | Minimize $g(x)$ $\Rightarrow$ find zeros of $g'(x)$ <br> $f(x) \mapsto g'(x)$, $f'(x) \mapsto g''(x)$ |
+| **Step 1** | Start with some $x_0$ | Start with some $x_0$ |
+| **Step 2 (Update)** | $x_{k+1} = x_k - \frac{f(x_k)}{f'(x_k)}$ | $x_{k+1} = x_k - \frac{g'(x_k)}{g''(x_k)}$ |
+| **Step 3** | Repeat until you find the root | Repeat until you find the candidate for minimum |
+
+The right column is simply the left column with $f$ replaced by $g'$ and $f'$ replaced by $g''$. That is the entire idea.
+
+## Worked Example: Minimizing $e^x - \ln(x)$
+
+Recall the function from the [Gradient Descent](gradient-descent.qmd) page:
+
+$$g(x) = e^x - \ln(x)$$
+
+Its minimum occurs at the omega constant $x \approx 0.5671$. Let us find this minimum using Newton's method for optimization.
+
+We need:
+
+- $g'(x) = e^x - \frac{1}{x}$ (set this to zero to find the minimum)
+- $g''(x) = e^x + \frac{1}{x^2}$ (the second derivative)
+
+The update rule is:
+
+$$x_{k+1} = x_k - \frac{g'(x_k)}{g''(x_k)} = x_k - \frac{e^{x_k} - \frac{1}{x_k}}{e^{x_k} + \frac{1}{x_k^2}}$$
+
+### Iterating from $x_0 = 0.05$
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+def g(x):
+    return np.exp(x) - np.log(x)
+
+def g_prime(x):
+    return np.exp(x) - 1/x
+
+def g_double_prime(x):
+    return np.exp(x) + 1/x**2
+
+# Newton's method iterations
+x_vals = [0.05]
+for i in range(6):
+    xk = x_vals[-1]
+    x_next = xk - g_prime(xk) / g_double_prime(xk)
+    x_vals.append(x_next)
+
+# Print iteration table
+print(f"{'k':<4} {'x_k':<12} {'g_prime(x_k)':<16} {'g_double_prime(x_k)':<20}")
+print("-" * 52)
+for i, xk in enumerate(x_vals):
+    print(f"{i:<4} {xk:<12.6f} {g_prime(xk):<16.6f} {g_double_prime(xk):<20.6f}")
+
+print(f"\nTrue minimum: x = 0.567143...")
+print(f"After 6 iterations: x_6 = {x_vals[6]:.6f}")
+```
+
+In just 6 iterations, starting from $x_0 = 0.05$, we reach $x_6 \approx 0.567$, which is essentially the true minimum. Newton's method converges remarkably fast.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+def g(x):
+    return np.exp(x) - np.log(x)
+
+def g_prime(x):
+    return np.exp(x) - 1/x
+
+def g_double_prime(x):
+    return np.exp(x) + 1/x**2
+
+# Newton's method iterations
+x_vals = [0.05]
+for i in range(6):
+    xk = x_vals[-1]
+    x_next = xk - g_prime(xk) / g_double_prime(xk)
+    x_vals.append(x_next)
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+# --- Left plot: g(x) with minimum marked ---
+x = np.linspace(0.01, 2.5, 300)
+ax1.plot(x, g(x), 'k', linewidth=2.5, label=r"$g(x) = e^x - \ln(x)$")
+
+# Mark the iterations on g(x)
+for i, xk in enumerate(x_vals):
+    if xk > 0.01:
+        alpha = 0.4 + 0.1 * i
+        ax1.axvline(xk, color='#CC0066', linewidth=0.8, alpha=min(alpha, 1), linestyle='--')
+
+# Mark minimum
+x_min = x_vals[-1]
+ax1.plot(x_min, g(x_min), 'o', color='#2E8B57', markersize=10, zorder=5)
+ax1.annotate(f'Minimum at x = {x_min:.4f}', xy=(x_min, g(x_min)),
+             xytext=(x_min + 0.05, g(x_min) - 0.5), fontsize=11, color='#2E8B57',
+             arrowprops=dict(arrowstyle='->', color='#2E8B57', lw=1.2))
+
+ax1.set_xlabel('x', fontsize=12)
+ax1.set_ylabel('g(x)', fontsize=12)
+ax1.set_title(r"$g(x) = e^x - \ln(x)$", fontsize=12, color='gray')
+ax1.set_xlim(0, 2.5)
+ax1.set_ylim(0.5, 5)
+ax1.legend(fontsize=11)
+ax1.grid(linestyle='--', alpha=0.4)
+
+# --- Right plot: g'(x) with Newton's method tangent lines ---
+x = np.linspace(0.03, 2.0, 300)
+ax2.plot(x, g_prime(x), 'k', linewidth=2.5, label=r"$g'(x) = e^x - 1/x$")
+ax2.axhline(0, color='#4169E1', linewidth=1.5, alpha=0.7)
+
+# Distinct colors for each iteration
+iter_colors = ['#CC0000', '#008B8B', '#FF8C00', '#9ACD32', '#4169E1', '#CC0066', '#2E8B57']
+
+# Draw tangent lines and mark points for all 7 iterations
+for i in range(len(x_vals) - 1):
+    xk = x_vals[i]
+    fk = g_prime(xk)
+    fpk = g_double_prime(xk)
+    xk1 = x_vals[i + 1]
+
+    # Tangent line at xk
+    x_t = np.linspace(min(xk1, xk) - 0.02, max(xk1, xk) + 0.02, 50)
+    y_t = fk + fpk * (x_t - xk)
+    ax2.plot(x_t, y_t, color=iter_colors[i], linewidth=1.8)
+
+    # Dashed vertical drop from (xk, g'(xk)) to x-axis
+    ax2.plot([xk, xk], [0, fk], '--', color=iter_colors[i], linewidth=1.5)
+
+    # Point on curve
+    ax2.plot(xk, fk, 'o', color=iter_colors[i], markersize=7, zorder=5)
+
+    # Label on x-axis
+    ax2.text(xk, -20.5 + i * 0.3, f'$x_{i}$', fontsize=10,
+             color=iter_colors[i], ha='center', fontweight='bold')
+
+# Mark x6 (final point)
+ax2.plot(x_vals[6], 0, 'o', color=iter_colors[6], markersize=9, zorder=6)
+ax2.plot([x_vals[6], x_vals[6]], [0, g_prime(x_vals[6])], '--',
+         color=iter_colors[6], linewidth=1.5)
+ax2.text(x_vals[6], -20.5 + 6 * 0.3, r'$x_6$', fontsize=10,
+         color=iter_colors[6], ha='center', fontweight='bold')
+
+ax2.set_xlabel('x', fontsize=12)
+ax2.set_ylabel(r"$g'(x)$", fontsize=12)
+ax2.set_title(r"Finding the zero of $g'(x)$", fontsize=12, color='gray')
+ax2.set_xlim(0, 2.0)
+ax2.set_ylim(-20, 7)
+ax2.legend(fontsize=11, loc='upper right')
+ax2.grid(linestyle='--', alpha=0.4)
+
+plt.tight_layout()
+plt.show()
+```
+
+## Why It Converges So Fast
+
+Gradient descent takes steps proportional to the slope. If the slope is large, it takes a big step. If the slope is small (near the minimum), it takes tiny steps. This is linear convergence.
+
+Newton's method uses the curvature to calibrate its step. Near the minimum, where the function is approximately quadratic, Newton's method can jump directly to the minimum in a single step. This is quadratic convergence — the number of correct digits roughly doubles with each iteration.
+
+The trade-off: Newton's method requires computing the second derivative, which is more expensive. For functions of many variables, the second derivative becomes a matrix (the Hessian), and inverting it can be costly. In the next pages, we will explore the second derivative in detail and then extend Newton's method to multiple variables.

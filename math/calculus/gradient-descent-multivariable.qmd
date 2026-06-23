@@ -1,0 +1,560 @@
+---
+title: "Gradient Descent in Multiple Variables"
+date: "2026-06-12"
+difficulty: 3
+order: 9
+categories: [calculus]
+---
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+
+Now that you have learned gradient descent for one variable, let us extend it to functions of multiple variables.
+
+Recall the 2D sauna example from the [Gradients](gradients.qmd) page. You are standing in a room where the temperature varies across both $x$ and $y$ directions, and you want to find the coldest spot. Earlier, you solved this analytically by computing both partial derivatives, setting them to zero, and solving the system. Now the goal is to find the coldest spot using gradients, just as you did in the one-variable case.
+
+
+## Naive Approach, Random Steps
+
+Imagine you start at some position in the sauna. You try stepping in four random directions and check which one leads to the coldest temperature. You take that step, then repeat by trying four directions again, picking the best, and continuing until you reach the coldest spot.
+
+This works, but the same question arises as in one variable. How do you pick the directions? Is there a smart way?
+
+Just like before, the answer is derivatives. Except this time, you use the **gradient** (the vector of all partial derivatives) to choose direction.
+
+
+## Gradient Points Uphill
+
+In one variable, the derivative told you the slope. If the slope was positive, you moved left (subtracted). If negative, you moved right (added). In two variables, you have a gradient vector with two components (the two partial derivatives). Each component tells you the slope in one direction.
+
+Here is what happens geometrically. At your starting point $(x_0, y_0)$, you compute the two partial derivatives. Each one gives a slope in its respective direction. When you combine them into a vector and project it onto the "floor" (the $xy$-plane), you get the **gradient vector**.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['png']
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.colors import LinearSegmentedColormap
+
+def T(x, y):
+    return 85 - (1/90) * x**2 * (x - 6) * y**2 * (y - 6)
+
+def grad_T(x, y):
+    dTdx = -(1/90) * x * (3*x - 12) * y**2 * (y - 6)
+    dTdy = -(1/90) * x**2 * (x - 6) * y * (3*y - 12)
+    return np.array([dTdx, dTdy])
+
+fig = plt.figure(figsize=(10, 8))
+ax = fig.add_subplot(111, projection='3d')
+
+x = np.linspace(0, 5, 60)
+y = np.linspace(0, 5, 60)
+X, Y = np.meshgrid(x, y)
+Z = T(X, Y)
+
+# Red-to-blue colormap
+colors_cmap = ['#0044CC', '#6699FF', '#FFFFFF', '#FF6666', '#CC0000']
+cmap = LinearSegmentedColormap.from_list('hot_cold', colors_cmap)
+
+surf = ax.plot_surface(X, Y, Z, cmap=cmap, edgecolor='none', alpha=0.7)
+
+# Starting point where gradient is large and visible
+x0, y0 = 3.0, 3.0
+z0 = T(x0, y0)
+floor_z = 72
+
+# Gradient at this point
+g = grad_T(x0, y0)
+dTdx_val = g[0]
+dTdy_val = g[1]
+
+# --- Tangent lines on the surface ---
+# Tangent in x-direction (slope = dT/dx)
+t_len = 0.8
+tx = np.linspace(x0 - t_len, x0 + t_len, 20)
+tz_x = z0 + dTdx_val * (tx - x0)
+ax.plot(tx, np.full_like(tx, y0), tz_x, color='#CC0000', linewidth=2.5, zorder=10)
+
+# Tangent in y-direction (slope = dT/dy)
+ty = np.linspace(y0 - t_len, y0 + t_len, 20)
+tz_y = z0 + dTdy_val * (ty - y0)
+ax.plot(np.full_like(ty, x0), ty, tz_y, color='#CC7000', linewidth=2.5, zorder=10)
+
+# Point on surface
+ax.scatter([x0], [y0], [z0], color='black', s=80, zorder=12)
+
+# --- On the floor: gradient and negative gradient ---
+ax.scatter([x0], [y0], [floor_z], color='black', s=70, zorder=12)
+
+# Scale arrows for visibility on floor
+arrow_scale = 0.3
+
+# Draw arrows as lines + triangle heads for better visibility
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+def draw_floor_arrow(ax, x_start, y_start, dx, dy, z, color, label, label_offset):
+    """Draw a flat arrow on the floor with a visible triangular head."""
+    # Arrow shaft
+    ax.plot([x_start, x_start + dx*0.75], [y_start, y_start + dy*0.75], [z, z],
+            color=color, linewidth=3, zorder=11)
+    # Arrowhead as a triangle
+    tip_x = x_start + dx
+    tip_y = y_start + dy
+    # Perpendicular direction for the base of the triangle
+    length = np.sqrt(dx**2 + dy**2)
+    perp_x = -dy / length * 0.12
+    perp_y = dx / length * 0.12
+    base_x = x_start + dx * 0.75
+    base_y = y_start + dy * 0.75
+    triangle = [[tip_x, tip_y, z],
+                [base_x + perp_x, base_y + perp_y, z],
+                [base_x - perp_x, base_y - perp_y, z]]
+    poly = Poly3DCollection([triangle], color=color, zorder=11)
+    ax.add_collection3d(poly)
+    # Label
+    ax.text(x_start + dx + label_offset[0], y_start + dy + label_offset[1], z + label_offset[2],
+            label, fontsize=14, color=color, fontweight='bold')
+
+gx, gy = g[0]*arrow_scale, g[1]*arrow_scale
+
+# Gradient (ascent, dark)
+draw_floor_arrow(ax, x0, y0, gx, gy, floor_z, '#333333', r'$\nabla f$', (-0.2, 0.15, 0.3))
+
+# Negative gradient (descent, green)
+draw_floor_arrow(ax, x0, y0, -gx, -gy, floor_z, '#2E8B57', r'$-\nabla f$', (-0.6, -0.2, 0.3))
+
+# Vertical dotted line
+ax.plot([x0, x0], [y0, y0], [floor_z, z0], 'k--', linewidth=1, alpha=0.4)
+
+# Stick figure
+hx, hy = x0, y0
+ax.scatter([hx], [hy], [floor_z + 1.8], color='black', s=30, zorder=10)
+ax.plot([hx, hx], [hy, hy], [floor_z + 0.3, floor_z + 1.5], color='black', linewidth=1.5, zorder=10)
+ax.plot([hx - 0.2, hx + 0.2], [hy, hy], [floor_z + 1.1, floor_z + 1.1], color='black', linewidth=1.5, zorder=10)
+ax.plot([hx, hx - 0.12], [hy, hy], [floor_z + 0.3, floor_z - 0.1], color='black', linewidth=1.5, zorder=10)
+ax.plot([hx, hx + 0.12], [hy, hy], [floor_z + 0.3, floor_z - 0.1], color='black', linewidth=1.5, zorder=10)
+
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$y$', fontsize=11)
+ax.set_zlim(floor_z, 86)
+ax.view_init(elev=25, azim=-50)
+plt.tight_layout()
+plt.show()
+```
+
+The gradient has a special property. It points in the direction of **steepest ascent**. If you take a tiny step in the direction of the gradient, you reach the hottest possible nearby point.
+
+But we want to get colder, not hotter. So we step in the direction of the **negative gradient** ($-\nabla f$). That is the direction of steepest descent, the direction that takes you to the coldest nearby point in one tiny step.
+
+
+## Update Rule
+
+The formula is exactly the same as in one variable, but with vectors instead of scalars.
+
+$$
+\begin{bmatrix} x_1 \\ y_1 \end{bmatrix} = \begin{bmatrix} x_0 \\ y_0 \end{bmatrix} - \alpha \cdot \nabla f(x_0, y_0)
+$$
+
+where $\nabla f(x_0, y_0) = \begin{bmatrix} \frac{\partial f}{\partial x}(x_0, y_0) \\\\ \frac{\partial f}{\partial y}(x_0, y_0) \end{bmatrix}$.
+
+This is identical in structure to the one-variable case $x_1 = x_0 - \alpha \cdot f'(x_0)$, except the derivative is replaced by the gradient vector.
+
+
+## Example, 2D Sauna
+
+Recall the temperature function from the gradients page:
+
+$$
+T(x, y) = 85 - \frac{1}{90}\, x^2(x-6)\, y^2(y-6)
+$$
+
+The gradient (which we [computed previously](gradients.qmd#computing-the-partial-derivatives)) is:
+
+$$
+\nabla T = \begin{bmatrix} -\frac{1}{90}\, x(3x - 12)\, y^2(y-6) \\\\ -\frac{1}{90}\, x^2(x-6)\, y(3y - 12) \end{bmatrix}
+$$
+
+Let us run a couple of steps with starting point $(0.5, 0.6)$ and learning rate $\alpha = 0.05$.
+
+**Step 1:** Compute the gradient at $(0.5, 0.6)$:
+
+$$
+\nabla T(0.5, 0.6) = \begin{bmatrix} -0.1134 \\ -0.0945 \end{bmatrix}
+$$
+
+Update:
+
+$$
+\begin{bmatrix} x_1 \\ y_1 \end{bmatrix} = \begin{bmatrix} 0.5 \\ 0.6 \end{bmatrix} - 0.05 \cdot \begin{bmatrix} -0.1134 \\ -0.0945 \end{bmatrix} = \begin{bmatrix} 0.5057 \\ 0.6047 \end{bmatrix}
+$$
+
+We moved slightly closer to the minimum.
+
+**Step 2:** Compute the gradient at the new point and repeat. Each iteration brings us closer. After many iterations, we converge to the minimum at approximately $(4, 4)$.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['png']
+import numpy as np
+import matplotlib.pyplot as plt
+
+def T(x, y):
+    return 85 - (1/90) * x**2 * (x - 6) * y**2 * (y - 6)
+
+def grad_T(x, y):
+    dTdx = -(1/90) * x * (3*x - 12) * y**2 * (y - 6)
+    dTdy = -(1/90) * x**2 * (x - 6) * y * (3*y - 12)
+    return np.array([dTdx, dTdy])
+
+# Run gradient descent
+alpha = 0.05
+pos = np.array([0.5, 0.6])
+path = [pos.copy()]
+for _ in range(300):
+    g = grad_T(pos[0], pos[1])
+    pos = pos - alpha * g
+    path.append(pos.copy())
+path = np.array(path)
+
+# Contour plot
+x = np.linspace(0, 5, 80)
+y = np.linspace(0, 5, 80)
+X, Y = np.meshgrid(x, y)
+Z = T(X, Y)
+
+fig, ax = plt.subplots(figsize=(7, 6))
+cont = ax.contourf(X, Y, Z, levels=20, cmap='coolwarm', alpha=0.8)
+ax.contour(X, Y, Z, levels=20, colors='gray', linewidths=0.5, alpha=0.5)
+
+# Plot path
+ax.plot(path[:, 0], path[:, 1], 'o-', color='black', markersize=3, linewidth=1.5, zorder=5)
+ax.plot(path[0, 0], path[0, 1], 'o', color='#DAA520', markersize=10, zorder=6)
+ax.annotate('Start', xy=(path[0, 0], path[0, 1]),
+            xytext=(path[0, 0] + 0.5, path[0, 1] - 0.4),
+            fontsize=10, fontweight='bold', color='#DAA520',
+            arrowprops=dict(arrowstyle='->', color='#DAA520'))
+
+ax.plot(path[-1, 0], path[-1, 1], '*', color='#2E8B57', markersize=16, zorder=6)
+ax.annotate('Minimum', xy=(path[-1, 0], path[-1, 1]),
+            xytext=(path[-1, 0] - 1.0, path[-1, 1] + 0.5),
+            fontsize=10, fontweight='bold', color='#2E8B57',
+            arrowprops=dict(arrowstyle='->', color='#2E8B57'))
+
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$y$', fontsize=11)
+ax.set_title('Gradient descent on the 2D sauna', fontsize=12, color='gray')
+ax.set_aspect('equal')
+plt.tight_layout()
+plt.show()
+```
+
+
+## Algorithm
+
+The full gradient descent algorithm for multiple variables:
+
+1. Define a learning rate $\alpha$ (alpha).
+2. Choose a starting point $(x_0, y_0)$.
+3. Update: $(x_k, y_k) = (x_{k-1}, y_{k-1}) - \alpha \cdot \nabla f(x_{k-1}, y_{k-1})$
+4. Repeat step 3 until you are close enough to the minimum (when the gradient is nearly zero and you barely move).
+
+::: {.callout-note}
+This generalizes to any number of variables. If your function has 100 parameters, the gradient is a vector with 100 entries, and the update rule is the same. This is exactly what happens inside neural networks with millions of parameters.
+:::
+
+
+## Local Minima in Multiple Variables
+
+Just like in one variable, gradient descent in two or more variables can get stuck in local minima. The practical solution is the same. Run gradient descent multiple times from different starting points.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['png']
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Function with multiple minima (from Coursera w2_tools)
+def f_multi(x, y):
+    return -(10/(3+3*(x-0.5)**2+3*(y-0.5)**2) +
+             2/(1+2*((x-3)**2)+2*(y-1.5)**2) +
+             3/(1+0.5*((x-3.5)**2)+0.5*(y-4)**2)) + 10
+
+def dfdx_multi(x, y):
+    return -(-2*3*(x-0.5)*10/(3+3*(x-0.5)**2+3*(y-0.5)**2)**2 +
+             -2*2*(x-3)*2/(1+2*((x-3)**2)+2*(y-1.5)**2)**2 +
+             -2*0.5*(x-3.5)*3/(1+0.5*((x-3.5)**2)+0.5*(y-4)**2)**2)
+
+def dfdy_multi(x, y):
+    return -(-2*3*(y-0.5)*10/(3+3*(x-0.5)**2+3*(y-0.5)**2)**2 +
+             -2*2*(y-1.5)*2/(1+2*((x-3)**2)+2*(y-1.5)**2)**2 +
+             -0.5*2*(y-4)*3/(1+0.5*((x-3.5)**2)+0.5*(y-4)**2)**2)
+
+# Run gradient descent from multiple starting points
+alpha = 0.3
+starts = [(1.5, 4.5), (4.5, 0.2), (0.1, 2.0)]
+colors = ['#CC0000', '#4682B4', '#2E8B57']
+
+x = np.linspace(0, 5, 100)
+y = np.linspace(0, 5, 100)
+X, Y = np.meshgrid(x, y)
+Z = f_multi(X, Y)
+
+fig, ax = plt.subplots(figsize=(7, 6))
+cont = ax.contourf(X, Y, Z, levels=25, cmap='coolwarm', alpha=0.85)
+ax.contour(X, Y, Z, levels=25, colors='gray', linewidths=0.4, alpha=0.4)
+
+for (sx, sy), color in zip(starts, colors):
+    pos = np.array([sx, sy])
+    path = [pos.copy()]
+    for _ in range(200):
+        gx = dfdx_multi(pos[0], pos[1])
+        gy = dfdy_multi(pos[0], pos[1])
+        pos = pos - alpha * np.array([gx, gy])
+        pos = np.clip(pos, 0.01, 4.99)
+        path.append(pos.copy())
+    path = np.array(path)
+    ax.plot(path[:, 0], path[:, 1], 'o-', color=color, markersize=2, linewidth=1.5, zorder=5)
+    ax.plot(path[0, 0], path[0, 1], 'o', color=color, markersize=9, zorder=6)
+    ax.plot(path[-1, 0], path[-1, 1], '*', color=color, markersize=14, zorder=6)
+
+# Label the minima
+ax.annotate('Global\nminimum', xy=(0.5, 0.5), xytext=(1.2, 0.2),
+            fontsize=9, fontweight='bold', color='#2E8B57', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#2E8B57'))
+ax.annotate('Local\nminimum', xy=(3.5, 4.0), xytext=(4.2, 4.5),
+            fontsize=9, fontweight='bold', color='#CC0000', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#CC0000'))
+ax.annotate('Local\nminimum', xy=(3.0, 1.5), xytext=(4.2, 1.0),
+            fontsize=9, fontweight='bold', color='#4682B4', ha='center',
+            arrowprops=dict(arrowstyle='->', color='#4682B4'))
+
+ax.set_xlabel('$x$', fontsize=11)
+ax.set_ylabel('$y$', fontsize=11)
+ax.set_title('Different starting points lead to different local minima', fontsize=12, color='gray')
+ax.set_aspect('equal')
+plt.tight_layout()
+plt.show()
+```
+
+There is no guaranteed way to know if you have found the global minimum. But if you run gradient descent from many different starting points, the best result you find is likely to be a good solution.
+
+
+## Python Implementation
+
+The multivariable gradient descent function is a direct extension of the one-variable version. Instead of a scalar derivative, you subtract the gradient vector:
+
+```{python}
+import numpy as np
+
+def gradient_descent_2d(dfdx, dfdy, x, y, learning_rate=0.1, num_iterations=100):
+    for _ in range(num_iterations):
+        x = x - learning_rate * dfdx(x, y)
+        y = y - learning_rate * dfdy(x, y)
+    return x, y
+```
+
+Define the 2D sauna function and its partial derivatives:
+
+```{python}
+def T(x, y):
+    return 85 - (1/90) * x**2 * (x - 6) * y**2 * (y - 6)
+
+def dTdx(x, y):
+    return -(1/90) * x * (3*x - 12) * y**2 * (y - 6)
+
+def dTdy(x, y):
+    return -(1/90) * x**2 * (x - 6) * y * (3*y - 12)
+```
+
+Run gradient descent starting at $(0.5, 0.6)$ with learning rate $0.1$:
+
+```{python}
+x_min, y_min = gradient_descent_2d(dTdx, dTdy, 0.5, 0.6, learning_rate=0.1, num_iterations=100)
+print(f"Minimum found at: ({x_min:.4f}, {y_min:.4f})")
+print(f"Temperature at minimum: {T(x_min, y_min):.4f} °C")
+```
+
+Try different starting points and learning rates:
+
+```{python}
+starts = [(0.5, 0.6), (1.0, 4.5), (4.5, 1.0)]
+for (sx, sy) in starts:
+    xm, ym = gradient_descent_2d(dTdx, dTdy, sx, sy, learning_rate=0.1, num_iterations=200)
+    print(f"Start ({sx}, {sy})  →  minimum at ({xm:.3f}, {ym:.3f}), T = {T(xm, ym):.2f} °C")
+```
+
+
+## Interactive Lab: 2D Gradient Descent
+
+<!-- interactive-tool -->
+
+::: {.callout-note}
+This tool animates gradient descent on the 2D sauna function. Adjust the starting point, learning rate, and iterations, then click **▶ Run** to watch the path descend toward the minimum.
+:::
+
+```{ojs}
+//| echo: false
+
+// 2D sauna function and gradient
+T_2d = (x, y) => 85 - (1/90) * x*x * (x - 6) * y*y * (y - 6)
+dTdx_2d = (x, y) => -(1/90) * x * (3*x - 12) * y*y * (y - 6)
+dTdy_2d = (x, y) => -(1/90) * x*x * (x - 6) * y * (3*y - 12)
+```
+
+```{ojs}
+//| echo: false
+
+viewof x0_2d = Inputs.range([0.1, 4.9], {label: "Start x", value: 0.5, step: 0.1, width: 200})
+viewof y0_2d = Inputs.range([0.1, 4.9], {label: "Start y", value: 0.6, step: 0.1, width: 200})
+
+html`<div style="display:flex;gap:16px;align-items:end">
+  ${viewof x0_2d}
+  ${viewof y0_2d}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof lr_2d = Inputs.range([0.01, 0.5], {label: "Learning rate", value: 0.1, step: 0.01, width: 200})
+viewof numIter_2d = Inputs.range([5, 200], {label: "Iterations", value: 50, step: 5, width: 200})
+viewof speed_2d = Inputs.range([20, 500], {label: "Step delay (ms)", value: 100, step: 10, width: 200})
+
+html`<div style="display:flex;gap:16px;align-items:end">
+  ${viewof lr_2d}
+  ${viewof numIter_2d}
+  ${viewof speed_2d}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof runBtn_2d = {
+  const btn = html`<button style="background:linear-gradient(135deg,#4682B4,#5a9fd4);color:white;border:none;border-radius:6px;padding:8px 20px;font-size:14px;font-weight:600;cursor:pointer">▶ Run 2D Gradient Descent</button>`;
+  let count = 0;
+  btn.value = count;
+  btn.onclick = () => { btn.value = ++count; btn.dispatchEvent(new Event("input", {bubbles:true})); };
+  return btn;
+}
+```
+
+```{ojs}
+//| echo: false
+
+gdPath_2d = {
+  const _trigger = runBtn_2d;
+  const path = [{x: x0_2d, y: y0_2d}];
+  let xi = x0_2d, yi = y0_2d;
+  for (let i = 0; i < numIter_2d; i++) {
+    const gx = dTdx_2d(xi, yi);
+    const gy = dTdy_2d(xi, yi);
+    xi = xi - lr_2d * gx;
+    yi = yi - lr_2d * gy;
+    if (xi < 0.01 || xi > 4.99 || yi < 0.01 || yi > 4.99) break;
+    path.push({x: xi, y: yi});
+  }
+  return path;
+}
+```
+
+```{ojs}
+//| echo: false
+
+{
+  const path = gdPath_2d;
+  const W = 500, H = 500;
+  const m = {top: 20, right: 20, bottom: 40, left: 50};
+
+  const svg = d3.create("svg")
+    .attr("viewBox", [0, 0, W, H]).attr("width", W).attr("height", H)
+    .style("max-width", "100%").style("font-family", "'PT Sans', sans-serif");
+
+  const xS = d3.scaleLinear().domain([0, 5]).range([m.left, W - m.right]);
+  const yS = d3.scaleLinear().domain([0, 5]).range([H - m.bottom, m.top]);
+
+  // Axes
+  svg.append("g").attr("transform", `translate(0,${H - m.bottom})`).call(d3.axisBottom(xS).ticks(5))
+    .append("text").attr("x", W - m.right).attr("y", -6).attr("fill", "black").attr("text-anchor", "end").attr("font-size", "12px").text("x");
+  svg.append("g").attr("transform", `translate(${m.left},0)`).call(d3.axisLeft(yS).ticks(5))
+    .append("text").attr("x", 6).attr("y", m.top - 5).attr("fill", "black").attr("font-size", "12px").text("y");
+
+  // Contour background (pre-computed temperature grid as colored rectangles)
+  const res = 40;
+  const cellW = (W - m.left - m.right) / res;
+  const cellH = (H - m.top - m.bottom) / res;
+  const colorScale = d3.scaleSequential(d3.interpolateRdYlBu).domain([86, 73]);
+
+  for (let i = 0; i < res; i++) {
+    for (let j = 0; j < res; j++) {
+      const cx = (i + 0.5) * 5 / res;
+      const cy = (j + 0.5) * 5 / res;
+      const temp = T_2d(cx, cy);
+      svg.append("rect")
+        .attr("x", m.left + i * cellW)
+        .attr("y", m.top + (res - 1 - j) * cellH)
+        .attr("width", cellW + 0.5)
+        .attr("height", cellH + 0.5)
+        .attr("fill", colorScale(temp))
+        .attr("opacity", 0.8);
+    }
+  }
+
+  // Minimum marker
+  svg.append("text").attr("x", xS(4)).attr("y", yS(4) - 8)
+    .attr("text-anchor", "middle").attr("font-size", "11px").attr("fill", "#2E8B57").attr("font-weight", "bold")
+    .text("Min (4,4)");
+  svg.append("circle").attr("cx", xS(4)).attr("cy", yS(4)).attr("r", 5).attr("fill", "none").attr("stroke", "#2E8B57").attr("stroke-width", 2);
+
+  // Info text
+  const info = svg.append("text").attr("x", W - m.right - 5).attr("y", m.top + 15)
+    .attr("text-anchor", "end").attr("font-size", "11px").attr("fill", "#333");
+
+  // Animate path
+  const gPath = svg.append("g");
+  let idx = 0;
+
+  function step() {
+    if (idx >= path.length) return;
+    const {x: xi, y: yi} = path[idx];
+
+    const color = idx === 0 ? "#DAA520" : (idx === path.length - 1 ? "#2E8B57" : "#CC0000");
+    const r = (idx === 0 || idx === path.length - 1) ? 5 : 3;
+
+    gPath.append("circle").attr("cx", xS(xi)).attr("cy", yS(yi)).attr("r", 0).attr("fill", color)
+      .transition().duration(80).attr("r", r);
+
+    if (idx > 0) {
+      const prev = path[idx - 1];
+      gPath.append("line")
+        .attr("x1", xS(prev.x)).attr("y1", yS(prev.y))
+        .attr("x2", xS(prev.x)).attr("y2", yS(prev.y))
+        .attr("stroke", "#333").attr("stroke-width", 1.5)
+        .transition().duration(80)
+        .attr("x2", xS(xi)).attr("y2", yS(yi));
+    }
+
+    const temp = T_2d(xi, yi);
+    const label = idx === 0 ? "Start" : (idx === path.length - 1 ? `Done (step ${idx})` : `Step ${idx}`);
+    info.text(`${label} | (${xi.toFixed(2)}, ${yi.toFixed(2)}), T = ${temp.toFixed(2)}°C`);
+
+    idx++;
+    if (idx < path.length) setTimeout(step, speed_2d);
+  }
+
+  setTimeout(step, 200);
+  return svg.node();
+}
+```

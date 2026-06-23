@@ -1,0 +1,380 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"Lab: Interpreting Eigenvalues and Eigenvectors\"\n",
+        "date: \"2026-06-05\"\n",
+        "difficulty: 3\n",
+        "order: 10\n",
+        "categories: [linear-algebra]\n",
+        "---\n",
+        "\n",
+        "In the previous notes you learned what eigenvalues and eigenvectors are and how to compute them. In this lab you will practice finding them with Python and build geometric intuition by exploring how standard transformations (reflection, shear, scaling, projection) relate to their eigenvectors.\n",
+        "\n",
+        "## Setup"
+      ],
+      "id": "93f59d28"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "\n",
+        "%config InlineBackend.figure_formats = ['svg']"
+      ],
+      "id": "c766728f",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "::: {.callout-note collapse=\"true\"}\n",
+        "## `plot_transformation` helper (expand to see implementation)"
+      ],
+      "id": "e02ffe2f"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def plot_transformation(A, v1, v2, vector_name='v'):\n",
+        "    \"\"\"Visualize a 2D transformation: show original vectors and their images under A.\"\"\"\n",
+        "    v1 = v1.flatten()\n",
+        "    v2 = v2.flatten()\n",
+        "    Av1 = A @ v1\n",
+        "    Av2 = A @ v2\n",
+        "\n",
+        "    fig, ax = plt.subplots(1, 1, figsize=(6, 6))\n",
+        "\n",
+        "    # Original vectors (solid)\n",
+        "    ax.quiver(0, 0, v1[0], v1[1], angles='xy', scale_units='xy', scale=1,\n",
+        "              color='#4682B4', width=0.015, zorder=5)\n",
+        "    ax.quiver(0, 0, v2[0], v2[1], angles='xy', scale_units='xy', scale=1,\n",
+        "              color='#2E8B57', width=0.015, zorder=5)\n",
+        "\n",
+        "    # Transformed vectors (faded)\n",
+        "    ax.quiver(0, 0, Av1[0], Av1[1], angles='xy', scale_units='xy', scale=1,\n",
+        "              color='#4682B4', width=0.015, alpha=0.4, zorder=4)\n",
+        "    ax.quiver(0, 0, Av2[0], Av2[1], angles='xy', scale_units='xy', scale=1,\n",
+        "              color='#2E8B57', width=0.015, alpha=0.4, zorder=4)\n",
+        "\n",
+        "    # Labels\n",
+        "    ax.text(v1[0]+0.1, v1[1]+0.1, f'${vector_name}_1$', fontsize=11, fontweight='bold', color='#4682B4')\n",
+        "    ax.text(v2[0]+0.1, v2[1]+0.1, f'${vector_name}_2$', fontsize=11, fontweight='bold', color='#2E8B57')\n",
+        "    ax.text(Av1[0]+0.1, Av1[1]+0.1, f'$A{vector_name}_1$', fontsize=10, color='#4682B4', alpha=0.7)\n",
+        "    ax.text(Av2[0]+0.1, Av2[1]+0.1, f'$A{vector_name}_2$', fontsize=10, color='#2E8B57', alpha=0.7)\n",
+        "\n",
+        "    lim = max(abs(Av1).max(), abs(Av2).max(), abs(v1).max(), abs(v2).max()) + 1\n",
+        "    lim = int(np.ceil(lim))\n",
+        "    ax.set_xlim(-lim, lim)\n",
+        "    ax.set_ylim(-lim, lim)\n",
+        "    ax.set_xticks(range(-lim, lim+1))\n",
+        "    ax.set_yticks(range(-lim, lim+1))\n",
+        "    ax.set_aspect('equal')\n",
+        "    ax.grid(True, linestyle='--', alpha=0.4)\n",
+        "    ax.axhline(0, color='black', linewidth=0.8)\n",
+        "    ax.axvline(0, color='black', linewidth=0.8)\n",
+        "    plt.tight_layout()\n",
+        "    plt.show()"
+      ],
+      "id": "ef984e91",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        ":::\n",
+        "\n",
+        "## 1. Eigenvalues and Eigenvectors: Definition and Interpretation\n",
+        "\n",
+        "Consider the matrix $A = \\begin{bmatrix}2&3\\\\2&1\\end{bmatrix}$. Let's see what it does to the standard basis vectors:"
+      ],
+      "id": "931d5358"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "A = np.array([[2, 3], [2, 1]])\n",
+        "\n",
+        "e1 = np.array([1, 0])\n",
+        "e2 = np.array([0, 1])\n",
+        "\n",
+        "print(f\"A @ e1 = {A @ e1}\")\n",
+        "print(f\"A @ e2 = {A @ e2}\")"
+      ],
+      "id": "80055366",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "plot_transformation(A, e1, e2, vector_name='e')"
+      ],
+      "id": "e777d6ff",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Both basis vectors changed direction. But what if we could find vectors that only get scaled (no direction change)?\n",
+        "\n",
+        "### Finding Eigenvalues and Eigenvectors with Python\n",
+        "\n",
+        "Use `np.linalg.eig()` which returns (eigenvalues, eigenvectors):"
+      ],
+      "id": "d8e89bc0"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "A_eig = np.linalg.eig(A)\n",
+        "\n",
+        "print(f\"Eigenvalues: {A_eig[0]}\")\n",
+        "print(f\"\\nEigenvector 1 (λ={A_eig[0][0]:.1f}): {A_eig[1][:,0]}\")\n",
+        "print(f\"Eigenvector 2 (λ={A_eig[0][1]:.1f}): {A_eig[1][:,1]}\")"
+      ],
+      "id": "9455262d",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Let's visualize: apply $A$ to its own eigenvectors:"
+      ],
+      "id": "c28fc9ee"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "v1 = A_eig[1][:,0]\n",
+        "v2 = A_eig[1][:,1]\n",
+        "plot_transformation(A, v1, v2)"
+      ],
+      "id": "8f8832b0",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The first eigenvector gets stretched by a factor of 4 (its eigenvalue). The second gets flipped (eigenvalue = -1). Both remain parallel to their original direction. That's what makes them eigenvectors.\n",
+        "\n",
+        "## 2. Eigenvalues of Standard Transformations\n",
+        "\n",
+        "### 2.1 Reflection About the $y$-axis\n",
+        "\n",
+        "$$A_{\\text{reflection}} = \\begin{bmatrix}-1 & 0\\\\0 & 1\\end{bmatrix}$$"
+      ],
+      "id": "b8d386fe"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "A_reflection = np.array([[-1, 0], [0, 1]])\n",
+        "eig = np.linalg.eig(A_reflection)\n",
+        "\n",
+        "print(f\"Eigenvalues: {eig[0]}\")\n",
+        "print(f\"Eigenvector 1: {eig[1][:,0]}\")\n",
+        "print(f\"Eigenvector 2: {eig[1][:,1]}\")"
+      ],
+      "id": "9697aa2c",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "plot_transformation(A_reflection, eig[1][:,0], eig[1][:,1])"
+      ],
+      "id": "f63d282b",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The eigenvectors are the x-axis ($\\lambda = -1$, gets flipped) and the y-axis ($\\lambda = 1$, stays fixed). This makes geometric sense: reflecting about the y-axis reverses horizontal vectors and leaves vertical vectors unchanged.\n",
+        "\n",
+        "### 2.2 Shear in the $x$-direction\n",
+        "\n",
+        "$$A_{\\text{shear}} = \\begin{bmatrix}1 & 0.5\\\\0 & 1\\end{bmatrix}$$\n",
+        "\n",
+        "A shear slides layers of the plane horizontally. What are its eigenvectors?"
+      ],
+      "id": "05638d9c"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "A_shear = np.array([[1, 0.5], [0, 1]])\n",
+        "eig = np.linalg.eig(A_shear)\n",
+        "\n",
+        "print(f\"Eigenvalues: {eig[0]}\")\n",
+        "print(f\"Eigenvectors:\\n{eig[1]}\")"
+      ],
+      "id": "90397e21",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Both eigenvalues are 1 (repeated). The shear only has one independent eigenvector direction (the x-axis). Points on the x-axis don't move under a horizontal shear, which matches $\\lambda = 1$. This is an example of a matrix that is not diagonalizable.\n",
+        "\n",
+        "### 2.3 Identity and Uniform Scaling\n",
+        "\n",
+        "The identity matrix $I$ leaves every vector unchanged. What are its eigenvectors?"
+      ],
+      "id": "69536de4"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "A_identity = np.array([[1, 0], [0, 1]])\n",
+        "eig = np.linalg.eig(A_identity)\n",
+        "\n",
+        "print(f\"Eigenvalues: {eig[0]}\")\n",
+        "print(f\"Eigenvectors (NumPy picks two, but ALL vectors are eigenvectors):\\n{eig[1]}\")"
+      ],
+      "id": "61072044",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Every vector is an eigenvector of $I$ with eigenvalue 1. NumPy just returns two (the standard basis), but any direction works.\n",
+        "\n",
+        "What about scaling by 2 in all directions?"
+      ],
+      "id": "5dbfc564"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "A_scaling = np.array([[2, 0], [0, 2]])\n",
+        "eig = np.linalg.eig(A_scaling)\n",
+        "\n",
+        "print(f\"Eigenvalues: {eig[0]}\")"
+      ],
+      "id": "0f358a75",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "plot_transformation(A_scaling, eig[1][:,0], eig[1][:,1])"
+      ],
+      "id": "d5f76ff1",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Again, every vector is an eigenvector (eigenvalue 2). Uniform scaling stretches everything equally, so no direction is \"special.\"\n",
+        "\n",
+        "### 2.4 Projection Onto the $x$-axis\n",
+        "\n",
+        "$$A_{\\text{projection}} = \\begin{bmatrix}1 & 0\\\\0 & 0\\end{bmatrix}$$\n",
+        "\n",
+        "This kills the $y$-component of every vector."
+      ],
+      "id": "a5715482"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "A_projection = np.array([[1, 0], [0, 0]])\n",
+        "eig = np.linalg.eig(A_projection)\n",
+        "\n",
+        "print(f\"Eigenvalues: {eig[0]}\")\n",
+        "print(f\"Eigenvector 1 (λ=1): {eig[1][:,0]}\")\n",
+        "print(f\"Eigenvector 2 (λ=0): {eig[1][:,1]}\")"
+      ],
+      "id": "89f232ff",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| fig-align: center\n",
+        "plot_transformation(A_projection, eig[1][:,0], eig[1][:,1])"
+      ],
+      "id": "7d43c9f1",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Eigenvalue 1 for the x-axis (horizontal vectors are unchanged by projection). Eigenvalue 0 for the y-axis (vertical vectors get sent to zero). A zero eigenvalue means that direction collapses.\n",
+        "\n",
+        "## Summary\n",
+        "\n",
+        "| Transformation | Matrix | Eigenvalues | Eigenvectors | Geometric meaning |\n",
+        "|:---|:---:|:---:|:---:|:---|\n",
+        "| Reflection (y-axis) | $\\begin{bmatrix}-1&0\\\\0&1\\end{bmatrix}$ | $-1, 1$ | $x$-axis, $y$-axis | Flip horizontal, keep vertical |\n",
+        "| Shear | $\\begin{bmatrix}1&0.5\\\\0&1\\end{bmatrix}$ | $1, 1$ | $x$-axis only | Only horizontal vectors stay put |\n",
+        "| Identity | $I$ | $1, 1$ | Everything | Nothing moves |\n",
+        "| Scaling (×2) | $2I$ | $2, 2$ | Everything | Everything doubles |\n",
+        "| Projection (x-axis) | $\\begin{bmatrix}1&0\\\\0&0\\end{bmatrix}$ | $1, 0$ | $x$-axis, $y$-axis | Keep horizontal, kill vertical |\n",
+        "\n",
+        "The eigenvalues tell you the stretching factor. The eigenvectors tell you which directions experience that stretching. Together, they completely characterize what a linear transformation does.\n",
+        "\n",
+        "---\n",
+        "\n",
+        "*Previous: [Eigenvalues and Eigenvectors](eigenvalues-eigenvectors.qmd)* | *Next: [Dimensionality Reduction and PCA](dimensionality-reduction-pca.qmd)*"
+      ],
+      "id": "95e73f40"
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3 (ipykernel)",
+      "path": "/home/parallels/website/.venv/share/jupyter/kernels/python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}

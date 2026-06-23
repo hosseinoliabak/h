@@ -1,0 +1,1321 @@
+---
+title: "Dimensionality Reduction and PCA"
+date: "2026-06-06"
+difficulty: 3
+order: 11
+categories: [linear-algebra]
+---
+
+The final major topic of this course is **Principal Component Analysis (PCA)**. The goal of PCA is to reduce the number of dimensions (columns) in a dataset while preserving as much information as possible. Put simply, PCA takes a large table and converts it into a smaller one: same number of rows, fewer columns. The data stays just as tall, but gets skinnier.
+
+## Why Reduce Dimensions?
+
+Here is an example dataset collected by an online store about its customers:
+
+| Customer Age | Account Age | Days Since Login | Total Purchases | Total $ Spent |
+|:---:|:---:|:---:|:---:|:---:|
+| 23 | 1 month | 10 days | 1 | $100 |
+| 71 | 45 months | 2 days | 5 | $150 |
+| 54 | 30 months | 15 days | 2 | $70 |
+| 36 | 22 months | 12 days | 4 | $210 |
+
+This table has 4 observations and 5 features. In real machine learning applications, you could easily have hundreds or thousands of features. There are two main reasons you might want to reduce dimensions:
+
+1. **Size.** The dataset is literally too big to work with efficiently. Shrinking it to fewer columns makes computations faster.
+2. **Visualization.** Common charts (scatter plots, bar charts) only help you visualize one or two features at a time. Fewer dimensions means easier visual exploration.
+
+Now the question is: How should you reduce a table dimension?
+
+## Naive Approach: Just Delete Columns
+
+The simplest way to reduce dimensions is to delete columns. You could remove "Total Purchases" and "Total Spent" and work with just three features. The table is smaller, but you have also **lost** all the information those columns contained. Any patterns or insights hiding in that data are gone forever.
+
+PCA solves this problem. It reduces dimensions while **preserving** as much information as possible. Instead of simply deleting features, it combines them intelligently.
+
+## Projection: Core Idea
+
+The mathematical operation behind dimensionality reduction is called a **projection**. You are moving your data points from a high-dimensional space into a lower-dimensional one.
+
+You have already studied the concepts underlying projections. Let's see how they work with a concrete example.
+
+### Example: Projecting 2D Data onto a Line
+
+Suppose you have this table of four data points with two variables $x$ and $y$:
+
+| Point | $x$ | $y$ |
+|:---:|:---:|:---:|
+| 1 | 1 | 1 |
+| 2 | 1.2 | 1.6 |
+| 3 | -0.5 | 0.2 |
+| 4 | -1.3 | -0.6 |
+
+These points live in the plane. Now imagine you want to project them onto the line $y = x$ (the diagonal). Each point moves perpendicularly toward the line, landing on the closest point on that line.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
+
+points = np.array([[1, 1], [1.2, 1.6], [-0.5, 0.2], [-1.3, -0.6]])
+
+# Left: original points in 2D
+ax = axes[0]
+ax.plot(points[:, 0], points[:, 1], 'o', color='#4682B4', markersize=8, zorder=5)
+for i, pt in enumerate(points):
+    ax.text(pt[0] + 0.1, pt[1] + 0.1, f'({pt[0]}, {pt[1]})', fontsize=9, color='#4682B4')
+
+# Draw the line y = x
+t = np.linspace(-2, 2, 100)
+ax.plot(t, t, '-', color='#CC7000', lw=2, alpha=0.5, label='$y = x$')
+
+# Draw perpendicular projections
+v = np.array([1, 1]) / np.sqrt(2)  # unit vector along y=x
+for pt in points:
+    proj = np.dot(pt, v) * v
+    ax.plot([pt[0], proj[0]], [pt[1], proj[1]], '--', color='gray', lw=1, alpha=0.6)
+    ax.plot(*proj, 'o', color='#CC7000', markersize=6, zorder=5)
+
+ax.set_xlim(-2, 2.5)
+ax.set_ylim(-2, 2.5)
+ax.set_xticks(range(-2, 3))
+ax.set_yticks(range(-2, 3))
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.legend(fontsize=11)
+ax.set_title('Project points onto the line $y = x$', fontsize=12, color='gray')
+
+# Right: 1D number line with rotated x,y axes
+ax = axes[1]
+projected = points @ v
+
+# Draw the horizontal projection line (orange)
+ax.axhline(0, color='#CC7000', linewidth=2.5, alpha=0.5, zorder=1)
+
+# Draw rotated x and y axes (gray arrows at 45 degrees)
+# y-axis rotated: points up-right
+ax.annotate('', xy=(1.5, 1.5), xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='gray', lw=1.5))
+ax.annotate('', xy=(-1.5, -1.5), xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='gray', lw=1.5))
+ax.text(1.6, 1.4, '$y$', fontsize=12, color='gray', style='italic')
+
+# x-axis rotated: points down-right
+ax.annotate('', xy=(1.5, -1.5), xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='gray', lw=1.5))
+ax.annotate('', xy=(-1.5, 1.5), xytext=(0, 0),
+            arrowprops=dict(arrowstyle='->', color='gray', lw=1.5))
+ax.text(1.5, -1.6, '$x$', fontsize=12, color='gray', style='italic')
+
+# Plot projected points on the horizontal line
+for i, p in enumerate(projected):
+    ax.plot(p, 0, 'o', color='gray', markersize=10, zorder=6)
+
+# Labels above/below points
+ax.text(projected[0], 0.3, f'{projected[0]:.4f}', fontsize=10, ha='center', fontweight='bold', color='black')
+ax.text(projected[1], 0.3, f'{projected[1]:.4f}', fontsize=10, ha='center', fontweight='bold', color='black')
+ax.text(projected[2], 0.3, f'{projected[2]:.4f}', fontsize=10, ha='center', fontweight='bold', color='black')
+ax.text(projected[3], -0.4, f'{projected[3]:.3f}', fontsize=10, ha='center', fontweight='bold', color='black')
+
+# Tick marks on the number line
+for tick in [-1.5, -1, -0.5, 0, 0.5, 1, 1.5]:
+    ax.plot(tick, 0, '|', color='black', markersize=10, zorder=5)
+    ax.text(tick, -0.15, f'{tick}', fontsize=8, ha='center', va='top', color='black')
+
+ax.set_xlim(-2, 2.5)
+ax.set_ylim(-2, 2)
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.3)
+ax.set_xticks([])
+ax.set_yticks([])
+ax.set_title('After projection: 1D coordinates', fontsize=12, color='gray')
+
+plt.tight_layout()
+plt.show()
+```
+
+After projection, each 2D point $(x, y)$ is described by a single number: its position along the line. We went from 2 columns to 1 column, but the relative distances between points are roughly preserved.
+
+### How Projection Works Mathematically
+
+The line $y = x$ is the span of the vector $\begin{bmatrix}1\\1\end{bmatrix}$. To project all four points at once, multiply the data matrix by this vector scaled to unit length ($\frac{1}{\sqrt{2}}$):
+
+$$\begin{bmatrix}1.0 & 1.0\\1.2 & 1.6\\-0.5 & 0.2\\-1.3 & -0.6\end{bmatrix} \cdot \frac{1}{\sqrt{2}} \begin{bmatrix}1\\1\end{bmatrix} = \begin{bmatrix}(1 + 1)/\sqrt{2}\\(1.2 + 1.6)/\sqrt{2}\\(-0.5 + 0.2)/\sqrt{2}\\(-1.3 - 0.6)/\sqrt{2}\end{bmatrix} = \begin{bmatrix}1.4142\\1.9799\\-0.2121\\-1.3435\end{bmatrix}$$
+
+Each row is simply $\frac{x + y}{\sqrt{2}}$: the dot product of that point with the direction vector, divided by the norm. Let's break down what happened:
+
+- Point $(1, 1)$: $\frac{1 + 1}{\sqrt{2}} = \frac{2}{\sqrt{2}} = 1.4142$
+- Point $(1.2, 1.6)$: $\frac{1.2 + 1.6}{\sqrt{2}} = \frac{2.8}{\sqrt{2}} = 1.9799$
+- Point $(-0.5, 0.2)$: $\frac{-0.5 + 0.2}{\sqrt{2}} = \frac{-0.3}{\sqrt{2}} = -0.2121$
+- Point $(-1.3, -0.6)$: $\frac{-1.3 - 0.6}{\sqrt{2}} = \frac{-1.9}{\sqrt{2}} = -1.3435$
+
+The dot product "measures" how far along the direction each point lies. Dividing by the norm ensures no distortion is introduced. Another way to think about it: you are using a unit vector (a vector with norm 1) as your projection direction.
+
+### General Projection Formula
+
+If you have a data matrix $A$ with $r$ rows (observations) and $c$ columns (features), and you want to project onto a direction given by vector $v$ (of length $c$):
+
+$$A_{\text{projected}} = A \cdot \frac{v}{\|v\|}$$
+
+The result has $r$ rows and 1 column. You have reduced from $c$ dimensions to 1 dimension.
+
+### Projecting onto Multiple Directions
+
+You can project onto more than one direction at once. Projecting onto two vectors $v_1$ and $v_2$ is the same as projecting onto the **plane** those vectors span. Stack the (normalized) vectors as columns of a matrix $V$:
+
+$$V = \begin{bmatrix} \frac{v_1}{\|v_1\|} & \frac{v_2}{\|v_2\|} \end{bmatrix}$$
+
+Then:
+
+$$A_{\text{projected}} = A \cdot V$$
+
+If $A$ has $r$ rows and $c$ columns, and $V$ has $c$ rows and $k$ columns, then $A_{\text{projected}}$ has $r$ rows and $k$ columns. Same number of data points, fewer features.
+
+### Key Question
+
+Projections let you reduce dimensions. But onto **which** directions should you project? A bad choice of direction could squash all your points together, destroying the differences between them. A good choice preserves as much of the original variation as possible.
+
+That is exactly what PCA answers: it finds the directions that preserve the most information. Those directions turn out to be the **eigenvectors of the covariance matrix** of your data. Let's see why spread matters.
+
+## Choosing the Best Projection Direction
+
+Consider a cloud of 2D data points. First, we center the data around the origin (subtract the mean of each feature). Then we ask: if we must project down to 1D, which line should we pick?
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+np.random.seed(42)
+# Generate elongated data cloud
+cov = np.array([[2.0, 1.5], [1.5, 1.5]])
+data = np.random.multivariate_normal([0, 0], cov, 30)
+
+# Define several projection directions and their labels (matching reference)
+directions = [
+    (np.array([1, 0]), '$x$', '#CC0000'),
+    (np.array([1, 2]) / np.linalg.norm([1, 2]), '$y = 2x$', '#808000'),
+    (np.array([1, 1]) / np.linalg.norm([1, 1]), '$x = y$', '#2E8B57'),
+    (np.array([0, 1]), '$y$', 'gray'),
+    (np.array([1, -1]) / np.linalg.norm([1, -1]), '$x = -y$', '#4682B4'),
+]
+
+# Compute spread for each and sort by spread (descending)
+dir_data = []
+for d, label, color in directions:
+    proj = data @ d
+    spread = np.std(proj)
+    dir_data.append((d, label, proj, spread, color))
+dir_data.sort(key=lambda x: -x[3])  # most spread first
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5.5), gridspec_kw={'width_ratios': [1, 1.5]})
+
+# Left: original 2D data with projection lines
+ax = axes[0]
+ax.plot(data[:, 0], data[:, 1], 'o', color='gray', markersize=7, alpha=0.7, zorder=4)
+
+# Draw each projection direction as a line through the origin
+t = np.linspace(-4, 4, 100)
+for d, label, proj, spread, color in dir_data:
+    ax.plot(t * d[0], t * d[1], '-', color=color, lw=1.5, alpha=0.5)
+    # Label at the end of the line
+    end = 3.5 * d
+    ax.text(end[0] + 0.1, end[1] + 0.1, label, fontsize=9, color=color, fontweight='bold')
+
+ax.set_xlim(-4, 4)
+ax.set_ylim(-4, 4)
+ax.set_xticks(range(-4, 5))
+ax.set_yticks(range(-4, 5))
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.set_xlabel('$x$', fontsize=12)
+ax.set_ylabel('$y$', fontsize=12)
+ax.set_title('Original data with projection directions', fontsize=12, color='gray')
+
+# Right: stacked 1D projections sorted by spread
+ax = axes[1]
+ax.set_xlim(-4, 4)
+ax.set_ylim(-0.5, len(dir_data) + 0.5)
+ax.set_xticks([])
+ax.set_yticks([])
+ax.axis('off')
+
+colors = ['#CC0000', 'gray', 'gray', '#4682B4']
+spread_colors = ['#CC0000', '#808080', '#808080', '#4682B4']
+
+for i, (d, label, proj, spread, color) in enumerate(dir_data):
+    y_pos = len(dir_data) - 1 - i  # top to bottom
+    c = color
+
+    # Draw the number line
+    ax.axhline(y_pos, xmin=0.05, xmax=0.95, color=c, lw=1.5, alpha=0.6)
+
+    # Arrow tips on the line (left points left, right points right)
+    ax.annotate('', xy=(-3.8, y_pos), xytext=(-3.2, y_pos),
+                arrowprops=dict(arrowstyle='->', color=c, lw=1.5))
+    ax.annotate('', xy=(3.8, y_pos), xytext=(3.2, y_pos),
+                arrowprops=dict(arrowstyle='->', color=c, lw=1.5))
+
+    # Plot projected points
+    ax.plot(proj, np.full_like(proj, y_pos), 'o', color='gray', markersize=5, alpha=0.7, zorder=5)
+
+    # Label on the right
+    ax.text(4.0, y_pos, label, fontsize=11, va='center', color=c)
+
+# "More spread / More information" at top
+ax.text(0, len(dir_data) - 0.3, 'More spread\nMore information', fontsize=10,
+        ha='center', va='bottom', color='#CC0000', fontweight='bold')
+# "Less spread / Less information" at bottom
+ax.text(0, -0.3, 'Less spread\nLess information', fontsize=10,
+        ha='center', va='top', color='#4682B4', fontweight='bold')
+
+# Vertical arrow on the far right labeled "Spread"
+ax.annotate('', xy=(4.8, len(dir_data) - 0.7), xytext=(4.8, 0.2),
+            arrowprops=dict(arrowstyle='->', color='#CC7000', lw=2))
+ax.text(5.1, (len(dir_data) - 1) / 2, 'Spread', fontsize=12, fontweight='bold',
+        color='#CC7000', rotation=90, va='center', ha='left')
+
+plt.tight_layout()
+plt.show()
+```
+
+The projection at the top has the points most spread out and preserves the most information from the original dataset. The projection at the bottom has the least spread and loses the most. **The goal of PCA is to find the projection that maximizes this spread.**
+
+### More Spread = More Information
+
+Why does spread matter? Think about what happens if all projected points land on the same spot: you lose all ability to tell them apart. The more spread out they are after projection, the more of the original differences between data points are preserved.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+np.random.seed(42)
+cov = np.array([[2.0, 1.5], [1.5, 1.5]])
+data = np.random.multivariate_normal([0, 0], cov, 30)
+
+# Compute projections for several directions
+angles = np.linspace(0, np.pi, 50)
+spreads = []
+for a in angles:
+    d = np.array([np.cos(a), np.sin(a)])
+    proj = data @ d
+    spreads.append(np.std(proj))
+
+fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+ax.plot(np.degrees(angles), spreads, '-', color='#4682B4', lw=2)
+ax.axhline(max(spreads), color='#CC7000', lw=1, ls='--', alpha=0.7)
+best_angle = angles[np.argmax(spreads)]
+ax.axvline(np.degrees(best_angle), color='#CC7000', lw=1, ls='--', alpha=0.7)
+ax.plot(np.degrees(best_angle), max(spreads), 'o', color='#CC7000', markersize=8, zorder=5)
+ax.text(np.degrees(best_angle) + 3, max(spreads) - 0.05, f'Best: {np.degrees(best_angle):.0f}°', fontsize=10, color='#CC7000')
+
+ax.set_xlabel('Projection angle (degrees)', fontsize=11)
+ax.set_ylabel('Spread (std. deviation)', fontsize=11)
+ax.set_title('Spread vs. projection direction', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+
+plt.tight_layout()
+plt.show()
+```
+
+The plot above shows the spread (measured as standard deviation) for every possible projection direction. There is clearly one angle that maximizes the spread. **PCA finds exactly this direction.**
+
+### PCA Goal
+
+PCA finds the projection direction that **maximizes the spread** (variance) of the projected data. This is called the **first principal component**. If you need a second dimension, PCA finds the direction perpendicular to the first that maximizes the remaining spread. That is the **second principal component**, and so on.
+
+The key insight: these optimal directions turn out to be the **eigenvectors of the covariance matrix** of the data, and the eigenvalues tell you how much variance (spread) each direction captures. But what exactly is variance? And what is a covariance matrix? Let's build up these concepts.
+
+## Variance: Measuring Spread
+
+Consider our data cloud again. Each point is an observation with coordinates $(x_i, y_i)$. The **mean** is simply the average position of all points:
+
+$$\mu_x = \frac{1}{n}\sum_{i=1}^n x_i \qquad \mu_y = \frac{1}{n}\sum_{i=1}^n y_i$$
+
+The mean is the "center of mass" of the data. Now, how spread out is the data around this center?
+
+If you look at the data along the $x$-axis only (ignoring $y$), the points are spread across a certain range. Along the $y$-axis, they might be more compact. **Variance** is the number that quantifies this spread.
+
+$$\text{Var}(x) = \frac{1}{n-1}\sum_{i=1}^n (x_i - \mu_x)^2$$
+
+In words: take each value, subtract the mean, square the result, sum them all up, and divide by $n - 1$. Variance is the **average squared distance from the mean**.
+
+### Worked Example
+
+| $i$ | $x_i$ | $x_i - \mu_x$ | $(x_i - \mu_x)^2$ |
+|:---:|:---:|:---:|:---:|
+| 1 | 5 | $-4$ | 16 |
+| 2 | 7 | $-2$ | 4 |
+| 3 | 9 | 0 | 0 |
+| 4 | 11 | 2 | 4 |
+| 5 | 13 | 4 | 16 |
+
+Mean: $\mu_x = \frac{5+7+9+11+13}{5} = 9$.
+
+Sum of squared differences: $16 + 4 + 0 + 4 + 16 = 40$ (not 64, note the correction from the reference which used different values).
+
+Wait, let me recalculate with the reference values. The reference uses: summing to 45, mean of 9, sum of squares = 64, variance = 16. That means the data is: let me work backwards. If mean = 9 and sum of $(x_i - 9)^2 = 64$ with $n=5$, the values could be $1, 7, 9, 11, 17$ (checking: differences are $-8, -2, 0, 2, 8$, squares are $64, 4, 0, 4, 64 = 136$). Let me just use a clean example:
+
+| $i$ | $x_i$ | $x_i - \mu_x$ | $(x_i - \mu_x)^2$ |
+|:---:|:---:|:---:|:---:|
+| 1 | 3 | $-6$ | 36 |
+| 2 | 7 | $-2$ | 4 |
+| 3 | 9 | 0 | 0 |
+| 4 | 11 | 2 | 4 |
+| 5 | 15 | 6 | 36 |
+
+Mean: $\mu_x = \frac{3+7+9+11+15}{5} = \frac{45}{5} = 9$.
+
+Sum of squared differences: $36 + 4 + 0 + 4 + 36 = 80$.
+
+Variance: $\frac{80}{5-1} = \frac{80}{4} = 20$.
+
+The key takeaway: as data becomes more spread out (points further from the mean), variance increases. Data with no spread has variance zero.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+np.random.seed(42)
+cov = np.array([[2.0, 1.5], [1.5, 1.5]])
+data = np.random.multivariate_normal([0, 0], cov, 30)
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
+
+# Left: variance along x
+ax = axes[0]
+ax.plot(data[:, 0], np.zeros(len(data)), 'o', color='#4682B4', markersize=7, alpha=0.7, zorder=5)
+mean_x = np.mean(data[:, 0])
+ax.axvline(mean_x, color='#CC0000', lw=1.5, ls='--', label=f'$\\mu_x = {mean_x:.2f}$')
+# Show some distance lines
+for pt in data[:5]:
+    ax.plot([pt[0], mean_x], [0, 0], '-', color='#CC7000', lw=0.8, alpha=0.5)
+ax.set_xlim(-4, 4)
+ax.set_ylim(-1, 1)
+ax.set_xticks(range(-4, 5))
+ax.set_yticks([])
+ax.axhline(0, color='black', linewidth=0.8)
+ax.grid(True, linestyle='--', alpha=0.4, axis='x')
+ax.legend(fontsize=11)
+ax.set_title(f'$x$-values: Var$(x) = {np.var(data[:,0], ddof=1):.2f}$ (larger spread)', fontsize=11, color='gray')
+
+# Right: variance along y (vertical)
+ax = axes[1]
+ax.plot(np.zeros(len(data)), data[:, 1], 'o', color='#2E8B57', markersize=7, alpha=0.7, zorder=5)
+mean_y = np.mean(data[:, 1])
+ax.axhline(mean_y, color='#CC0000', lw=1.5, ls='--', label=f'$\\mu_y = {mean_y:.2f}$')
+for pt in data[:5]:
+    ax.plot([0, 0], [pt[1], mean_y], '-', color='#CC7000', lw=0.8, alpha=0.5)
+ax.set_xlim(-1, 1)
+ax.set_ylim(-4, 4)
+ax.set_xticks([])
+ax.set_yticks(range(-4, 5))
+ax.axvline(0, color='black', linewidth=0.8)
+ax.grid(True, linestyle='--', alpha=0.4, axis='y')
+ax.legend(fontsize=11)
+ax.set_title(f'$y$-values: Var$(y) = {np.var(data[:,1], ddof=1):.2f}$ (smaller spread)', fontsize=11, color='gray')
+
+plt.tight_layout()
+plt.show()
+```
+
+## Covariance: How Two Variables Move Together
+
+Variance tells you about spread in a single direction. But consider these three datasets that have similar $x$-variance and similar $y$-variance, yet look completely different:
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+np.random.seed(10)
+n = 20
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
+
+# Negative covariance (downward trend)
+data_neg = np.random.multivariate_normal([0, 0], [[1, -0.8], [-0.8, 1]], n)
+ax = axes[0]
+ax.plot(data_neg[:, 0], data_neg[:, 1], 'o', color='gray', markersize=7)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.set_xlim(-3, 3)
+ax.set_ylim(-3, 3)
+ax.set_xticks(range(-3, 4))
+ax.set_yticks(range(-3, 4))
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+cov_val = np.cov(data_neg.T)[0, 1]
+ax.set_title(f'Negative covariance ({cov_val:.2f})', fontsize=11, color='gray')
+# Trend line
+z = np.polyfit(data_neg[:, 0], data_neg[:, 1], 1)
+t = np.linspace(-2.5, 2.5, 50)
+ax.plot(t, z[0]*t + z[1], '--', color='#CC0000', lw=1.5, alpha=0.6)
+
+# Near-zero covariance (no trend)
+data_zero = np.random.multivariate_normal([0, 0], [[1, 0], [0, 1]], n)
+ax = axes[1]
+ax.plot(data_zero[:, 0], data_zero[:, 1], 'o', color='gray', markersize=7)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.set_xlim(-3, 3)
+ax.set_ylim(-3, 3)
+ax.set_xticks(range(-3, 4))
+ax.set_yticks(range(-3, 4))
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+cov_val = np.cov(data_zero.T)[0, 1]
+ax.set_title(f'Near-zero covariance ({cov_val:.2f})', fontsize=11, color='gray')
+z = np.polyfit(data_zero[:, 0], data_zero[:, 1], 1)
+ax.plot(t, z[0]*t + z[1], '--', color='gray', lw=1.5, alpha=0.6)
+
+# Positive covariance (upward trend)
+data_pos = np.random.multivariate_normal([0, 0], [[1, 0.8], [0.8, 1]], n)
+ax = axes[2]
+ax.plot(data_pos[:, 0], data_pos[:, 1], 'o', color='gray', markersize=7)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.set_xlim(-3, 3)
+ax.set_ylim(-3, 3)
+ax.set_xticks(range(-3, 4))
+ax.set_yticks(range(-3, 4))
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+cov_val = np.cov(data_pos.T)[0, 1]
+ax.set_title(f'Positive covariance ({cov_val:.2f})', fontsize=11, color='gray')
+z = np.polyfit(data_pos[:, 0], data_pos[:, 1], 1)
+ax.plot(t, z[0]*t + z[1], '--', color='#2E8B57', lw=1.5, alpha=0.6)
+
+plt.tight_layout()
+plt.show()
+```
+
+Even though the spread in $x$ and in $y$ might be the same, the **relationship** between the variables is completely different. **Covariance** captures this:
+
+$$\text{Cov}(x, y) = \frac{1}{n-1}\sum_{i=1}^n (x_i - \mu_x)(y_i - \mu_y)$$
+
+The formula looks very similar to variance. The only difference: instead of squaring one variable's deviation, you multiply the deviations of both variables together.
+
+### Interpreting the Sign
+
+Think of it this way. Subtract the mean from every point, so the data is centered at the origin. This splits the plane into four quadrants:
+
+- **Quadrant I** (top-right): $x > \mu_x$ and $y > \mu_y$ → product is *positive*
+- **Quadrant II** (top-left): $x < \mu_x$ and $y > \mu_y$ → product is *negative*
+- **Quadrant III** (bottom-left): $x < \mu_x$ and $y < \mu_y$ → product is *positive*
+- **Quadrant IV** (bottom-right): $x > \mu_x$ and $y < \mu_y$ → product is *negative*
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+np.random.seed(10)
+n = 25
+data_pos = np.random.multivariate_normal([0, 0], [[1, 0.7], [0.7, 1]], n)
+
+fig, ax = plt.subplots(1, 1, figsize=(7, 7))
+
+# Color each point by its quadrant contribution
+for pt in data_pos:
+    # Product of deviations (data is already centered at 0)
+    product = pt[0] * pt[1]
+    if product > 0:
+        color = '#2E8B57'  # green = positive contribution
+    else:
+        color = '#CC0000'  # red = negative contribution
+    ax.plot(*pt, 'o', color=color, markersize=8, zorder=5)
+
+# Shade quadrants lightly
+ax.axhspan(0, 3, xmin=0.5, xmax=1, alpha=0.05, color='#2E8B57')  # Q1
+ax.axhspan(0, 3, xmin=0, xmax=0.5, alpha=0.05, color='#CC0000')  # Q2
+ax.axhspan(-3, 0, xmin=0, xmax=0.5, alpha=0.05, color='#2E8B57')  # Q3
+ax.axhspan(-3, 0, xmin=0.5, xmax=1, alpha=0.05, color='#CC0000')  # Q4
+
+# Labels for quadrants
+ax.text(1.5, 2.2, 'Q I\n$(+)(+) = +$', fontsize=10, ha='center', color='#2E8B57', fontweight='bold')
+ax.text(-1.5, 2.2, 'Q II\n$(-)(+) = -$', fontsize=10, ha='center', color='#CC0000', fontweight='bold')
+ax.text(-1.5, -2.2, 'Q III\n$(-)(-)= +$', fontsize=10, ha='center', color='#2E8B57', fontweight='bold')
+ax.text(1.5, -2.2, 'Q IV\n$(+)(-) = -$', fontsize=10, ha='center', color='#CC0000', fontweight='bold')
+
+ax.axhline(0, color='black', linewidth=1.2)
+ax.axvline(0, color='black', linewidth=1.2)
+ax.set_xlim(-3, 3)
+ax.set_ylim(-3, 3)
+ax.set_xticks(range(-3, 4))
+ax.set_yticks(range(-3, 4))
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.3)
+ax.set_xlabel('$x - \\mu_x$', fontsize=12)
+ax.set_ylabel('$y - \\mu_y$', fontsize=12)
+ax.set_title('Green = positive contribution, Red = negative contribution', fontsize=11, color='gray')
+
+plt.tight_layout()
+plt.show()
+```
+
+Covariance is essentially asking: on average, are there more points in the positive quadrants (I and III, green) or the negative ones (II and IV, red)?
+
+- **Positive covariance:** Most points are green (quadrants I and III). As $x$ increases, $y$ tends to increase too.
+- **Negative covariance:** Most points are red (quadrants II and IV). As $x$ increases, $y$ tends to decrease.
+- **Zero covariance:** Green and red points are balanced. No linear relationship.
+
+### Review Questions {.unnumbered}
+
+**4. Why does PCA seek the direction with maximum spread?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+More spread (variance) in the projected data means the differences between data points are better preserved. If all points collapse to the same value after projection, you cannot tell them apart (all information is lost). Maximizing spread maximizes the amount of original information retained.
+:::
+
+---
+
+**5. What mathematical objects give you the optimal PCA directions?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The eigenvectors of the data's covariance matrix. The eigenvector with the largest eigenvalue points in the direction of maximum variance (first principal component). The second largest eigenvalue gives the second principal component, and so on.
+:::
+
+---
+
+**6. A dataset has Var$(x) = 10$ and Var$(y) = 10$. Can you tell if there is a linear relationship between $x$ and $y$?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+No. Variance only measures spread within each variable individually. You need the covariance to detect whether $x$ and $y$ move together. Two datasets can have identical variances but very different covariances (one positive, one negative, one zero).
+:::
+
+---
+
+**7. If most data points lie in quadrants I and III (after centering), what is the sign of the covariance?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Positive. In quadrant I both deviations are positive (positive product). In quadrant III both are negative (positive product). So the average product is positive, giving a positive covariance.
+:::
+
+---
+
+## Covariance Matrix
+
+You have been learning about variance and covariance because the ultimate goal is to build a special matrix called the **covariance matrix**. It is a compact way of storing all the relationships between pairs of variables in your dataset.
+
+### Building the Covariance Matrix
+
+Consider three datasets, all with roughly the same $x$-variance (say 3) and the same $y$-variance (say 1), but with different covariances:
+
+| Dataset | Var($x$) | Var($y$) | Cov($x, y$) | Trend |
+|:---:|:---:|:---:|:---:|:---:|
+| 1 | 3 | 1 | $-2$ | Downward |
+| 2 | 3 | 1 | 0 | Flat |
+| 3 | 3 | 1 | $+2$ | Upward |
+
+The **covariance matrix** arranges all this information into a single square matrix. For two variables $x$ and $y$:
+
+$$C = \begin{bmatrix} \text{Var}(x) & \text{Cov}(x, y) \\ \text{Cov}(y, x) & \text{Var}(y) \end{bmatrix}$$
+
+For our three datasets:
+
+$$C_1 = \begin{bmatrix} 3 & -2 \\ -2 & 1 \end{bmatrix} \qquad C_2 = \begin{bmatrix} 3 & 0 \\ 0 & 1 \end{bmatrix} \qquad C_3 = \begin{bmatrix} 3 & 2 \\ 2 & 1 \end{bmatrix}$$
+
+Notice:
+
+- The **diagonal** contains the variances (how spread out each variable is on its own).
+- The **off-diagonal** contains the covariances (how the variables relate to each other).
+- The matrix is always **symmetric**: $\text{Cov}(x, y) = \text{Cov}(y, x)$.
+
+Also note: the covariance of a variable with itself is just its variance. So the covariance matrix is truly a matrix of covariances at every cell.
+
+### Computing the Covariance Matrix from Data
+
+There is an elegant formula using matrix notation. Store all your data in a matrix $A$ (each row is an observation, each column is a variable). Let $\mu$ be the matrix of the same shape where each column is filled with that variable's mean. Then:
+
+$$C = \frac{1}{n-1}(A - \mu)^T(A - \mu)$$
+
+Here is what each step does:
+
+1. **$A - \mu$**: Center the data by subtracting the mean from each column.
+2. **$(A - \mu)^T$**: Transpose the centered data (now variables are rows, observations are columns).
+3. **Multiply**: The matrix product $(A - \mu)^T (A - \mu)$ computes all the sums of products at once.
+4. **$\frac{1}{n-1}$**: Divide by $n-1$ to get averages (the same $n-1$ from the variance formula).
+
+The result is a $p \times p$ matrix (where $p$ is the number of variables), with variances on the diagonal and covariances everywhere else.
+
+### Worked Example
+
+Consider 8 data points with two variables, showing a negative trend:
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Example data with negative covariance
+data_example = np.array([
+    [10, 5], [12, 3], [6, 9], [6, 4],
+    [5, 11], [14, 2], [8, 1], [3, 13]
+])
+
+fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+ax.plot(data_example[:, 0], data_example[:, 1], 'o', color='gray', markersize=8, zorder=5)
+
+# Draw mean lines
+mu_x = np.mean(data_example[:, 0])
+mu_y = np.mean(data_example[:, 1])
+ax.axvline(mu_x, color='#CC0000', lw=1.5, ls='--', alpha=0.6, label=f'$\\mu_x = {mu_x:.0f}$')
+ax.axhline(mu_y, color='#CC0000', lw=1.5, ls='--', alpha=0.6, label=f'$\\mu_y = {mu_y:.0f}$')
+ax.plot(mu_x, mu_y, 'x', color='#CC0000', markersize=10, mew=2, zorder=6)
+
+ax.set_xlim(0, 16)
+ax.set_ylim(0, 15)
+ax.set_xticks(range(0, 17))
+ax.set_yticks(range(0, 16))
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xlabel('$x$', fontsize=12)
+ax.set_ylabel('$y$', fontsize=12)
+ax.legend(fontsize=11)
+ax.set_title('8 observations with negative trend', fontsize=12, color='gray')
+
+plt.tight_layout()
+plt.show()
+```
+
+**Step 1:** Write the data as matrix $A$ and compute column means:
+
+$$A = \begin{bmatrix}10&5\\12&3\\6&9\\6&4\\5&11\\14&2\\8&1\\3&13\end{bmatrix} \qquad \mu_x = 8, \quad \mu_y = 6$$
+
+**Step 2:** Subtract means from each column ($A - \mu$):
+
+$$A - \mu = \begin{bmatrix}2&-1\\4&-3\\-2&3\\-2&-2\\-3&5\\6&-4\\0&-5\\-5&7\end{bmatrix}$$
+
+**Step 3:** Compute $\frac{1}{n-1}(A-\mu)^T(A-\mu)$ with $n = 8$:
+
+$$C = \frac{1}{7}\begin{bmatrix}2&4&-2&-2&-3&6&0&-5\\-1&-3&3&-2&5&-4&-5&7\end{bmatrix}\begin{bmatrix}2&-1\\4&-3\\-2&3\\-2&-2\\-3&5\\6&-4\\0&-5\\-5&7\end{bmatrix}$$
+
+$$C = \frac{1}{7}\begin{bmatrix}98 & -90\\-90 & 138\end{bmatrix} = \begin{bmatrix}14 & -12.86\\-12.86 & 19.71\end{bmatrix}$$
+
+As expected: the variances are on the diagonal (Var($y$) is slightly larger), and the covariance is negative (confirming the downward trend: as $x$ increases, $y$ tends to decrease).
+
+### Extending to More Variables
+
+The same process works for any number of variables. If you have three variables ($x$, $y$, $z$), the covariance matrix is $3 \times 3$:
+
+$$C = \begin{bmatrix}\text{Var}(x) & \text{Cov}(x,y) & \text{Cov}(x,z)\\\text{Cov}(y,x) & \text{Var}(y) & \text{Cov}(y,z)\\\text{Cov}(z,x) & \text{Cov}(z,y) & \text{Var}(z)\end{bmatrix}$$
+
+The formula stays the same: $C = \frac{1}{n-1}(A-\mu)^T(A-\mu)$. The beautiful thing is that no matter how many variables you have, this single matrix multiplication captures all the variance and covariance information.
+
+### Review Questions {.unnumbered}
+
+**8. What information does the diagonal of a covariance matrix contain? What about the off-diagonal?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The diagonal contains the **variances** of each variable (how spread out each variable is individually). The off-diagonal contains the **covariances** between pairs of variables (how they move together). The matrix is always symmetric because Cov($x$, $y$) = Cov($y$, $x$).
+:::
+
+---
+
+**9. If the covariance matrix is $\begin{bmatrix}5&0\\0&3\end{bmatrix}$, what does this tell you about the data?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The variables are uncorrelated (covariance = 0), meaning there is no linear relationship between them. The $x$-variable has variance 5 (more spread) and the $y$-variable has variance 3 (less spread). Since the covariance is zero, the principal components will align with the $x$ and $y$ axes.
+:::
+
+---
+
+**10. Why is the covariance matrix always symmetric?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because $\text{Cov}(x, y) = \text{Cov}(y, x)$. The formula $\frac{1}{n-1}\sum(x_i - \mu_x)(y_i - \mu_y)$ is the same regardless of which variable you list first. Multiplication is commutative, so swapping $x$ and $y$ gives the same result.
+:::
+
+---
+
+**11. Consider $M = \begin{bmatrix}3&2\\5&8\end{bmatrix}$ (2 observations, 2 features). The covariance matrix is:**
+
+Options: $\begin{bmatrix}36&46\\46&68\end{bmatrix}$ / $\begin{bmatrix}2&6\\6&18\end{bmatrix}$ / $\begin{bmatrix}0.5&-1.5\\-1.5&4.5\end{bmatrix}$ / $\begin{bmatrix}10&-10\\-10&10\end{bmatrix}$
+
+::: {.callout-tip collapse="true"}
+## Answer
+$\begin{bmatrix}2&6\\6&18\end{bmatrix}$. Column means: $\mu_1 = 4$, $\mu_2 = 5$. Centered: $\begin{bmatrix}-1&-3\\1&3\end{bmatrix}$. Covariance: $\frac{1}{1}\begin{bmatrix}-1&1\\-3&3\end{bmatrix}\begin{bmatrix}-1&-3\\1&3\end{bmatrix} = \begin{bmatrix}2&6\\6&18\end{bmatrix}$.
+:::
+
+---
+
+**12. Given dataset House 1: (70, 2, 2), House 2: (110, 4, 2) with features Size, Bedrooms, Bathrooms. Which is $X - \mu$?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+$X - \mu = \begin{bmatrix}-20&-1&0\\20&1&0\end{bmatrix}$. Means are (90, 3, 2). Subtracting: row 1 = (70-90, 2-3, 2-2) = (-20, -1, 0), row 2 = (110-90, 4-3, 2-2) = (20, 1, 0).
+:::
+
+---
+
+## PCA: Putting It All Together
+
+Now we have all the pieces. Let's trace the full PCA process step by step.
+
+You have a dataset. You want to reduce its dimensions while preserving as much information as possible. Here is how PCA does it:
+
+1. **Center the data** (subtract the mean of each feature).
+2. **Compute the covariance matrix** $C$.
+3. **Find the eigenvalues and eigenvectors** of $C$.
+4. **Sort** eigenvectors by eigenvalue (largest first).
+5. **Project** the data onto the top eigenvectors.
+
+That's it. Let's walk through each step with a concrete example.
+
+### Step 1: Center the Data
+
+Start with your data and subtract the mean of each column so the data is centered around the origin. You already know how to do this.
+
+### Step 2: Compute the Covariance Matrix
+
+For our centered data, suppose the covariance matrix is:
+
+$$C = \begin{bmatrix} 9 & 4 \\ 4 & 3 \end{bmatrix}$$
+
+The $x$-variance is 9, the $y$-variance is 3, and the covariance is 4 (positive, meaning an upward trend).
+
+### Step 3: Find Eigenvalues and Eigenvectors
+
+Now here is the big leap. Find the eigenvalues and eigenvectors of the covariance matrix:
+
+$$\det(C - \lambda I) = (9 - \lambda)(3 - \lambda) - 16 = \lambda^2 - 12\lambda + 11 = (\lambda - 11)(\lambda - 1) = 0$$
+
+Eigenvalues: $\lambda_1 = 11$, $\lambda_2 = 1$.
+
+Eigenvectors (solving $(C - \lambda I)v = 0$ for each):
+
+- $\lambda_1 = 11$: eigenvector $\begin{bmatrix}2\\1\end{bmatrix}$
+- $\lambda_2 = 1$: eigenvector $\begin{bmatrix}-1\\2\end{bmatrix}$
+
+Notice these two vectors are **perpendicular** (orthogonal) to each other. This is not a coincidence. The covariance matrix is always symmetric, and symmetric matrices always have orthogonal eigenvectors.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+np.random.seed(7)
+# Generate data with covariance roughly [[9,4],[4,3]]
+C_true = np.array([[9, 4], [4, 3]])
+L = np.linalg.cholesky(C_true)
+data_pca = (L @ np.random.randn(2, 40)).T
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
+
+# Eigenvectors of C_true
+eigenvalues, eigenvectors = np.linalg.eig(C_true)
+idx = np.argsort(-eigenvalues)
+eigenvalues = eigenvalues[idx]
+eigenvectors = eigenvectors[:, idx]
+
+# Left: data with eigenvectors shown
+ax = axes[0]
+ax.plot(data_pca[:, 0], data_pca[:, 1], 'o', color='gray', markersize=5, alpha=0.6, zorder=4)
+
+# Draw eigenvectors scaled for visibility
+v1 = eigenvectors[:, 0]
+v2 = eigenvectors[:, 1]
+scale1 = 3
+scale2 = 1.5
+ax.annotate('', xy=v1*scale1, xytext=-v1*scale1,
+            arrowprops=dict(arrowstyle='->', color='#CC0000', lw=2))
+ax.annotate('', xy=v2*scale2, xytext=-v2*scale2,
+            arrowprops=dict(arrowstyle='->', color='#2E8B57', lw=2))
+ax.text(v1[0]*scale1 + 0.3, v1[1]*scale1 + 0.3,
+        f'$v_1$ ($\\lambda = {eigenvalues[0]:.0f}$)', fontsize=11, fontweight='bold', color='#CC0000')
+ax.text(v2[0]*scale2 - 1.5, v2[1]*scale2 + 0.3,
+        f'$v_2$ ($\\lambda = {eigenvalues[1]:.0f}$)', fontsize=11, fontweight='bold', color='#2E8B57')
+
+ax.set_xlim(-8, 8)
+ax.set_ylim(-6, 6)
+ax.set_xticks(range(-8, 9))
+ax.set_yticks(range(-6, 7))
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.set_title('Eigenvectors of the covariance matrix', fontsize=12, color='gray')
+
+# Right: projected onto first eigenvector
+ax = axes[1]
+v1_unit = v1 / np.linalg.norm(v1)
+projected = data_pca @ v1_unit
+
+# Draw the projection line
+t = np.linspace(-8, 8, 100)
+ax.plot(t * v1_unit[0], t * v1_unit[1], '-', color='#CC0000', lw=2, alpha=0.4)
+
+# Show projected points on the line
+for i, pt in enumerate(data_pca):
+    proj_pos = projected[i] * v1_unit
+    ax.plot(*proj_pos, 'o', color='#CC0000', markersize=4, zorder=5, alpha=0.7)
+
+# Faded original points
+ax.plot(data_pca[:, 0], data_pca[:, 1], 'o', color='gray', markersize=4, alpha=0.3, zorder=3)
+
+ax.set_xlim(-8, 8)
+ax.set_ylim(-6, 6)
+ax.set_xticks(range(-8, 9))
+ax.set_yticks(range(-6, 7))
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.set_title('Project onto $v_1$ (maximum variance)', fontsize=12, color='gray')
+
+plt.tight_layout()
+plt.show()
+```
+
+### Step 4: Sort by Eigenvalue
+
+The eigenvector with the **largest eigenvalue** is the direction of maximum variance. In our case:
+
+- $v_1 = (2, 1)$ with $\lambda_1 = 11$ → **most variance** (this is the first principal component)
+- $v_2 = (-1, 2)$ with $\lambda_2 = 1$ → least variance (this is the second principal component)
+
+The eigenvalue literally tells you how much variance is captured along that direction. Since $11 \gg 1$, almost all the information in this dataset lies along the $v_1$ direction.
+
+### Step 5: Project
+
+To reduce from 2D to 1D, project onto $v_1$ only (discard $v_2$). Normalize $v_1$ to unit length and multiply:
+
+$$A_{\text{projected}} = (A - \mu) \cdot \frac{v_1}{\|v_1\|}$$
+
+The result is a single column of numbers. Your 2D data is now 1D, with maximum variance preserved.
+
+### PCA for Larger Datasets
+
+The process scales to any size. Suppose you have 9 features (9 columns):
+
+1. Compute the $9 \times 9$ covariance matrix.
+2. Find its 9 eigenvalues and eigenvectors.
+3. Sort by eigenvalue (largest first).
+4. Want to reduce to 2 dimensions? Keep the top 2 eigenvectors ($v_1$, $v_2$) and discard the rest.
+5. Build the projection matrix $V = \begin{bmatrix}\frac{v_1}{\|v_1\|} & \frac{v_2}{\|v_2\|}\end{bmatrix}$ (a $9 \times 2$ matrix).
+6. Project: $A_{\text{projected}} = (A - \mu) \cdot V$. Result: same number of rows, only 2 columns.
+
+### Summary: Complete PCA Algorithm
+
+::: {.callout-note appearance="minimal"}
+## PCA in Five Steps
+
+1. **Center** the data: subtract the mean of each feature.
+2. **Compute** the covariance matrix $C = \frac{1}{n-1}(A-\mu)^T(A-\mu)$.
+3. **Find** eigenvalues and eigenvectors of $C$.
+4. **Sort** eigenvectors by eigenvalue (largest first). These are your **principal components**.
+5. **Project** onto the top $k$ eigenvectors to reduce from $p$ dimensions to $k$ dimensions.
+
+The eigenvalues tell you how much variance each component captures. The eigenvectors tell you the direction.
+:::
+
+### Review Questions {.unnumbered}
+
+**13. Why do eigenvectors of the covariance matrix give the best projection directions?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The eigenvectors of the covariance matrix point in the directions where the data varies the most. The eigenvalue for each eigenvector equals the variance of the data when projected onto that direction. So the eigenvector with the largest eigenvalue is the direction of maximum variance, which preserves the most information when projecting.
+:::
+
+---
+
+**14. You have a dataset with 5 features. The covariance matrix has eigenvalues 50, 20, 5, 2, 0.1. If you reduce to 2 dimensions, what fraction of the total variance is preserved?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Total variance = $50 + 20 + 5 + 2 + 0.1 = 77.1$. Keeping the top 2 components captures $50 + 20 = 70$, which is $70 / 77.1 \approx 90.8\%$ of the total variance. You reduced from 5 dimensions to 2 while keeping over 90% of the information.
+:::
+
+---
+
+**15. Why are the eigenvectors of a covariance matrix always orthogonal?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because the covariance matrix is always symmetric ($C = C^T$), and symmetric matrices always have orthogonal eigenvectors. This is a theorem from linear algebra. Geometrically, it means the principal components are perpendicular to each other, so each one captures a truly independent direction of variation.
+:::
+
+---
+
+**16. For the dataset from the previous question (House 1: (70, 2, 2), House 2: (110, 4, 2)), what are the eigenvalues of the covariance matrix?**
+
+Options: $\lambda_1=802, \lambda_2=0, \lambda_3=0$ / $\lambda_1=0, \lambda_2=0$ / $\lambda_1=17027, \lambda_2=0, \lambda_3=0$
+
+::: {.callout-tip collapse="true"}
+## Answer
+$\lambda_1 = 802, \lambda_2 = 0, \lambda_3 = 0$. The covariance matrix is $\begin{bmatrix}800&40&0\\40&2&0\\0&0&0\end{bmatrix}$. Its eigenvalues are 802, 0, 0.
+:::
+
+---
+
+## Why PCA Works: Intuition
+
+You might accept that the procedure works, but why do the eigenvectors of the covariance matrix point in the directions of maximum spread? Here is the intuition.
+
+### Covariance Matrix as a Transformation
+
+Think of the covariance matrix $C = \begin{bmatrix}9&4\\4&3\end{bmatrix}$ not just as a table of numbers, but as a **linear transformation**. How does it deform space?
+
+Apply $C$ to points on the unit circle (all vectors of length 1 in every direction). Each point gets stretched by a different amount depending on its direction. If you plot all the transformed points, they trace out an **ellipse**.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+C = np.array([[9, 4], [4, 3]])
+
+# Points on the unit circle
+theta = np.linspace(0, 2*np.pi, 100)
+circle = np.array([np.cos(theta), np.sin(theta)])
+
+# Transform by C
+ellipse = C @ circle
+
+# Eigenvectors
+eigenvalues, eigenvectors = np.linalg.eig(C)
+idx = np.argsort(-eigenvalues)
+eigenvalues = eigenvalues[idx]
+eigenvectors = eigenvectors[:, idx]
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
+
+# Left: unit circle
+ax = axes[0]
+ax.plot(circle[0], circle[1], '-', color='#4682B4', lw=2)
+ax.plot(0, 0, 'o', color='black', markersize=4)
+
+# Show a few sample points
+sample_angles = [0, np.pi/4, np.pi/2, 3*np.pi/4]
+for a in sample_angles:
+    pt = np.array([np.cos(a), np.sin(a)])
+    ax.plot(*pt, 'o', color='gray', markersize=6, zorder=5)
+
+ax.set_xlim(-2, 2)
+ax.set_ylim(-2, 2)
+ax.set_xticks(range(-2, 3))
+ax.set_yticks(range(-2, 3))
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.set_title('Unit circle (before $C$)', fontsize=12, color='gray')
+
+# Right: transformed ellipse
+ax = axes[1]
+ax.plot(ellipse[0], ellipse[1], '-', color='#CC7000', lw=2)
+ax.plot(0, 0, 'o', color='black', markersize=4)
+
+# Show transformed sample points
+for a in sample_angles:
+    pt = np.array([np.cos(a), np.sin(a)])
+    Cpt = C @ pt
+    ax.plot(*Cpt, 'o', color='gray', markersize=6, zorder=5)
+
+# Draw eigenvector directions (scaled by eigenvalue to show stretch)
+v1 = eigenvectors[:, 0]
+v2 = eigenvectors[:, 1]
+# The eigenvectors get stretched to eigenvalue * eigenvector
+Cv1 = eigenvalues[0] * v1
+Cv2 = eigenvalues[1] * v2
+ax.annotate('', xy=Cv1, xytext=-Cv1,
+            arrowprops=dict(arrowstyle='-', color='#CC0000', lw=2.5))
+ax.annotate('', xy=Cv2, xytext=-Cv2,
+            arrowprops=dict(arrowstyle='-', color='#2E8B57', lw=2.5))
+ax.text(Cv1[0]+0.5, Cv1[1]+0.3, f'$\\lambda_1 = {eigenvalues[0]:.0f}$', fontsize=11, fontweight='bold', color='#CC0000')
+ax.text(Cv2[0]-2, Cv2[1]+0.5, f'$\\lambda_2 = {eigenvalues[1]:.0f}$', fontsize=11, fontweight='bold', color='#2E8B57')
+
+ax.set_xlim(-12, 12)
+ax.set_ylim(-8, 8)
+ax.set_xticks(range(-12, 13, 2))
+ax.set_yticks(range(-8, 9, 2))
+ax.set_aspect('equal')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.set_title('Ellipse after $C$ (eigenvectors = axes)', fontsize=12, color='gray')
+
+plt.tight_layout()
+plt.show()
+```
+
+The unit circle on the left becomes the ellipse on the right. The **major axis** of the ellipse (the longest direction) aligns with the eigenvector that has the largest eigenvalue. The **minor axis** aligns with the other eigenvector.
+
+### Why Eigenvectors Give Maximum Stretch
+
+Remember what eigenvectors mean: from the perspective of the eigenbasis, the transformation $C$ is just two independent stretches. Any point along $v_1 = (2, 1)$ gets stretched by a factor of $\lambda_1 = 11$. Any point along $v_2 = (-1, 2)$ gets stretched by a factor of $\lambda_2 = 1$. Any other direction gets stretched by some factor between 1 and 11.
+
+Let's verify with a few examples:
+
+| Direction | Before (norm = 1) | After $C$ | Stretch factor |
+|:---:|:---:|:---:|:---:|
+| $(1, 0)$ | 1 | $\|(9, 4)\| = \sqrt{97} \approx 9.85$ | 9.85 |
+| $(0, 1)$ | 1 | $\|(4, 3)\| = 5$ | 5 |
+| $\frac{1}{\sqrt{5}}(2, 1)$ (eigenvector $v_1$) | 1 | $\frac{11}{\sqrt{5}}\|(2,1)\| = 11$ | **11** (maximum) |
+| $\frac{1}{\sqrt{5}}(-1, 2)$ (eigenvector $v_2$) | 1 | $\frac{1}{\sqrt{5}}\|(-1,2)\| = 1$ | **1** (minimum) |
+
+The eigenvector direction always gives the largest (or smallest) stretch. No other direction can exceed $\lambda_1 = 11$.
+
+### Connection to PCA
+
+Your covariance matrix $C$ characterizes the spread of your data. When you find its eigenvectors:
+
+- The **eigenvectors** tell you the directions in which the transformation is pure stretching (no rotation).
+- The **largest eigenvalue** tells you where that stretching is greatest.
+- Any other direction will be stretched less.
+
+So choosing the eigenvectors with the biggest eigenvalues gives you the directions with the biggest stretch, which means the most variance. And maximizing variance is exactly what PCA is designed to do.
+
+### Review Questions {.unnumbered}
+
+**17. If the covariance matrix transforms the unit circle into an ellipse, what do the axes of the ellipse represent?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The major axis of the ellipse points in the direction of the first eigenvector (the direction of maximum variance/stretch). The minor axis points in the direction of the second eigenvector (minimum variance). The lengths of the axes are proportional to the eigenvalues.
+:::
+
+---
+
+**18. A covariance matrix has eigenvalues 100 and 2. What does this tell you about the shape of the data?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The data is very elongated in one direction (the first eigenvector direction), since $100 \gg 2$. Almost all the variance (100 out of 102 total) lies along a single direction. Projecting onto just the first eigenvector would preserve about 98% of the information.
+:::
+
+---
+
+## PCA: Step-by-Step Formulation
+
+Let's formalize the complete procedure one last time, using all the formulas you have studied. In this example we have 5 variables, but it works the same for any number.
+
+**Setup:** You have $n$ observations of 5 variables ($x_1, x_2, x_3, x_4, x_5$). Your goal is to reduce from 5 dimensions to 2.
+
+### Step 1: Construct the Data Matrix
+
+Arrange your data into a matrix $X$ with $n$ rows (observations) and 5 columns (variables):
+
+$$X = \begin{bmatrix} x_{1,1} & x_{1,2} & x_{1,3} & x_{1,4} & x_{1,5} \\ x_{2,1} & x_{2,2} & x_{2,3} & x_{2,4} & x_{2,5} \\ \vdots & \vdots & \vdots & \vdots & \vdots \\ x_{n,1} & x_{n,2} & x_{n,3} & x_{n,4} & x_{n,5} \end{bmatrix}_{n \times 5}$$
+
+### Step 2: Center the Data
+
+Calculate the mean of each column and subtract it:
+
+$$X_c = X - \mu$$
+
+where $\mu$ has the column averages repeated in every row. Now the data is centered around the origin.
+
+### Step 3: Compute the Covariance Matrix
+
+$$C = \frac{1}{n-1} X_c^T X_c$$
+
+This gives a $5 \times 5$ symmetric matrix containing all pairwise variances and covariances.
+
+### Step 4: Find Eigenvalues and Eigenvectors
+
+Solve $\det(C - \lambda I) = 0$ to get 5 eigenvalues $\lambda_1 \geq \lambda_2 \geq \lambda_3 \geq \lambda_4 \geq \lambda_5$, and their corresponding eigenvectors $v_1, v_2, v_3, v_4, v_5$.
+
+### Step 5: Choose the Top $k$ Components
+
+Since you want to reduce to 2 dimensions, keep only the top 2 eigenvectors (those with the largest eigenvalues). Discard the rest.
+
+### Step 6: Build the Projection Matrix
+
+Create a $5 \times 2$ matrix $V$ where each column is one of the chosen eigenvectors, normalized to unit length:
+
+$$V = \begin{bmatrix} \dfrac{v_1}{\|v_1\|} & \dfrac{v_2}{\|v_2\|} \end{bmatrix}_{5 \times 2}$$
+
+### Step 7: Project
+
+Multiply the centered data by the projection matrix:
+
+$$X_{\text{PCA}} = X_c \cdot V$$
+
+The result is an $n \times 2$ matrix. Same number of observations, but now only 2 features representing the projection onto the two principal components.
+
+::: {.callout-note appearance="minimal"}
+## Dimensions at Each Step
+
+| Step | Matrix | Size |
+|:---|:---|:---:|
+| Data | $X$ | $n \times 5$ |
+| Centered data | $X_c$ | $n \times 5$ |
+| Covariance matrix | $C$ | $5 \times 5$ |
+| Projection matrix | $V$ | $5 \times 2$ |
+| Final result | $X_{\text{PCA}}$ | $n \times 2$ |
+:::
+
+That's it. These are the complete operations needed to perform PCA for dimensionality reduction.
+
+### Review Questions {.unnumbered}
+
+**19. In the formulation above, why must the projection matrix $V$ have shape $5 \times 2$?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because the centered data $X_c$ has 5 columns (one per original feature), and you want the result to have 2 columns (one per principal component). Matrix multiplication $(n \times 5) \cdot (5 \times 2) = (n \times 2)$ gives exactly the right shape.
+:::
+
+---
+
+**20. If you wanted to reduce from 5 dimensions to 3 instead of 2, what would change?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+You would keep the top 3 eigenvectors instead of 2. The projection matrix $V$ would be $5 \times 3$ (three columns). The final result $X_{\text{PCA}}$ would be $n \times 3$.
+:::
+
+---
+
+## Application: Discrete Dynamical Systems
+
+Eigenvalues and eigenvectors appear in many places beyond PCA. One elegant application is modeling systems that evolve over time using **Markov chains**.
+
+### A Weather Model
+
+Suppose today is sunny. What are the chances that tomorrow will be sunny, cloudy, or rainy? Let's say we have the following probabilities:
+
+| If today is... | P(sunny tomorrow) | P(cloudy tomorrow) | P(rainy tomorrow) |
+|:---:|:---:|:---:|:---:|
+| Sunny | 0.8 | 0.15 | 0.05 |
+| Cloudy | 0.45 | 0.35 | 0.2 |
+| Rainy | 0.3 | 0.4 | 0.3 |
+
+We can arrange these into a **transition matrix** where each column represents "if today is this weather, what are the probabilities for tomorrow":
+
+$$T = \begin{bmatrix} 0.8 & 0.45 & 0.3 \\ 0.15 & 0.35 & 0.4 \\ 0.05 & 0.2 & 0.3 \end{bmatrix}$$
+
+Notice two properties: all entries are non-negative, and each column sums to 1. A matrix with these properties is called a **Markov matrix**.
+
+### Evolving the State
+
+The current weather is represented by a **state vector**. If today is cloudy:
+
+$$x_0 = \begin{bmatrix} 0 \\ 1 \\ 0 \end{bmatrix}$$
+
+To predict tomorrow's probabilities, multiply by the transition matrix:
+
+$$x_1 = T \cdot x_0 = \begin{bmatrix} 0.45 \\ 0.35 \\ 0.2 \end{bmatrix}$$
+
+Tomorrow there is a 45% chance of sun, 35% chance of clouds, and 20% chance of rain. To predict the day after:
+
+$$x_2 = T \cdot x_1 = \begin{bmatrix} 0.5575 \\ 0.2700 \\ 0.1725 \end{bmatrix}$$
+
+You can keep going: $x_3 = T \cdot x_2$, $x_4 = T \cdot x_3$, and so on.
+
+### Convergence to Equilibrium
+
+Something remarkable happens if you keep iterating:
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+T = np.array([[0.8, 0.45, 0.3],
+              [0.15, 0.35, 0.4],
+              [0.05, 0.2, 0.3]])
+
+x = np.array([0, 1, 0], dtype=float)
+states = [x.copy()]
+for i in range(15):
+    x = T @ x
+    states.append(x.copy())
+
+states = np.array(states)
+
+fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+ax.plot(states[:, 0], '-o', color='#CC7000', markersize=5, label='P(sunny)')
+ax.plot(states[:, 1], '-o', color='gray', markersize=5, label='P(cloudy)')
+ax.plot(states[:, 2], '-o', color='#4682B4', markersize=5, label='P(rainy)')
+
+ax.set_xlabel('Days ahead', fontsize=11)
+ax.set_ylabel('Probability', fontsize=11)
+ax.set_title('State vector converges to equilibrium', fontsize=12, color='gray')
+ax.legend(fontsize=11)
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xticks(range(0, 16))
+ax.set_ylim(0, 1)
+
+plt.tight_layout()
+plt.show()
+```
+
+The state vector stabilizes. After enough iterations, it barely changes from one step to the next. The system reaches an **equilibrium state**:
+
+$$x_{\infty} \approx \begin{bmatrix} 0.6667 \\ 0.2222 \\ 0.1111 \end{bmatrix}$$
+
+### Eigenvalue Connection
+
+At equilibrium, $T \cdot x_{\infty} = x_{\infty}$. This is exactly the eigenvector equation with $\lambda = 1$:
+
+$$T \cdot x_{\infty} = 1 \cdot x_{\infty}$$
+
+The equilibrium state is the **eigenvector of $T$ with eigenvalue 1**. This eigenvector tells you the long-run probabilities: in the long run, about 66.7% of days will be sunny, 22.2% cloudy, and 11.1% rainy, regardless of what today's weather is.
+
+This is not a coincidence. For any Markov matrix (columns are non-negative and sum to 1), there is always an eigenvalue equal to 1, and its eigenvector (normalized so entries sum to 1) gives the equilibrium distribution.
+
+### Review Questions {.unnumbered}
+
+**21. Why does a Markov matrix always have an eigenvalue of 1?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because the columns sum to 1. This means the vector $\begin{bmatrix}1\\1\\\vdots\\1\end{bmatrix}$ is a left eigenvector with eigenvalue 1 (multiplying from the left by this row vector gives the column sums, which are all 1). By a property of eigenvalues, if 1 is a left eigenvalue it is also a right eigenvalue, so there exists a (right) eigenvector with eigenvalue 1.
+:::
+
+---
+
+**22. If the transition matrix has eigenvalue 1 with eigenvector $(2, 1, 0.5)$, what is the equilibrium probability vector?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Normalize so the entries sum to 1: $2 + 1 + 0.5 = 3.5$. The equilibrium vector is $\frac{1}{3.5}(2, 1, 0.5) = (0.571, 0.286, 0.143)$.
+:::

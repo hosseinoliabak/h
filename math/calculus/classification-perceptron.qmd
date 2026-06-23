@@ -1,0 +1,445 @@
+---
+title: "Classification with a Perceptron"
+date: "2026-06-15"
+difficulty: 3
+order: 14
+categories: [calculus]
+---
+
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+We have already seen how a perceptron solves regression problems. The output was a continuous number (a price, a sales figure, etc.). But a perceptron can also solve **classification** problems, specifically binary classification. The only change we need to make is to add an **activation function** at the output. In this page, we will see exactly how that works.
+
+## From Regression to Classification
+
+In regression, the perceptron computed a linear combination and output it directly. Recall the general formula from the [Optimization in Neural Networks](optimization-in-neural-networks.qmd) page.
+
+$$\hat{y} = w_1 x_1 + w_2 x_2 + \cdots + w_n x_n + b$$
+
+Or in compact notation, $\hat{y} = \mathbf{w} \cdot \mathbf{x} + b$ (if you need a refresher on [the dot product](../linear-algebra/vector-algebra.qmd#dot-product), see the linear algebra notes). That worked because we wanted a continuous prediction (a price, a sales figure). But for classification, we want the output to represent a probability, a number between 0 and 1 that tells us how confident the model is about the class.
+
+The solution is to pass the linear combination through an activation function that squishes the entire number line into the interval $[0, 1]$.
+
+## A Motivating Example: Alien Sentiment Analysis
+
+Imagine you have encountered an alien civilization. They only have two words in their language: **aack** and **beep**. You listen to four sentences and take note of the alien's mood when saying each one.
+
+| Sentence | aack count ($x_1$) | beep count ($x_2$) | Mood |
+|----------|---------------------|---------------------|------|
+| Aack aack aack! | 3                   | 0                   | Happy (1) |
+| Beep beep! | 0                   | 2                   | Sad (0) |
+| Aack beep beep beep! | 1                   | 3                   | Sad (0) |
+| Aack beep aack! | 2                   | 1                   | Happy (1) |
+
+: {tbl-colwidths="[20,13,13,14]"}
+
+The goal is to build a model that can predict the mood (happy or sad) for new sentences based on the word counts.
+
+## Plotting the Data
+
+If we plot these points with $x_1$ (aack count) on the horizontal axis and $x_2$ (beep count) on the vertical axis, a pattern emerges. The happy points tend to cluster in the bottom-right (more aack, less beep) and the sad points cluster in the top-left (more beep, less aack). A good classifier should find a line that separates these two regions.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Data points
+aack = np.array([3, 0, 1, 2])
+beep = np.array([0, 2, 3, 1])
+mood = np.array([1, 0, 0, 1])  # 1 = happy, 0 = sad
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+# --- Left plot: emoji markers ---
+ax = axes[0]
+for i in range(len(aack)):
+    emoji = '😊' if mood[i] == 1 else '😢'
+    ax.text(aack[i], beep[i], emoji, fontsize=22, ha='center', va='center',
+            zorder=10, bbox=dict(boxstyle='round,pad=0.1', fc='white', ec='none'))
+
+ax.set_xlabel(r'$x_1$ (aack count)', fontsize=12)
+ax.set_ylabel(r'$x_2$ (beep count)', fontsize=12)
+ax.set_title('Alien Sentiment Data', fontsize=12, color='gray')
+ax.set_xticks(range(0, 4))
+ax.set_yticks(range(0, 4))
+ax.set_xlim(-0.5, 3.5)
+ax.set_ylim(-0.5, 3.5)
+ax.set_aspect('equal')
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.grid(linestyle='--', alpha=0.4)
+
+# --- Right plot: colored dots with decision boundary ---
+ax = axes[1]
+happy = mood == 1
+sad = mood == 0
+
+ax.scatter(aack[happy], beep[happy], color='#2E8B57', s=120, zorder=5, label='Happy')
+ax.scatter(aack[sad], beep[sad], color='#CC0000', s=120, zorder=5, label='Sad')
+
+# Decision boundary from a trained linear classifier
+from sklearn.linear_model import Perceptron as SkPerceptron
+clf = SkPerceptron(max_iter=1000, random_state=0)
+clf.fit(np.column_stack([aack, beep]), mood)
+w1, w2 = clf.coef_[0]
+b_coef = clf.intercept_[0]
+# Line: w1*x1 + w2*x2 + b = 0 => x2 = -(w1*x1 + b) / w2
+x_line = np.linspace(-0.5, 3.5, 100)
+y_line = -(w1 * x_line + b_coef) / w2
+ax.plot(x_line, y_line, color='#CC0000', linewidth=2, linestyle='-', label='Decision boundary')
+
+# Shade regions
+ax.fill_between(x_line, np.clip(y_line, -0.5, 3.5), -0.5, alpha=0.05, color='#2E8B57')
+ax.fill_between(x_line, np.clip(y_line, -0.5, 3.5), 3.5, alpha=0.05, color='#CC0000')
+
+ax.set_xlabel(r'$x_1$ (aack count)', fontsize=12)
+ax.set_ylabel(r'$x_2$ (beep count)', fontsize=12)
+ax.set_title('Classification Boundary', fontsize=12, color='gray')
+ax.set_xticks(range(0, 4))
+ax.set_yticks(range(0, 4))
+ax.set_xlim(-0.5, 3.5)
+ax.set_ylim(-0.5, 3.5)
+ax.set_aspect('equal')
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+ax.grid(linestyle='--', alpha=0.4)
+ax.legend(fontsize=10)
+
+plt.tight_layout()
+plt.show()
+```
+
+## The Classification Perceptron
+
+The architecture looks almost identical to the regression perceptron. We have inputs $x_1$ and $x_2$, weights $w_1$ and $w_2$, and a bias $b$. The difference is what happens inside the node.
+
+```{=html}
+<div style="text-align:center;">
+<svg xmlns="http://www.w3.org/2000/svg" style="max-width:100%;max-height:196px;" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="736px" viewBox="-0.5 -0.5 736 196"><defs/><g><g data-cell-id="0"><g data-cell-id="1"><g data-cell-id="GUtJScHUfDq8wf_AJo13-5"><g transform="translate(0.5,0.5)"><path d="M 541 85 L 581 85" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-2"><g transform="translate(0.5,0.5)"><path d="M 371 35 Q 541 35 541 85 Q 541 135 371 135 Z" fill="#ffffff" stroke="#000000" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(#ffffff, var(--ge-dark-color, #121212)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 168px; height: 1px; padding-top: 85px; margin-left: 372px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-weight: bold; font-style: italic; white-space: normal; word-wrap: normal; ">σ(z)</div></div></div></foreignObject><text x="456" y="91" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-weight="bold" font-style="italic">σ(z)</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-3"><g transform="translate(0.5,0.5)"><rect x="191" y="35" width="180" height="100" fill="#ffffff" stroke="#000000" pointer-events="all" style="fill: light-dark(#ffffff, var(--ge-dark-color, #121212)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 178px; height: 1px; padding-top: 85px; margin-left: 192px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: normal; word-wrap: normal; "><b>z</b> = x<sub>1</sub>w<sub>1</sub> + x<sub>2</sub>w<sub>2</sub> + b</div></div></div></foreignObject><text x="281" y="91" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">z = x1w1 + x2w2 + b</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-4"><g transform="translate(0.5,0.5)"><ellipse cx="613.5" cy="85" rx="32.5" ry="32.5" fill="#ffffff" stroke="#000000" pointer-events="all" style="fill: light-dark(#ffffff, var(--ge-dark-color, #121212)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 63px; height: 1px; padding-top: 85px; margin-left: 582px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">ŷ</div></div></div></foreignObject><text x="613" y="91" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle">ŷ</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-8"><g transform="translate(0.5,0.5)"><path d="M 119.48 33.57 L 191 60" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 36px; margin-left: 161px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: nowrap; ">w<sub>1</sub></div></div></div></foreignObject><text x="161" y="42" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">w1</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-7"><g transform="translate(0.5,0.5)"><ellipse cx="96" cy="25" rx="25" ry="25" fill="#ffffff" stroke="#000000" pointer-events="all" style="fill: light-dark(#ffffff, var(--ge-dark-color, #121212)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 48px; height: 1px; padding-top: 25px; margin-left: 72px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: normal; word-wrap: normal; ">x<sub>1</sub></div></div></div></foreignObject><text x="96" y="31" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">x1</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-9"><g transform="translate(0.5,0.5)"><ellipse cx="96" cy="85" rx="25" ry="25" fill="#ffffff" stroke="#000000" pointer-events="all" style="fill: light-dark(#ffffff, var(--ge-dark-color, #121212)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 48px; height: 1px; padding-top: 85px; margin-left: 72px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: normal; word-wrap: normal; ">x<sub>2</sub></div></div></div></foreignObject><text x="96" y="91" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">x2</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-11"><g transform="translate(0.5,0.5)"><path d="M 121 85 L 191 85" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 75px; margin-left: 160px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: nowrap; ">w<sub>2</sub></div></div></div></foreignObject><text x="160" y="81" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">w2</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-12"><g transform="translate(0.5,0.5)"><ellipse cx="96" cy="145" rx="25" ry="25" fill="#ffffff" stroke="#000000" stroke-dasharray="3 3" pointer-events="all" style="fill: light-dark(#ffffff, var(--ge-dark-color, #121212)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 48px; height: 1px; padding-top: 145px; margin-left: 72px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: normal; word-wrap: normal; ">1</div></div></div></foreignObject><text x="96" y="151" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">1</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-13"><g transform="translate(0.5,0.5)"><path d="M 119.48 136.43 L 191 110" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 109px; margin-left: 159px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: nowrap; ">b</div></div></div></foreignObject><text x="159" y="115" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">b</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-15"><g transform="translate(0.5,0.5)"><ellipse cx="691" cy="43.75" rx="20" ry="20" fill="#d5e8d4" stroke="#82b366" stroke-width="2" pointer-events="all" style="fill: rgb(213, 232, 212); stroke: rgb(130, 179, 102);"/><ellipse cx="684.33" cy="37.08" rx="2" ry="2" fill="#666666" stroke="#666666" stroke-width="2.67" pointer-events="all" style="fill: rgb(102, 102, 102); stroke: rgb(102, 102, 102);"/><ellipse cx="697.67" cy="37.08" rx="2" ry="2" fill="#666666" stroke="#666666" stroke-width="2.67" pointer-events="all" style="fill: rgb(102, 102, 102); stroke: rgb(102, 102, 102);"/><path d="M 701 46.42 C 701 51.94 696.52 56.42 691 56.42 C 685.48 56.42 681 51.94 681 46.42 L 681.91 46.42 C 681.91 49.66 683.64 52.67 686.45 54.29 C 689.27 55.91 692.73 55.91 695.55 54.29 C 698.36 52.67 700.09 49.66 700.09 46.42 Z" fill="#000000" stroke="#666666" stroke-width="1.33" stroke-miterlimit="10" pointer-events="all" style="fill: rgb(0, 0, 0); stroke: rgb(102, 102, 102);"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 42px; height: 1px; padding-top: 44px; margin-left: 710px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: normal; word-wrap: normal; ">1</div></div></div></foreignObject><text x="731" y="50" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">1</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-16"><g transform="translate(0.5,0.5)"><ellipse cx="691" cy="126.25" rx="20" ry="20" fill="#f8cecc" stroke="#b85450" stroke-width="2" pointer-events="all" style="fill: rgb(248, 206, 204); stroke: rgb(184, 84, 80);"/><ellipse cx="684.33" cy="119.58" rx="2" ry="2" fill="#666666" stroke="#666666" stroke-width="2.67" pointer-events="all" style="fill: rgb(102, 102, 102); stroke: rgb(102, 102, 102);"/><ellipse cx="697.67" cy="119.58" rx="2" ry="2" fill="#666666" stroke="#666666" stroke-width="2.67" pointer-events="all" style="fill: rgb(102, 102, 102); stroke: rgb(102, 102, 102);"/><path d="M 681 135.58 C 681 130.06 685.48 125.58 691 125.58 C 696.52 125.58 701 130.06 701 135.58 L 700.09 135.58 C 700.09 132.34 698.36 129.33 695.55 127.71 C 692.73 126.09 689.27 126.09 686.45 127.71 C 683.64 129.33 681.91 132.34 681.91 135.58 Z" fill="#000000" stroke="#666666" stroke-width="1.33" stroke-miterlimit="10" pointer-events="all" style="fill: rgb(0, 0, 0); stroke: rgb(102, 102, 102);"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 42px; height: 1px; padding-top: 126px; margin-left: 710px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: normal; word-wrap: normal; ">0</div></div></div></foreignObject><text x="731" y="132" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">0</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-18"><g transform="translate(0.5,0.5)"><rect x="191" y="145" width="180" height="30" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 178px; height: 1px; padding-top: 160px; margin-left: 192px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">Continuous Number</div></div></div></foreignObject><text x="281" y="166" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle">Continuous Number</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-19"><g transform="translate(0.5,0.5)"><rect x="371" y="145" width="170" height="50" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 168px; height: 1px; padding-top: 170px; margin-left: 372px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">Activation Function<div>Sigmoid Function</div></div></div></div></foreignObject><text x="456" y="176" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle">Activation Functi...</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-20"><g transform="translate(0.5,0.5)"><rect x="1" y="10" width="40" height="30" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 38px; height: 1px; padding-top: 25px; margin-left: 2px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">Aack</div></div></div></foreignObject><text x="21" y="31" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle">Aack</text></switch></g></g></g><g data-cell-id="GUtJScHUfDq8wf_AJo13-21"><g transform="translate(0.5,0.5)"><rect x="1" y="70" width="40" height="30" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 38px; height: 1px; padding-top: 85px; margin-left: 2px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">Beep</div></div></div></foreignObject><text x="21" y="91" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle">Beep</text></switch></g></g></g></g></g></g><switch><g requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"/><a transform="translate(0,-5)" xlink:href="https://www.drawio.com/doc/faq/svg-export-text-problems" target="_blank"><text text-anchor="middle" font-size="10px" x="50%" y="100%">Text is not SVG - cannot display</text></a></switch></svg>
+</div>
+```
+
+### Step 1: Linear Combination
+
+The perceptron first computes a continuous number $z$ (the weighted sum of the inputs). This number can be anything on the real number line. Then it passes $z$ through an **activation function** (the sigmoid function), which squishes the output into the range 0 to 1.
+
+Just like before, we compute a weighted sum (a [dot product](../linear-algebra/vector-algebra.qmd#dot-product) between the weight vector and the input vector, plus a bias).
+
+$$z = w_1 x_1 + w_2 x_2 + b$$
+
+The weights encode the importance of each feature. If the word "aack" is strongly correlated with happiness, then $w_1$ will be a large positive number. If "beep" is correlated with sadness (inversely correlated with happiness), then $w_2$ will be a negative number.
+
+The output $z$ is a continuous value. It can be any real number: $-1000$, $+7000$, $0.5$, anything.
+
+### Step 2: The Sigmoid Activation Function
+
+We cannot use $z$ directly as our prediction because we need a number between 0 and 1. This is where the **sigmoid function** comes in. It takes any real number and maps it to the interval $(0, 1)$.
+
+$$\sigma(z) = \frac{1}{1 + e^{-z}}$$
+
+The final prediction is:
+
+$$\hat{y} = \sigma(z) = \frac{1}{1 + e^{-z}}$$
+
+### Interpreting the Output
+
+The sigmoid output has a natural interpretation as a probability.
+
+- $\hat{y} = 0.9$ means the model is quite confident the sentence is happy.
+- $\hat{y} = 0.5$ means the model is uncertain (equally likely happy or sad).
+- $\hat{y} = 0.01$ means the model is quite confident the sentence is sad.
+
+## What the Weights Represent Geometrically
+
+The linear combination $z = w_1 x_1 + w_2 x_2 + b = 0$ defines a **decision boundary**, a line in the feature space. On one side of this line, $z > 0$ and the sigmoid outputs values greater than 0.5 (predicting happy). On the other side, $z < 0$ and the sigmoid outputs values less than 0.5 (predicting sad).
+
+The weights and bias together determine the position and orientation of this dividing line. Training the perceptron means finding the line that best separates the happy and sad regions.
+
+## Sigmoid Function In Detail
+
+Now let us look at the sigmoid more closely and graph it. Later, we will also compute its derivative, which turns out to be remarkably simple and is one of the reasons the sigmoid is so popular in machine learning.
+
+The sigmoid function takes any real number and maps it to the interval $(0, 1)$.
+
+$$\sigma(z) = \frac{1}{1 + e^{-z}}$$
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+z = np.linspace(-8, 8, 300)
+sigma = 1 / (1 + np.exp(-z))
+
+fig, ax = plt.subplots(figsize=(8, 4.5))
+ax.plot(z, sigma, color='#4682B4', linewidth=2.5)
+
+# Asymptotes
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axhline(1, color='#CC0000', linewidth=1, linestyle='--', alpha=0.6, label='y = 1')
+ax.axhline(0, color='#CC0000', linewidth=1, linestyle='--', alpha=0.6, label='y = 0')
+ax.axvline(0, color='black', linewidth=0.8)
+
+# Key point: sigma(0) = 0.5
+ax.plot(0, 0.5, 'o', color='#2E8B57', markersize=8, zorder=5)
+ax.annotate(r'$\sigma(0) = \frac{1}{2}$', xy=(0, 0.5), xytext=(1.5, 0.38),
+            fontsize=12, color='#2E8B57',
+            arrowprops=dict(arrowstyle='->', color='#2E8B57', lw=1.2))
+
+ax.set_xlabel('z (input)', fontsize=12)
+ax.set_ylabel(r'$\sigma(z)$ (output)', fontsize=12)
+ax.set_title('Sigmoid Function', fontsize=12, color='gray')
+ax.set_xlim(-8, 8)
+ax.set_ylim(-0.1, 1.1)
+ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
+ax.grid(linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+The horizontal axis is the input $z$ (which can be any real number) and the vertical axis is the output $\sigma(z)$ (which is always between 0 and 1).
+
+A few key observations about the graph.
+
+- The sigmoid has horizontal asymptotes at 0 and 1. It never actually reaches these values, but it gets arbitrarily close.
+- $\sigma(0) = \frac{1}{2}$. You can verify this by plugging in: $\frac{1}{1 + e^0} = \frac{1}{1 + 1} = \frac{1}{2}$.
+- For large positive inputs (like $z = 1000$), $\sigma(z)$ is very close to 1.
+- For large negative inputs (like $z = -1000$), $\sigma(z)$ is very close to 0.
+
+### Why the Derivative Matters
+
+In machine learning, we train models using gradient descent, which requires computing derivatives. If the activation function has a messy derivative, the math and the code become painful. The sigmoid has an exceptionally clean derivative, which makes it a natural choice.
+
+## Computing the Derivative
+
+We want to find $\frac{d}{dz}\sigma(z)$. Let us work through it step by step using the [chain rule](derivative-rules.qmd#chain-rule).
+
+#### Rewriting for the Chain Rule
+
+First, rewrite the sigmoid in a form that is easier to differentiate.
+
+$$\sigma(z) = (1 + e^{-z})^{-1}$$
+
+#### Applying the Chain Rule
+
+The chain rule says: take the derivative of the outer function, then multiply by the derivative of the inner function.
+
+$$\frac{d}{dz}\sigma(z) = -1 \cdot (1 + e^{-z})^{-2} \cdot \frac{d}{dz}(1 + e^{-z})$$
+
+Now compute the derivative of the inside. The derivative of 1 is 0. The derivative of $e^{-z}$ is $e^{-z} \cdot (-1)$ (chain rule again). So:
+
+$$\frac{d}{dz}(1 + e^{-z}) = 0 + e^{-z} \cdot (-1) = -e^{-z}$$
+
+#### Simplifying
+
+Plugging back in:
+
+$$\frac{d}{dz}\sigma(z) = -1 \cdot (1 + e^{-z})^{-2} \cdot (-e^{-z})$$
+
+The two negatives cancel:
+
+$$\frac{d}{dz}\sigma(z) = \frac{e^{-z}}{(1 + e^{-z})^2}$$
+
+#### The Elegant Trick
+
+This is where it gets beautiful. We add and subtract 1 in the numerator:
+
+$$\frac{e^{-z}}{(1 + e^{-z})^2} = \frac{(1 + e^{-z}) - 1}{(1 + e^{-z})^2}$$
+
+Split into two fractions:
+
+$$= \frac{1 + e^{-z}}{(1 + e^{-z})^2} - \frac{1}{(1 + e^{-z})^2}$$
+
+The first fraction simplifies (cancel one factor from top and bottom):
+
+$$= \frac{1}{1 + e^{-z}} - \frac{1}{(1 + e^{-z})^2}$$
+
+Factor out $\frac{1}{1 + e^{-z}}$:
+
+$$= \frac{1}{1 + e^{-z}} \left(1 - \frac{1}{1 + e^{-z}}\right)$$
+
+### Final Result
+
+Recognize that $\frac{1}{1 + e^{-z}}$ is just $\sigma(z)$. So:
+
+$$\boxed{\frac{d}{dz}\sigma(z) = \sigma(z) \cdot (1 - \sigma(z))}$$
+
+The derivative of the sigmoid is the sigmoid times one minus the sigmoid. That is it.
+
+```{python}
+#| echo: false
+#| fig-align: center
+
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+z = np.linspace(-8, 8, 300)
+sigma = 1 / (1 + np.exp(-z))
+dsigma = sigma * (1 - sigma)
+
+fig, ax = plt.subplots(figsize=(8, 4.5))
+ax.plot(z, sigma, color='#4682B4', linewidth=2.5, label=r'$\sigma(z)$')
+ax.plot(z, dsigma, color='#CC7000', linewidth=2.5, label=r"$\sigma'(z) = \sigma(z)(1 - \sigma(z))$")
+
+ax.axhline(0, color='black', linewidth=0.8)
+ax.axvline(0, color='black', linewidth=0.8)
+
+ax.set_xlabel('z', fontsize=12)
+ax.set_ylabel('Output', fontsize=12)
+ax.set_title('Sigmoid and Its Derivative', fontsize=12, color='gray')
+ax.set_xlim(-8, 8)
+ax.set_ylim(-0.1, 1.1)
+ax.legend(fontsize=12)
+ax.grid(linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+Notice that the derivative (orange curve) peaks at $z = 0$ where $\sigma(0) = \frac{1}{2}$, giving a maximum derivative value of $\frac{1}{2} \cdot \frac{1}{2} = \frac{1}{4}$. The derivative is largest where the sigmoid is steepest, which makes sense geometrically.
+
+## Training the Classification Perceptron
+
+When we train a classification perceptron with gradient descent, we will need to differentiate the sigmoid as part of the chain rule. Instead of dealing with a complex fraction every time, we can simply write:
+
+$$\sigma'(z) = \sigma(z)(1 - \sigma(z))$$
+
+This means that once we have computed the forward pass (which gives us $\sigma(z)$), the derivative is essentially free. We already have the value, so computing the gradient requires just one multiplication and one subtraction. This efficiency is one reason the sigmoid was the default activation function in neural networks for decades.
+
+Now let us see how the full training process works.
+
+### A Worked Example
+
+Take the sentence "Aack beep beep beep" as an example. It contains the word "aack" one time ($x_1 = 1$) and the word "beep" three times ($x_2 = 3$). Suppose we are in the middle of training and the current weights are $w_1 = 4.5$, $w_2 = 1.5$, and the bias $b = 2$.
+
+The perceptron multiplies the inputs by the weights, sums them up, and applies the sigmoid:
+
+$$z = x_1 w_1 + x_2 w_2 + b = (1)(4.5) + (3)(1.5) + 2 = 11$$
+
+$$\hat{y} = \sigma(11) \approx 0.99998$$
+
+The model predicts this sentence is almost certainly happy (close to 1). But the actual label is $y = 0$ (the sentence is sad). So the model is very wrong, and we need to update the weights to reduce this error.
+
+### Why Not Squared Error?
+
+You might think we could use the same loss functions from regression: $\hat{y} - y$, $(\hat{y} - y)^2$, or $\frac{1}{2}(\hat{y} - y)^2$. Those work, but for classification, there is a better choice called the **log loss** (also known as binary cross-entropy). We already encountered it in the [Log Loss](log-loss.qmd) section when we were finding the ideal coin to fit a dataset.
+
+### Log Loss
+
+The log loss function is:
+
+$$L(y, \hat{y}) = -y \ln(\hat{y}) - (1 - y)\ln(1 - \hat{y})$$
+
+This is exactly the loss function from the [coin-flipping problem](log-loss.qmd#coin-flip-game). It has two key properties.
+
+- If $y = 0$, the loss simplifies to $-\ln(1 - \hat{y})$. This is small when $\hat{y}$ is close to 0 (correct prediction) and large when $\hat{y}$ is close to 1 (wrong prediction).
+- If $y = 1$, the loss simplifies to $-\ln(\hat{y})$. This is small when $\hat{y}$ is close to 1 (correct) and large when $\hat{y}$ is close to 0 (wrong).
+
+In both cases, $L(y, \hat{y})$ is large when $\hat{y}$ is far from $y$ and small when they are close. That is exactly what we want from a loss function.
+
+```{=html}
+<div style="text-align:center;">
+<svg xmlns="http://www.w3.org/2000/svg" style="max-width:100%;max-height:350px;" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="532px" viewBox="-0.5 -0.5 532 171"><defs/><g><g data-cell-id="qOaStLOFCxH_fQFmIALj-0"><g data-cell-id="qOaStLOFCxH_fQFmIALj-1"><g data-cell-id="qOaStLOFCxH_fQFmIALj-2"><g transform="translate(0.5,0.5)"><path d="M 301 85 L 341 85" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g></g><g data-cell-id="qOaStLOFCxH_fQFmIALj-5"><g transform="translate(0.5,0.5)"><ellipse cx="373.5" cy="85" rx="32.5" ry="32.5" fill="#ffffff" stroke="#000000" pointer-events="all" style="fill: light-dark(#ffffff, var(--ge-dark-color, #121212)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 63px; height: 1px; padding-top: 85px; margin-left: 342px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">ŷ</div></div></div></foreignObject><text x="374" y="91" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle">ŷ</text></switch></g></g></g><g data-cell-id="qOaStLOFCxH_fQFmIALj-6"><g transform="translate(0.5,0.5)"><path d="M 119.59 33.28 L 201 62.5" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 37px; margin-left: 166px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: nowrap; ">w<sub>1</sub></div></div></div></foreignObject><text x="166" y="43" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">w1</text></switch></g></g></g><g data-cell-id="qOaStLOFCxH_fQFmIALj-7"><g transform="translate(0.5,0.5)"><ellipse cx="96" cy="25" rx="25" ry="25" fill="#ffffff" stroke="#000000" pointer-events="all" style="fill: light-dark(#ffffff, var(--ge-dark-color, #121212)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 48px; height: 1px; padding-top: 25px; margin-left: 72px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: normal; word-wrap: normal; ">x<sub>1</sub></div></div></div></foreignObject><text x="96" y="31" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">x1</text></switch></g></g></g><g data-cell-id="qOaStLOFCxH_fQFmIALj-8"><g transform="translate(0.5,0.5)"><ellipse cx="96" cy="85" rx="25" ry="25" fill="#ffffff" stroke="#000000" pointer-events="all" style="fill: light-dark(#ffffff, var(--ge-dark-color, #121212)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 48px; height: 1px; padding-top: 85px; margin-left: 72px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: normal; word-wrap: normal; ">x<sub>2</sub></div></div></div></foreignObject><text x="96" y="91" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">x2</text></switch></g></g></g><g data-cell-id="qOaStLOFCxH_fQFmIALj-9"><g transform="translate(0.5,0.5)"><path d="M 121 85 L 201 85" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 75px; margin-left: 166px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: nowrap; ">w<sub>2</sub></div></div></div></foreignObject><text x="166" y="81" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">w2</text></switch></g></g></g><g data-cell-id="qOaStLOFCxH_fQFmIALj-10"><g transform="translate(0.5,0.5)"><ellipse cx="96" cy="145" rx="25" ry="25" fill="#ffffff" stroke="#000000" stroke-dasharray="3 3" pointer-events="all" style="fill: light-dark(#ffffff, var(--ge-dark-color, #121212)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 48px; height: 1px; padding-top: 145px; margin-left: 72px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: normal; word-wrap: normal; ">1</div></div></div></foreignObject><text x="96" y="151" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">1</text></switch></g></g></g><g data-cell-id="qOaStLOFCxH_fQFmIALj-11"><g transform="translate(0.5,0.5)"><path d="M 119.59 136.72 L 201 107.5" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 108px; margin-left: 161px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: nowrap; ">b</div></div></div></foreignObject><text x="161" y="114" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">b</text></switch></g></g></g><g data-cell-id="qOaStLOFCxH_fQFmIALj-12"><g transform="translate(0.5,0.5)"><ellipse cx="451" cy="25" rx="20" ry="20" fill="#d5e8d4" stroke="#82b366" stroke-width="2" pointer-events="all" style="fill: rgb(213, 232, 212); stroke: rgb(130, 179, 102);"/><ellipse cx="444.33" cy="18.33" rx="2" ry="2" fill="#666666" stroke="#666666" stroke-width="2.67" pointer-events="all" style="fill: rgb(102, 102, 102); stroke: rgb(102, 102, 102);"/><ellipse cx="457.67" cy="18.33" rx="2" ry="2" fill="#666666" stroke="#666666" stroke-width="2.67" pointer-events="all" style="fill: rgb(102, 102, 102); stroke: rgb(102, 102, 102);"/><path d="M 461 27.67 C 461 33.19 456.52 37.67 451 37.67 C 445.48 37.67 441 33.19 441 27.67 L 441.91 27.67 C 441.91 30.91 443.64 33.92 446.45 35.54 C 449.27 37.16 452.73 37.16 455.55 35.54 C 458.36 33.92 460.09 30.91 460.09 27.67 Z" fill="#000000" stroke="#666666" stroke-width="1.33" stroke-miterlimit="10" pointer-events="all" style="fill: rgb(0, 0, 0); stroke: rgb(102, 102, 102);"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 42px; height: 1px; padding-top: 25px; margin-left: 470px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: normal; word-wrap: normal; ">1</div></div></div></foreignObject><text x="491" y="31" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">1</text></switch></g></g></g><g data-cell-id="qOaStLOFCxH_fQFmIALj-13"><g transform="translate(0.5,0.5)"><ellipse cx="451" cy="145" rx="20" ry="20" fill="#f8cecc" stroke="#b85450" stroke-width="2" pointer-events="all" style="fill: rgb(248, 206, 204); stroke: rgb(184, 84, 80);"/><ellipse cx="444.33" cy="138.33" rx="2" ry="2" fill="#666666" stroke="#666666" stroke-width="2.67" pointer-events="all" style="fill: rgb(102, 102, 102); stroke: rgb(102, 102, 102);"/><ellipse cx="457.67" cy="138.33" rx="2" ry="2" fill="#666666" stroke="#666666" stroke-width="2.67" pointer-events="all" style="fill: rgb(102, 102, 102); stroke: rgb(102, 102, 102);"/><path d="M 441 154.33 C 441 148.81 445.48 144.33 451 144.33 C 456.52 144.33 461 148.81 461 154.33 L 460.09 154.33 C 460.09 151.09 458.36 148.08 455.55 146.46 C 452.73 144.84 449.27 144.84 446.45 146.46 C 443.64 148.08 441.91 151.09 441.91 154.33 Z" fill="#000000" stroke="#666666" stroke-width="1.33" stroke-miterlimit="10" pointer-events="all" style="fill: rgb(0, 0, 0); stroke: rgb(102, 102, 102);"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 42px; height: 1px; padding-top: 145px; margin-left: 470px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-style: italic; white-space: normal; word-wrap: normal; ">0</div></div></div></foreignObject><text x="491" y="151" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-style="italic">0</text></switch></g></g></g><g data-cell-id="qOaStLOFCxH_fQFmIALj-16"><g transform="translate(0.5,0.5)"><rect x="1" y="10" width="40" height="30" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 38px; height: 1px; padding-top: 25px; margin-left: 2px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">Aack</div></div></div></foreignObject><text x="21" y="31" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle">Aack</text></switch></g></g></g><g data-cell-id="qOaStLOFCxH_fQFmIALj-17"><g transform="translate(0.5,0.5)"><rect x="1" y="70" width="40" height="30" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 38px; height: 1px; padding-top: 85px; margin-left: 2px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">Beep</div></div></div></foreignObject><text x="21" y="91" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle">Beep</text></switch></g></g></g><g data-cell-id="rbg2yFDaZZgA1MBLtSTj-8"><g transform="translate(0.5,0.5)"/><g data-cell-id="rbg2yFDaZZgA1MBLtSTj-3"><g transform="translate(0.5,0.5)"><rect x="201" y="40" width="100" height="90" rx="38.7" ry="38.7" fill="#ffffff" stroke="#000000" pointer-events="all" style="fill: light-dark(#ffffff, var(--ge-dark-color, #121212)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g></g><g data-cell-id="rbg2yFDaZZgA1MBLtSTj-5"><g transform="translate(0.5,0.5)"><path d="M 251 130 L 251 40" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g></g><g data-cell-id="rbg2yFDaZZgA1MBLtSTj-6"><g transform="translate(0.5,0.5)"><rect x="251" y="70" width="50" height="30" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 48px; height: 1px; padding-top: 85px; margin-left: 252px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Helvetica; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; "><span style="font-family: Garamond; font-style: italic; font-weight: 700;">σ(z)</span></div></div></div></foreignObject><text x="276" y="91" fill="light-dark(#000000, #ffffff)" font-family="Helvetica" font-size="20px" text-anchor="middle">σ(z)</text></switch></g></g></g><g data-cell-id="rbg2yFDaZZgA1MBLtSTj-7"><g transform="translate(0.5,0.5)"><rect x="201" y="70" width="50" height="30" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 48px; height: 1px; padding-top: 85px; margin-left: 202px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; "><div style="display: inline-block; font-size: 20px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-weight: bold; font-style: italic; white-space: normal; word-wrap: normal; ">z</div></div></div></foreignObject><text x="226" y="91" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="20px" text-anchor="middle" font-weight="bold" font-style="italic">z</text></switch></g></g></g></g><g data-cell-id="rbg2yFDaZZgA1MBLtSTj-9"><g transform="translate(0.5,0.5)"><path d="M 511 138.63 L 511 31.37" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/><path d="M 511 143.88 L 507.5 136.88 L 511 138.63 L 514.5 136.88 Z" fill="#000000" stroke="#000000" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(0, 0, 0), rgb(255, 255, 255)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/><path d="M 511 26.12 L 514.5 33.12 L 511 31.37 L 507.5 33.12 Z" fill="#000000" stroke="#000000" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(0, 0, 0), rgb(255, 255, 255)); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 85px; margin-left: 511px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 16px; font-family: Garamond; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-weight: bold; font-style: italic; background-color: light-dark(#ffffff, var(--ge-dark-color, #121212)); white-space: nowrap; ">L(y, ŷ)</div></div></div></foreignObject><text x="511" y="90" fill="light-dark(#000000, #ffffff)" font-family="Garamond" font-size="16px" text-anchor="middle" font-weight="bold" font-style="italic">L(y, ŷ)</text></switch></g></g></g></g></g></g><switch><g requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"/><a transform="translate(0,-5)" xlink:href="https://www.drawio.com/doc/faq/svg-export-text-problems" target="_blank"><text text-anchor="middle" font-size="10px" x="50%" y="100%">Text is not SVG - cannot display</text></a></switch></svg>
+</div>
+```
+
+::: {.callout-note}
+There are several reasons to prefer log loss over squared error for classification. One is that the math works out cleanly (as we will see shortly). Another is that log loss has a probabilistic interpretation. Since $\hat{y}$ represents a probability, log loss measures how "surprised" we are by the true label given our prediction. This connects classification directly to information theory and maximum likelihood estimation.
+:::
+
+### Gradient Descent Update Rules
+
+The goal is to find the weights $w_1$, $w_2$, and $b$ that minimize the log loss. We use gradient descent, just like we did for regression. The update formulas are:
+
+$$w_1 \leftarrow w_1 - \alpha \frac{\partial L}{\partial w_1}$$
+
+$$w_2 \leftarrow w_2 - \alpha \frac{\partial L}{\partial w_2}$$
+
+$$b \leftarrow b - \alpha \frac{\partial L}{\partial b}$$
+
+We start with arbitrary (random) values for the weights and bias, compute the partial derivatives, update, and repeat.
+
+## Computing the Gradients
+
+We need to find $\frac{\partial L}{\partial w_1}$, $\frac{\partial L}{\partial w_2}$, and $\frac{\partial L}{\partial b}$. Let us focus on $w_1$ first. The key question is: how does $w_1$ affect the loss $L$?
+
+The answer involves a chain of dependencies. The weight $w_1$ affects $\hat{y}$ (through the summation and sigmoid), and $\hat{y}$ affects $L$ (through the log loss formula). By the chain rule:
+
+$$\frac{\partial L}{\partial w_1} = \frac{\partial L}{\partial \hat{y}} \cdot \frac{\partial \hat{y}}{\partial w_1}$$
+
+The same pattern holds for $w_2$ and $b$:
+
+$$\frac{\partial L}{\partial w_2} = \frac{\partial L}{\partial \hat{y}} \cdot \frac{\partial \hat{y}}{\partial w_2}$$
+
+$$\frac{\partial L}{\partial b} = \frac{\partial L}{\partial \hat{y}} \cdot \frac{\partial \hat{y}}{\partial b}$$
+
+Notice that $\frac{\partial L}{\partial \hat{y}}$ appears in all three expressions. We only need to compute four derivatives total: the common one, plus the three partial derivatives of $\hat{y}$ with respect to each parameter.
+
+### Derivative of Log Loss with Respect to $\hat{y}$
+
+Recall $L(y, \hat{y}) = -y\ln(\hat{y}) - (1 - y)\ln(1 - \hat{y})$.
+
+Taking the derivative with respect to $\hat{y}$:
+
+$$\frac{\partial L}{\partial \hat{y}} = -\frac{y}{\hat{y}} + \frac{1 - y}{1 - \hat{y}}$$
+
+Combining into a single fraction:
+
+$$\frac{\partial L}{\partial \hat{y}} = \frac{-y(1 - \hat{y}) + (1-y)\hat{y}}{\hat{y}(1 - \hat{y})} = \frac{\hat{y} - y}{\hat{y}(1 - \hat{y})}$$
+
+### Derivatives of $\hat{y}$ with Respect to Parameters
+
+Recall that $\hat{y} = \sigma(z)$ where $z = w_1 x_1 + w_2 x_2 + b$. Using the sigmoid derivative $\sigma'(z) = \sigma(z)(1 - \sigma(z)) = \hat{y}(1 - \hat{y})$ and the chain rule:
+
+$$\frac{\partial \hat{y}}{\partial w_1} = \hat{y}(1 - \hat{y}) \cdot x_1$$
+
+$$\frac{\partial \hat{y}}{\partial w_2} = \hat{y}(1 - \hat{y}) \cdot x_2$$
+
+$$\frac{\partial \hat{y}}{\partial b} = \hat{y}(1 - \hat{y})$$
+
+### Putting It Together
+
+Now multiply $\frac{\partial L}{\partial \hat{y}}$ by each of the above:
+
+$$\frac{\partial L}{\partial w_1} = \frac{\hat{y} - y}{\hat{y}(1 - \hat{y})} \cdot \hat{y}(1 - \hat{y}) \cdot x_1$$
+
+The $\hat{y}(1 - \hat{y})$ terms cancel beautifully:
+
+$$\frac{\partial L}{\partial w_1} = (\hat{y} - y) \cdot x_1$$
+
+$$\frac{\partial L}{\partial w_2} = (\hat{y} - y) \cdot x_2$$
+
+$$\frac{\partial L}{\partial b} = (\hat{y} - y)$$
+
+::: {.callout-note}
+Notice how clean these are. The sigmoid derivative and the log loss derivative were designed to cancel each other out. This is not a coincidence. It is one of the reasons log loss is the standard loss function for classification with sigmoid activation.
+:::
+
+### Interpreting the Gradients
+
+These gradients have an intuitive interpretation. If $y$ and $\hat{y}$ are very close (good prediction), then $\hat{y} - y$ is small, so the gradients are small. The model barely needs to update. But if $\hat{y}$ is far from $y$ (bad prediction), then $\hat{y} - y$ is large, and the model makes a big correction. This is exactly what we want.
+
+### Final Gradient Descent Update Rules
+
+Plugging the gradients into the gradient descent formulas:
+
+$$w_1 \leftarrow w_1 - \alpha(\hat{y} - y) x_1$$
+
+$$w_2 \leftarrow w_2 - \alpha(\hat{y} - y) x_2$$
+
+$$b \leftarrow b - \alpha(\hat{y} - y)$$
+
+You start with some initial $w_1$, $w_2$, and $b$, then iterate using this procedure. After many iterations, you converge to values that give a good classification model for the dataset. That is gradient descent for a classification perceptron.

@@ -1,0 +1,479 @@
+---
+title: "Function Grapher"
+toc: false
+show-reading-time: false
+---
+
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+
+.graph-container {
+  max-width: 900px;
+}
+
+.graph-container label {
+  display: block;
+  font-weight: 600;
+  margin-top: 16px;
+  margin-bottom: 6px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #555;
+}
+
+.func-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.func-row input {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 15px;
+  font-family: 'Courier New', monospace;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 8px;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.func-row input:focus {
+  outline: none;
+  border-color: #2c7be5;
+}
+
+.func-row .color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.func-row button {
+  padding: 6px 10px;
+  font-size: 16px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fafafa;
+  cursor: pointer;
+  transition: all 0.2s;
+  line-height: 1;
+}
+
+.func-row button:hover {
+  border-color: #cc0000;
+  background: #fff5f5;
+}
+
+
+
+.graph-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.graph-actions button {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fafafa;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.graph-actions button:hover {
+  border-color: #2c7be5;
+  background: #eef5ff;
+}
+
+#graph-plot {
+  margin-top: 20px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 12px;
+  overflow: hidden;
+  min-height: 400px;
+}
+
+.slider-controls {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slider-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  width: 55px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.slider-row input[type="range"] {
+  flex: 1;
+  height: 6px;
+  accent-color: #4682B4;
+  cursor: pointer;
+}
+
+.zoom-btn {
+  width: 28px;
+  height: 28px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.zoom-btn:hover {
+  border-color: #4682B4;
+  background: #eef5ff;
+}
+
+.graph-error {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #fff5f5;
+  border: 1px solid #ffcccc;
+  color: #cc0000;
+  font-size: 13px;
+  display: none;
+}
+
+.graph-error.visible {
+  display: block;
+}
+
+.examples-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #888;
+}
+</style>
+
+<p>Type a math formula and see it graphed instantly. Supports <code>x^2</code>, <code>sin(x)</code>, <code>sqrt(x)</code>, <code>log(x)</code>, <code>abs(x)</code>, <code>e^x</code>, <code>pi*x</code>, and more. Everything runs in your browser.</p>
+
+<div class="graph-container">
+
+<label>Functions</label>
+<div id="func-list">
+  <div class="func-row" data-index="0">
+    <span class="color-dot" style="background:#4682B4;"></span>
+    <input type="text" value="x^2" placeholder="e.g. sin(x), x^3 - 2*x" />
+    <button class="remove-btn" title="Remove">&times;</button>
+  </div>
+</div>
+
+<div class="graph-actions">
+  <button id="btn-add">+ Add function</button>
+  <button id="btn-clear">Clear all</button>
+</div>
+
+
+
+<p class="examples-hint">Try: <code>sin(x)</code> &middot; <code>x^3 - 3*x</code> &middot; <code>exp(-x^2)</code> &middot; <code>1/x</code> &middot; <code>tan(x)</code> &middot; <code>log(x)</code> &middot; <code>sin(pi*x)</code></p>
+
+<div class="graph-error" id="graph-error"></div>
+
+<div id="graph-plot"></div>
+
+<div class="slider-controls">
+  <div class="slider-row">
+    <span class="slider-label">x range</span>
+    <button class="zoom-btn" id="x-out">−</button>
+    <input type="range" id="x-zoom" min="1" max="100" value="50" />
+    <button class="zoom-btn" id="x-in">+</button>
+  </div>
+  <div class="slider-row">
+    <span class="slider-label">y range</span>
+    <button class="zoom-btn" id="y-out">−</button>
+    <input type="range" id="y-zoom" min="1" max="100" value="50" />
+    <button class="zoom-btn" id="y-in">+</button>
+  </div>
+</div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mathjs@11/lib/browser/math.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/function-plot@1/dist/function-plot.js"></script>
+
+<script>
+(function() {
+  const COLORS = ['#4682B4', '#CC0000', '#2E8B57', '#CC7000', '#6A0DAD', '#DAA520', '#008B8B', '#DC143C'];
+  let funcIndex = 1;
+
+  const funcList = document.getElementById('func-list');
+  const errorEl = document.getElementById('graph-error');
+  const plotEl = document.getElementById('graph-plot');
+
+  function getRows() {
+    return funcList.querySelectorAll('.func-row');
+  }
+
+  function addRow(value) {
+    var idx = funcIndex++;
+    var color = COLORS[idx % COLORS.length];
+    var row = document.createElement('div');
+    row.className = 'func-row';
+    row.dataset.index = idx;
+    row.innerHTML = '<span class="color-dot" style="background:' + color + ';"></span>' +
+      '<input type="text" value="' + (value || '') + '" placeholder="e.g. sin(x), x^3 - 2*x" />' +
+      '<button class="remove-btn" title="Remove">&times;</button>';
+    funcList.appendChild(row);
+    row.querySelector('input').focus();
+    render();
+  }
+
+  function removeRow(row) {
+    if (getRows().length <= 1) {
+      row.querySelector('input').value = '';
+    } else {
+      row.remove();
+    }
+    render();
+  }
+
+  // Detect any single-letter variable (not x) and replace with x for plotting
+  function normalizeVar(expr) {
+    // Known function names and constants to exclude
+    var reserved = ['sin','cos','tan','asin','acos','atan','sqrt','log','ln','exp','abs','ceil','floor','round','pi','e','x'];
+    // Find all single lowercase letters used as identifiers
+    var matches = expr.match(/\b([a-z])\b/g);
+    if (!matches) return {expr: expr, varName: null};
+    // Filter out reserved
+    var vars = [];
+    for (var i = 0; i < matches.length; i++) {
+      if (reserved.indexOf(matches[i]) === -1 && vars.indexOf(matches[i]) === -1) {
+        vars.push(matches[i]);
+      }
+    }
+    // If there's exactly one non-x variable, replace it with x
+    if (vars.length === 1 && vars[0] !== 'x') {
+      var v = vars[0];
+      // Replace the variable with x (word boundary)
+      return {expr: expr.replace(new RegExp('\\b' + v + '\\b', 'g'), 'x'), varName: v};
+    }
+    return {expr: expr, varName: null};
+  }
+
+  function render() {
+    errorEl.classList.remove('visible');
+    errorEl.textContent = '';
+
+    // Auto-detect sensible x-range based on the expressions
+    var allExprs = [];
+    var rows2 = getRows();
+    for (var j = 0; j < rows2.length; j++) {
+      var e = rows2[j].querySelector('input').value.trim();
+      if (e) allExprs.push(normalizeVar(e));
+    }
+    var joined = allExprs.join(' ');
+    var xMin = -10, xMax = 10;
+    // If expression contains ln(1-x) or log(1-x), domain is likely (0,1)
+    if ((joined.indexOf('ln(1-x)') !== -1 || joined.indexOf('log(1-x)') !== -1) && joined.indexOf('ln(x)') !== -1) {
+      xMin = 0.01; xMax = 0.99;
+    } else if (joined.indexOf('ln(x)') !== -1 || joined.indexOf('log(x)') !== -1 || joined.indexOf('sqrt(x)') !== -1) {
+      xMin = 0.01; xMax = 10;
+    } else if (joined.indexOf('1/x') !== -1) {
+      xMin = -10; xMax = 10;
+    }
+
+    var data = [];
+    var detectedVar = null;
+    var rows = getRows();
+    for (var i = 0; i < rows.length; i++) {
+      var expr = rows[i].querySelector('input').value.trim();
+      if (!expr) continue;
+      // Auto-detect variable: find single-letter vars that aren't math functions
+      var result = normalizeVar(expr);
+      var plotExpr = result.expr.replace(/\bpi\b/g, "PI").replace(/\be\^\(([^)]+)\)/g, "exp($1)").replace(/\be\^([a-zA-Z0-9]+)/g, "exp($1)");
+      if (result.varName) detectedVar = result.varName;
+      var color = COLORS[i % COLORS.length];
+      rows[i].querySelector('.color-dot').style.background = color;
+      data.push({
+        fn: plotExpr,
+        color: color,
+        attr: { 'stroke-width': 3 }
+      });
+    }
+
+    if (data.length === 0) {
+      plotEl.innerHTML = '';
+      return;
+    }
+
+    try {
+      // Sample the first function to auto-detect y range
+      var yMin = Infinity, yMax = -Infinity;
+      try {
+        var mathScope = { pi: Math.PI, e: Math.E };
+        var step = (xMax - xMin) / 200;
+        for (var s = xMin + step; s < xMax - step; s += step) {
+          for (var d = 0; d < data.length; d++) {
+            try {
+              var node = math.parse(data[d].fn);
+              var compiled = node.compile();
+              mathScope.x = s;
+              var val = compiled.evaluate(mathScope);
+              if (isFinite(val)) {
+                if (val < yMin) yMin = val;
+                if (val > yMax) yMax = val;
+              }
+            } catch(e2) {}
+          }
+        }
+      } catch(e3) {}
+      // Add padding
+      if (!isFinite(yMin) || !isFinite(yMax)) { yMin = -10; yMax = 10; }
+      var yPad = (yMax - yMin) * 0.1 || 1;
+      yMin -= yPad; yMax += yPad;
+
+      // Detect variable name for x-axis label
+      var axisLabel = detectedVar || 'x';
+
+      functionPlot({
+        target: '#graph-plot',
+        width: plotEl.clientWidth || 800,
+        height: 420,
+        xAxis: { domain: [xMin, xMax], label: axisLabel },
+        yAxis: { domain: [yMin, yMax], label: 'f(' + axisLabel + ')' },
+        grid: true,
+        tip: { xLine: true, yLine: true },
+        data: data
+      });
+      // Save base ranges for slider zoom
+      baseXRange = [xMin, xMax];
+      baseYRange = [yMin, yMax];
+      xZoomSlider.value = 50;
+      yZoomSlider.value = 50;
+    } catch (e) {
+      errorEl.textContent = e.message || 'Invalid expression';
+      errorEl.classList.add('visible');
+    }
+  }
+
+  // Event: input changes
+  funcList.addEventListener('input', render);
+
+  // Event: remove button
+  funcList.addEventListener('click', function(e) {
+    if (e.target.classList.contains('remove-btn')) {
+      removeRow(e.target.closest('.func-row'));
+    }
+  });
+
+  // Event: add button
+  document.getElementById('btn-add').addEventListener('click', function() {
+    addRow('');
+  });
+
+  // Event: clear
+  document.getElementById('btn-clear').addEventListener('click', function() {
+    var rows = getRows();
+    for (var i = rows.length - 1; i >= 0; i--) {
+      if (i === 0) {
+        rows[i].querySelector('input').value = '';
+      } else {
+        rows[i].remove();
+      }
+    }
+    render();
+  });
+
+
+
+  // Slider zoom controls
+  var xZoomSlider = document.getElementById('x-zoom');
+  var yZoomSlider = document.getElementById('y-zoom');
+  var baseXRange = null;
+  var baseYRange = null;
+
+  function applyZoom() {
+    if (!baseXRange || !baseYRange) return;
+    var xFactor = Math.pow(10, (xZoomSlider.value - 50) / 25);
+    var yFactor = Math.pow(10, (yZoomSlider.value - 50) / 25);
+    var xCenter = (baseXRange[0] + baseXRange[1]) / 2;
+    var yCenter = (baseYRange[0] + baseYRange[1]) / 2;
+    var xHalf = (baseXRange[1] - baseXRange[0]) / 2 / xFactor;
+    var yHalf = (baseYRange[1] - baseYRange[0]) / 2 / yFactor;
+
+    try {
+      var rows3 = getRows();
+      var data2 = [];
+      var detVar = null;
+      for (var i = 0; i < rows3.length; i++) {
+        var ex = rows3[i].querySelector('input').value.trim();
+        if (!ex) continue;
+        var res = normalizeVar(ex);
+        if (res.varName) detVar = res.varName;
+        data2.push({ fn: res.expr, color: COLORS[i % COLORS.length], attr: { 'stroke-width': 3 } });
+      }
+      if (data2.length === 0) return;
+      functionPlot({
+        target: '#graph-plot',
+        width: plotEl.clientWidth || 800,
+        height: 420,
+        xAxis: { domain: [xCenter - xHalf, xCenter + xHalf], label: detVar || 'x' },
+        yAxis: { domain: [yCenter - yHalf, yCenter + yHalf] },
+        grid: true,
+        tip: { xLine: true, yLine: true },
+        data: data2
+      });
+    } catch(e) {}
+  }
+
+  xZoomSlider.addEventListener('input', applyZoom);
+  yZoomSlider.addEventListener('input', applyZoom);
+
+  document.getElementById('x-in').addEventListener('click', function() {
+    xZoomSlider.value = Math.min(100, parseInt(xZoomSlider.value) + 5);
+    applyZoom();
+  });
+  document.getElementById('x-out').addEventListener('click', function() {
+    xZoomSlider.value = Math.max(1, parseInt(xZoomSlider.value) - 5);
+    applyZoom();
+  });
+  document.getElementById('y-in').addEventListener('click', function() {
+    yZoomSlider.value = Math.min(100, parseInt(yZoomSlider.value) + 5);
+    applyZoom();
+  });
+  document.getElementById('y-out').addEventListener('click', function() {
+    yZoomSlider.value = Math.max(1, parseInt(yZoomSlider.value) - 5);
+    applyZoom();
+  });
+
+  // Initial render
+  setTimeout(render, 100);
+
+  // Resize
+  window.addEventListener('resize', function() {
+    clearTimeout(window._graphResize);
+    window._graphResize = setTimeout(render, 200);
+  });
+})();
+</script>
+```
