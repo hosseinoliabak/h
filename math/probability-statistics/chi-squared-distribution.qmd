@@ -1,0 +1,638 @@
+---
+title: "Chi-Squared Distribution"
+date: "2026-06-22"
+difficulty: 3
+order: 9
+categories: [probability]
+---
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+## Motivation: Noise Power in Communications
+
+Imagine you are transmitting bits between two antennas. You send the message `10010`. The message travels through the air, which in this case is the **communication channel**. The channel has noise that will affect the message you send. This noise can come from different sources: interference from other devices, Wi-Fi router obstructions (walls, trees, buildings), conditions like rain or high humidity, electrical interference from nearby parallel lines, and many other factors.
+
+You receive the message `10010` plus some noise that affected the signal. Call the noise $Z$, which has a random nature. One common assumption in communications is that the noise $Z$ has a Gaussian distribution with mean $\mu = 0$.
+
+One measure that is very useful in communications is the **noise power**, which is roughly modeled by the square of the noise:
+
+$$
+W = Z^2
+$$
+
+This measure is important because it is associated with the variance (dispersion) of the noise and determines how hard it is to correctly interpret the received signal.
+
+The big question is: **what is the distribution of $W$?**
+
+## Deriving the Chi-Squared Distribution (One Degree of Freedom)
+
+For simplicity, assume that $Z$ follows a standard normal distribution, $Z \sim N(0, 1)$. We want to find the distribution of $W = Z^2$.
+
+```{python}
+#| echo: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm, chi2
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+
+z = np.linspace(-3.5, 3.5, 300)
+pdf_z = norm.pdf(z, 0, 1)
+
+# Left: show that W = z^2 maps two z-values to the same W
+axes[0].plot(z, pdf_z, color='#4682B4', linewidth=2.5)
+axes[0].fill_between(z, pdf_z, alpha=0.15, color='#4682B4')
+
+# Highlight symmetric z values for W = 1
+w_val = 1.0
+z_pos = np.sqrt(w_val)
+z_neg = -np.sqrt(w_val)
+axes[0].axvline(z_pos, color='#CC7000', linestyle='--', linewidth=1.5, alpha=0.8)
+axes[0].axvline(z_neg, color='#CC7000', linestyle='--', linewidth=1.5, alpha=0.8)
+axes[0].plot([z_neg, z_pos], [norm.pdf(z_neg), norm.pdf(z_pos)], 'o', color='#CC7000', markersize=8)
+axes[0].annotate(r'$-\sqrt{W}$', xy=(z_neg, -0.03), ha='center', fontsize=11, color='#CC7000', fontweight='bold')
+axes[0].annotate(r'$+\sqrt{W}$', xy=(z_pos, -0.03), ha='center', fontsize=11, color='#CC7000', fontweight='bold')
+
+axes[0].set_xlabel('z', fontsize=12)
+axes[0].set_ylabel('f(z)', fontsize=12)
+axes[0].set_title('Standard Normal: each W maps to two z values', fontsize=11, color='gray')
+axes[0].set_xlim(-3.5, 3.5)
+axes[0].set_ylim(-0.06, 0.45)
+axes[0].grid(linestyle='--', alpha=0.4)
+
+# Right: resulting chi-squared(1) PDF
+w = np.linspace(0.01, 8, 300)
+pdf_chi1 = chi2.pdf(w, df=1)
+axes[1].plot(w, pdf_chi1, color='#CC7000', linewidth=2.5)
+axes[1].fill_between(w, pdf_chi1, alpha=0.15, color='#CC7000')
+axes[1].set_xlabel('w', fontsize=12)
+axes[1].set_ylabel('f(w)', fontsize=12)
+axes[1].set_title('Chi-squared distribution with k = 1', fontsize=11, color='gray')
+axes[1].set_xlim(0, 8)
+axes[1].set_ylim(0, 1.5)
+axes[1].grid(linestyle='--', alpha=0.4)
+
+plt.tight_layout()
+plt.show()
+```
+
+Here is the key insight: each value of $W$ can be achieved with **two** different values of $Z$, namely $-\sqrt{W}$ and $+\sqrt{W}$. This is because squaring removes the sign.
+
+The probability that $W \leq w$ (the CDF of $W$) is the area under the standard normal PDF between $-\sqrt{w}$ and $+\sqrt{w}$:
+
+$$
+F_W(w) = P(W \leq w) = P(-\sqrt{w} \leq Z \leq \sqrt{w})
+$$
+
+Notice that for small values of $w$, you gain area at a much quicker rate. This is because the Gaussian distribution concentrates probability around 0, so the region near the center has a lot of density packed in.
+
+This distribution is known as the **chi-squared distribution with one degree of freedom** (chi is pronounced "kai"), written:
+
+$$
+W \sim \chi^2(1)
+$$
+
+## From CDF to PDF
+
+Since the CDF is the integral of the PDF, you can find the PDF by taking the derivative of the CDF. The PDF is simply the slope of the CDF at each point.
+
+```{python}
+#| echo: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import chi2
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+
+w = np.linspace(0.01, 8, 300)
+
+# CDF
+cdf_chi1 = chi2.cdf(w, df=1)
+axes[0].plot(w, cdf_chi1, color='#4682B4', linewidth=2.5)
+axes[0].set_xlabel('w', fontsize=12)
+axes[0].set_ylabel(r'$F_W(w)$', fontsize=12)
+axes[0].set_title('CDF of Chi-squared(1)', fontsize=11, color='gray')
+axes[0].set_xlim(0, 8)
+axes[0].set_ylim(0, 1.05)
+axes[0].grid(linestyle='--', alpha=0.4)
+axes[0].annotate('Steep near 0\n(fast accumulation)', xy=(0.3, 0.4), fontsize=10, color='#4682B4', fontweight='bold')
+
+# PDF
+pdf_chi1 = chi2.pdf(w, df=1)
+axes[1].plot(w, pdf_chi1, color='#CC7000', linewidth=2.5)
+axes[1].fill_between(w, pdf_chi1, alpha=0.15, color='#CC7000')
+axes[1].set_xlabel('w', fontsize=12)
+axes[1].set_ylabel(r'$f_W(w)$', fontsize=12)
+axes[1].set_title('PDF of Chi-squared(1) (derivative of CDF)', fontsize=11, color='gray')
+axes[1].set_xlim(0, 8)
+axes[1].set_ylim(0, 1.5)
+axes[1].grid(linestyle='--', alpha=0.4)
+axes[1].annotate('High density\nnear 0', xy=(0.3, 1.0), fontsize=10, color='#CC7000', fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+```
+
+The rate at which probability accumulates is large for small values of $w$ and gets smaller and smaller as $w$ increases. For small values of $w$, the CDF is a very steep curve that grows quickly, but for larger values it grows slower and slower. This makes sense: squaring a standard normal variable produces values near 0 most often, because the normal distribution concentrates around 0.
+
+## More Degrees of Freedom
+
+Now, what if you want the noise power accumulated over **two** transmissions? That means the total power is:
+
+$$
+W = Z_1^2 + Z_2^2
+$$
+
+where both $Z_1$ and $Z_2$ are independent standard normal variables. This is the **chi-squared distribution with two degrees of freedom**, $\chi^2(2)$.
+
+What about the power accumulated over **five** transmissions?
+
+$$
+W = Z_1^2 + Z_2^2 + Z_3^2 + Z_4^2 + Z_5^2
+$$
+
+That is a **chi-squared distribution with five degrees of freedom**, $\chi^2(5)$.
+
+## General Definition
+
+In general, for $k$ independent standard normal variables:
+
+$$
+W = Z_1^2 + Z_2^2 + \cdots + Z_k^2 \sim \chi^2(k)
+$$
+
+The parameter $k$ is called the **degrees of freedom**. It tells you how many squared normal variables are being summed.
+
+```{python}
+#| echo: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import chi2
+
+fig, ax = plt.subplots(figsize=(9, 5))
+
+w = np.linspace(0.01, 20, 400)
+colors = ['#4682B4', '#2E8B57', '#CC7000', '#CC0000', '#6A0DAD']
+degrees = [1, 2, 3, 5, 10]
+
+for k, color in zip(degrees, colors):
+    pdf = chi2.pdf(w, df=k)
+    ax.plot(w, pdf, color=color, linewidth=2.5, label=f'k = {k}')
+
+ax.set_xlabel('w', fontsize=12)
+ax.set_ylabel('f(w)', fontsize=12)
+ax.set_title('Chi-squared PDF for different degrees of freedom', fontsize=12, color='gray')
+ax.legend(fontsize=11, title='Degrees of freedom')
+ax.set_xlim(0, 20)
+ax.set_ylim(0, 0.55)
+ax.grid(linestyle='--', alpha=0.4)
+
+plt.tight_layout()
+plt.show()
+```
+
+Notice that as $k$ increases:
+
+- The PDF becomes more **spread out** (the distribution has larger variance)
+- The shape becomes more and more **symmetrical** (approaching a bell curve for large $k$)
+- The peak shifts to the right
+
+This makes intuitive sense: you are adding more and more positive terms together, so the sum tends to be larger and more predictable.
+
+## Summary
+
+| Property | Value |
+|----------|-------|
+| Definition | $W = Z_1^2 + \cdots + Z_k^2$, where $Z_i \sim N(0,1)$ independently |
+| Parameter | $k$ (degrees of freedom) |
+| Support | $w \geq 0$ (sum of squares is always non-negative) |
+| Mean | $k$ |
+| Variance | $2k$ |
+| Notation | $W \sim \chi^2(k)$ |
+
+: Key properties of the chi-squared distribution {#tbl-chi-squared-properties}
+
+### Review Questions {.unnumbered}
+
+**1. If $Z \sim N(0, 1)$, what distribution does $W = Z^2$ follow?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+$W$ follows a chi-squared distribution with one degree of freedom, $W \sim \chi^2(1)$.
+:::
+
+---
+
+**2. Why does the chi-squared PDF have high density near $w = 0$ when $k = 1$?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because the standard normal distribution concentrates most of its probability around $Z = 0$. When you square values near 0, you get values of $W$ near 0. So most of the probability mass of $W = Z^2$ ends up near 0.
+:::
+
+---
+
+**3. What is the chi-squared distribution with 5 degrees of freedom in terms of normal variables?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+It is the distribution of $W = Z_1^2 + Z_2^2 + Z_3^2 + Z_4^2 + Z_5^2$, where each $Z_i$ is an independent standard normal variable, $Z_i \sim N(0, 1)$.
+:::
+
+---
+
+**4. What happens to the shape of the chi-squared distribution as $k$ increases?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+As $k$ increases, the PDF becomes more spread out and more symmetrical, approaching a bell-curve shape. The peak also shifts to the right.
+:::
+
+---
+
+**5. In the communications example, what does the "noise power" $W = Z^2$ represent and why is it useful?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The noise power is the square of the noise signal $Z$. It is useful because it is associated with the variance (dispersion) of the noise and determines how difficult it is to correctly interpret the received signal. Larger noise power means harder signal detection.
+:::
+
+## Interactive Tool: PMF/PDF and CDF Explorer
+
+Use this tool to explore the relationship between the PMF/PDF and CDF. Choose a distribution, adjust its parameters, and run experiments to compare theoretical and observed results. Toggle "Show CDF" to overlay the cumulative distribution function.
+
+- **Discrete - Binomial**: Toss a coin $n$ times with probability of heads $p$. The variable $X$ counts the number of heads. Run experiments to simulate many rounds of $n$ tosses.
+- **Continuous - Uniform**: A random number is picked with equal probability anywhere between $a$ and $b$. Think of it as a spinner that lands uniformly on an interval.
+- **Continuous - Normal**: Values cluster around the mean $\mu$ with spread controlled by $\sigma$. Most values fall within a few $\sigma$ of the mean. Think of it as measuring heights, temperatures, or measurement errors.
+- **Continuous - Chi-Squared**: The sum of $k$ squared standard normal variables. Controlled by degrees of freedom $k$. Used in hypothesis testing and goodness-of-fit tests.
+
+<!-- interactive-tool -->
+
+```{ojs}
+//| echo: false
+
+html`<style>
+.pmfcdf-tool {
+  border: 2px solid #ddd; border-radius: 8px; padding: 20px; margin: 1em 0; background: #fafafa;
+  font-family: 'PT Sans', sans-serif;
+}
+.pmfcdf-tool .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 12px; }
+.pmfcdf-tool label { font-weight: 600; margin-right: 4px; }
+.pmfcdf-tool select, .pmfcdf-tool input[type="number"] {
+  padding: 5px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em;
+}
+.pmfcdf-tool input[type="number"] { width: 65px; }
+.pmfcdf-tool .chart { border: 1px solid #ddd; border-radius: 6px; padding: 10px; background: #fff; margin: 12px 0; }
+.pmfcdf-tool .btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.pmfcdf-tool button {
+  padding: 7px 16px; border: 1px solid #22176F; background: #fff; color: #22176F;
+  border-radius: 4px; font-size: 0.9em; font-weight: 600; cursor: pointer;
+}
+.pmfcdf-tool button:hover { background: #22176F; color: #fff; }
+.pmfcdf-tool .legend { font-size: 0.9em; color: #555; margin-top: 6px; }
+.pmfcdf-tool .stats { font-size: 0.9em; margin-top: 8px; color: #333; }
+</style>`
+```
+
+```{ojs}
+//| echo: false
+
+{
+  const Plot = await import("https://esm.sh/@observablehq/plot@0.6");
+  let experiments = [];
+  let lastX = null;
+
+  const container = html`<div class="pmfcdf-tool">
+    <div class="row">
+      <div><label>Choose distribution:</label>
+        <select id="it-dist">
+          <option value="binomial">Discrete - Binomial</option>
+          <option value="uniform">Continuous - Uniform</option>
+          <option value="normal">Continuous - Normal</option>
+          <option value="chisquared">Continuous - Chi-Squared</option>
+        </select>
+      </div>
+      <div id="it-params"></div>
+      <div><label><input type="checkbox" id="it-cdf"> Show CDF</label></div>
+    </div>
+    <div id="it-chart" style="min-height:320px;"></div>
+    <div class="btn-row">
+      <strong>Run the experiment:</strong>
+      <button id="it-1">one time</button>
+      <button id="it-10">10 times</button>
+      <button id="it-50">50 times</button>
+      <button id="it-100">100 times</button>
+      <button id="it-refresh">Refresh</button>
+    </div>
+    <div id="it-stats" style="font-size:0.9em;margin-top:8px;color:#333;"></div>
+    <div id="it-results" style="font-size:0.82em;color:#666;margin-top:4px;max-height:55px;overflow-y:auto;word-break:break-all;"></div>
+    <div class="legend" style="font-size:0.85em;color:#555;margin-top:10px;">
+      <strong style="color:#333;">●/━</strong> PMF/PDF &nbsp;&nbsp;
+      <strong style="color:#CC0000;">━</strong> CDF &nbsp;&nbsp;
+      <strong style="color:#CC7000;">█</strong> Experiment histogram
+    </div>
+  </div>`;
+
+  const distEl = container.querySelector('#it-dist');
+  const paramsEl = container.querySelector('#it-params');
+  const chartEl = container.querySelector('#it-chart');
+  const cdfCheck = container.querySelector('#it-cdf');
+  const statsEl = container.querySelector('#it-stats');
+  const resultsEl = container.querySelector('#it-results');
+
+  function getParams() {
+    const d = distEl.value;
+    if (d === "binomial") {
+      return {dist: d, n: parseInt(container.querySelector('#it-n')?.value || 10),
+              p: parseFloat(container.querySelector('#it-p')?.value || 0.3)};
+    } else if (d === "uniform") {
+      return {dist: d, a: parseFloat(container.querySelector('#it-a')?.value || 0),
+              b: parseFloat(container.querySelector('#it-b')?.value || 5)};
+    } else if (d === "chisquared") {
+      return {dist: d, k: parseInt(container.querySelector('#it-k')?.value || 3)};
+    } else {
+      return {dist: d, mu: parseFloat(container.querySelector('#it-mu')?.value || 0),
+              sigma: parseFloat(container.querySelector('#it-sigma')?.value || 1)};
+    }
+  }
+
+  function updateParamsUI() {
+    const d = distEl.value;
+    if (d === "binomial") {
+      paramsEl.innerHTML = `<label>n =</label><input type="number" id="it-n" value="10" min="1" max="50" style="width:55px;">
+        <label style="margin-left:12px;">p =</label><input type="number" id="it-p" value="0.3" min="0.01" max="0.99" step="0.05" style="width:60px;">`;
+    } else if (d === "uniform") {
+      paramsEl.innerHTML = `<label>a =</label><input type="number" id="it-a" value="0" step="0.5" style="width:55px;">
+        <label style="margin-left:12px;">b =</label><input type="number" id="it-b" value="5" step="0.5" style="width:55px;">`;
+    } else if (d === "chisquared") {
+      paramsEl.innerHTML = `<label>k (degrees of freedom) =</label><input type="number" id="it-k" value="3" min="1" max="50" step="1" style="width:55px;">`;
+    } else {
+      paramsEl.innerHTML = `<label>μ =</label><input type="number" id="it-mu" value="0" step="0.1" style="width:55px;">
+        <label style="margin-left:12px;">σ =</label><input type="number" id="it-sigma" value="1" min="0.1" step="0.1" style="width:55px;">`;
+    }
+    paramsEl.querySelectorAll('input').forEach(inp => inp.addEventListener('change', () => { experiments = []; lastX = null; render(); }));
+  }
+
+  function binomCoeff(n, k) {
+    if (k < 0 || k > n) return 0;
+    let c = 1;
+    for (let i = 0; i < k; i++) c = c * (n - i) / (i + 1);
+    return c;
+  }
+
+  function sampleOne(params) {
+    if (params.dist === "binomial") {
+      let s = 0;
+      for (let i = 0; i < params.n; i++) if (Math.random() < params.p) s++;
+      return s;
+    } else if (params.dist === "uniform") {
+      return params.a + Math.random() * (params.b - params.a);
+    } else if (params.dist === "chisquared") {
+      // Sum of k squared standard normals
+      let s = 0;
+      for (let i = 0; i < params.k; i++) {
+        const u1 = Math.random(), u2 = Math.random();
+        const z = Math.sqrt(-2*Math.log(u1)) * Math.cos(2*Math.PI*u2);
+        s += z * z;
+      }
+      return s;
+    } else {
+      const u1 = Math.random(), u2 = Math.random();
+      return params.mu + params.sigma * Math.sqrt(-2*Math.log(u1)) * Math.cos(2*Math.PI*u2);
+    }
+  }
+
+  function render() {
+    const params = getParams();
+    const showC = cdfCheck.checked;
+    const plotWidth = chartEl.clientWidth || 720;
+    let marks = [];
+
+    if (params.dist === "binomial") {
+      const {n, p} = params;
+      const xs = Array.from({length: n+1}, (_, i) => i);
+      const pmf = xs.map(k => binomCoeff(n, k) * Math.pow(p, k) * Math.pow(1-p, n-k));
+
+      // Experiment histogram (behind)
+      if (experiments.length > 0) {
+        const counts = new Array(n+1).fill(0);
+        experiments.forEach(v => { if (v >= 0 && v <= n) counts[Math.round(v)]++; });
+        const histData = xs.map((x, i) => ({x1: x - 0.4, x2: x + 0.4, y: counts[i] / experiments.length}));
+        marks.push(Plot.rectY(histData, {x1: "x1", x2: "x2", y1: 0, y2: "y", fill: "#CC7000", fillOpacity: 0.5}));
+      }
+
+      // PMF lollipops (on top)
+      const pmfData = xs.map((x, i) => ({x, y: pmf[i]}));
+      marks.push(Plot.ruleX(pmfData, {x: "x", y1: 0, y2: "y", stroke: "#333", strokeWidth: 2}));
+      marks.push(Plot.dot(pmfData, {x: "x", y: "y", fill: "#333", r: 5}));
+
+      if (showC) {
+        const cdf = []; let cum = 0;
+        for (const v of pmf) { cum += v; cdf.push(cum); }
+        const cdfSteps = [{x: -1, y: 0}];
+        for (let i = 0; i < xs.length; i++) {
+          cdfSteps.push({x: xs[i], y: i > 0 ? cdf[i-1] : 0});
+          cdfSteps.push({x: xs[i], y: cdf[i]});
+          if (i < xs.length-1) cdfSteps.push({x: xs[i+1], y: cdf[i]});
+          else cdfSteps.push({x: n+1, y: cdf[i]});
+        }
+        marks.push(Plot.line(cdfSteps, {x: "x", y: "y", stroke: "#CC0000", strokeWidth: 2}));
+      }
+
+      marks.push(Plot.ruleY([0]));
+      chartEl.innerHTML = '';
+      chartEl.appendChild(Plot.plot({
+        width: plotWidth, height: 300, marginLeft: 45,
+        x: {domain: [-0.5, n + 0.5], label: "x"},
+        y: {domain: [0, showC ? 1.05 : Math.max(...pmf) * 1.4], label: "f"},
+        marks
+      }));
+
+    } else {
+      let xMin, xMax;
+      if (params.dist === "uniform") {
+        const {a, b} = params;
+        xMin = a - 1.5; xMax = b + 1.5;
+        if (a >= b) { xMin = a - 2; xMax = a + 2; }
+        const h = (b > a) ? 1/(b - a) : 0;
+        const maxPdfEst = Math.max(h, 0.01);
+
+        // Experiment dots + histogram (only within [a, b])
+        if (experiments.length > 0) {
+          const nBins = Math.max(Math.round((b - a) * 5), 10);
+          const binW = (b - a) / nBins;
+          const bins = new Array(nBins).fill(0);
+          experiments.forEach(v => {
+            const idx = Math.floor((v - a) / binW);
+            if (idx >= 0 && idx < nBins) bins[idx]++;
+          });
+          const histData = bins.map((c, i) => ({x1: a + i*binW, x2: a + (i+1)*binW, y: c / (experiments.length * binW)}));
+          marks.push(Plot.rectY(histData, {x1: "x1", x2: "x2", y1: 0, y2: "y", fill: "#CC7000", fillOpacity: 0.45}));
+          const dotData = experiments.map(v => ({x: v, y: -0.02 * maxPdfEst + Math.random() * 0.04 * maxPdfEst}));
+          marks.push(Plot.dot(dotData, {x: "x", y: "y", fill: "#CC7000", r: 3.5, fillOpacity: 0.6}));
+        }
+
+        // PDF: flat line between a and b, zero line outside, circles at endpoints on the x-axis
+        marks.push(Plot.line([{x: xMin, y: 0}, {x: a, y: 0}], {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
+        marks.push(Plot.line([{x: a, y: h}, {x: b, y: h}], {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
+        marks.push(Plot.line([{x: b, y: 0}, {x: xMax, y: 0}], {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
+        marks.push(Plot.dot([{x: a, y: 0}, {x: b, y: 0}], {x: "x", y: "y", fill: "#333", r: 6}));
+
+        if (showC) {
+          const cdfSteps = [{x: xMin, y: 0}, {x: a, y: 0}, {x: b, y: 1}, {x: xMax, y: 1}];
+          marks.push(Plot.line(cdfSteps, {x: "x", y: "y", stroke: "#CC0000", strokeWidth: 2}));
+        }
+
+        marks.push(Plot.ruleY([0]));
+        chartEl.innerHTML = '';
+        chartEl.appendChild(Plot.plot({
+          width: plotWidth, height: 300, marginLeft: 45,
+          x: {domain: [xMin, xMax], label: "x"},
+          y: {domain: [0, showC ? Math.max(maxPdfEst * 1.2, 1.05) : maxPdfEst * 1.5], label: "f"},
+          marks
+        }));
+
+      } else if (params.dist === "chisquared") {
+        // Chi-Squared distribution
+        const k = params.k;
+        xMin = 0; xMax = Math.max(k + 4*Math.sqrt(2*k), 10);
+        // Gamma function approximation (Stirling) for chi-squared PDF
+        function lnGamma(z) {
+          if (z <= 0) return 0;
+          const c = [76.18009172947146,-86.50532032941677,24.01409824083091,-1.231739572450155,0.001208650973866179,-0.000005395239384953];
+          let x = z, y = z, tmp = x + 5.5;
+          tmp -= (x+0.5)*Math.log(tmp);
+          let ser = 1.000000000190015;
+          for (let j = 0; j < 6; j++) ser += c[j]/(++y);
+          return -tmp + Math.log(2.5066282746310005*ser/x);
+        }
+        const halfK = k/2;
+        const lnCoeff = -halfK*Math.log(2) - lnGamma(halfK);
+        const pdfFn = x => {
+          if (x <= 0) return 0;
+          return Math.exp(lnCoeff + (halfK-1)*Math.log(x) - x/2);
+        };
+
+        const step = (xMax - xMin) / 300;
+        const xs = Array.from({length: 301}, (_, i) => xMin + i*step);
+        const pdfData = xs.map(x => ({x, y: pdfFn(x)}));
+        const maxPdfEst = Math.max(...pdfData.map(d => d.y), 0.01);
+
+        if (experiments.length > 0) {
+          const nBins = 30;
+          const binW = (xMax - xMin) / nBins;
+          const bins = new Array(nBins).fill(0);
+          experiments.forEach(v => {
+            const idx = Math.floor((v - xMin) / binW);
+            if (idx >= 0 && idx < nBins) bins[idx]++;
+          });
+          const histData = bins.map((c, i) => ({x1: xMin + i*binW, x2: xMin + (i+1)*binW, y: c / (experiments.length * binW)}));
+          marks.push(Plot.rectY(histData, {x1: "x1", x2: "x2", y1: 0, y2: "y", fill: "#CC7000", fillOpacity: 0.45}));
+          const dotData = experiments.map(v => ({x: v, y: -0.02 * maxPdfEst + Math.random() * 0.08 * maxPdfEst}));
+          marks.push(Plot.dot(dotData, {x: "x", y: "y", fill: "#CC7000", r: 3.5, fillOpacity: 0.6}));
+        }
+
+        marks.push(Plot.line(pdfData, {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
+
+        if (showC) {
+          let cum = 0;
+          const cdfData = xs.map(x => { cum += pdfFn(x) * step; return {x, y: Math.min(cum, 1)}; });
+          marks.push(Plot.line(cdfData, {x: "x", y: "y", stroke: "#CC0000", strokeWidth: 2}));
+        }
+
+        marks.push(Plot.ruleY([0]));
+        chartEl.innerHTML = '';
+        chartEl.appendChild(Plot.plot({
+          width: plotWidth, height: 300, marginLeft: 45,
+          x: {domain: [xMin, xMax], label: "x"},
+          y: {domain: [0, showC ? Math.max(maxPdfEst * 1.2, 1.05) : maxPdfEst * 1.4], label: "f"},
+          marks
+        }));
+
+      } else {
+        // Normal distribution
+        xMin = params.mu - 4*params.sigma; xMax = params.mu + 4*params.sigma;
+        const pdfFn = x => (1/(params.sigma*Math.sqrt(2*Math.PI))) * Math.exp(-0.5*((x-params.mu)/params.sigma)**2);
+
+        const step = (xMax - xMin) / 300;
+        const xs = Array.from({length: 301}, (_, i) => xMin + i*step);
+        const pdfData = xs.map(x => ({x, y: pdfFn(x)}));
+        const maxPdfEst = Math.max(...pdfData.map(d => d.y), 0.01);
+
+        // Experiment dots on x-axis + histogram (behind)
+        if (experiments.length > 0) {
+          const nBins = 30;
+          const binW = (xMax - xMin) / nBins;
+          const bins = new Array(nBins).fill(0);
+          experiments.forEach(v => {
+            const idx = Math.floor((v - xMin) / binW);
+            if (idx >= 0 && idx < nBins) bins[idx]++;
+          });
+          const histData = bins.map((c, i) => ({x1: xMin + i*binW, x2: xMin + (i+1)*binW, y: c / (experiments.length * binW)}));
+          marks.push(Plot.rectY(histData, {x1: "x1", x2: "x2", y1: 0, y2: "y", fill: "#CC7000", fillOpacity: 0.45}));
+          const dotData = experiments.map(v => ({x: v, y: -0.02 * maxPdfEst + Math.random() * 0.08 * maxPdfEst}));
+          marks.push(Plot.dot(dotData, {x: "x", y: "y", fill: "#CC7000", r: 3.5, fillOpacity: 0.6}));
+        }
+
+        // PDF curve (on top)
+        marks.push(Plot.line(pdfData, {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
+
+        if (showC) {
+          let cum = 0;
+          const cdfData = xs.map(x => { cum += pdfFn(x) * step; return {x, y: Math.min(cum, 1)}; });
+          marks.push(Plot.line(cdfData, {x: "x", y: "y", stroke: "#CC0000", strokeWidth: 2}));
+        }
+
+        marks.push(Plot.ruleY([0]));
+        chartEl.innerHTML = '';
+        chartEl.appendChild(Plot.plot({
+          width: plotWidth, height: 300, marginLeft: 45,
+          x: {domain: [xMin, xMax], label: "x"},
+          y: {domain: [0, showC ? Math.max(maxPdfEst * 1.2, 1.05) : maxPdfEst * 1.4], label: "f"},
+          marks
+        }));
+      }
+    }
+
+    // Update stats
+    if (experiments.length > 0) {
+      statsEl.innerHTML = `<strong>x = </strong>${lastX !== null ? (typeof lastX === 'number' ? lastX.toFixed(2) : lastX) : ''} &nbsp;&nbsp;&nbsp; <strong>Total experiments = </strong>${experiments.length}`;
+      const shown = experiments.slice(-100).map(v => typeof v === 'number' ? v.toFixed(2) : v).join('  ');
+      resultsEl.textContent = shown + (experiments.length > 100 ? ' ... (showing last 100)' : '');
+    } else {
+      statsEl.textContent = '';
+      resultsEl.textContent = '';
+    }
+  }
+
+  function runExp(count) {
+    const params = getParams();
+    for (let i = 0; i < count; i++) {
+      const v = sampleOne(params);
+      experiments.push(v);
+      lastX = v;
+    }
+    render();
+  }
+
+  distEl.addEventListener('change', () => { updateParamsUI(); experiments = []; lastX = null; render(); });
+  cdfCheck.addEventListener('change', render);
+  container.querySelector('#it-1').addEventListener('click', () => runExp(1));
+  container.querySelector('#it-10').addEventListener('click', () => runExp(10));
+  container.querySelector('#it-50').addEventListener('click', () => runExp(50));
+  container.querySelector('#it-100').addEventListener('click', () => runExp(100));
+  container.querySelector('#it-refresh').addEventListener('click', () => { experiments = []; lastX = null; render(); });
+
+  updateParamsUI();
+  setTimeout(render, 150);
+  return container;
+}
+```

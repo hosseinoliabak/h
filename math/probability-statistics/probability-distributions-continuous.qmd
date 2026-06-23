@@ -550,302 +550,236 @@ In a discrete variable, specific values have positive probability (mass), which 
 
 ---
 
-## Interactive Tool: PMF/PDF and CDF Explorer
 
-Use this tool to explore the relationship between the PMF/PDF and CDF. Choose a distribution, adjust its parameters, and run experiments to compare theoretical and observed results. Toggle "Show CDF" to overlay the cumulative distribution function.
+## Sampling from a Distribution Using the CDF
 
-- **Discrete - Binomial**: Toss a coin $n$ times with probability of heads $p$. The variable $X$ counts the number of heads. Run experiments to simulate many rounds of $n$ tosses.
-- **Continuous - Uniform**: A random number is picked with equal probability anywhere between $a$ and $b$. Think of it as a spinner that lands uniformly on an interval.
-- **Continuous - Normal**: Values cluster around the mean $\mu$ with spread controlled by $\sigma$. Most values fall within a few $\sigma$ of the mean. Think of it as measuring heights, temperatures, or measurement errors.
+Imagine you have a dataset (for example, heights of people), but you need more data and collecting it is too expensive. What can you do? You can create **synthetic data** that looks like the original. The way to do this is to construct a distribution from your data and then **sample** from it — meaning you pick points that follow the probabilities given by that distribution.
 
-<!-- interactive-tool -->
+This is a fundamental concept in probability and machine learning: sampling from a probability distribution.
 
-```{ojs}
-//| echo: false
+### Discrete Case
 
-html`<style>
-.pmfcdf-tool {
-  border: 2px solid #ddd; border-radius: 8px; padding: 20px; margin: 1em 0; background: #fafafa;
-  font-family: 'PT Sans', sans-serif;
-}
-.pmfcdf-tool .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 12px; }
-.pmfcdf-tool label { font-weight: 600; margin-right: 4px; }
-.pmfcdf-tool select, .pmfcdf-tool input[type="number"] {
-  padding: 5px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em;
-}
-.pmfcdf-tool input[type="number"] { width: 65px; }
-.pmfcdf-tool .chart { border: 1px solid #ddd; border-radius: 6px; padding: 10px; background: #fff; margin: 12px 0; }
-.pmfcdf-tool .btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
-.pmfcdf-tool button {
-  padding: 7px 16px; border: 1px solid #22176F; background: #fff; color: #22176F;
-  border-radius: 4px; font-size: 0.9em; font-weight: 600; cursor: pointer;
-}
-.pmfcdf-tool button:hover { background: #22176F; color: #fff; }
-.pmfcdf-tool .legend { font-size: 0.9em; color: #555; margin-top: 6px; }
-.pmfcdf-tool .stats { font-size: 0.9em; margin-top: 8px; color: #333; }
-</style>`
+Suppose you have a simple discrete distribution with three outcomes: green, blue, and orange, with probabilities 0.3, 0.5, and 0.2 respectively.
+
+```{python}
+#| echo: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings('ignore')
+
+fig = plt.figure(figsize=(14, 6))
+
+# Left side: PMF bar chart (top-left) and stacked strip (bottom-left)
+ax_pmf = fig.add_axes([0.03, 0.4, 0.38, 0.55])
+ax_strip = fig.add_axes([0.03, 0.08, 0.38, 0.15])
+
+# Right side: CDF staircase with rotated bars (narrower)
+ax_cdf = fig.add_axes([0.52, 0.08, 0.44, 0.85])
+
+colors = ['#2EC4B6', '#4682B4', '#CC7000']
+probs = [0.3, 0.5, 0.2]
+
+# --- Top-left: PMF bars ---
+ax_pmf.bar([0, 1, 2], probs, color=colors, edgecolor='white', width=0.6, zorder=3)
+ax_pmf.set_xticks([0, 1, 2])
+ax_pmf.set_xticklabels(['0', '1', '2'], fontsize=11, fontweight='600')
+ax_pmf.set_ylabel('Probability', fontsize=11)
+ax_pmf.set_ylim(0, 0.6)
+ax_pmf.set_xlim(-0.5, 2.5)
+ax_pmf.grid(axis='y', linestyle='--', alpha=0.4)
+ax_pmf.spines['top'].set_visible(False)
+ax_pmf.spines['right'].set_visible(False)
+for i, (x, p) in enumerate(zip([0, 1, 2], probs)):
+    ax_pmf.text(x, p + 0.02, f'{p}', ha='center', fontsize=11, fontweight='600')
+
+# --- Bottom-left: stacked horizontal strip ---
+left = 0
+for i, p in enumerate(probs):
+    ax_strip.barh(0, p, left=left, color=colors[i], edgecolor='white', height=0.5)
+    left += p
+ax_strip.set_xlim(0, 1)
+ax_strip.set_ylim(-0.5, 0.5)
+ax_strip.set_xticks([0, 0.3, 0.8, 1.0])
+ax_strip.set_xticklabels(['0', '0.3', '0.8', '1'], fontsize=10)
+ax_strip.set_yticks([])
+ax_strip.spines['top'].set_visible(False)
+ax_strip.spines['right'].set_visible(False)
+ax_strip.spines['left'].set_visible(False)
+for boundary in [0.3, 0.8]:
+    ax_strip.axvline(boundary, color='#333', linewidth=1, linestyle='-', alpha=0.5)
+
+# --- Right: CDF staircase with rotated bars pushed to the right ---
+# Colored bars behind the CDF (these are the PMF bars rotated and pushed right)
+# Green: x=0 to x=1, y=0 to y=0.3
+ax_cdf.fill_between([0, 1], 0, 0.3, color=colors[0], alpha=0.7, zorder=1)
+# Blue: x=1 to x=2, y=0.3 to y=0.8
+ax_cdf.fill_between([1, 2], 0.3, 0.8, color=colors[1], alpha=0.7, zorder=1)
+# Orange: x=2 to x=2.8, y=0.8 to y=1.0
+ax_cdf.fill_between([2, 2.8], 0.8, 1.0, color=colors[2], alpha=0.7, zorder=1)
+
+# Gray dashed horizontal lines at CDF levels
+for y in [0.3, 0.8, 1.0]:
+    ax_cdf.axhline(y=y, color='gray', linestyle='--', linewidth=0.8, zorder=2)
+
+# CDF staircase (red, thick) — starts at origin (0,0)
+ax_cdf.plot([-0.3, 0], [0, 0], color='#CC0000', linewidth=3, zorder=3)
+ax_cdf.plot([0, 0], [0, 0.3], color='#CC0000', linewidth=3, zorder=3)
+ax_cdf.plot([0, 1], [0.3, 0.3], color='#CC0000', linewidth=3, zorder=3)
+ax_cdf.plot([1, 1], [0.3, 0.8], color='#CC0000', linewidth=3, zorder=3)
+ax_cdf.plot([1, 2], [0.8, 0.8], color='#CC0000', linewidth=3, zorder=3)
+ax_cdf.plot([2, 2], [0.8, 1.0], color='#CC0000', linewidth=3, zorder=3)
+ax_cdf.plot([2, 2.8], [1.0, 1.0], color='#CC0000', linewidth=3, zorder=3)
+
+# Uniform samples on the y-axis (evenly spaced ~0.23 apart)
+u_samples = [0.23, 0.46, 0.69, 0.92]
+for u in u_samples:
+    if u < 0.3: x_hit = 0
+    elif u < 0.8: x_hit = 1
+    else: x_hit = 2
+    # Horizontal dotted line from the y-axis spine (-0.3) to the CDF hit point
+    ax_cdf.plot([-0.3, x_hit], [u, u], ':', color='#555', linewidth=1, zorder=2)
+    # Vertical dotted line from CDF hit point down to x-axis
+    ax_cdf.plot([x_hit, x_hit], [u, 0], ':', color='#555', linewidth=1, zorder=2)
+    # Dot on the y-axis spine (at x=-0.3)
+    ax_cdf.plot(-0.3, u, 'o', color='#333', markersize=6, zorder=6)
+    # Dot on the x-axis (at y=0)
+    ax_cdf.plot(x_hit, 0, 'o', color='#333', markersize=5, zorder=6)
+
+ax_cdf.set_xlim(-0.3, 3.0)
+ax_cdf.set_ylim(0, 1.08)
+ax_cdf.set_xticks([0, 1, 2])
+ax_cdf.set_xticklabels(['0', '1', '2'], fontsize=11, fontweight='600')
+ax_cdf.set_yticks([0, 0.3, 0.8, 1.0])
+ax_cdf.set_yticklabels(['0', '0.3', '0.8', '1'], fontsize=10)
+ax_cdf.set_ylabel('Cumulative Probability', fontsize=11)
+ax_cdf.spines['top'].set_visible(False)
+ax_cdf.spines['right'].set_visible(False)
+ax_cdf.grid(False)
+
+plt.show()
 ```
 
-```{ojs}
-//| echo: false
+To sample from this distribution, notice that the probabilities add to 1. You can stack them into a continuous strip between 0 and 1 (bottom-left above). Then follow three steps:
 
-{
-  const Plot = await import("https://esm.sh/@observablehq/plot@0.6");
-  let experiments = [];
-  let lastX = null;
+**Step 1:** Generate a random number $u$ uniformly between 0 and 1.
 
-  const container = html`<div class="pmfcdf-tool">
-    <div class="row">
-      <div><label>Choose distribution:</label>
-        <select id="it-dist">
-          <option value="binomial">Discrete - Binomial</option>
-          <option value="uniform">Continuous - Uniform</option>
-          <option value="normal">Continuous - Normal</option>
-        </select>
-      </div>
-      <div id="it-params"></div>
-      <div><label><input type="checkbox" id="it-cdf"> Show CDF</label></div>
-    </div>
-    <div id="it-chart" style="min-height:320px;"></div>
-    <div class="btn-row">
-      <strong>Run the experiment:</strong>
-      <button id="it-1">one time</button>
-      <button id="it-10">10 times</button>
-      <button id="it-50">50 times</button>
-      <button id="it-100">100 times</button>
-      <button id="it-refresh">Refresh</button>
-    </div>
-    <div id="it-stats" style="font-size:0.9em;margin-top:8px;color:#333;"></div>
-    <div id="it-results" style="font-size:0.82em;color:#666;margin-top:4px;max-height:55px;overflow-y:auto;word-break:break-all;"></div>
-    <div class="legend" style="font-size:0.85em;color:#555;margin-top:10px;">
-      <strong style="color:#333;">●/━</strong> PMF/PDF &nbsp;&nbsp;
-      <strong style="color:#CC0000;">━</strong> CDF &nbsp;&nbsp;
-      <strong style="color:#CC7000;">█</strong> Experiment histogram
-    </div>
-  </div>`;
+**Step 2:** Find which interval the number belongs to:
 
-  const distEl = container.querySelector('#it-dist');
-  const paramsEl = container.querySelector('#it-params');
-  const chartEl = container.querySelector('#it-chart');
-  const cdfCheck = container.querySelector('#it-cdf');
-  const statsEl = container.querySelector('#it-stats');
-  const resultsEl = container.querySelector('#it-results');
+- $[0, 0.3)$ → Green (outcome 0)
+- $[0.3, 0.8)$ → Blue (outcome 1)
+- $[0.8, 1.0]$ → Orange (outcome 2)
 
-  function getParams() {
-    const d = distEl.value;
-    if (d === "binomial") {
-      return {dist: d, n: parseInt(container.querySelector('#it-n')?.value || 10),
-              p: parseFloat(container.querySelector('#it-p')?.value || 0.3)};
-    } else if (d === "uniform") {
-      return {dist: d, a: parseFloat(container.querySelector('#it-a')?.value || 0),
-              b: parseFloat(container.querySelector('#it-b')?.value || 5)};
-    } else {
-      return {dist: d, mu: parseFloat(container.querySelector('#it-mu')?.value || 0),
-              sigma: parseFloat(container.querySelector('#it-sigma')?.value || 1)};
-    }
-  }
+**Step 3:** Assign the outcome based on the interval.
 
-  function updateParamsUI() {
-    const d = distEl.value;
-    if (d === "binomial") {
-      paramsEl.innerHTML = `<label>n =</label><input type="number" id="it-n" value="10" min="1" max="50" style="width:55px;">
-        <label style="margin-left:12px;">p =</label><input type="number" id="it-p" value="0.3" min="0.01" max="0.99" step="0.05" style="width:60px;">`;
-    } else if (d === "uniform") {
-      paramsEl.innerHTML = `<label>a =</label><input type="number" id="it-a" value="0" step="0.5" style="width:55px;">
-        <label style="margin-left:12px;">b =</label><input type="number" id="it-b" value="5" step="0.5" style="width:55px;">`;
-    } else {
-      paramsEl.innerHTML = `<label>μ =</label><input type="number" id="it-mu" value="0" step="0.1" style="width:55px;">
-        <label style="margin-left:12px;">σ =</label><input type="number" id="it-sigma" value="1" min="0.1" step="0.1" style="width:55px;">`;
-    }
-    paramsEl.querySelectorAll('input').forEach(inp => inp.addEventListener('change', () => { experiments = []; lastX = null; render(); }));
-  }
+The right side of the figure shows an equivalent view using the **CDF staircase**. We simply rotated the bars from the left and pushed them to the right. The red line is the cumulative distribution function. Now all you have to do is sample uniformly from the vertical interval $[0, 1]$ (the black dots on the left edge). Then you read out what the value is on the horizontal axis by following the CDF — and you are picking numbers according to the distribution on the left.
 
-  function binomCoeff(n, k) {
-    if (k < 0 || k > n) return 0;
-    let c = 1;
-    for (let i = 0; i < k; i++) c = c * (n - i) / (i + 1);
-    return c;
-  }
+For example, if your uniform sample is $u = 0.55$, it sits between 0.3 and 0.8 on the CDF. Following the staircase horizontally, you land at $x = 1$ (Blue). The bigger the step, the more likely you are to land there.
 
-  function sampleOne(params) {
-    if (params.dist === "binomial") {
-      let s = 0;
-      for (let i = 0; i < params.n; i++) if (Math.random() < params.p) s++;
-      return s;
-    } else if (params.dist === "uniform") {
-      return params.a + Math.random() * (params.b - params.a);
-    } else {
-      const u1 = Math.random(), u2 = Math.random();
-      return params.mu + params.sigma * Math.sqrt(-2*Math.log(u1)) * Math.cos(2*Math.PI*u2);
-    }
-  }
+### Continuous Case
 
-  function render() {
-    const params = getParams();
-    const showC = cdfCheck.checked;
-    const plotWidth = chartEl.clientWidth || 720;
-    let marks = [];
+The same idea works for continuous distributions. Suppose you want to sample from a normal distribution. Calculating areas directly is hard, but the CDF gives you a shortcut.
 
-    if (params.dist === "binomial") {
-      const {n, p} = params;
-      const xs = Array.from({length: n+1}, (_, i) => i);
-      const pmf = xs.map(k => binomCoeff(n, k) * Math.pow(p, k) * Math.pow(1-p, n-k));
+The method is called **inverse transform sampling** and follows three steps:
 
-      // Experiment histogram (behind)
-      if (experiments.length > 0) {
-        const counts = new Array(n+1).fill(0);
-        experiments.forEach(v => { if (v >= 0 && v <= n) counts[Math.round(v)]++; });
-        const histData = xs.map((x, i) => ({x1: x - 0.4, x2: x + 0.4, y: counts[i] / experiments.length}));
-        marks.push(Plot.rectY(histData, {x1: "x1", x2: "x2", y1: 0, y2: "y", fill: "#CC7000", fillOpacity: 0.5}));
-      }
+**Step 1:** Sample $u$ uniformly from $[0, 1]$.
 
-      // PMF lollipops (on top)
-      const pmfData = xs.map((x, i) => ({x, y: pmf[i]}));
-      marks.push(Plot.ruleX(pmfData, {x: "x", y1: 0, y2: "y", stroke: "#333", strokeWidth: 2}));
-      marks.push(Plot.dot(pmfData, {x: "x", y: "y", fill: "#333", r: 5}));
+**Step 2:** Find the value $x$ such that $F(x) = u$ (i.e., invert the CDF).
 
-      if (showC) {
-        const cdf = []; let cum = 0;
-        for (const v of pmf) { cum += v; cdf.push(cum); }
-        const cdfSteps = [{x: -1, y: 0}];
-        for (let i = 0; i < xs.length; i++) {
-          cdfSteps.push({x: xs[i], y: i > 0 ? cdf[i-1] : 0});
-          cdfSteps.push({x: xs[i], y: cdf[i]});
-          if (i < xs.length-1) cdfSteps.push({x: xs[i+1], y: cdf[i]});
-          else cdfSteps.push({x: n+1, y: cdf[i]});
-        }
-        marks.push(Plot.line(cdfSteps, {x: "x", y: "y", stroke: "#CC0000", strokeWidth: 2}));
-      }
+**Step 3:** The resulting $x$ follows the desired distribution.
 
-      marks.push(Plot.ruleY([0]));
-      chartEl.innerHTML = '';
-      chartEl.appendChild(Plot.plot({
-        width: plotWidth, height: 300, marginLeft: 45,
-        x: {domain: [-0.5, n + 0.5], label: "x"},
-        y: {domain: [0, showC ? 1.05 : Math.max(...pmf) * 1.4], label: "f"},
-        marks
-      }));
+Why does this work? Points sampled uniformly on the vertical axis of the CDF get mapped to the horizontal axis. Where the CDF is steep (high density region), many uniform samples get mapped to a narrow range of $x$ values, producing more points there. Where the CDF is flat (low density region), fewer samples land.
 
-    } else {
-      let xMin, xMax;
-      if (params.dist === "uniform") {
-        const {a, b} = params;
-        xMin = a - 1.5; xMax = b + 1.5;
-        if (a >= b) { xMin = a - 2; xMax = a + 2; }
-        const h = (b > a) ? 1/(b - a) : 0;
-        const maxPdfEst = Math.max(h, 0.01);
+```{python}
+#| echo: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
 
-        // Experiment dots + histogram (only within [a, b])
-        if (experiments.length > 0) {
-          const nBins = Math.max(Math.round((b - a) * 5), 10);
-          const binW = (b - a) / nBins;
-          const bins = new Array(nBins).fill(0);
-          experiments.forEach(v => {
-            const idx = Math.floor((v - a) / binW);
-            if (idx >= 0 && idx < nBins) bins[idx]++;
-          });
-          const histData = bins.map((c, i) => ({x1: a + i*binW, x2: a + (i+1)*binW, y: c / (experiments.length * binW)}));
-          marks.push(Plot.rectY(histData, {x1: "x1", x2: "x2", y1: 0, y2: "y", fill: "#CC7000", fillOpacity: 0.45}));
-          const dotData = experiments.map(v => ({x: v, y: -0.02 * maxPdfEst + Math.random() * 0.04 * maxPdfEst}));
-          marks.push(Plot.dot(dotData, {x: "x", y: "y", fill: "#CC7000", r: 3.5, fillOpacity: 0.6}));
-        }
+fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
 
-        // PDF: flat line between a and b, zero line outside, circles at endpoints on the x-axis
-        marks.push(Plot.line([{x: xMin, y: 0}, {x: a, y: 0}], {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
-        marks.push(Plot.line([{x: a, y: h}, {x: b, y: h}], {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
-        marks.push(Plot.line([{x: b, y: 0}, {x: xMax, y: 0}], {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
-        marks.push(Plot.dot([{x: a, y: 0}, {x: b, y: 0}], {x: "x", y: "y", fill: "#333", r: 6}));
+# Left: PDF with the sampled points from inverse CDF shown on x-axis
+rng = np.random.default_rng(42)
+x = np.linspace(-3.5, 3.5, 300)
+pdf = norm.pdf(x)
 
-        if (showC) {
-          const cdfSteps = [{x: xMin, y: 0}, {x: a, y: 0}, {x: b, y: 1}, {x: xMax, y: 1}];
-          marks.push(Plot.line(cdfSteps, {x: "x", y: "y", stroke: "#CC0000", strokeWidth: 2}));
-        }
+# Uniformly spaced samples (same as right plot)
+u_samples = np.linspace(0.05, 0.95, 7)
+x_samples = norm.ppf(u_samples)
 
-        marks.push(Plot.ruleY([0]));
-        chartEl.innerHTML = '';
-        chartEl.appendChild(Plot.plot({
-          width: plotWidth, height: 300, marginLeft: 45,
-          x: {domain: [xMin, xMax], label: "x"},
-          y: {domain: [0, showC ? Math.max(maxPdfEst * 1.2, 1.05) : maxPdfEst * 1.5], label: "f"},
-          marks
-        }));
+axes[0].plot(x, pdf, color='#4682B4', linewidth=2.5)
+axes[0].fill_between(x, pdf, alpha=0.15, color='#4682B4')
+# Show the same points that come out of the CDF mapping
+axes[0].scatter(x_samples, np.zeros(len(x_samples)) - 0.01, color='#333', s=50, zorder=5)
+axes[0].set_xlabel('$x$', fontsize=11)
+axes[0].set_ylabel('Density', fontsize=11)
+axes[0].set_title('PDF: sampled points cluster where density is high', fontsize=12, color='gray')
+axes[0].set_ylim(-0.05, 0.45)
+axes[0].grid(linestyle='--', alpha=0.4)
 
-      } else {
-        // Normal distribution
-        xMin = params.mu - 4*params.sigma; xMax = params.mu + 4*params.sigma;
-        const pdfFn = x => (1/(params.sigma*Math.sqrt(2*Math.PI))) * Math.exp(-0.5*((x-params.mu)/params.sigma)**2);
+# Right: CDF with uniform samples mapped
+cdf = norm.cdf(x)
+# Uniformly spaced samples on the vertical [0, 1] interval
+u_samples = np.linspace(0.05, 0.95, 7)
+x_samples = norm.ppf(u_samples)
 
-        const step = (xMax - xMin) / 300;
-        const xs = Array.from({length: 301}, (_, i) => xMin + i*step);
-        const pdfData = xs.map(x => ({x, y: pdfFn(x)}));
-        const maxPdfEst = Math.max(...pdfData.map(d => d.y), 0.01);
+axes[1].plot(x, cdf, color='#4682B4', linewidth=2.5)
+for u, xs in zip(u_samples, x_samples):
+    # Orange dotted lines: horizontal from right edge to CDF, then vertical down to x-axis
+    axes[1].plot([xs, 3.8], [u, u], ':', color='#CC7000', linewidth=1)
+    axes[1].plot([xs, xs], [0, u], ':', color='#CC7000', linewidth=1)
+    # Dot where it hits the CDF
+    axes[1].plot(xs, u, 'o', color='#CC7000', markersize=5, zorder=5)
+    # Dot on x-axis
+    axes[1].plot(xs, 0, 'o', color='#333', markersize=5, zorder=5)
+    # Dot on the right edge (uniform vertical samples)
+    axes[1].plot(3.8, u, 'o', color='#333', markersize=7, zorder=5)
 
-        // Experiment dots on x-axis + histogram (behind)
-        if (experiments.length > 0) {
-          const nBins = 30;
-          const binW = (xMax - xMin) / nBins;
-          const bins = new Array(nBins).fill(0);
-          experiments.forEach(v => {
-            const idx = Math.floor((v - xMin) / binW);
-            if (idx >= 0 && idx < nBins) bins[idx]++;
-          });
-          const histData = bins.map((c, i) => ({x1: xMin + i*binW, x2: xMin + (i+1)*binW, y: c / (experiments.length * binW)}));
-          marks.push(Plot.rectY(histData, {x1: "x1", x2: "x2", y1: 0, y2: "y", fill: "#CC7000", fillOpacity: 0.45}));
-          const dotData = experiments.map(v => ({x: v, y: -0.02 * maxPdfEst + Math.random() * 0.08 * maxPdfEst}));
-          marks.push(Plot.dot(dotData, {x: "x", y: "y", fill: "#CC7000", r: 3.5, fillOpacity: 0.6}));
-        }
+# Gray vertical bar on the right representing the [0, 1] interval
+axes[1].axvline(x=3.8, ymin=0, ymax=1, color='#888', linewidth=6, alpha=0.3, zorder=1)
 
-        // PDF curve (on top)
-        marks.push(Plot.line(pdfData, {x: "x", y: "y", stroke: "#333", strokeWidth: 2.5}));
+axes[1].set_xlabel('$x$', fontsize=11)
+axes[1].set_ylabel('$F(x) = P(X \\leq x)$', fontsize=11)
+axes[1].set_title('CDF: sample $u$ uniformly, read $x$ horizontally', fontsize=12, color='gray')
+axes[1].set_xlim(-3.5, 4.2)
+axes[1].set_ylim(0, 1.05)
+axes[1].grid(linestyle='--', alpha=0.4)
 
-        if (showC) {
-          let cum = 0;
-          const cdfData = xs.map(x => { cum += pdfFn(x) * step; return {x, y: Math.min(cum, 1)}; });
-          marks.push(Plot.line(cdfData, {x: "x", y: "y", stroke: "#CC0000", strokeWidth: 2}));
-        }
-
-        marks.push(Plot.ruleY([0]));
-        chartEl.innerHTML = '';
-        chartEl.appendChild(Plot.plot({
-          width: plotWidth, height: 300, marginLeft: 45,
-          x: {domain: [xMin, xMax], label: "x"},
-          y: {domain: [0, showC ? Math.max(maxPdfEst * 1.2, 1.05) : maxPdfEst * 1.4], label: "f"},
-          marks
-        }));
-      }
-    }
-
-    // Update stats
-    if (experiments.length > 0) {
-      statsEl.innerHTML = `<strong>x = </strong>${lastX !== null ? (typeof lastX === 'number' ? lastX.toFixed(2) : lastX) : ''} &nbsp;&nbsp;&nbsp; <strong>Total experiments = </strong>${experiments.length}`;
-      const shown = experiments.slice(-100).map(v => typeof v === 'number' ? v.toFixed(2) : v).join('  ');
-      resultsEl.textContent = shown + (experiments.length > 100 ? ' ... (showing last 100)' : '');
-    } else {
-      statsEl.textContent = '';
-      resultsEl.textContent = '';
-    }
-  }
-
-  function runExp(count) {
-    const params = getParams();
-    for (let i = 0; i < count; i++) {
-      const v = sampleOne(params);
-      experiments.push(v);
-      lastX = v;
-    }
-    render();
-  }
-
-  distEl.addEventListener('change', () => { updateParamsUI(); experiments = []; lastX = null; render(); });
-  cdfCheck.addEventListener('change', render);
-  container.querySelector('#it-1').addEventListener('click', () => runExp(1));
-  container.querySelector('#it-10').addEventListener('click', () => runExp(10));
-  container.querySelector('#it-50').addEventListener('click', () => runExp(50));
-  container.querySelector('#it-100').addEventListener('click', () => runExp(100));
-  container.querySelector('#it-refresh').addEventListener('click', () => { experiments = []; lastX = null; render(); });
-
-  updateParamsUI();
-  setTimeout(render, 150);
-  return container;
-}
+plt.tight_layout()
+plt.show()
 ```
+
+On the left, you can see that sampled points cluster where the PDF is tallest (near the mean). On the right, uniform samples on the vertical axis are mapped through the CDF to produce values that follow the normal distribution.
+
+### Summary
+
+The CDF is not just a way to read probabilities — it is a practical tool for generating random samples from any distribution. This **inverse transform method** works for both discrete and continuous distributions and is widely used in simulations and machine learning.
+
+### Review Questions {.unnumbered}
+
+**13. In the discrete sampling method, why do you generate a uniform random number between 0 and 1?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because the probabilities of all outcomes sum to 1, they partition the interval $[0, 1]$ into segments. A uniform random number lands in each segment with probability equal to the segment's length, which matches the desired probability of each outcome.
+:::
+
+---
+
+**14. Why does inverse transform sampling produce more samples where the PDF is high?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Where the PDF is high, the CDF is steep (rising quickly). A steep CDF means many different uniform values $u$ all map to a narrow range of $x$ values. So more samples end up concentrated there, exactly matching the high density.
+:::
+
+---
+
+**15. Can you use inverse transform sampling if you only know the CDF numerically (not as a formula)?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Yes. You can interpolate the CDF numerically. Given a uniform sample $u$, you find the $x$ where the CDF crosses $u$ using interpolation or binary search. This is commonly done in practice for distributions without closed-form inverse CDFs.
+:::
