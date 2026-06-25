@@ -237,6 +237,20 @@ With a 99.9% effective test: true positives = $100 \times 0.999 = 99.9$, false p
 The test accuracy (99%) tells us $P(\text{positive} \mid \text{sick})$, which is the probability of testing positive if you are sick. But what we actually want to know is the reverse: $P(\text{sick} \mid \text{positive})$. These two probabilities are not the same. Bayes theorem lets us flip the conditional probability by accounting for the base rate of the disease.
 :::
 
+---
+
+**4. A disease impacts 1% of the population. Researchers devised a test so that people with the disease test positive 95% of the time. People who do not have the disease test negative 90% of the time. If an individual receives a positive test result, what is the probability that they truly have the disease?**
+
+a. 15.58%
+b. 42.76%
+c. 8.76%
+d. 90%
+
+::: {.callout-tip collapse="true"}
+## Answer
+**c.** 8.76%. Using Bayes theorem: $P(\text{sick} \mid \text{test}_{pos}) = \frac{P(\text{test}_{pos} \mid \text{sick}) \cdot P(\text{sick})}{P(\text{test}_{pos})}$. We have $P(\text{sick}) = 0.01$, $P(\text{test}_{pos} \mid \text{sick}) = 0.95$, $P(\text{test}_{pos} \mid \text{not sick}) = 1 - 0.90 = 0.10$. Using the law of total probability: $P(\text{test}_{pos}) = 0.95 \times 0.01 + 0.10 \times 0.99 = 0.0095 + 0.099 = 0.1085$. Therefore $P(\text{sick} \mid \text{test}_{pos}) = \frac{0.0095}{0.1085} \approx 0.0876 = 8.76\%$. Even with a positive test, the low base rate means most positives are false positives.
+:::
+
 ## Spam Detection Example
 
 Here is another application of Bayes theorem: detecting spam emails.
@@ -615,3 +629,224 @@ html`<div style="display:flex; gap:12px; margin:12px 0;">
 ```
 
 Drag the slider to increase the number of games. As you go from 10 to 1,000, the red line (stay) settles around 33% and the blue line (switch) settles around 67%. The more games you simulate, the closer both lines get to their expected values.
+
+
+## Lab: Naive Bayes Spam Detection
+
+In this lab you will implement the Naive Bayes algorithm for a spam detection problem, directly applying Bayes theorem. You will build a classifier that determines whether an email is spam or ham (not spam) based on the words it contains.
+
+Download the dataset: [emails.csv](/media/emails.csv)
+
+### Problem Setup
+
+The goal is to classify emails as spam ($1$) or ham ($0$). Using Bayes theorem:
+
+$$
+P(\text{spam} \mid \text{email}) = \frac{P(\text{email} \mid \text{spam}) \cdot P(\text{spam})}{P(\text{email})}
+$$
+
+Since $P(\text{email})$ appears in both the spam and ham calculations, you only need to compare:
+
+- $P(\text{spam}) \cdot P(\text{email} \mid \text{spam})$
+- $P(\text{ham}) \cdot P(\text{email} \mid \text{ham})$
+
+The **naive assumption** is that each word in an email appears independently of the others:
+
+$$
+P(\text{email} \mid \text{spam}) = P(\text{word}_1 \mid \text{spam}) \cdot P(\text{word}_2 \mid \text{spam}) \cdots P(\text{word}_n \mid \text{spam})
+$$
+
+This assumption is false (words are correlated), but it leads to a simple and surprisingly effective algorithm.
+
+### Loading and Exploring Data
+
+```{python}
+#| echo: true
+import numpy as np
+import pandas as pd
+from nltk.corpus import stopwords
+from nltk import word_tokenize
+import string
+
+dataframe_emails = pd.read_csv('../../media/emails.csv')
+dataframe_emails.head()
+```
+
+```{python}
+#| echo: true
+print(f"Number of emails: {len(dataframe_emails)}")
+print(f"Proportion of spam emails: {dataframe_emails.spam.sum()/len(dataframe_emails):.4f}")
+print(f"Proportion of ham emails: {1-dataframe_emails.spam.sum()/len(dataframe_emails):.4f}")
+```
+
+The dataset is **unbalanced**: about 24% spam and 76% ham.
+
+### Preprocessing
+
+Every email starts with "Subject: " which we remove. We shuffle the data for proper train/test splitting, then tokenize the text by removing stopwords and punctuation.
+
+```{python}
+#| echo: true
+def preprocess_emails(df):
+    """Shuffle the dataset and extract email content and labels."""
+    df = df.sample(frac=1, ignore_index=True, random_state=42)
+    X = df.text.apply(lambda x: x[9:]).to_numpy()
+    Y = df.spam.to_numpy()
+    return X, Y
+
+X, Y = preprocess_emails(dataframe_emails)
+```
+
+```{python}
+#| echo: true
+def preprocess_text(X):
+    """Remove stopwords and punctuation, tokenize text."""
+    stop = set(stopwords.words('english') + list(string.punctuation))
+    if isinstance(X, str):
+        X = np.array([X])
+    X_preprocessed = []
+    for email in X:
+        email = np.array([i.lower() for i in word_tokenize(email) if i.lower() not in stop]).astype(X.dtype)
+        X_preprocessed.append(email)
+    if len(X_preprocessed) == 1:
+        return X_preprocessed[0]
+    return X_preprocessed
+
+# This may take a minute to run
+X_treated = preprocess_text(X)
+```
+
+```{python}
+#| echo: true
+email_index = 989
+print(f"Before: {X[email_index][:80]}...")
+print(f"After: {X_treated[email_index][:10]}")
+```
+
+### Train/Test Split
+
+```{python}
+#| echo: true
+TRAIN_SIZE = int(0.80 * len(X_treated))
+
+X_train = X_treated[:TRAIN_SIZE]
+Y_train = Y[:TRAIN_SIZE]
+X_test = X_treated[TRAIN_SIZE:]
+Y_test = Y[TRAIN_SIZE:]
+
+print(f"Proportion of spam in train: {sum(Y_train == 1)/len(Y_train):.4f}")
+print(f"Proportion of spam in test: {sum(Y_test == 1)/len(Y_test):.4f}")
+```
+
+### Implementing Naive Bayes
+
+**Step 1:** Build a word frequency dictionary. For each word, count how many spam and ham emails contain it. Start each count at 1 to avoid zeros in the product.
+
+```{python}
+#| echo: true
+def get_word_frequency(X, Y):
+    """Build a dictionary counting word appearances in spam and ham emails."""
+    word_dict = {}
+    for i in range(len(X)):
+        email = set(X[i])
+        cls = Y[i]
+        for word in email:
+            if word not in word_dict:
+                word_dict[word] = {"spam": 1, "ham": 1}
+            if cls == 0:
+                word_dict[word]["ham"] += 1
+            if cls == 1:
+                word_dict[word]["spam"] += 1
+    return word_dict
+
+word_frequency = get_word_frequency(X_train, Y_train)
+class_frequency = {'ham': sum(Y_train == 0), 'spam': sum(Y_train == 1)}
+print(f"Vocabulary size: {len(word_frequency)} words")
+print(f"Training set: {class_frequency}")
+```
+
+**Step 2:** Compute $P(\text{word} \mid \text{class})$:
+
+```{python}
+#| echo: true
+def prob_word_given_class(word, cls, word_frequency, class_frequency):
+    """Calculate P(word | class)."""
+    return word_frequency[word][cls] / class_frequency[cls]
+
+print(f"P(lottery | spam) = {prob_word_given_class('lottery', 'spam', word_frequency, class_frequency):.6f}")
+print(f"P(lottery | ham) = {prob_word_given_class('lottery', 'ham', word_frequency, class_frequency):.6f}")
+print(f"P(schedule | spam) = {prob_word_given_class('schedule', 'spam', word_frequency, class_frequency):.6f}")
+print(f"P(schedule | ham) = {prob_word_given_class('schedule', 'ham', word_frequency, class_frequency):.6f}")
+```
+
+**Step 3:** Compute $P(\text{email} \mid \text{class})$ by multiplying word probabilities:
+
+```{python}
+#| echo: true
+def prob_email_given_class(treated_email, cls, word_frequency, class_frequency):
+    """Calculate P(email | class) using naive independence assumption."""
+    prob = 1
+    for word in treated_email:
+        if word in word_frequency:
+            prob *= prob_word_given_class(word, cls, word_frequency, class_frequency)
+    return prob
+
+example_email = "Click here to win a lottery ticket and claim your prize!"
+treated = preprocess_text(example_email)
+print(f"Email: {example_email}")
+print(f"Tokens: {treated}")
+print(f"P(email | spam) = {prob_email_given_class(treated, 'spam', word_frequency, class_frequency):.4e}")
+print(f"P(email | ham) = {prob_email_given_class(treated, 'ham', word_frequency, class_frequency):.4e}")
+```
+
+**Step 4:** The full classifier. Compare $P(\text{spam}) \cdot P(\text{email} \mid \text{spam})$ vs $P(\text{ham}) \cdot P(\text{email} \mid \text{ham})$:
+
+```{python}
+#| echo: true
+def naive_bayes(treated_email, word_frequency, class_frequency):
+    """Classify an email as spam (1) or ham (0)."""
+    prob_email_spam = prob_email_given_class(treated_email, 'spam', word_frequency, class_frequency)
+    prob_email_ham = prob_email_given_class(treated_email, 'ham', word_frequency, class_frequency)
+
+    p_spam = class_frequency['spam'] / (class_frequency['spam'] + class_frequency['ham'])
+    p_ham = class_frequency['ham'] / (class_frequency['spam'] + class_frequency['ham'])
+
+    spam_likelihood = p_spam * prob_email_spam
+    ham_likelihood = p_ham * prob_email_ham
+
+    return 1 if spam_likelihood >= ham_likelihood else 0
+
+for email in ["Click here to win a lottery ticket and claim your prize!",
+              "Our meeting will happen in the main office. Please be there in time."]:
+    treated = preprocess_text(email)
+    pred = "spam" if naive_bayes(treated, word_frequency, class_frequency) == 1 else "ham"
+    print(f"'{email}' -> {pred}")
+```
+
+### Model Performance
+
+```{python}
+#| echo: true
+Y_pred = [naive_bayes(email, word_frequency, class_frequency) for email in X_test]
+
+true_positives = sum(1 for yt, yp in zip(Y_test, Y_pred) if yt == 1 and yp == 1)
+true_negatives = sum(1 for yt, yp in zip(Y_test, Y_pred) if yt == 0 and yp == 0)
+accuracy = (true_positives + true_negatives) / len(Y_test)
+
+print(f"True positives (spam correctly detected): {true_positives}")
+print(f"True negatives (ham correctly detected): {true_negatives}")
+print(f"Accuracy: {accuracy:.4f}")
+```
+
+Even with the naive independence assumption, the model achieves about 85% accuracy. Not bad for such a simple algorithm built entirely from Bayes theorem.
+
+### Try It Yourself
+
+```{python}
+#| echo: true
+email = "Congratulations! You have been selected to receive a free vacation package. Click here now!"
+treated = preprocess_text(email)
+pred = "spam" if naive_bayes(treated, word_frequency, class_frequency) == 1 else "ham"
+print(f"Email: {email}")
+print(f"Prediction: {pred}")
+```
