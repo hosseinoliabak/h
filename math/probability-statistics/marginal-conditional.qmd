@@ -1,0 +1,775 @@
+---
+title: "Marginal and Conditional Distributions"
+date: "2026-06-25"
+difficulty: 2
+order: 17
+categories: [probability]
+---
+
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+Now that you know joint distributions, there are two important operations you can perform on them: finding the **marginal distribution** and the **conditional distribution**.
+
+- **Marginal distribution:** You have the full joint distribution of two variables, but you want the distribution of just one of them (ignoring the other). You aggregate (sum) over the variable you do not care about.
+- **Conditional distribution:** You have the full joint distribution, but you want the distribution of one variable given that the other takes a specific value. You take a "slice" of the joint distribution.
+
+## Marginal Distributions
+
+### Intuition
+
+Imagine you have the full distribution of ages and heights of a population. All of a sudden, you do not care about age anymore. You just want the distribution of heights. What do you do? You **aggregate over all the ages**. The result is called the **marginal distribution** of height.
+
+A marginal distribution is simply the distribution of one variable while completely ignoring the other. It is useful for summarizing the behavior of one variable at a time.
+
+### Children Example (Age and Height)
+
+Recall the joint PMF of our 10 children:
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
+
+ages = [7, 8, 9, 10]
+heights = [45, 46, 47, 48, 49, 50]
+joint = np.array([
+    [0.1, 0.2, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.2, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.3, 0.1],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+])
+
+marg_height = joint.sum(axis=0)  # sum columns
+marg_age = joint.sum(axis=1)     # sum rows
+
+fig = plt.figure(figsize=(9, 7))
+gs = GridSpec(2, 2, width_ratios=[5, 1], height_ratios=[5, 1], hspace=0.08, wspace=0.08)
+
+# Main heatmap
+ax_main = fig.add_subplot(gs[0, 0])
+im = ax_main.imshow(joint, cmap='Blues', aspect='auto', vmin=0, vmax=0.35)
+ax_main.set_xticks(range(len(heights)))
+ax_main.set_xticklabels(heights)
+ax_main.set_yticks(range(len(ages)))
+ax_main.set_yticklabels(ages)
+ax_main.set_xlabel('Height (inches)', fontsize=12)
+ax_main.set_ylabel('Age (years)', fontsize=12)
+ax_main.set_title('Joint PMF with marginals', fontsize=12, color='gray')
+
+for i in range(len(ages)):
+    for j in range(len(heights)):
+        val = joint[i, j]
+        color = 'white' if val > 0.15 else 'black'
+        ax_main.text(j, i, f'{val:.1f}', ha='center', va='center', fontsize=11, fontweight='bold', color=color)
+
+# Right bar: marginal of age (row sums)
+ax_right = fig.add_subplot(gs[0, 1])
+ax_right.barh(range(len(ages)), marg_age, color='#4682B4', alpha=0.7, edgecolor='white', height=0.7)
+for i, val in enumerate(marg_age):
+    ax_right.text(val + 0.01, i, f'{val:.1f}', va='center', fontsize=10, fontweight='bold', color='#4682B4')
+ax_right.set_yticks([])
+ax_right.set_xlim(0, 0.55)
+ax_right.set_xlabel('$P_X(x)$', fontsize=10)
+ax_right.set_title('$P_X$', fontsize=11, color='#4682B4', fontweight='bold')
+ax_right.grid(linestyle='--', alpha=0.3, axis='x')
+
+# Bottom bar: marginal of height (column sums)
+ax_bottom = fig.add_subplot(gs[1, 0])
+ax_bottom.bar(range(len(heights)), marg_height, color='#2E8B57', alpha=0.7, edgecolor='white', width=0.7)
+for j, val in enumerate(marg_height):
+    if val > 0:
+        ax_bottom.text(j, val + 0.01, f'{val:.1f}', ha='center', fontsize=10, fontweight='bold', color='#2E8B57')
+ax_bottom.set_xticks(range(len(heights)))
+ax_bottom.set_xticklabels(heights)
+ax_bottom.set_ylim(0, 0.45)
+ax_bottom.set_ylabel('$P_Y(y)$', fontsize=10)
+ax_bottom.set_title('$P_Y$', fontsize=11, color='#2E8B57', fontweight='bold', loc='left')
+ax_bottom.grid(linestyle='--', alpha=0.3, axis='y')
+
+# Hide bottom-right corner
+ax_empty = fig.add_subplot(gs[1, 1])
+ax_empty.axis('off')
+
+plt.tight_layout()
+plt.show()
+```
+
+For example, $P_Y(50) = \sum_i P_{XY}(x_i, 50) = 0 + 0 + 0.1 + 0.1 = 2/10$, and $P_X(7) = 3/10$ because that is the sum of the entire first row.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 3.5))
+
+# Marginal of height (sum columns)
+heights = [45, 46, 47, 48, 49, 50]
+marg_height = [0.1, 0.2, 0.2, 0.0, 0.3, 0.2]
+axes[0].bar(heights, marg_height, color='#2E8B57', alpha=0.7, edgecolor='white', width=0.6)
+for h, p in zip(heights, marg_height):
+    if p > 0:
+        axes[0].text(h, p + 0.02, f'{p:.1f}', ha='center', fontsize=11, fontweight='bold')
+axes[0].set_xlabel('Height (inches)', fontsize=12)
+axes[0].set_ylabel('$P_Y(y)$', fontsize=12)
+axes[0].set_title('Marginal distribution of Height', fontsize=11, color='gray')
+axes[0].set_xticks(heights)
+axes[0].set_ylim(0, 0.45)
+axes[0].grid(linestyle='--', alpha=0.3, axis='y')
+
+# Marginal of age (sum rows)
+ages = [7, 8, 9, 10]
+marg_age = [0.3, 0.2, 0.4, 0.1]
+axes[1].bar(ages, marg_age, color='#4682B4', alpha=0.7, edgecolor='white', width=0.6)
+for a, p in zip(ages, marg_age):
+    axes[1].text(a, p + 0.02, f'{p:.1f}', ha='center', fontsize=11, fontweight='bold')
+axes[1].set_xlabel('Age (years)', fontsize=12)
+axes[1].set_ylabel('$P_X(x)$', fontsize=12)
+axes[1].set_title('Marginal distribution of Age', fontsize=11, color='gray')
+axes[1].set_xticks(ages)
+axes[1].set_ylim(0, 0.55)
+axes[1].grid(linestyle='--', alpha=0.3, axis='y')
+
+plt.tight_layout()
+plt.show()
+```
+
+Notice that these are exactly the individual distributions we started with before constructing the joint distribution. Marginalization recovers them from the joint table.
+
+### Dice Example (Independent Variables)
+
+For two independent dice ($X$ = first die, $Y$ = second die), the joint PMF is a uniform $\frac{1}{36}$ grid. When you sum each row to get the marginal of $X$:
+
+$$
+P_X(x) = \sum_{y=1}^{6} \frac{1}{36} = \frac{6}{36} = \frac{1}{6}
+$$
+
+The same applies to $Y$. You recover the original $\frac{1}{6}$ for each value. This makes sense: if you already knew each die had probability $\frac{1}{6}$ per face, marginalizing the joint just gives you that back.
+
+### Sum-of-Dice Example (Dependent Variables)
+
+For $X$ = first die and $Y$ = sum of both dice, the joint PMF has a diagonal stripe pattern. When you marginalize over $X$ (sum each row), you get the PMF of the sum:
+
+$$
+P_Y(y) = \sum_{x=1}^{6} P_{XY}(x, y)
+$$
+
+For $y = 10$: the valid cells are $(x=4, y=10)$, $(x=5, y=10)$, and $(x=6, y=10)$. Each contributes $\frac{1}{36}$, so $P_Y(10) = \frac{3}{36}$.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
+
+# Build joint PMF: X = first die (1-6), Y = sum (2-12)
+x_vals = np.arange(1, 7)
+y_vals = np.arange(2, 13)
+
+joint = np.zeros((len(y_vals), len(x_vals)))
+for i, y in enumerate(y_vals):
+    for j, x in enumerate(x_vals):
+        second_die = y - x
+        if 1 <= second_die <= 6:
+            joint[i, j] = 1/36
+
+marg_y = joint.sum(axis=1)  # row sums = marginal of Y
+
+fig = plt.figure(figsize=(10, 7))
+gs = GridSpec(1, 2, width_ratios=[3, 1.2], wspace=0.15)
+
+# Left: joint PMF heatmap
+ax_main = fig.add_subplot(gs[0, 0])
+im = ax_main.imshow(joint, cmap='Blues', aspect='auto', vmin=0, vmax=0.035, origin='lower')
+ax_main.set_xticks(range(6))
+ax_main.set_xticklabels(x_vals)
+ax_main.set_yticks(range(11))
+ax_main.set_yticklabels(y_vals)
+ax_main.set_xlabel('X (first die)', fontsize=12)
+ax_main.set_ylabel('Y (sum of both dice)', fontsize=12)
+ax_main.set_title('Joint PMF', fontsize=12, color='gray')
+
+for i in range(len(y_vals)):
+    for j in range(len(x_vals)):
+        if joint[i, j] > 0:
+            ax_main.text(j, i, '1/36', ha='center', va='center', fontsize=7, color='black')
+
+# Right: marginal of Y (row sums as horizontal bars)
+ax_right = fig.add_subplot(gs[0, 1])
+colors = ['#4682B4'] * len(y_vals)
+colors[8] = '#CC7000'  # highlight y=10
+ax_right.barh(range(len(y_vals)), marg_y, color=colors, alpha=0.7, edgecolor='white', height=0.7)
+for i, val in enumerate(marg_y):
+    count = int(round(val * 36))
+    ax_right.text(val + 0.002, i, f'{count}/36', va='center', fontsize=9, fontweight='bold')
+ax_right.set_yticks(range(11))
+ax_right.set_yticklabels(y_vals)
+ax_right.set_xlabel('$P_Y(y)$', fontsize=11)
+ax_right.set_title('Marginal of Y\n(row sums)', fontsize=11, color='gray')
+ax_right.set_xlim(0, 0.22)
+ax_right.grid(linestyle='--', alpha=0.3, axis='x')
+
+plt.tight_layout()
+plt.show()
+```
+
+This gives the familiar triangular distribution of the sum of two dice.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(8, 3.5))
+
+sums = range(2, 13)
+counts = [1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1]
+probs_y = [c/36 for c in counts]
+
+ax.bar(sums, probs_y, color='#CC7000', alpha=0.7, edgecolor='white', width=0.6)
+for s, p in zip(sums, probs_y):
+    ax.text(s, p + 0.003, f'{counts[s-2]}/36', ha='center', fontsize=9, fontweight='bold')
+
+ax.set_xlabel('y (sum of two dice)', fontsize=12)
+ax.set_ylabel('$P_Y(y)$', fontsize=12)
+ax.set_title('Marginal distribution of Y (obtained by summing rows of the joint PMF)', fontsize=11, color='gray')
+ax.set_xticks(range(2, 13))
+ax.set_ylim(0, 0.2)
+ax.grid(linestyle='--', alpha=0.3, axis='y')
+plt.tight_layout()
+plt.show()
+```
+
+### Call Center Example (Continuous)
+
+The same idea works for continuous variables. In the call center example with waiting time ($X$) and customer rating ($Y$):
+
+- The marginal distribution of waiting time is obtained by "collapsing" the scatter plot onto the $X$-axis (summing along the $Y$-axis).
+- The marginal distribution of rating is obtained by collapsing onto the $Y$-axis (summing along the $X$-axis).
+
+You can visualize this as slicing through the 3D density surface with a plane. The slice (integral along one axis) gives you the marginal distribution of the other variable:
+
+```{ojs}
+//| echo: false
+
+{
+  const Plotly = await import("https://cdn.jsdelivr.net/npm/plotly.js-dist@2/+esm");
+  
+  // Generate the same dataset as in joint-distributions.qmd
+  function mulberry32(a) {
+    return function() {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    }
+  }
+  
+  // Beta distribution approximation using rejection sampling
+  function betaSample(rng, alpha, beta) {
+    // Use Jöhnk's algorithm for small alpha/beta
+    while (true) {
+      const u1 = rng();
+      const u2 = rng();
+      const x = Math.pow(u1, 1/alpha);
+      const y = Math.pow(u2, 1/beta);
+      if (x + y <= 1) return x / (x + y);
+    }
+  }
+  
+  const rng = mulberry32(42);
+  const n = 1000;
+  const X = [];
+  const Y = [];
+  
+  for (let i = 0; i < 500; i++) {
+    X.push(betaSample(rng, 2, 5) * 10);
+    Y.push(betaSample(rng, 5, 2) * 10);
+  }
+  for (let i = 0; i < 500; i++) {
+    X.push(betaSample(rng, 5, 2) * 10);
+    Y.push(betaSample(rng, 2, 5) * 10);
+  }
+  
+  // Compute 2D KDE on a grid
+  const gridSize = 40;
+  const xGrid = Array.from({length: gridSize}, (_, i) => i * 10 / (gridSize - 1));
+  const yGrid = Array.from({length: gridSize}, (_, i) => i * 10 / (gridSize - 1));
+  
+  const bandwidth = 1.0;
+  const Z = [];
+  for (let j = 0; j < gridSize; j++) {
+    const row = [];
+    for (let i = 0; i < gridSize; i++) {
+      let density = 0;
+      for (let k = 0; k < n; k++) {
+        const dx = (xGrid[i] - X[k]) / bandwidth;
+        const dy = (yGrid[j] - Y[k]) / bandwidth;
+        density += Math.exp(-0.5 * (dx*dx + dy*dy));
+      }
+      row.push(density / (n * 2 * Math.PI * bandwidth * bandwidth));
+    }
+    Z.push(row);
+  }
+  
+  // Marginal of X (sum over Y axis)
+  const margX = xGrid.map((_, i) => {
+    let sum = 0;
+    for (let j = 0; j < gridSize; j++) sum += Z[j][i];
+    return sum * (10 / (gridSize - 1));
+  });
+  
+  // Plane at max height for visualization
+  const maxZ = Math.max(...Z.flat());
+  const planeZ = Array.from({length: 2}, () => Array.from({length: gridSize}, () => maxZ * 0.3));
+  
+  const container = html`<div style="width:100%;max-width:800px;margin:0 auto;">
+    <div id="plotly-marginal-3d" style="width:100%;height:500px;"></div>
+  </div>`;
+  
+  const surfaceTrace = {
+    type: 'surface',
+    x: xGrid,
+    y: yGrid,
+    z: Z,
+    colorscale: [[0, '#f0f0fb'], [0.3, '#87CEEB'], [0.6, '#4682B4'], [1, '#22176F']],
+    opacity: 0.85,
+    showscale: true,
+    colorbar: {title: 'Density', len: 0.6}
+  };
+  
+  // Marginal as a filled curve on the X-Z plane (at y=0)
+  const margScale = maxZ / Math.max(...margX) * 0.8;
+  const margTrace = {
+    type: 'scatter3d',
+    mode: 'lines',
+    x: xGrid,
+    y: Array(gridSize).fill(0),
+    z: margX.map(v => v * margScale),
+    line: {color: '#CC7000', width: 5},
+    name: 'Marginal P(X)'
+  };
+  
+  const layout = {
+    title: {text: '3D Joint Density with Marginal of X', font: {size: 13, color: 'gray'}},
+    scene: {
+      xaxis: {title: 'Waiting Time (min)'},
+      yaxis: {title: 'Customer Rating'},
+      zaxis: {title: 'Density'},
+      camera: {eye: {x: 1.8, y: -1.5, z: 1.0}}
+    },
+    margin: {l: 0, r: 0, t: 40, b: 0},
+    showlegend: true,
+    legend: {x: 0.7, y: 0.9}
+  };
+  
+  yield container;
+  Plotly.default.newPlot(container.querySelector('#plotly-marginal-3d'), [surfaceTrace, margTrace], layout, {responsive: true});
+}
+```
+
+The orange curve along the front face is the marginal distribution of waiting time, obtained by integrating (summing) the density surface along the customer rating axis. This is the "slice" you get when you collapse the 2D distribution down to one dimension.
+
+### General Rule
+
+The goal of marginalization is to reduce a joint distribution (two dimensions) back to a single-variable distribution (one dimension). You sum (or integrate, for continuous) over the variable you want to eliminate:
+
+$$
+P_X(x_i) = \sum_{j} P_{XY}(x_i, y_j) \qquad \text{(sum over columns)}
+$$
+
+$$
+P_Y(y_j) = \sum_{i} P_{XY}(x_i, y_j) \qquad \text{(sum over rows)}
+$$
+
+### Review Questions {.unnumbered}
+
+**1. What is a marginal distribution?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The distribution of one variable obtained by summing (or integrating) over all values of the other variable in a joint distribution. It "ignores" one variable and describes the behavior of the remaining one.
+:::
+
+---
+
+**2. From the children joint PMF, compute the marginal probability $P_Y(49)$.**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Sum the column for height = 49: $0 + 0 + 0.3 + 0 = 0.3$. So $P_Y(49) = 3/10$.
+:::
+
+---
+
+**3. For two independent dice, why does the marginal of each die give $\frac{1}{6}$ for every face?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because summing a row (or column) of the joint PMF means adding six entries of $\frac{1}{36}$, which gives $\frac{6}{36} = \frac{1}{6}$. Independence means the joint is just the product of the marginals, so marginalizing recovers what you started with.
+:::
+
+---
+
+**4. In the sum-of-dice example, why is $P_Y(7) = \frac{6}{36}$ the largest marginal probability?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because 7 can be formed by the most combinations of two dice: (1,6), (2,5), (3,4), (4,3), (5,2), (6,1). That means the row for $y = 7$ has 6 non-zero entries of $\frac{1}{36}$, giving $P_Y(7) = \frac{6}{36}$. No other sum has as many valid pairs.
+:::
+
+
+## Conditional Distributions
+
+### Intuition
+
+With a marginal distribution, you "forget" one variable and summarize the other. With a **conditional distribution**, you do the opposite: you **fix** one variable at a specific value and ask what the distribution of the other variable looks like.
+
+For example: given that a child is 9 years old, what is the distribution of heights? You are not aggregating over all ages. You are taking a **slice** of the joint distribution at age = 9.
+
+### Children Example: P(Height | Age = 9)
+
+Fix $X = 9$ (age 9). Look at only that row of the joint PMF:
+
+| Height | 45 | 46 | 47 | 48 | 49 | 50 |
+|--------|----|----|----|----|----|----|
+| Joint $P(X=9, Y=y)$ | 0 | 0 | 0 | 0 | 0.3 | 0.1 |
+
+There is a problem: these values sum to $0.3 + 0.1 = 0.4$, not 1. A valid probability distribution must sum to 1.
+
+The fix is to **normalize** by dividing each entry by the row sum ($P_X(9) = 0.4$):
+
+| Height | 45 | 46 | 47 | 48 | 49 | 50 |
+|--------|----|----|----|----|----|----|
+| $P(Y=y \mid X=9)$ | 0 | 0 | 0 | 0 | 3/4 | 1/4 |
+
+Now the row sums to 1 and we have a proper distribution. The conditional probability is:
+
+$$
+P(Y=49 \mid X=9) = \frac{P(X=9, Y=49)}{P_X(9)} = \frac{3/10}{4/10} = \frac{3}{4}
+$$
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 3.5))
+
+heights = [45, 46, 47, 48, 49, 50]
+
+# Joint row for age=9
+joint_row = [0, 0, 0, 0, 0.3, 0.1]
+axes[0].bar(heights, joint_row, color='#4682B4', alpha=0.7, edgecolor='white', width=0.6)
+axes[0].set_xlabel('Height (inches)', fontsize=12)
+axes[0].set_ylabel('$P(X=9, Y=y)$', fontsize=12)
+axes[0].set_title('Joint PMF row for Age = 9 (sums to 0.4)', fontsize=11, color='gray')
+axes[0].set_xticks(heights)
+axes[0].set_ylim(0, 0.85)
+axes[0].text(49, 0.32, '0.3', ha='center', fontsize=11, fontweight='bold')
+axes[0].text(50, 0.12, '0.1', ha='center', fontsize=11, fontweight='bold')
+axes[0].grid(linestyle='--', alpha=0.3, axis='y')
+
+# Conditional distribution (normalized)
+cond = [0, 0, 0, 0, 3/4, 1/4]
+axes[1].bar(heights, cond, color='#CC7000', alpha=0.7, edgecolor='white', width=0.6)
+axes[1].set_xlabel('Height (inches)', fontsize=12)
+axes[1].set_ylabel('$P(Y=y \\mid X=9)$', fontsize=12)
+axes[1].set_title('Conditional distribution (normalized, sums to 1)', fontsize=11, color='gray')
+axes[1].set_xticks(heights)
+axes[1].set_ylim(0, 0.85)
+axes[1].text(49, 0.77, '3/4', ha='center', fontsize=11, fontweight='bold')
+axes[1].text(50, 0.27, '1/4', ha='center', fontsize=11, fontweight='bold')
+axes[1].grid(linestyle='--', alpha=0.3, axis='y')
+
+plt.tight_layout()
+plt.show()
+```
+
+### Formula for Conditional Distribution
+
+This normalization step is exactly the **conditional probability rule** applied to distributions:
+
+$$
+P(Y = y \mid X = x) = \frac{P_{XY}(x, y)}{P_X(x)}
+$$
+
+Where:
+
+- $P_{XY}(x, y)$ is the joint probability (numerator)
+- $P_X(x)$ is the marginal probability (denominator, the row sum)
+- $P(Y = y \mid X = x)$ is the conditional probability (the result)
+
+The denominator ensures that the conditional distribution sums to 1.
+
+### Dice Example: P(Y | X = 4)
+
+For two independent dice ($X$ = first die, $Y$ = second die), suppose the first die shows 4. What is the conditional distribution of the second die?
+
+$$
+P(Y = 1 \mid X = 4) = \frac{P_{XY}(4, 1)}{P_X(4)} = \frac{1/36}{1/6} = \frac{1}{6}
+$$
+
+This makes sense: since the dice are independent, knowing that the first die is 4 gives no information about the second die. The conditional distribution is the same as the marginal (still uniform $\frac{1}{6}$ for each face).
+
+This is a key property of independent variables: **conditioning does not change the distribution**.
+
+### Call Center Example (Continuous)
+
+For continuous variables, the same logic applies with density functions instead of probability mass functions:
+
+$$
+f(y \mid x) = \frac{f_{XY}(x, y)}{f_X(x)}
+$$
+
+For the call center, if you want the distribution of customer ratings given a waiting time of 4 minutes, you take a vertical slice through the joint density surface at $X = 4$ and normalize it.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
+
+np.random.seed(42)
+n1, n2 = 500, 500
+x1 = np.random.beta(2, 5, n1) * 10
+y1 = np.random.beta(5, 2, n1) * 10
+x2 = np.random.beta(5, 2, n2) * 10
+y2 = np.random.beta(2, 5, n2) * 10
+X = np.concatenate([x1, x2])
+Y = np.concatenate([y1, y2])
+
+# KDE
+xy = np.vstack([X, Y])
+kde = gaussian_kde(xy)
+
+# Slice at x=4
+y_range = np.linspace(0, 10, 200)
+slice_x4 = np.array([kde([4, yi])[0] for yi in y_range])
+# Normalize to get conditional
+slice_norm = slice_x4 / np.trapezoid(slice_x4, y_range)
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+# Contour with slice line
+xgrid = np.linspace(0, 10, 80)
+ygrid = np.linspace(0, 10, 80)
+Xg, Yg = np.meshgrid(xgrid, ygrid)
+positions = np.vstack([Xg.ravel(), Yg.ravel()])
+Zg = kde(positions).reshape(Xg.shape)
+
+axes[0].contourf(Xg, Yg, Zg, levels=15, cmap='Blues', alpha=0.7)
+axes[0].axvline(4, color='#CC0000', linewidth=2.5, linestyle='--', label='Slice at X = 4')
+axes[0].set_xlabel('Waiting time (minutes)', fontsize=12)
+axes[0].set_ylabel('Customer rating', fontsize=12)
+axes[0].set_title('Joint density with slice at X = 4', fontsize=11, color='gray')
+axes[0].legend(fontsize=10)
+axes[0].grid(linestyle='--', alpha=0.2)
+
+# Conditional distribution
+axes[1].plot(y_range, slice_norm, color='#CC7000', linewidth=2.5)
+axes[1].fill_between(y_range, slice_norm, alpha=0.15, color='#CC7000')
+axes[1].set_xlabel('Customer rating (y)', fontsize=12)
+axes[1].set_ylabel('$f(y \\mid X = 4)$', fontsize=12)
+axes[1].set_title('Conditional distribution of Y given X = 4', fontsize=11, color='gray')
+axes[1].set_xlim(0, 10)
+axes[1].grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+For a waiting time of 4 minutes (roughly in the middle), the conditional distribution of satisfaction shows peaks at both high and low ratings, reflecting the two clusters in the data.
+
+```{ojs}
+//| echo: false
+
+{
+  const Plotly = await import("https://cdn.jsdelivr.net/npm/plotly.js-dist@2/+esm");
+  
+  // Generate the same dataset
+  function mulberry32(a) {
+    return function() {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    }
+  }
+  
+  function betaSample(rng, alpha, beta) {
+    while (true) {
+      const u1 = rng();
+      const u2 = rng();
+      const x = Math.pow(u1, 1/alpha);
+      const y = Math.pow(u2, 1/beta);
+      if (x + y <= 1) return x / (x + y);
+    }
+  }
+  
+  const rng = mulberry32(42);
+  const n = 1000;
+  const X = [], Y = [];
+  for (let i = 0; i < 500; i++) { X.push(betaSample(rng, 2, 5) * 10); Y.push(betaSample(rng, 5, 2) * 10); }
+  for (let i = 0; i < 500; i++) { X.push(betaSample(rng, 5, 2) * 10); Y.push(betaSample(rng, 2, 5) * 10); }
+  
+  const gridSize = 40;
+  const xGrid = Array.from({length: gridSize}, (_, i) => i * 10 / (gridSize - 1));
+  const yGrid = Array.from({length: gridSize}, (_, i) => i * 10 / (gridSize - 1));
+  const bandwidth = 1.0;
+  
+  const Z = [];
+  for (let j = 0; j < gridSize; j++) {
+    const row = [];
+    for (let i = 0; i < gridSize; i++) {
+      let density = 0;
+      for (let k = 0; k < n; k++) {
+        const dx = (xGrid[i] - X[k]) / bandwidth;
+        const dy = (yGrid[j] - Y[k]) / bandwidth;
+        density += Math.exp(-0.5 * (dx*dx + dy*dy));
+      }
+      row.push(density / (n * 2 * Math.PI * bandwidth * bandwidth));
+    }
+    Z.push(row);
+  }
+  
+  // Find the grid index closest to x=4
+  const sliceIdx = xGrid.reduce((best, v, i) => Math.abs(v - 4) < Math.abs(xGrid[best] - 4) ? i : best, 0);
+  
+  // Extract the slice at x=4
+  const sliceVals = yGrid.map((_, j) => Z[j][sliceIdx]);
+  const sliceSum = sliceVals.reduce((s, v) => s + v, 0) * (10 / (gridSize - 1));
+  const condDist = sliceVals.map(v => v / sliceSum);
+  
+  // Plane at x=4 for visualization
+  const maxZ = Math.max(...Z.flat());
+  const planeY = [0, 10];
+  const planeZvals = [0, maxZ * 1.1];
+  
+  const container = html`<div style="width:100%;max-width:800px;margin:0 auto;">
+    <div id="plotly-conditional-3d" style="width:100%;height:500px;"></div>
+  </div>`;
+  
+  const surfaceTrace = {
+    type: 'surface',
+    x: xGrid, y: yGrid, z: Z,
+    colorscale: [[0, '#f0f0fb'], [0.3, '#87CEEB'], [0.6, '#4682B4'], [1, '#22176F']],
+    opacity: 0.75,
+    showscale: false,
+    name: 'Joint density'
+  };
+  
+  // Slice line on the surface at x=4
+  const sliceLine = {
+    type: 'scatter3d',
+    mode: 'lines',
+    x: Array(gridSize).fill(xGrid[sliceIdx]),
+    y: yGrid,
+    z: sliceVals,
+    line: {color: '#CC7000', width: 6},
+    name: 'Slice at X = 4'
+  };
+  
+  // Vertical plane at x=4 (semi-transparent)
+  const planeTrace = {
+    type: 'surface',
+    x: [[xGrid[sliceIdx], xGrid[sliceIdx]], [xGrid[sliceIdx], xGrid[sliceIdx]]],
+    y: [[0, 10], [0, 10]],
+    z: [[0, 0], [maxZ * 0.9, maxZ * 0.9]],
+    colorscale: [[0, 'rgba(204,0,0,0.15)'], [1, 'rgba(204,0,0,0.15)']],
+    showscale: false,
+    opacity: 0.3,
+    name: 'Cutting plane'
+  };
+  
+  const layout = {
+    title: {text: 'Slicing the joint density at X = 4 to get f(Y | X=4)', font: {size: 12, color: 'gray'}},
+    scene: {
+      xaxis: {title: 'Waiting Time (min)'},
+      yaxis: {title: 'Customer Rating'},
+      zaxis: {title: 'Density'},
+      camera: {eye: {x: 1.6, y: -1.8, z: 0.9}}
+    },
+    margin: {l: 0, r: 0, t: 40, b: 0},
+    showlegend: true,
+    legend: {x: 0.65, y: 0.95}
+  };
+  
+  yield container;
+  Plotly.default.newPlot(container.querySelector('#plotly-conditional-3d'), [surfaceTrace, planeTrace, sliceLine], layout, {responsive: true});
+}
+```
+
+The red semi-transparent plane cuts through the surface at $X = 4$. The orange curve is the density along that slice. After normalizing (dividing by the area under the orange curve), you get the conditional distribution $f(Y \mid X = 4)$.
+
+### Marginal vs. Conditional: Summary
+
+| Operation | What you do | Result |
+|-----------|-------------|--------|
+| Marginal | Sum (or integrate) over one variable | Distribution of the other variable, ignoring the first |
+| Conditional | Fix one variable, normalize the slice | Distribution of the other variable, given the first |
+: {tbl-colwidths="[20,40,40]"}
+
+### Review Questions {.unnumbered}
+
+**5. What is the difference between a marginal and a conditional distribution?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+A marginal distribution ignores one variable entirely (sums over it). A conditional distribution fixes one variable at a specific value and asks what the other variable looks like given that constraint. Marginalization collapses; conditioning slices.
+:::
+
+---
+
+**6. Why do you need to normalize when computing a conditional distribution from the joint PMF?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because the row (or column) of the joint PMF corresponding to a fixed value of one variable does not sum to 1. It sums to the marginal probability of that value. Dividing by that marginal ensures the conditional distribution is a valid probability distribution (sums to 1).
+:::
+
+---
+
+**7. For two independent dice, what is $P(Y=3 \mid X=5)$?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+$P(Y=3 \mid X=5) = \frac{P(X=5, Y=3)}{P_X(5)} = \frac{1/36}{1/6} = \frac{1}{6}$. Since the dice are independent, knowing the first die does not affect the second. The conditional equals the marginal.
+:::
+
+---
+
+**8. If two variables are independent, what happens to the conditional distribution?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+It equals the marginal distribution. If $X$ and $Y$ are independent, then $P(Y=y \mid X=x) = P_Y(y)$ for all $x$. Knowing the value of $X$ provides no information about $Y$, so the distribution of $Y$ does not change.
+:::
+
+---
+
+**9. Using the children dataset, compute $P(Y=46 \mid X=7)$.**
+
+::: {.callout-tip collapse="true"}
+## Answer
+$P(Y=46 \mid X=7) = \frac{P(X=7, Y=46)}{P_X(7)} = \frac{2/10}{3/10} = \frac{2}{3}$. Of the 3 children who are age 7, 2 of them are 46 inches tall.
+:::

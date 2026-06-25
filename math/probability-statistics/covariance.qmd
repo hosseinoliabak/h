@@ -1,0 +1,277 @@
+---
+title: "Covariance"
+date: "2026-06-25"
+difficulty: 3
+order: 18
+categories: [probability]
+---
+
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+Each distribution has its own expected value and its own variance. But when you have two variables, there is something these measures do not capture: the **relationship** between them. As you might expect, the age of a child and their height are related (older children tend to be taller). How do we measure this? With a concept called **covariance**.
+
+## Motivation: Three Relationships
+
+Consider a discrete random variable $X$ representing the age of a child, and three other variables:
+
+- $Y_1$ = height of the child (in inches)
+- $Y_2$ = grades on a test
+- $Y_3$ = number of naps per day
+
+Here is the data for 10 children:
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Dataset from the course
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+heights = np.array([50, 52, 55, 57, 60, 62, 64, 65, 67, 68])  # Y1: positively correlated
+grades = np.array([5, 7, 8, 3, 1, 1, 6, 10, 2, 7])             # Y2: uncorrelated
+naps = np.array([8, 7, 6, 5, 4, 3, 2, 1, 1, 0])               # Y3: negatively correlated
+
+mean_x = ages.mean()
+mean_y1 = heights.mean()
+mean_y2 = grades.mean()
+mean_y3 = naps.mean()
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+# Age vs Height
+axes[0].scatter(ages, heights, s=60, color='#4682B4', zorder=3, edgecolors='white')
+axes[0].scatter(mean_x, mean_y1, s=120, color='#CC0000', marker='x', linewidths=3, zorder=5)
+axes[0].text(mean_x + 0.3, mean_y1, f'$\\mu$ = ({mean_x:.1f}, {mean_y1:.0f})', fontsize=9, color='#CC0000', fontweight='bold', va='center')
+axes[0].set_xlabel('Age (years)', fontsize=12)
+axes[0].set_ylabel('Height (inches)', fontsize=12)
+axes[0].set_title('Age vs. Height\n(positive trend)', fontsize=11, color='gray')
+axes[0].grid(linestyle='--', alpha=0.3)
+
+# Age vs Grades
+axes[1].scatter(ages, grades, s=60, color='#2E8B57', zorder=3, edgecolors='white')
+axes[1].scatter(mean_x, mean_y2, s=120, color='#CC0000', marker='x', linewidths=3, zorder=5)
+axes[1].text(mean_x + 0.3, mean_y2, f'$\\mu$ = ({mean_x:.1f}, {mean_y2:.0f})', fontsize=9, color='#CC0000', fontweight='bold', va='center')
+axes[1].set_xlabel('Age (years)', fontsize=12)
+axes[1].set_ylabel('Grades', fontsize=12)
+axes[1].set_title('Age vs. Grades\n(no clear trend)', fontsize=11, color='gray')
+axes[1].grid(linestyle='--', alpha=0.3)
+
+# Age vs Naps
+axes[2].scatter(ages, naps, s=60, color='#CC7000', zorder=3, edgecolors='white')
+axes[2].scatter(mean_x, mean_y3, s=120, color='#CC0000', marker='x', linewidths=3, zorder=5)
+axes[2].text(mean_x + 0.3, mean_y3, f'$\\mu$ = ({mean_x:.1f}, {mean_y3:.1f})', fontsize=9, color='#CC0000', fontweight='bold', va='center')
+axes[2].set_xlabel('Age (years)', fontsize=12)
+axes[2].set_ylabel('Naps per day', fontsize=12)
+axes[2].set_title('Age vs. Naps\n(negative trend)', fontsize=11, color='gray')
+axes[2].grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+The red cross marks the mean $(\bar{X}, \bar{Y})$ in each plot. You can see three different patterns:
+
+- **Age vs. Height:** as age increases, height increases (points go up to the right).
+- **Age vs. Grades:** no clear pattern (points are scattered randomly).
+- **Age vs. Naps:** as age increases, naps decrease (points go down to the right).
+
+The mean and variance of each variable individually cannot capture these relationships. We need a new measure.
+
+## Building Intuition for Covariance
+
+### Step 1: Center the Data
+
+First, center both variables by subtracting their means. This moves the "balance point" to the origin:
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+heights = np.array([50, 52, 55, 57, 60, 62, 64, 65, 67, 68])
+grades = np.array([5, 7, 8, 3, 1, 1, 6, 10, 2, 7])
+naps = np.array([8, 7, 6, 5, 4, 3, 2, 1, 1, 0])
+
+# Center
+cx = ages - ages.mean()
+cy1 = heights - heights.mean()
+cy2 = grades - grades.mean()
+cy3 = naps - naps.mean()
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+for ax, cy, title, color in zip(axes, [cy1, cy2, cy3],
+    ['Age vs. Height (centered)', 'Age vs. Grades (centered)', 'Age vs. Naps (centered)'],
+    ['#4682B4', '#2E8B57', '#CC7000']):
+    ax.scatter(cx, cy, s=60, color=color, zorder=3, edgecolors='white')
+    ax.axhline(0, color='gray', linewidth=0.8)
+    ax.axvline(0, color='gray', linewidth=0.8)
+    ax.set_xlabel('$X - \\bar{X}$', fontsize=12)
+    ax.set_ylabel('$Y - \\bar{Y}$', fontsize=12)
+    ax.set_title(title, fontsize=11, color='gray')
+    ax.grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+### Step 2: Look at the Signs of the Products
+
+After centering, look at the sign of each point's coordinates:
+
+- **Positive covariance (Age vs. Height):** When $X - \bar{X}$ is positive (older than average), $Y - \bar{Y}$ tends to also be positive (taller than average). When $X - \bar{X}$ is negative, $Y - \bar{Y}$ tends to be negative too. The coordinates have the **same sign**, so their product $(X - \bar{X})(Y - \bar{Y})$ is usually **positive**.
+
+- **Near-zero covariance (Age vs. Grades):** The signs of $X - \bar{X}$ and $Y - \bar{Y}$ have no consistent pattern. Sometimes same sign, sometimes opposite. The products cancel out.
+
+- **Negative covariance (Age vs. Naps):** When $X - \bar{X}$ is positive, $Y - \bar{Y}$ tends to be negative (and vice versa). The coordinates have **opposite signs**, so their product is usually **negative**.
+
+### Step 3: Average the Products
+
+The covariance is the average of all these products:
+
+$$
+\text{Cov}(X, Y) = \frac{1}{n} \sum_{i=1}^{n} (x_i - \bar{x})(y_i - \bar{y})
+$$
+
+Or equivalently, in terms of expected values:
+
+$$
+\text{Cov}(X, Y) = \mathbb{E}\left[(X - \mathbb{E}[X])(Y - \mathbb{E}[Y])\right]
+$$
+
+## Computing Covariance
+
+### Age vs. Height (Positive Covariance)
+
+```{python}
+#| echo: false
+#| warning: false
+import numpy as np
+from IPython.display import display, Math
+
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+heights = np.array([50, 52, 55, 57, 60, 62, 64, 65, 67, 68])
+
+mean_x = ages.mean()
+mean_y = heights.mean()
+cx = ages - mean_x
+cy = heights - mean_y
+products = cx * cy
+cov = products.mean()
+
+display(Math(rf"\bar{{X}} = {mean_x}, \quad \bar{{Y}} = {mean_y}"))
+display(Math(rf"\text{{Cov}}(X, Y_1) = \frac{{1}}{{10}} \sum (x_i - \bar{{x}})(y_i - \bar{{y}}) = \frac{{{products.sum():.1f}}}{{10}} = {cov:.1f}"))
+```
+
+The covariance is positive because when age grows, height grows too.
+
+### Age vs. Naps (Negative Covariance)
+
+```{python}
+#| echo: false
+#| warning: false
+import numpy as np
+from IPython.display import display, Math
+
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+naps = np.array([8, 7, 6, 5, 4, 3, 2, 1, 1, 0])
+
+mean_x = ages.mean()
+mean_y = naps.mean()
+cx = ages - mean_x
+cy = naps - mean_y
+products = cx * cy
+cov = products.mean()
+
+display(Math(rf"\bar{{X}} = {mean_x}, \quad \bar{{Y}} = {mean_y}"))
+display(Math(rf"\text{{Cov}}(X, Y_3) = \frac{{1}}{{10}} \sum (x_i - \bar{{x}})(y_i - \bar{{y}}) = \frac{{{products.sum():.1f}}}{{10}} = {cov:.2f}"))
+```
+
+The covariance is negative because as age increases, naps per day decrease.
+
+### Age vs. Grades (Near-Zero Covariance)
+
+```{python}
+#| echo: false
+#| warning: false
+import numpy as np
+from IPython.display import display, Math
+
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+grades = np.array([5, 7, 8, 3, 1, 1, 6, 10, 2, 7])
+
+mean_x = ages.mean()
+mean_y = grades.mean()
+cx = ages - mean_x
+cy = grades - mean_y
+products = cx * cy
+cov = products.mean()
+
+display(Math(rf"\bar{{X}} = {mean_x}, \quad \bar{{Y}} = {mean_y}"))
+display(Math(rf"\text{{Cov}}(X, Y_2) = \frac{{1}}{{10}} \sum (x_i - \bar{{x}})(y_i - \bar{{y}}) = \frac{{{products.sum():.1f}}}{{10}} = {cov:.1f}"))
+```
+
+The covariance is very close to zero because age and grades have no consistent linear relationship.
+
+## Summary
+
+| Variables | Relationship | Covariance |
+|-----------|-------------|------------|
+| Age vs. Height | Positive (grow together) | $> 0$ |
+| Age vs. Grades | None (no pattern) | $\approx 0$ |
+| Age vs. Naps | Negative (one grows, other shrinks) | $< 0$ |
+
+$$
+\text{Cov}(X, Y) = \mathbb{E}\left[(X - \mathbb{E}[X])(Y - \mathbb{E}[Y])\right]
+$$
+
+- **Positive covariance:** variables tend to move in the same direction.
+- **Negative covariance:** variables tend to move in opposite directions.
+- **Near-zero covariance:** no consistent linear relationship.
+
+### Review Questions {.unnumbered}
+
+**1. What does covariance measure?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Covariance measures the direction of the linear relationship between two variables. It tells you whether the variables tend to increase together (positive), decrease together / move in opposite directions (negative), or have no consistent linear pattern (near zero).
+:::
+
+---
+
+**2. Why do you center the data (subtract means) before computing covariance?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Centering shifts the data so the mean is at the origin. This lets you use the sign of the coordinates to determine whether points tend to fall in the "same sign" quadrants (positive relationship) or "opposite sign" quadrants (negative relationship). Without centering, the location of the data would dominate and obscure the relationship.
+:::
+
+---
+
+**3. If the covariance between two variables is 0, does that mean they are independent?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Not necessarily. Covariance only measures **linear** relationships. Two variables can have a strong non-linear relationship (for example, $Y = X^2$) and still have zero covariance. Zero covariance means no linear trend, but other patterns may exist.
+:::
+
+---
+
+**4. Two variables have covariance $-15$. What does this tell you about their scatter plot?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The scatter plot shows a downward trend: as one variable increases, the other tends to decrease. The negative sign means the centered coordinates tend to have opposite signs (when $X$ is above average, $Y$ is below average, and vice versa).
+:::
