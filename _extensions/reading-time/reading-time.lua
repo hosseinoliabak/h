@@ -352,13 +352,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
   -- Inject reading time and difficulty into title meta
   local label = "~" .. minutes .. " min read"
+  local tooltip = "Estimated based on " .. WPM .. " words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level."
   local script = pandoc.RawBlock("html", [[
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   var meta = document.querySelector(".quarto-title-meta");
   if (meta) {
     var div = document.createElement("div");
-    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>]] .. label .. [[</p></div>';
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>]] .. label .. [[ <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">]] .. tooltip .. [[</span></span></p></div>';
     meta.appendChild(div);
 ]] .. difficulty_html .. [[
   }
