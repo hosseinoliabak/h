@@ -1,0 +1,848 @@
+---
+title: "Quantiles and Box Plots"
+date: "2026-06-24"
+difficulty: 2
+order: 15
+categories: [probability]
+---
+
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+You have learned several ways to describe data numerically: expected value, variance, skewness, and kurtosis. But for a data scientist, it is equally important to be able to **visualize** data. This page introduces quantiles and box plots, two fundamental tools for understanding the shape of a dataset.
+
+## Quantiles
+
+### Starting with a Dataset
+
+Consider an advertising dataset that records newspaper ad budgets (in thousands of dollars). For simplicity, take just twelve samples:
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+# 12 sample values from the newspaper ad budget dataset
+data = np.array([8.7, 14.2, 18.3, 18.4, 23.2, 25.9, 29.7, 35.2, 51.2, 54.7, 65.9, 75.0])
+
+fig, ax = plt.subplots(figsize=(10, 2.5))
+ax.scatter(data, np.zeros_like(data), s=80, color='#4682B4', zorder=3, edgecolors='white', linewidth=0.8)
+for i, val in enumerate(data):
+    ax.text(val, 0.15, f'{val}', ha='center', fontsize=9, rotation=45)
+ax.set_xlim(-2, 80)
+ax.set_ylim(-0.5, 0.8)
+ax.axhline(0, color='gray', linewidth=0.5)
+ax.set_xlabel('Newspaper ad budget ($1000s)', fontsize=12)
+ax.set_yticks([])
+ax.set_title('12 sorted samples from the advertising dataset', fontsize=12, color='gray')
+ax.grid(linestyle='--', alpha=0.3, axis='x')
+plt.tight_layout()
+plt.show()
+```
+
+The data is already sorted in increasing order. From here, you might want to find the **median**, the value that splits the data in half.
+
+### Median as Quantile
+
+Since there are twelve data points (an even number), you split them into two halves of six. The median is the average of the two middle values (the 6th and 7th):
+
+$$
+\text{Median} = \frac{25.9 + 29.7}{2} = 27.8
+$$
+
+This value is called the **50% quantile** or the **second quartile** ($Q_2$). Half the data falls below it, half above.
+
+### First and Third Quartiles
+
+What about the value that leaves one quarter of the data to the left and three quarters to the right? Take the lower half (first six values) and find its midpoint:
+
+$$
+Q_1 = \frac{18.3 + 18.4}{2} = 18.35
+$$
+
+This is the **25% quantile** or **first quartile** ($Q_1$). It works like the median, but instead of cutting the data in half, it cuts off the bottom quarter.
+
+Similarly, the **75% quantile** or **third quartile** ($Q_3$) is the midpoint of the upper half:
+
+$$
+Q_3 = \frac{51.2 + 54.7}{2} = 52.95
+$$
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+data = np.array([8.7, 14.2, 18.3, 18.4, 23.2, 25.9, 29.7, 35.2, 51.2, 54.7, 65.9, 75.0])
+
+Q1 = 18.35
+Q2 = 27.8
+Q3 = 52.95
+
+fig, ax = plt.subplots(figsize=(10, 3))
+
+ax.scatter(data, np.zeros_like(data), s=80, color='#4682B4', zorder=3, edgecolors='white', linewidth=0.8)
+
+# Quartile lines
+for q, label, color in [(Q1, '$Q_1$ = 18.35', '#2E8B57'), (Q2, '$Q_2$ = 27.8', '#CC7000'), (Q3, '$Q_3$ = 52.95', '#6A0DAD')]:
+    ax.axvline(q, color=color, linewidth=2, linestyle='--', zorder=2)
+    ax.text(q, 0.45, label, ha='center', fontsize=10, fontweight='bold', color=color)
+
+# Shade regions
+ax.axvspan(-2, Q1, alpha=0.06, color='#2E8B57')
+ax.axvspan(Q1, Q2, alpha=0.06, color='#CC7000')
+ax.axvspan(Q2, Q3, alpha=0.06, color='#CC7000')
+ax.axvspan(Q3, 80, alpha=0.06, color='#6A0DAD')
+
+ax.text(10, -0.35, '25%', ha='center', fontsize=10, color='gray')
+ax.text(23, -0.35, '25%', ha='center', fontsize=10, color='gray')
+ax.text(40, -0.35, '25%', ha='center', fontsize=10, color='gray')
+ax.text(66, -0.35, '25%', ha='center', fontsize=10, color='gray')
+
+ax.set_xlim(-2, 80)
+ax.set_ylim(-0.6, 0.7)
+ax.axhline(0, color='gray', linewidth=0.5)
+ax.set_xlabel('Newspaper ad budget ($1000s)', fontsize=12)
+ax.set_yticks([])
+ax.set_title('Quartiles divide the data into four equal parts', fontsize=12, color='gray')
+ax.grid(linestyle='--', alpha=0.3, axis='x')
+plt.tight_layout()
+plt.show()
+```
+
+### General Definition
+
+The **$k$% quantile** is the value $q(k/100)$ that leaves $k$% of the data to the left and $(100 - k)$% to the right:
+
+$$
+P(X \leq q) = \frac{k}{100}
+$$
+
+The three most common quantiles have special names:
+
+| Quantile | Notation | Meaning |
+|----------|----------|---------|
+| 25% quantile | $Q_1$ (first quartile) | One quarter of data falls below |
+| 50% quantile | $Q_2$ (median) | Half of data falls below |
+| 75% quantile | $Q_3$ (third quartile) | Three quarters of data falls below |
+
+You can compute a quantile for any percentage. For example, the 10% quantile is the value below which 10% of observations fall.
+
+### Quantiles from Continuous Distributions
+
+When your data follows a continuous distribution with a probability density function (PDF), the $k$% quantile is the value $q$ such that the area under the curve to the left of $q$ equals $k/100$:
+
+$$
+P(X \leq q) = \int_{-\infty}^{q} f(x)\, dx = \frac{k}{100}
+$$
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+fig, ax = plt.subplots(figsize=(8, 4))
+
+x = np.linspace(-4, 4, 400)
+pdf = norm.pdf(x, 0, 1)
+
+# 20% quantile
+q20 = norm.ppf(0.20)
+
+ax.plot(x, pdf, color='#333', linewidth=2.5)
+ax.fill_between(x, pdf, where=(x <= q20), alpha=0.3, color='#4682B4', label=f'Area = 20% (left of $q$)')
+ax.fill_between(x, pdf, where=(x > q20), alpha=0.08, color='#999')
+ax.axvline(q20, color='#CC0000', linewidth=2, linestyle='--')
+ax.text(q20, -0.03, f'$q(0.20) = {q20:.2f}$', ha='center', fontsize=11, fontweight='bold', color='#CC0000')
+
+ax.text(-1.8, 0.1, '20%', fontsize=14, fontweight='bold', color='#4682B4', ha='center')
+ax.text(1.0, 0.1, '80%', fontsize=14, fontweight='bold', color='gray', ha='center')
+
+ax.set_xlabel('x', fontsize=12)
+ax.set_ylabel('f(x)', fontsize=12)
+ax.set_title('20% quantile of a normal distribution', fontsize=12, color='gray')
+ax.set_xlim(-4, 4)
+ax.set_ylim(-0.06, 0.45)
+ax.legend(fontsize=10)
+ax.grid(linestyle='--', alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+This connects what you know about discrete data (counting how many points fall below a value) to continuous distributions (computing areas under a curve).
+
+### Review Questions {.unnumbered}
+
+**1. You have 20 data points sorted in order. How would you find the median?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Since 20 is even, the median is the average of the 10th and 11th values. This splits the data into two halves of 10 each.
+:::
+
+---
+
+**2. What is the difference between the 25% quantile and the 75% quantile?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The 25% quantile ($Q_1$) is the value below which 25% of the data falls. The 75% quantile ($Q_3$) is the value below which 75% of the data falls. The difference $Q_3 - Q_1$ is called the interquartile range (IQR) and measures the spread of the middle 50% of data.
+:::
+
+---
+
+**3. For a continuous distribution, what does the 90% quantile represent geometrically?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+It is the value $q$ such that the area under the PDF to the left of $q$ equals 0.90. In other words, 90% of the total probability mass lies below that point.
+:::
+
+---
+
+**4. A dataset has $Q_1 = 10$, $Q_2 = 15$, and $Q_3 = 30$. What can you say about the shape of this data?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The distance from $Q_2$ to $Q_3$ (15) is much larger than the distance from $Q_1$ to $Q_2$ (5). This suggests the data is positively skewed (right-skewed), with more spread in the upper half than the lower half.
+:::
+
+
+## Box Plots
+
+A **box plot** (also called a box-and-whiskers plot) is a standardized way of displaying a distribution based on five statistics: the minimum, $Q_1$, the median ($Q_2$), $Q_3$, and the maximum. It gives you a quick visual summary of center, spread, and skewness.
+
+### Building a Box Plot Step by Step
+
+Using the same newspaper ad budget data, here are the ingredients:
+
+| Statistic | Value |
+|-----------|-------|
+| Minimum | 8.7 |
+| $Q_1$ | 18.35 |
+| $Q_2$ (median) | 27.8 |
+| $Q_3$ | 52.95 |
+| Maximum | 75 |
+| IQR ($Q_3 - Q_1$) | 34.6 |
+
+The **interquartile range** (IQR) is $Q_3 - Q_1 = 52.95 - 18.35 = 34.6$. This is the width of the box, and it contains the middle 50% of the data.
+
+Here is how to construct the box plot:
+
+1. **Draw the box** from $Q_1$ to $Q_3$ (18.35 to 52.95).
+2. **Draw the median line** inside the box at $Q_2 = 27.8$.
+3. **Draw the whiskers.** Extend lines from each end of the box outward. The whiskers reach at most $1.5 \times \text{IQR}$ beyond the box edges:
+   - Lower whisker limit: $Q_1 - 1.5 \times \text{IQR} = 18.35 - 51.9 = -33.55$
+   - Upper whisker limit: $Q_3 + 1.5 \times \text{IQR} = 52.95 + 51.9 = 104.85$
+4. **Cap the whiskers** at the actual min and max of the data if they fall within those limits. In this case, the minimum (8.7) and maximum (75) are both within the whisker limits, so the whiskers simply end at those values.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+data = np.array([8.7, 14.2, 18.3, 18.4, 23.2, 25.9, 29.7, 35.2, 51.2, 54.7, 65.9, 75.0])
+
+fig, ax = plt.subplots(figsize=(10, 3.5))
+
+# Box plot
+bp = ax.boxplot(data, vert=False, widths=0.5, patch_artist=True,
+               boxprops=dict(facecolor='#CC7000', alpha=0.3, edgecolor='#CC7000', linewidth=2),
+               medianprops=dict(color='#CC0000', linewidth=2.5),
+               whiskerprops=dict(color='#333', linewidth=1.5),
+               capprops=dict(color='#333', linewidth=1.5),
+               flierprops=dict(marker='o', markerfacecolor='#CC0000', markersize=8))
+
+# Annotate
+ax.text(18.35, 1.35, '$Q_1$=18.35', ha='center', fontsize=9, color='#2E8B57', fontweight='bold')
+ax.text(27.8, 0.55, '$Q_2$=27.8', ha='center', fontsize=9, color='#CC0000', fontweight='bold')
+ax.text(52.95, 1.35, '$Q_3$=52.95', ha='center', fontsize=9, color='#6A0DAD', fontweight='bold')
+ax.text(8.7, 0.55, 'min=8.7', ha='center', fontsize=9, color='gray', fontweight='bold')
+ax.text(75, 0.55, 'max=75', ha='center', fontsize=9, color='gray', fontweight='bold')
+
+# IQR brace annotation
+ax.annotate('', xy=(18.35, 1.55), xytext=(52.95, 1.55),
+           arrowprops=dict(arrowstyle='<->', color='#CC7000', lw=1.5))
+ax.text(35.65, 1.65, 'IQR = 34.6', ha='center', fontsize=10, color='#CC7000', fontweight='bold')
+
+ax.set_xlim(-5, 85)
+ax.set_ylim(0.3, 2.0)
+ax.set_xlabel('Newspaper ad budget ($1000s)', fontsize=12)
+ax.set_yticks([])
+ax.set_title('Box plot of the 12-sample newspaper dataset', fontsize=12, color='gray')
+ax.grid(linestyle='--', alpha=0.3, axis='x')
+plt.tight_layout()
+plt.show()
+```
+
+### Reading a Box Plot
+
+Just by looking at the box plot, you can immediately observe:
+
+- **Skewness:** The distance from $Q_2$ to $Q_3$ (about 25) is much larger than $Q_1$ to $Q_2$ (about 9.5). This tells you the data is positively skewed (right-skewed).
+- **Spread:** The IQR (box width) shows where the middle 50% lives. The whiskers show the full range.
+- **Outliers:** Any data points beyond the whiskers are plotted as individual dots and considered outliers (unusually extreme values). In this 12-sample case, there are no outliers because all points fall within the whisker limits.
+
+### Outliers in Box Plots
+
+The whisker rule ($1.5 \times \text{IQR}$) is a standard cutoff for identifying outliers. Any observation beyond the whiskers is flagged as an extreme point.
+
+Using the full [newspaper advertising dataset](/media/advertising.csv) (200 observations), the statistics are:
+
+| Statistic | Value |
+|-----------|-------|
+| Minimum | 0.3 |
+| $Q_1$ | 12.75 |
+| $Q_2$ (median) | 25.75 |
+| $Q_3$ | 45.1 |
+| IQR ($Q_3 - Q_1$) | 32.35 |
+| Lower whisker limit ($Q_1 - 1.5 \times \text{IQR}$) | $-35.78$ (below min, so whisker stops at 0.3) |
+| Upper whisker limit ($Q_3 + 1.5 \times \text{IQR}$) | 93.625 |
+| Maximum | 114.0 |
+
+The lower whisker reaches the minimum (0.3) because no data points fall below $Q_1 - 1.5 \times \text{IQR}$. The upper whisker ends at 89.4 (the largest data point within 93.625). Two data points exceed that limit (100.9 and 114.0) and appear as outlier dots.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Load the full advertising dataset
+df = pd.read_csv('../../media/advertising.csv')
+data_full = df['Newspaper'].values
+
+fig, ax = plt.subplots(figsize=(10, 3))
+
+bp = ax.boxplot(data_full, vert=False, widths=0.5, patch_artist=True,
+               boxprops=dict(facecolor='#4682B4', alpha=0.3, edgecolor='#4682B4', linewidth=2),
+               medianprops=dict(color='#CC0000', linewidth=2.5),
+               whiskerprops=dict(color='#333', linewidth=1.5),
+               capprops=dict(color='#333', linewidth=1.5),
+               flierprops=dict(marker='o', markerfacecolor='#CC0000', markersize=8, markeredgecolor='#CC0000'))
+
+ax.set_xlim(-10, 125)
+ax.set_xlabel('Newspaper ad budget ($1000s)', fontsize=12)
+ax.set_yticks([])
+ax.set_title('Box plot of the full dataset (with outliers)', fontsize=12, color='gray')
+ax.grid(linestyle='--', alpha=0.3, axis='x')
+
+# Label outliers
+ax.annotate('outliers', xy=(108, 1.15), fontsize=10, color='#CC0000', fontweight='bold', ha='center')
+
+plt.tight_layout()
+plt.show()
+```
+
+### Review Questions {.unnumbered}
+
+**5. What five statistics does a box plot display?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The minimum (or lower whisker), first quartile ($Q_1$), median ($Q_2$), third quartile ($Q_3$), and maximum (or upper whisker). Together these are called the five-number summary.
+:::
+
+---
+
+**6. How do you determine the whisker length in a box plot?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Each whisker extends at most $1.5 \times \text{IQR}$ from the edge of the box. The lower whisker goes down to $Q_1 - 1.5 \times \text{IQR}$ (or the minimum value if that is closer), and the upper whisker goes up to $Q_3 + 1.5 \times \text{IQR}$ (or the maximum value if that is closer).
+:::
+
+---
+
+**7. In our 12-sample dataset, $Q_2 - Q_1 = 9.45$ and $Q_3 - Q_2 = 25.15$. What does this tell you?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The upper half of the box is much wider than the lower half. This means the data is positively skewed (right-skewed): there is more spread above the median than below it.
+:::
+
+---
+
+**8. What does it mean when a data point appears as a dot beyond the whisker?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+It is an **outlier**, a value that is unusually far from the center of the distribution. Specifically, it lies more than $1.5 \times \text{IQR}$ beyond $Q_1$ or $Q_3$. These points deserve special attention because they may represent errors, rare events, or genuinely extreme observations.
+:::
+
+
+## Kernel Density Estimation
+
+The samples in the advertising dataset seem to come from a continuous random variable. You know that continuous distributions are described by a probability density function (PDF). The question is: can we estimate what the PDF looks like from the data?
+
+### Histograms as a Starting Point
+
+The most familiar approach is a histogram. A histogram satisfies the conditions of a density function (it is positive and the area under it equals 1), but it is not a great approximation for a PDF because:
+
+- PDFs are usually **smooth** functions, but histograms are jagged with sharp discontinuities.
+- The bar edges come from the binning technique, not from the data itself. The underlying distribution may be perfectly smooth, but the histogram makes it look like it has many peaks.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+df = pd.read_csv('../../media/advertising.csv')
+data_full = df['Newspaper'].values
+
+fig, ax = plt.subplots(figsize=(8, 4))
+
+ax.hist(data_full, bins=15, density=True, color='#4682B4', alpha=0.5, edgecolor='white')
+ax.set_xlabel('Newspaper ad budget ($1000s)', fontsize=12)
+ax.set_ylabel('Density', fontsize=12)
+ax.set_title('Histogram of the full advertising dataset', fontsize=12, color='gray')
+ax.grid(linestyle='--', alpha=0.3, axis='y')
+plt.tight_layout()
+plt.show()
+```
+
+Is there a way to get a smooth approximation of the PDF from this data?
+
+### Idea Behind KDE
+
+The method is called **kernel density estimation** (KDE). The idea is simple:
+
+1. **Place a small Gaussian curve** (called a **kernel**) on top of each data point.
+2. **Sum all the Gaussians** into a single curve.
+3. **Multiply by $\frac{1}{n}$** (divide by the number of points) so the total area equals 1.
+
+Since each individual Gaussian has area 1, their sum has area $n$. Dividing by $n$ brings the area back to 1, giving a valid density function. The result is high where many data points cluster and low where data is sparse.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+# Use our 12 sample points to illustrate the concept
+data_12 = np.array([8.7, 14.2, 18.3, 18.4, 23.2, 25.9, 29.7, 35.2, 51.2, 54.7, 65.9, 75.0])
+n = len(data_12)
+sigma = 5  # bandwidth
+
+x = np.linspace(-10, 95, 500)
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 3.5))
+
+# Left: individual kernels
+for xi in data_12:
+    kernel = norm.pdf(x, xi, sigma)
+    axes[0].plot(x, kernel, color='#4682B4', alpha=0.4, linewidth=1)
+    axes[0].axvline(xi, color='#CC0000', alpha=0.3, linewidth=0.8, linestyle='-')
+axes[0].scatter(data_12, np.zeros_like(data_12), color='#CC0000', s=40, zorder=5)
+axes[0].set_xlabel('x', fontsize=11)
+axes[0].set_ylabel('Density', fontsize=11)
+axes[0].set_title('Step 1: Gaussian on each point', fontsize=11, color='gray')
+axes[0].set_xlim(-10, 95)
+axes[0].grid(linestyle='--', alpha=0.3)
+
+# Middle: raw sum of kernels
+kde_sum = np.zeros_like(x)
+for xi in data_12:
+    kde_sum += norm.pdf(x, xi, sigma)
+
+axes[1].plot(x, kde_sum, color='#2E8B57', linewidth=2.5)
+axes[1].fill_between(x, kde_sum, alpha=0.15, color='#2E8B57')
+axes[1].scatter(data_12, np.zeros_like(data_12), color='#CC0000', s=40, zorder=5)
+axes[1].set_xlabel('x', fontsize=11)
+axes[1].set_title(f'Step 2: Sum all kernels (area = {n})', fontsize=11, color='gray')
+axes[1].set_xlim(-10, 95)
+axes[1].grid(linestyle='--', alpha=0.3)
+
+# Right: divided by n
+kde = kde_sum / n
+
+axes[2].plot(x, kde, color='#CC7000', linewidth=2.5)
+axes[2].fill_between(x, kde, alpha=0.15, color='#CC7000')
+axes[2].scatter(data_12, np.zeros_like(data_12), color='#CC0000', s=40, zorder=5)
+axes[2].set_xlabel('x', fontsize=11)
+axes[2].set_title('Step 3: Multiply by 1/n (area = 1)', fontsize=11, color='gray')
+axes[2].set_xlim(-10, 95)
+axes[2].grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+### Bandwidth ($\sigma$)
+
+The **bandwidth** (the $\sigma$ of each Gaussian kernel) controls how far each data point spreads its influence:
+
+- **Small $\sigma$**: thin kernels, bumpy result (overfitting to individual points)
+- **Large $\sigma$**: wide kernels, very smooth result (may over-smooth and hide real features)
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+data_12 = np.array([8.7, 14.2, 18.3, 18.4, 23.2, 25.9, 29.7, 35.2, 51.2, 54.7, 65.9, 75.0])
+n = len(data_12)
+x = np.linspace(-10, 95, 500)
+
+fig, axes = plt.subplots(1, 3, figsize=(14, 3.5))
+
+for ax, sigma, label in zip(axes, [2, 5, 12], ['Small $\\sigma$ = 2', 'Medium $\\sigma$ = 5', 'Large $\\sigma$ = 12']):
+    kde = np.zeros_like(x)
+    for xi in data_12:
+        kde += norm.pdf(x, xi, sigma)
+    kde /= n
+    ax.plot(x, kde, color='#4682B4', linewidth=2.5)
+    ax.fill_between(x, kde, alpha=0.15, color='#4682B4')
+    ax.scatter(data_12, np.zeros_like(data_12), color='#CC0000', s=30, zorder=5)
+    ax.set_xlabel('x', fontsize=11)
+    ax.set_title(label, fontsize=12, color='gray')
+    ax.set_xlim(-10, 95)
+    ax.set_ylim(0, None)
+    ax.grid(linestyle='--', alpha=0.3)
+
+axes[0].set_ylabel('Density', fontsize=11)
+plt.tight_layout()
+plt.show()
+```
+
+### KDE with More Data
+
+With only 12 data points, the KDE looks rough regardless of bandwidth. But with the full 200-point dataset, KDE produces a smooth, informative density estimate:
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
+
+df = pd.read_csv('../../media/advertising.csv')
+data_full = df['Newspaper'].values
+
+fig, ax = plt.subplots(figsize=(8, 4))
+
+# Histogram for comparison
+ax.hist(data_full, bins=20, density=True, color='#4682B4', alpha=0.3, edgecolor='white', label='Histogram')
+
+# KDE
+kde = gaussian_kde(data_full)
+x = np.linspace(-5, 120, 500)
+ax.plot(x, kde(x), color='#CC7000', linewidth=2.5, label='KDE')
+
+ax.set_xlabel('Newspaper ad budget ($1000s)', fontsize=12)
+ax.set_ylabel('Density', fontsize=12)
+ax.set_title('Histogram vs. KDE on the full dataset (200 points)', fontsize=12, color='gray')
+ax.legend(fontsize=11)
+ax.set_xlim(-5, 120)
+ax.grid(linestyle='--', alpha=0.3, axis='y')
+plt.tight_layout()
+plt.show()
+```
+
+KDE gives you a smooth approximation of the PDF based purely on your data. It is the foundation for violin plots, which you will see next.
+
+### Review Questions {.unnumbered}
+
+**9. What are two problems with using a histogram as an estimate of the PDF?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+First, histograms are not smooth (they have sharp jumps between bars), while the true PDF is usually a smooth curve. Second, the bar edges depend on how you choose the bin boundaries, not on the data itself, so the same data can produce different-looking histograms depending on the binning.
+:::
+
+---
+
+**10. In KDE, what is the "kernel" and what role does it play?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The kernel is a small probability density function (typically a Gaussian) placed on top of each data point. It spreads the influence of each observation to its neighborhood, creating high density where points cluster and low density where points are sparse.
+:::
+
+---
+
+**11. What happens to the KDE if you choose a very small bandwidth?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Each kernel is very narrow, so the resulting estimate has a sharp spike at each data point. The curve becomes bumpy and noisy, overfitting to the individual observations rather than revealing the overall shape of the distribution.
+:::
+
+---
+
+**12. Why does the KDE have total area equal to 1?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Each individual Gaussian kernel has area 1. The KDE is the average of $n$ such kernels (sum divided by $n$). The average of functions that each have area 1 also has area 1. This guarantees the KDE is a valid density function.
+:::
+
+
+## Violin Plots
+
+A **violin plot** combines the information from a box plot and a KDE into a single visualization. It shows you:
+
+- The **KDE** (density shape) mirrored on both sides, giving the "violin" silhouette.
+- The **box plot** elements (median, quartiles, whiskers) drawn inside.
+
+This gives you the best of both worlds: the precise summary statistics from the box plot and the full distributional shape from the KDE.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+df = pd.read_csv('../../media/advertising.csv')
+data_full = df['Newspaper'].values
+
+fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
+
+# Box plot alone
+axes[0].boxplot(data_full, vert=True, widths=0.5, patch_artist=True,
+              boxprops=dict(facecolor='#4682B4', alpha=0.3, edgecolor='#4682B4', linewidth=2),
+              medianprops=dict(color='#CC0000', linewidth=2.5),
+              whiskerprops=dict(color='#333', linewidth=1.5),
+              capprops=dict(color='#333', linewidth=1.5),
+              flierprops=dict(marker='o', markerfacecolor='#CC0000', markersize=6, markeredgecolor='#CC0000'))
+axes[0].set_title('Box plot', fontsize=12, color='gray')
+axes[0].set_ylabel('Newspaper budget ($1000s)', fontsize=11)
+axes[0].set_xticks([])
+axes[0].grid(linestyle='--', alpha=0.3, axis='y')
+
+# KDE alone (vertical)
+from scipy.stats import gaussian_kde
+kde = gaussian_kde(data_full)
+y_range = np.linspace(-5, 120, 300)
+density = kde(y_range)
+axes[1].fill_betweenx(y_range, -density, density, alpha=0.3, color='#CC7000')
+axes[1].plot(density, y_range, color='#CC7000', linewidth=2)
+axes[1].plot(-density, y_range, color='#CC7000', linewidth=2)
+axes[1].axvline(0, color='gray', linewidth=0.5)
+axes[1].set_title('KDE (mirrored)', fontsize=12, color='gray')
+axes[1].set_xticks([])
+axes[1].set_ylabel('Newspaper budget ($1000s)', fontsize=11)
+axes[1].grid(linestyle='--', alpha=0.3, axis='y')
+
+# Violin plot (combined)
+vp = axes[2].violinplot(data_full, positions=[0], showmedians=True, showextrema=True)
+for body in vp['bodies']:
+    body.set_facecolor('#4682B4')
+    body.set_alpha(0.3)
+    body.set_edgecolor('#4682B4')
+vp['cmedians'].set_color('#CC0000')
+vp['cmedians'].set_linewidth(2.5)
+vp['cmins'].set_color('#333')
+vp['cmaxes'].set_color('#333')
+vp['cbars'].set_color('#333')
+
+# Add quartile lines
+q1, q2, q3 = np.percentile(data_full, [25, 50, 75])
+axes[2].hlines([q1, q3], -0.15, 0.15, color='#2E8B57', linewidth=2, linestyle='-')
+axes[2].set_title('Violin plot (both combined)', fontsize=12, color='gray')
+axes[2].set_xticks([])
+axes[2].set_ylabel('Newspaper budget ($1000s)', fontsize=11)
+axes[2].grid(linestyle='--', alpha=0.3, axis='y')
+
+plt.tight_layout()
+plt.show()
+```
+
+The violin shape immediately reveals features that a box plot alone cannot show: whether the distribution is bimodal, where the bulk of data concentrates, and the overall shape of the tails. Together with the quartile markers, it gives a complete picture at a glance.
+
+
+## QQ Plots
+
+Many statistical models (linear regression, logistic regression, Gaussian Naive Bayes) assume that the data follows a **normal distribution**. How can you check whether this assumption is reasonable?
+
+A histogram gives a rough sense, but it is hard to tell from a histogram alone whether data is "close enough" to Gaussian. A more precise tool is the **quantile-quantile plot** (QQ plot).
+
+### How QQ Plots Work
+
+1. **Standardize** your data (subtract the mean, divide by the standard deviation).
+2. **Compute the quantiles** of your standardized data (sort the values).
+3. **Compute the same quantiles** from a standard normal distribution (the "theoretical" quantiles).
+4. **Plot** theoretical quantiles on the x-axis and sample quantiles on the y-axis.
+
+If your data is truly normally distributed, the sample quantiles will match the theoretical quantiles, and the points will fall along a straight diagonal line.
+
+### Example: Newspaper Budget (Not Gaussian)
+
+The newspaper ad budget column is right-skewed. Its QQ plot shows clear deviation from the diagonal:
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy import stats
+
+df = pd.read_csv('../../media/advertising.csv')
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+
+# Newspaper: not Gaussian
+newspaper = df['Newspaper'].values
+axes[0].hist(newspaper, bins=20, density=True, color='#4682B4', alpha=0.5, edgecolor='white')
+axes[0].set_title('Newspaper budget (histogram)', fontsize=11, color='gray')
+axes[0].set_xlabel('Budget ($1000s)', fontsize=11)
+axes[0].set_ylabel('Density', fontsize=11)
+axes[0].grid(linestyle='--', alpha=0.3, axis='y')
+
+# QQ plot for newspaper
+stats.probplot(newspaper, dist="norm", plot=axes[1])
+axes[1].get_lines()[0].set(color='#4682B4', markersize=4)
+axes[1].get_lines()[1].set(color='#CC7000', linewidth=2)
+axes[1].set_title('QQ plot: Newspaper budget', fontsize=11, color='gray')
+axes[1].set_xlabel('Theoretical quantiles', fontsize=11)
+axes[1].set_ylabel('Sample quantiles', fontsize=11)
+axes[1].grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+The points curve away from the orange line, especially in the tails. The concentration of points on the left and the upward curve on the right are signs of positive skewness. This data is clearly not Gaussian.
+
+### Example: Sales (Approximately Gaussian)
+
+The Sales column from the same dataset looks more bell-shaped:
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy import stats
+
+df = pd.read_csv('../../media/advertising.csv')
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+
+# Sales: approximately Gaussian
+sales = df['Sales'].values
+axes[0].hist(sales, bins=20, density=True, color='#2E8B57', alpha=0.5, edgecolor='white')
+axes[0].set_title('Sales (histogram)', fontsize=11, color='gray')
+axes[0].set_xlabel('Sales', fontsize=11)
+axes[0].set_ylabel('Density', fontsize=11)
+axes[0].grid(linestyle='--', alpha=0.3, axis='y')
+
+# QQ plot for sales
+stats.probplot(sales, dist="norm", plot=axes[1])
+axes[1].get_lines()[0].set(color='#2E8B57', markersize=4)
+axes[1].get_lines()[1].set(color='#CC7000', linewidth=2)
+axes[1].set_title('QQ plot: Sales', fontsize=11, color='gray')
+axes[1].set_xlabel('Theoretical quantiles', fontsize=11)
+axes[1].set_ylabel('Sample quantiles', fontsize=11)
+axes[1].grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+The points align closely with the diagonal line, suggesting that the Sales data is approximately normally distributed.
+
+### Reading a QQ Plot
+
+| Pattern | Interpretation |
+|---------|----------------|
+| Points follow the diagonal line | Data is approximately Gaussian |
+| Points curve above the line on the right | Heavier right tail than normal (positive skew) |
+| Points curve below the line on the left | Heavier left tail than normal (negative skew) |
+| S-shaped curve | Heavier tails on both sides (high kurtosis) |
+
+### Review Questions {.unnumbered}
+
+**13. What does a violin plot show that a box plot alone does not?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+A violin plot shows the full shape of the distribution (the KDE density curve), not just the five-number summary. You can see whether the data is bimodal, where most values concentrate, and the exact shape of the tails.
+:::
+
+---
+
+**14. Why is checking for normality important in data science?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Many models (linear regression, logistic regression, Gaussian Naive Bayes) and statistical tests assume the data follows a Gaussian distribution. If this assumption is violated, the model predictions or test results may be unreliable.
+:::
+
+---
+
+**15. In a QQ plot, what does it mean when the points fall along the diagonal line?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+It means the sample quantiles match the theoretical normal quantiles, which suggests the data is approximately normally distributed.
+:::
+
+---
+
+**16. The QQ plot for the newspaper budget curves upward on the right side. What does this indicate?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The upper quantiles of the data are larger than what a normal distribution would predict. This indicates positive skewness: the right tail is heavier (stretches further) than a Gaussian tail would. The data has more extreme high values than a normal distribution.
+:::
+
+---
+
+**17. Consider the following box plot for test scores of two classes, A and B. Class A has a box from about 68 to 90 with median around 75. Class B has a box from about 78 to 92 with median around 85, and one outlier below the whisker. Which statements are true?**
+
+a. Class B's IQR is larger than Class A's IQR
+b. Class A's median score is higher than Class B's median score
+c. Class B's median score is higher than Class A's median score
+d. Class A's IQR is larger than Class B's IQR
+
+::: {.callout-tip collapse="true"}
+## Answer
+**c and d.** Class B's median (~85) is higher than Class A's median (~75), so c is true. Class A's box (rectangle) is taller than Class B's box, meaning Class A's IQR is larger, so d is also true.
+:::
+
+---
+
+**18. Consider the following QQ plot where points closely follow the diagonal line with only minor deviations at the extreme tails. Which statement is true?**
+
+a. The data looks normally distributed
+b. The data has a higher variance than a normal distribution
+c. The data has a lower variance than a normal distribution
+d. The data is not normally distributed
+
+::: {.callout-tip collapse="true"}
+## Answer
+**a.** The data looks normally distributed. When the points in a QQ plot closely follow the diagonal reference line, it means the sample quantiles match the theoretical normal quantiles. Minor deviations at the very extremes are common even in truly normal data due to sampling variability.
+:::
