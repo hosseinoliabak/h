@@ -106,7 +106,7 @@ local function count_extras_from_source(basename)
       elseif not is_hidden then code_lines = code_lines + 1 end
     end
   end
-  local code_minutes = math.ceil(code_lines / 10) * 2
+  local code_minutes = math.ceil(code_lines / 4) * 2
 
   local math_blocks = 0
   for _ in content:gmatch("%$%$[^$]+%$%$") do math_blocks = math_blocks + 1 end

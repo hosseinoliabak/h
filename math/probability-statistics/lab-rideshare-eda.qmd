@@ -1,0 +1,165 @@
+---
+title: "Lab: Rideshare Exploratory Data Analysis"
+date: "2026-06-23"
+difficulty: 2
+order: 11
+categories: [probability]
+---
+
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+In this lab you will apply probability, conditional probability, and distributions to a real-world dataset: rideshare trips in Chicago during 2022. You will explore how rides are distributed throughout the year, investigate tipping behavior, and compute conditional probabilities (such as the probability of receiving a tip given a specific day of the week).
+
+Download the dataset: [rideshare_2022.csv](/media/rideshare_2022.csv)
+
+## Importing Libraries
+
+```{python}
+#| echo: true
+import pandas as pd
+import matplotlib.pyplot as plt
+```
+
+## Loading Data
+
+The dataset contains rideshare trips from Chicago in 2022, downsampled by a factor of 100 from the original (which has hundreds of millions of rows).
+
+```{python}
+#| echo: true
+df = pd.read_csv('../../media/rideshare_2022.csv', parse_dates=['Trip Start Timestamp', 'Trip End Timestamp'])
+df.head()
+```
+
+## Exploring the Dataset
+
+The dataset includes columns such as Trip ID, timestamps, trip duration, distance, fare, tip, and geographic coordinates. Run `df.info()` to see column types and missing values.
+
+```{python}
+#| echo: true
+df.info()
+```
+
+### Selecting Columns of Interest
+
+For this analysis, we keep only the columns we need. This reduces memory usage and makes the DataFrame easier to work with.
+
+```{python}
+#| echo: true
+columns_of_interest = ['Trip Start Timestamp', 'Trip Seconds',
+       'Trip Miles', 'Fare', 'Tip', 'Additional Charges', 'Trip Total', 'Shared Trip Authorized',
+       'Trips Pooled', 'Pickup Centroid Latitude', 'Pickup Centroid Longitude', 'Dropoff Centroid Latitude',
+       'Dropoff Centroid Longitude']
+
+df = df[columns_of_interest]
+
+# Rename columns: remove spaces, make lowercase
+df = df.rename(columns={i: "_".join(i.split(" ")).lower() for i in df.columns})
+df.info()
+```
+
+## Visualizing Distributions
+
+### Rides Throughout the Year
+
+To understand how rides are distributed over time, we create a `date` column and plot a histogram. Setting `density=True` scales the histogram so the area equals 1, making it look like a probability density function.
+
+```{python}
+#| echo: true
+df['date'] = pd.to_datetime(df['trip_start_timestamp'].dt.date)
+df.hist('date', density=True)
+plt.xlabel('Date')
+plt.ylabel('Density')
+plt.title('Distribution of rides throughout 2022')
+plt.tight_layout()
+plt.show()
+```
+
+The rides are roughly **uniformly distributed** throughout the year, with slight fluctuations. This is real-world data, so perfect uniformity is not expected.
+
+### Tip Distribution
+
+```{python}
+#| echo: true
+df.hist('tip', density=True, bins=100)
+plt.xlabel('Tip ($)')
+plt.ylabel('Density')
+plt.title('Distribution of tips (all rides)')
+plt.tight_layout()
+plt.show()
+```
+
+The large bar at tip = 0 dominates the plot. Most riders do not tip (remember, cash tips are not recorded). We can calculate the probability of tipping:
+
+```{python}
+#| echo: true
+tippers = df['tip'] > 0
+number_of_tippers = tippers.sum()
+total_rides = len(df)
+fraction_of_tippers = number_of_tippers / total_rides
+print(f'The percentage of riders who tip is {fraction_of_tippers*100:.0f}%.')
+```
+
+### Conditional Distribution: Tips Given a Tip Was Given
+
+If we **condition** on the event that a tip was given (filter out non-tippers), the distribution changes shape entirely:
+
+```{python}
+#| echo: true
+df_tippers = df[tippers]
+df_tippers.hist('tip', density=True, bins=100)
+plt.xlabel('Tip ($)')
+plt.ylabel('Density')
+plt.title('Distribution of tips (given tip > 0)')
+plt.tight_layout()
+plt.show()
+```
+
+This is a **conditional distribution**: the distribution of the tip amount, given that a tip was actually given. Mathematically, you are looking at $P(\text{tip amount} \mid \text{tip} > 0)$.
+
+## Splitting Data Into Subsets: Conditional Probability
+
+An interesting question: does tipping behavior change depending on the day of the week? This is a conditional probability question: $P(\text{tip} \mid \text{weekday})$.
+
+```{python}
+#| echo: true
+# Extract day of the week
+df['weekday'] = df['date'].dt.day_name()
+
+# Count rides per day
+WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+daily_ride_counts = df['weekday'].value_counts().reindex(WEEKDAYS)
+daily_ride_counts
+```
+
+```{python}
+#| echo: true
+# Count tippers per day
+df_tippers = df[df['tip'] > 0]
+daily_tippers_counts = df_tippers['weekday'].value_counts().reindex(WEEKDAYS)
+daily_tippers_counts
+```
+
+```{python}
+#| echo: true
+# Calculate conditional probability of tipping given day of the week
+df_daily = pd.concat([daily_ride_counts, daily_tippers_counts], axis=1, keys=['ride_count', 'tippers_count'])
+df_daily['tips_percentage'] = df_daily['tippers_count'] / df_daily['ride_count'] * 100
+df_daily
+```
+
+What you just calculated are **conditional probabilities**: $P(\text{tip} \mid \text{weekday})$ for each day. You can see that Fridays and Saturdays have significantly more rides, but the tipping percentage stays fairly consistent across days.
+
+## Key Takeaways
+
+- Ride dates follow a roughly **uniform distribution** throughout 2022.
+- The raw tip distribution is dominated by zeros (most riders do not tip in the app).
+- **Conditioning** on tip > 0 reveals a different shape entirely.
+- **Conditional probabilities** $P(\text{tip} \mid \text{day})$ show tipping rates are stable across weekdays despite varying ride volumes.
+
+Congratulations on finishing this lab. You have applied probability, distributions, and conditional probability to a real-world dataset. In future weeks, you will continue exploring this rideshare data with more advanced statistical tools.
