@@ -1,0 +1,1245 @@
+---
+title: "Covariance and Correlation"
+date: "2026-06-25"
+difficulty: 3
+order: 18
+categories: [probability]
+---
+
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+Each distribution has its own expected value and its own variance. But when you have two variables, there is something these measures do not capture: the **relationship** between them. As you might expect, the age of a child and their height are related (older children tend to be taller). How do we measure this? With a concept called **covariance**.
+
+## Motivation: Three Relationships
+
+Consider a discrete random variable $X$ representing the age of a child, and three other variables:
+
+- $Y_1$ = height of the child (in inches)
+- $Y_2$ = grades on a test
+- $Y_3$ = number of naps per day
+
+Here is the data for 10 children:
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Dataset from the course
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+heights = np.array([50, 52, 55, 57, 60, 62, 64, 65, 67, 68])  # Y1: positively correlated
+grades = np.array([5, 7, 8, 3, 1, 1, 6, 10, 2, 7])             # Y2: uncorrelated
+naps = np.array([8, 7, 6, 5, 4, 3, 2, 1, 1, 0])               # Y3: negatively correlated
+
+mean_x = ages.mean()
+mean_y1 = heights.mean()
+mean_y2 = grades.mean()
+mean_y3 = naps.mean()
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+# Age vs Height
+axes[0].scatter(ages, heights, s=60, color='#4682B4', zorder=3, edgecolors='white')
+axes[0].scatter(mean_x, mean_y1, s=120, color='#CC0000', marker='x', linewidths=3, zorder=5)
+axes[0].text(mean_x + 0.3, mean_y1, f'$\\mu$ = ({mean_x:.1f}, {mean_y1:.0f})', fontsize=9, color='#CC0000', fontweight='bold', va='center')
+axes[0].set_xlabel('Age (years)', fontsize=12)
+axes[0].set_ylabel('Height (inches)', fontsize=12)
+axes[0].set_title('Age vs. Height\n(positive trend)', fontsize=11, color='gray')
+axes[0].grid(linestyle='--', alpha=0.3)
+
+# Age vs Grades
+axes[1].scatter(ages, grades, s=60, color='#2E8B57', zorder=3, edgecolors='white')
+axes[1].scatter(mean_x, mean_y2, s=120, color='#CC0000', marker='x', linewidths=3, zorder=5)
+axes[1].text(mean_x + 0.3, mean_y2, f'$\\mu$ = ({mean_x:.1f}, {mean_y2:.0f})', fontsize=9, color='#CC0000', fontweight='bold', va='center')
+axes[1].set_xlabel('Age (years)', fontsize=12)
+axes[1].set_ylabel('Grades', fontsize=12)
+axes[1].set_title('Age vs. Grades\n(no clear trend)', fontsize=11, color='gray')
+axes[1].grid(linestyle='--', alpha=0.3)
+
+# Age vs Naps
+axes[2].scatter(ages, naps, s=60, color='#CC7000', zorder=3, edgecolors='white')
+axes[2].scatter(mean_x, mean_y3, s=120, color='#CC0000', marker='x', linewidths=3, zorder=5)
+axes[2].text(mean_x + 0.3, mean_y3, f'$\\mu$ = ({mean_x:.1f}, {mean_y3:.1f})', fontsize=9, color='#CC0000', fontweight='bold', va='center')
+axes[2].set_xlabel('Age (years)', fontsize=12)
+axes[2].set_ylabel('Naps per day', fontsize=12)
+axes[2].set_title('Age vs. Naps\n(negative trend)', fontsize=11, color='gray')
+axes[2].grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+The red cross marks the mean $(\bar{X}, \bar{Y})$ in each plot. You can see three different patterns:
+
+- **Age vs. Height:** as age increases, height increases (points go up to the right).
+- **Age vs. Grades:** no clear pattern (points are scattered randomly).
+- **Age vs. Naps:** as age increases, naps decrease (points go down to the right).
+
+The mean and variance of each variable individually cannot capture these relationships. We need a new measure.
+
+## Building Intuition for Covariance
+
+### Step 1: Center the Data
+
+First, center both variables by subtracting their means. This moves the "balance point" to the origin:
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+heights = np.array([50, 52, 55, 57, 60, 62, 64, 65, 67, 68])
+grades = np.array([5, 7, 8, 3, 1, 1, 6, 10, 2, 7])
+naps = np.array([8, 7, 6, 5, 4, 3, 2, 1, 1, 0])
+
+# Center
+cx = ages - ages.mean()
+cy1 = heights - heights.mean()
+cy2 = grades - grades.mean()
+cy3 = naps - naps.mean()
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+for ax, cy, title, color in zip(axes, [cy1, cy2, cy3],
+    ['Age vs. Height (centered)', 'Age vs. Grades (centered)', 'Age vs. Naps (centered)'],
+    ['#4682B4', '#2E8B57', '#CC7000']):
+    ax.scatter(cx, cy, s=60, color=color, zorder=3, edgecolors='white')
+    ax.axhline(0, color='gray', linewidth=0.8)
+    ax.axvline(0, color='gray', linewidth=0.8)
+    ax.set_xlabel('$X - \\bar{X}$', fontsize=12)
+    ax.set_ylabel('$Y - \\bar{Y}$', fontsize=12)
+    ax.set_title(title, fontsize=11, color='gray')
+    ax.grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+### Step 2: Look at the Signs of the Products
+
+After centering, look at the sign of each point's coordinates:
+
+- **Positive covariance (Age vs. Height):** When $X - \bar{X}$ is positive (older than average), $Y - \bar{Y}$ tends to also be positive (taller than average). When $X - \bar{X}$ is negative, $Y - \bar{Y}$ tends to be negative too. The coordinates have the **same sign**, so their product $(X - \bar{X})(Y - \bar{Y})$ is usually **positive**.
+
+- **Near-zero covariance (Age vs. Grades):** The signs of $X - \bar{X}$ and $Y - \bar{Y}$ have no consistent pattern. Sometimes same sign, sometimes opposite. The products cancel out.
+
+- **Negative covariance (Age vs. Naps):** When $X - \bar{X}$ is positive, $Y - \bar{Y}$ tends to be negative (and vice versa). The coordinates have **opposite signs**, so their product is usually **negative**.
+
+### Step 3: Average the Products
+
+The covariance is the average of all these products:
+
+$$
+\text{Cov}(X, Y) = \frac{1}{n-1} \sum_{i=1}^{n} (x_i - \bar{x})(y_i - \bar{y})
+$$
+
+Or equivalently, in terms of expected values:
+
+$$
+\text{Cov}(X, Y) = \mathbb{E}\left[(X - \mathbb{E}[X])(Y - \mathbb{E}[Y])\right]
+$$
+
+## Computing Covariance
+
+### Age vs. Height (Positive Covariance)
+
+Older children tend to be taller, so we expect both variables to move in the same direction. Let's verify this with the computation table:
+
+```{python}
+#| echo: false
+#| warning: false
+import numpy as np
+from IPython.display import display, Math, Markdown
+
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+heights = np.array([50, 52, 55, 57, 60, 62, 64, 65, 67, 68])
+
+mean_x = ages.mean()
+mean_y = heights.mean()
+cx = ages - mean_x
+cy = heights - mean_y
+products = cx * cy
+cov = products.sum() / (len(ages) - 1)
+
+display(Math(rf"\bar{{X}} = {mean_x}, \quad \bar{{Y}} = {mean_y:.0f}"))
+
+# Build markdown table
+header = "| Age $(x)$ | Height $(y)$ | $x_i - \\bar{x}$ | $y_i - \\bar{y}$ | $(x_i - \\bar{x})(y_i - \\bar{y})$ |"
+sep = "|:---:|:---:|:---:|:---:|:---:|"
+rows = [header, sep]
+for i in range(len(ages)):
+    rows.append(f"| {ages[i]} | {heights[i]} | {cx[i]:g} | {cy[i]:g} | {products[i]:g} |")
+rows.append(f"| | | | | $\\sum = {products.sum():g}$ |")
+
+display(Markdown('\n'.join(rows)))
+
+display(Math(rf"\text{{Cov}}(X, Y_1) = \frac{{\sum (x_i - \bar{{x}})(y_i - \bar{{y}})}}{{n-1}} = \frac{{{products.sum():g}}}{{9}} = {cov:g} > 0"))
+```
+
+The covariance is positive because when age grows, height grows too.
+
+### Age vs. Naps (Negative Covariance)
+
+Younger children nap more, so as age goes up, naps go down. We expect the products of the deviations to be mostly negative:
+
+```{python}
+#| echo: false
+#| warning: false
+import numpy as np
+from IPython.display import display, Math
+
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+naps = np.array([8, 7, 6, 5, 4, 3, 2, 1, 1, 0])
+
+mean_x = ages.mean()
+mean_y = naps.mean()
+cx = ages - mean_x
+cy = naps - mean_y
+products = cx * cy
+cov = products.sum() / (len(ages) - 1)
+
+display(Math(rf"\bar{{X}} = {mean_x}, \quad \bar{{Y}} = {mean_y}"))
+display(Math(rf"\text{{Cov}}(X, Y_3) = \frac{{1}}{{n-1}} \sum (x_i - \bar{{x}})(y_i - \bar{{y}}) = \frac{{{products.sum():.1f}}}{{9}} = {cov:.2f}"))
+```
+
+The covariance is negative because as age increases, naps per day decrease.
+
+### Age vs. Grades (Near-Zero Covariance)
+
+There is no obvious pattern between age and test grades in this group. The positive and negative products should roughly cancel out:
+
+```{python}
+#| echo: false
+#| warning: false
+import numpy as np
+from IPython.display import display, Math
+
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+grades = np.array([5, 7, 8, 3, 1, 1, 6, 10, 2, 7])
+
+mean_x = ages.mean()
+mean_y = grades.mean()
+cx = ages - mean_x
+cy = grades - mean_y
+products = cx * cy
+cov = products.sum() / (len(ages) - 1)
+
+display(Math(rf"\bar{{X}} = {mean_x}, \quad \bar{{Y}} = {mean_y}"))
+display(Math(rf"\text{{Cov}}(X, Y_2) = \frac{{1}}{{n-1}} \sum (x_i - \bar{{x}})(y_i - \bar{{y}}) = \frac{{{products.sum():.1f}}}{{9}} = {cov:.1f}"))
+```
+
+The covariance is very close to zero because age and grades have no consistent linear relationship.
+
+## Summary
+
+| Variables | Relationship | Covariance |
+|-----------|-------------|------------|
+| Age vs. Height | Positive (grow together) | $> 0$ |
+| Age vs. Grades | None (no pattern) | $\approx 0$ |
+| Age vs. Naps | Negative (one grows, other shrinks) | $< 0$ |
+
+$$
+\text{Cov}(X, Y) = \mathbb{E}\left[(X - \mathbb{E}[X])(Y - \mathbb{E}[Y])\right]
+$$
+
+- **Positive covariance:** variables tend to move in the same direction.
+- **Negative covariance:** variables tend to move in opposite directions.
+- **Near-zero covariance:** no consistent linear relationship.
+
+### Review Questions {.unnumbered}
+
+**1. What does covariance measure?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Covariance measures the direction of the linear relationship between two variables. It tells you whether the variables tend to increase together (positive), decrease together / move in opposite directions (negative), or have no consistent linear pattern (near zero).
+:::
+
+---
+
+**1. If the covariance between two variables is 0, does that mean they are independent?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Not necessarily. Covariance only measures **linear** relationships. Two variables can have a strong non-linear relationship (for example, $Y = X^2$) and still have zero covariance. Zero covariance means no linear trend, but other patterns may exist.
+:::
+
+---
+
+**1. Why do you center the data (subtract means) before computing covariance?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Centering shifts the data so the mean is at the origin. This lets you use the sign of the coordinates to determine whether points tend to fall in the "same sign" quadrants (positive relationship) or "opposite sign" quadrants (negative relationship). Without centering, the location of the data would dominate and obscure the relationship.
+:::
+
+---
+
+**1. Two variables have covariance $-15$. What does this tell you about their scatter plot?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The scatter plot shows a downward trend: as one variable increases, the other tends to decrease. The negative sign means the centered coordinates tend to have opposite signs (when $X$ is above average, $Y$ is below average, and vice versa).
+:::
+
+
+
+## Covariance of a Probability Distribution
+
+So far we computed covariance from a data set by averaging the products of deviations. But what if our data comes from a probability distribution with **unequal** probabilities? Then we take a *weighted* average instead.
+
+### Three Games: Same Expectation, Same Variance, Different Covariance
+
+Players $X$ and $Y$ play three different games, each time winning or losing \$1. How similar are these games for each player individually?
+
+```{python}
+#| echo: false
+#| warning: false
+from IPython.display import display, Math, Markdown
+
+display(Markdown("For **all three games**, each player can win \\$1 or lose \\$1 with equal probability:"))
+
+display(Math(r"\mathbb{E}[X] = \frac{1}{2}(1) + \frac{1}{2}(-1) = 0, \quad \mathbb{E}[Y] = 0"))
+display(Math(r"\text{Var}(X) = \frac{1}{2}(1-0)^2 + \frac{1}{2}(-1-0)^2 = 1, \quad \text{Var}(Y) = 1"))
+```
+
+So the games are identical from each player's perspective: expected winnings of 0 and variance of 1. Yet the games feel very different because of the **relationship** between the players. This is what covariance captures.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+
+# Game 1: both win or both lose
+axes[0].scatter([1, -1], [1, -1], s=120, color='#4682B4', zorder=3, edgecolors='white')
+axes[0].annotate('$p = 1/2$', (1, 1), textcoords='offset points', xytext=(8, -5), fontsize=10)
+axes[0].annotate('$p = 1/2$', (-1, -1), textcoords='offset points', xytext=(8, -5), fontsize=10)
+axes[0].axhline(0, color='gray', linewidth=0.5)
+axes[0].axvline(0, color='gray', linewidth=0.5)
+axes[0].set_xlim(-1.8, 1.8)
+axes[0].set_ylim(-1.8, 1.8)
+axes[0].set_xlabel('Player X', fontsize=11)
+axes[0].set_ylabel('Player Y', fontsize=11)
+axes[0].set_title('Game 1: Both win or both lose\nCov = +1', fontsize=10, color='gray')
+axes[0].grid(linestyle='--', alpha=0.3)
+
+# Game 2: one wins, other loses
+axes[1].scatter([1, -1], [-1, 1], s=120, color='#2E8B57', zorder=3, edgecolors='white')
+axes[1].annotate('$p = 1/2$', (1, -1), textcoords='offset points', xytext=(8, 5), fontsize=10)
+axes[1].annotate('$p = 1/2$', (-1, 1), textcoords='offset points', xytext=(8, -5), fontsize=10)
+axes[1].axhline(0, color='gray', linewidth=0.5)
+axes[1].axvline(0, color='gray', linewidth=0.5)
+axes[1].set_xlim(-1.8, 1.8)
+axes[1].set_ylim(-1.8, 1.8)
+axes[1].set_xlabel('Player X', fontsize=11)
+axes[1].set_ylabel('Player Y', fontsize=11)
+axes[1].set_title('Game 2: One wins, other loses\nCov = −1', fontsize=10, color='gray')
+axes[1].grid(linestyle='--', alpha=0.3)
+
+# Game 3: all four possibilities
+axes[2].scatter([1, -1, 1, -1], [1, -1, -1, 1], s=120, color='#CC7000', zorder=3, edgecolors='white')
+axes[2].annotate('$p = 1/4$', (1, 1), textcoords='offset points', xytext=(5, -5), fontsize=9)
+axes[2].annotate('$p = 1/4$', (-1, -1), textcoords='offset points', xytext=(5, 5), fontsize=9)
+axes[2].annotate('$p = 1/4$', (1, -1), textcoords='offset points', xytext=(5, 5), fontsize=9)
+axes[2].annotate('$p = 1/4$', (-1, 1), textcoords='offset points', xytext=(5, -5), fontsize=9)
+axes[2].axhline(0, color='gray', linewidth=0.5)
+axes[2].axvline(0, color='gray', linewidth=0.5)
+axes[2].set_xlim(-1.8, 1.8)
+axes[2].set_ylim(-1.8, 1.8)
+axes[2].set_xlabel('Player X', fontsize=11)
+axes[2].set_ylabel('Player Y', fontsize=11)
+axes[2].set_title('Game 3: Any combination\nCov = 0', fontsize=10, color='gray')
+axes[2].grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+Let's compute the covariance for each game. Since $\mu_X = \mu_Y = 0$, centering changes nothing:
+
+```{python}
+#| echo: false
+#| warning: false
+from IPython.display import display, Math, Markdown
+
+# Game 1
+display(Markdown("**Game 1** — both win or both lose:"))
+
+header = "| $x$ | $y$ | $x - \\mu_X$ | $y - \\mu_Y$ | $(x-\\mu_X)(y-\\mu_Y)$ |"
+sep = "|:---:|:---:|:---:|:---:|:---:|"
+rows = [header, sep,
+    "| 1 | 1 | 1 | 1 | 1 |",
+    "| −1 | −1 | −1 | −1 | 1 |",
+    "| | | | $\\sum$ | 2 |"
+]
+display(Markdown('\n'.join(rows)))
+display(Math(r"\text{Cov}(X, Y) = \frac{2}{2} = 1"))
+```
+
+```{python}
+#| echo: false
+#| warning: false
+from IPython.display import display, Math, Markdown
+
+# Game 2
+display(Markdown("**Game 2** — one wins, other loses:"))
+
+header = "| $x$ | $y$ | $x - \\mu_X$ | $y - \\mu_Y$ | $(x-\\mu_X)(y-\\mu_Y)$ |"
+sep = "|:---:|:---:|:---:|:---:|:---:|"
+rows = [header, sep,
+    "| 1 | −1 | 1 | −1 | −1 |",
+    "| −1 | 1 | −1 | 1 | −1 |",
+    "| | | | $\\sum$ | −2 |"
+]
+display(Markdown('\n'.join(rows)))
+display(Math(r"\text{Cov}(X, Y) = \frac{-2}{2} = -1"))
+```
+
+```{python}
+#| echo: false
+#| warning: false
+from IPython.display import display, Math, Markdown
+
+# Game 3
+display(Markdown("**Game 3** — all four possibilities:"))
+
+header = "| $x$ | $y$ | $x - \\mu_X$ | $y - \\mu_Y$ | $(x-\\mu_X)(y-\\mu_Y)$ |"
+sep = "|:---:|:---:|:---:|:---:|:---:|"
+rows = [header, sep,
+    "| 1 | 1 | 1 | 1 | 1 |",
+    "| −1 | −1 | −1 | −1 | 1 |",
+    "| 1 | −1 | 1 | −1 | −1 |",
+    "| −1 | 1 | −1 | 1 | −1 |",
+    "| | | | $\\sum$ | 0 |"
+]
+display(Markdown('\n'.join(rows)))
+display(Math(r"\text{Cov}(X, Y) = \frac{0}{4} = 0"))
+```
+
+All three games have the same $\mathbb{E}[X]$, $\mathbb{E}[Y]$, $\text{Var}(X)$, and $\text{Var}(Y)$. Only covariance tells them apart.
+
+### Game 4: Unequal Probabilities
+
+In Games 1-3, each outcome was equally likely, so we computed covariance as a simple average:
+
+$$
+\text{Cov}(X, Y) = \frac{\sum (x_i - \mu_x)(y_i - \mu_y)}{n} = \underbrace{\frac{1}{n}}_{\text{equal probabilities}} \sum (x_i - \mu_x)(y_i - \mu_y)
+$$
+
+But what if the outcomes have **different** probabilities? Then $\frac{1}{n}$ no longer works. Instead, we weight each term by its probability:
+
+$$
+\text{Cov}(X, Y) = \sum_i \underbrace{p_{XY}(x_i, y_i)}_{\text{unequal probabilities}} (x_i - \mu_x)(y_i - \mu_y)
+$$
+
+This simplifies to a convenient equivalent form:
+
+$$
+\text{Cov}(X, Y) = \mathbb{E}[XY] - \mathbb{E}[X]\,\mathbb{E}[Y]
+$$
+
+Now consider a game where the outcomes have different probabilities:
+
+- Both win \$1 with probability $\frac{1}{2}$
+- Both lose \$1 with probability $\frac{1}{3}$
+- Neither wins nor loses with probability $\frac{1}{6}$
+
+```{python}
+#| echo: false
+#| warning: false
+import numpy as np
+from IPython.display import display, Math, Markdown
+
+x = np.array([1, -1, 0])
+y = np.array([1, -1, 0])
+p = np.array([1/2, 1/3, 1/6])
+
+mu_x = np.sum(p * x)
+mu_y = np.sum(p * y)
+var_x = np.sum(p * (x - mu_x)**2)
+
+E_xy = np.sum(p * x * y)
+cov = E_xy - mu_x * mu_y
+
+display(Math(rf"\mu_X = \mu_Y = \frac{{1}}{{2}}(1) + \frac{{1}}{{3}}(-1) + \frac{{1}}{{6}}(0) = \frac{{1}}{{6}}"))
+display(Math(rf"\text{{Var}}(X) = \text{{Var}}(Y) = {var_x:.4f}"))
+
+display(Markdown("Covariance calculation:"))
+
+header = "| $x_i$ | $y_i$ | $p_i$ | $x_i - \\mu_X$ | $y_i - \\mu_Y$ | $p_i(x_i-\\mu_X)(y_i-\\mu_Y)$ |"
+sep = "|:---:|:---:|:---:|:---:|:---:|:---:|"
+rows = [header, sep]
+
+for i in range(len(x)):
+    cx = x[i] - mu_x
+    cy = y[i] - mu_y
+    prod = p[i] * cx * cy
+    rows.append(f"| {x[i]:g} | {y[i]:g} | {p[i]:.4g} | {cx:.4g} | {cy:.4g} | {prod:.4g} |")
+
+display(Markdown('\n'.join(rows)))
+
+display(Math(rf"\text{{Cov}}(X, Y) = \mathbb{{E}}[XY] - \mathbb{{E}}[X]\,\mathbb{{E}}[Y] = {E_xy:.4g} - \left(\tfrac{{1}}{{6}}\right)^2 = {cov:.4f}"))
+```
+
+The covariance is positive — as expected, since the players tend to win and lose together.
+
+::: {.callout-note}
+## Covariance generalizes variance
+Notice that $\text{Cov}(X, X) = \mathbb{E}[X^2] - (\mathbb{E}[X])^2 = \text{Var}(X)$. Covariance with unequal probabilities uses the same weighted-sum idea as variance, but applied to two different variables.
+:::
+
+### Review Questions {.unnumbered}
+
+**1. In the three games example, why can't expected value or variance alone distinguish the games?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because each player individually has the same distribution in all three games: win \$1 or lose \$1 with equal probability. This gives $\mathbb{E}[X] = 0$ and $\text{Var}(X) = 1$ regardless of the game. The difference is in how the two players relate to each other, which only covariance captures.
+:::
+
+---
+
+**1. How does the covariance formula change when outcomes have unequal probabilities?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Instead of a simple average $\frac{1}{n}\sum(x_i - \bar{x})(y_i - \bar{y})$, you take a weighted average: $\text{Cov}(X,Y) = \sum_i p_i(x_i - \mu_X)(y_i - \mu_Y)$. Each product of deviations is multiplied by its probability rather than divided equally by $n$.
+:::
+
+---
+
+**1. Show that $\text{Cov}(X, X) = \text{Var}(X)$.**
+
+::: {.callout-tip collapse="true"}
+## Answer
+$\text{Cov}(X, X) = \mathbb{E}[X \cdot X] - \mathbb{E}[X]\,\mathbb{E}[X] = \mathbb{E}[X^2] - (\mathbb{E}[X])^2 = \text{Var}(X)$.
+:::
+
+## Covariance Matrix
+
+When you have more than two variables, you need to track the variance of each variable *and* the covariance of every pair. The **covariance matrix** organizes all of this into a single matrix.
+
+::: {.callout-note}
+## See Also
+The covariance matrix plays a central role in dimensionality reduction. For a deeper treatment of how eigenvectors of the covariance matrix give the best projection directions (PCA), see [Dimensionality Reduction and PCA](../linear-algebra/dimensionality-reduction-pca.qmd#covariance-matrix) in the linear algebra notes.
+:::
+
+For two variables $X$ and $Y$, the covariance matrix is:
+
+$$
+\Sigma = \begin{bmatrix} \text{Var}(X) & \text{Cov}(X, Y) \\ \text{Cov}(Y, X) & \text{Var}(Y) \end{bmatrix}
+$$
+
+The diagonal entries are the variances. The off-diagonal entries are the covariances. Since $\text{Cov}(X, Y) = \text{Cov}(Y, X)$, the matrix is always **symmetric**.
+
+### Examples from Earlier
+
+```{python}
+#| echo: false
+#| warning: false
+import numpy as np
+from IPython.display import display, Math, Markdown
+
+# Age vs Height
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+heights = np.array([50, 52, 55, 57, 60, 62, 64, 65, 67, 68])
+
+var_x = np.var(ages, ddof=1)
+var_y = np.var(heights, ddof=1)
+cov_xy = np.sum((ages - ages.mean()) * (heights - heights.mean())) / (len(ages) - 1)
+
+display(Markdown("**Age vs. Height:**"))
+display(Math(rf"\Sigma = \begin{{bmatrix}} \text{{Var}}(X) & \text{{Cov}}(X,Y) \\ \text{{Cov}}(Y,X) & \text{{Var}}(Y) \end{{bmatrix}} = \begin{{bmatrix}} {var_x:.2f} & {cov_xy:.2f} \\ {cov_xy:.2f} & {var_y:.2f} \end{{bmatrix}}"))
+```
+
+```{python}
+#| echo: false
+#| warning: false
+from IPython.display import display, Math, Markdown
+
+display(Markdown("**Game 1** (both win or both lose): $\\text{Var}(X) = \\text{Var}(Y) = 1$, $\\text{Cov}(X,Y) = 1$"))
+display(Math(r"\Sigma = \begin{bmatrix} 1 & 1 \\ 1 & 1 \end{bmatrix}"))
+
+display(Markdown("**Game 2** (one wins, other loses): $\\text{Var}(X) = \\text{Var}(Y) = 1$, $\\text{Cov}(X,Y) = -1$"))
+display(Math(r"\Sigma = \begin{bmatrix} 1 & -1 \\ -1 & 1 \end{bmatrix}"))
+```
+
+### Generalizing to More Variables
+
+For three variables $X$, $Y$, $Z$:
+
+$$
+\Sigma = \begin{bmatrix}
+\text{Var}(X) & \text{Cov}(X, Y) & \text{Cov}(X, Z) \\
+\text{Cov}(Y, X) & \text{Var}(Y) & \text{Cov}(Y, Z) \\
+\text{Cov}(Z, X) & \text{Cov}(Z, Y) & \text{Var}(Z)
+\end{bmatrix}
+$$
+
+And for $n$ variables $X_1, X_2, \ldots, X_n$, the covariance matrix is an $n \times n$ symmetric matrix:
+
+$$
+\Sigma_{ij} = \text{Cov}(X_i, X_j)
+$$
+
+where $\Sigma_{ii} = \text{Var}(X_i)$ on the diagonal.
+
+For example, with 5 variables $V, W, X, Y, Z$, the covariance matrix is $5 \times 5$:
+
+$$
+\Sigma = \begin{bmatrix}
+\text{Var}(V) & \text{Cov}(V,W) & \text{Cov}(V,X) & \text{Cov}(V,Y) & \text{Cov}(V,Z) \\
+\text{Cov}(W,V) & \text{Var}(W) & \text{Cov}(W,X) & \text{Cov}(W,Y) & \text{Cov}(W,Z) \\
+\text{Cov}(X,V) & \text{Cov}(X,W) & \text{Var}(X) & \text{Cov}(X,Y) & \text{Cov}(X,Z) \\
+\text{Cov}(Y,V) & \text{Cov}(Y,W) & \text{Cov}(Y,X) & \text{Var}(Y) & \text{Cov}(Y,Z) \\
+\text{Cov}(Z,V) & \text{Cov}(Z,W) & \text{Cov}(Z,X) & \text{Cov}(Z,Y) & \text{Var}(Z)
+\end{bmatrix}
+$$
+
+Notice the structure: variances line the diagonal, and every off-diagonal entry is a covariance between two different variables. The matrix is always symmetric because $\text{Cov}(A, B) = \text{Cov}(B, A)$.
+
+### Computed Example (3 Variables)
+
+```{python}
+#| echo: false
+#| warning: false
+import numpy as np
+from IPython.display import display, Math, Markdown
+
+# Using Age, Height, Naps from earlier
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+heights = np.array([50, 52, 55, 57, 60, 62, 64, 65, 67, 68])
+naps = np.array([8, 7, 6, 5, 4, 3, 2, 1, 1, 0])
+
+data = np.vstack([ages, heights, naps])
+cov_matrix = np.cov(data)  # sample covariance (ddof=1)
+
+display(Markdown("**Age, Height, Naps** (three variables):"))
+display(Math(rf"""\Sigma = \begin{{bmatrix}}
+{cov_matrix[0,0]:.2f} & {cov_matrix[0,1]:.2f} & {cov_matrix[0,2]:.2f} \\
+{cov_matrix[1,0]:.2f} & {cov_matrix[1,1]:.2f} & {cov_matrix[1,2]:.2f} \\
+{cov_matrix[2,0]:.2f} & {cov_matrix[2,1]:.2f} & {cov_matrix[2,2]:.2f}
+\end{{bmatrix}}"""))
+
+display(Markdown("Reading this matrix: the positive values (Age-Height) show variables that grow together, while the negative values (Age-Naps, Height-Naps) show variables that move in opposite directions."))
+```
+
+The covariance matrix is fundamental in statistics and machine learning. It appears in multivariate Gaussian distributions, principal component analysis (PCA), and many other methods that deal with multiple variables simultaneously.
+
+### Review Questions {.unnumbered}
+
+**1. What goes on the diagonal of a covariance matrix?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The variances of each variable: $\Sigma_{ii} = \text{Var}(X_i)$. The diagonal entry for variable $X_i$ is the covariance of $X_i$ with itself, which equals its variance.
+:::
+
+---
+
+**1. Why is the covariance matrix always symmetric?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because $\text{Cov}(X, Y) = \text{Cov}(Y, X)$. The order does not matter in the product $(x_i - \mu_X)(y_i - \mu_Y) = (y_i - \mu_Y)(x_i - \mu_X)$, so entry $(i, j)$ always equals entry $(j, i)$.
+:::
+
+---
+
+**1. For a data set with 5 variables, what is the size of the covariance matrix and how many unique covariance values (not variances) does it contain?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The matrix is $5 \times 5$. It has 5 variances on the diagonal. The remaining entries are covariances, but since the matrix is symmetric, the number of unique covariances is $\binom{5}{2} = 10$.
+:::
+
+
+## Correlation Coefficient
+
+### Problem with Covariance: No Bounded Range
+
+Consider the two datasets from earlier:
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+heights = np.array([50, 52, 55, 57, 60, 62, 64, 65, 67, 68])
+naps = np.array([8, 7, 6, 5, 4, 3, 2, 1, 1, 0])
+
+var_x = ages.var(ddof=1)
+var_h = heights.var(ddof=1)
+var_n = naps.var(ddof=1)
+cov_h = ((ages - ages.mean()) * (heights - heights.mean())).sum() / (len(ages) - 1)
+cov_n = ((ages - ages.mean()) * (naps - naps.mean())).sum() / (len(ages) - 1)
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
+
+# Age vs Naps
+axes[0].scatter(ages, naps, s=60, color='#4682B4', zorder=3, edgecolors='white')
+axes[0].scatter(ages.mean(), naps.mean(), s=100, color='#CC0000', marker='s', zorder=5)
+m, b = np.polyfit(ages, naps, 1)
+x_fit = np.linspace(5.5, 15.5, 100)
+axes[0].plot(x_fit, m * x_fit + b, color='#2E8B57', linewidth=2.5)
+axes[0].set_xlabel('x', fontsize=12)
+axes[0].set_ylabel('y', fontsize=12)
+axes[0].set_title('Age vs. Naps per Day', fontsize=12, fontweight='bold')
+axes[0].set_xlim(5.5, 15.5)
+axes[0].grid(linestyle='--', alpha=0.3)
+# Stats below plot
+axes[0].text(0.5, -0.22, f'$\\mathrm{{Var}}(X) = {var_x:.2f}$', transform=axes[0].transAxes, ha='center', fontsize=11)
+axes[0].text(0.5, -0.30, f'$\\mathrm{{Var}}(Y) = {var_n:.2f}$', transform=axes[0].transAxes, ha='center', fontsize=11)
+axes[0].text(0.5, -0.42, f'$\\mathrm{{Cov}}(X, Y) = {cov_n:.2f}$', transform=axes[0].transAxes, ha='center', fontsize=14, fontweight='bold', color='#CC0000')
+
+# Age vs Height
+axes[1].scatter(ages, heights, s=60, color='#4682B4', zorder=3, edgecolors='white')
+axes[1].scatter(ages.mean(), heights.mean(), s=100, color='#CC0000', marker='s', zorder=5)
+m, b = np.polyfit(ages, heights, 1)
+axes[1].plot(x_fit, m * x_fit + b, color='#2E8B57', linewidth=2.5)
+axes[1].set_xlabel('x', fontsize=12)
+axes[1].set_ylabel('y', fontsize=12)
+axes[1].set_title('Age vs. Height', fontsize=12, fontweight='bold')
+axes[1].set_xlim(5.5, 15.5)
+axes[1].grid(linestyle='--', alpha=0.3)
+# Stats below plot
+axes[1].text(0.5, -0.22, f'$\\mathrm{{Var}}(X) = {var_x:.2f}$', transform=axes[1].transAxes, ha='center', fontsize=11)
+axes[1].text(0.5, -0.30, f'$\\mathrm{{Var}}(Y) = {var_h:.2f}$', transform=axes[1].transAxes, ha='center', fontsize=11)
+axes[1].text(0.5, -0.42, f'$\\mathrm{{Cov}}(X, Y) = {cov_h:.2f}$', transform=axes[1].transAxes, ha='center', fontsize=14, fontweight='bold', color='#4682B4')
+
+plt.subplots_adjust(bottom=0.25)
+plt.tight_layout(rect=[0, 0.12, 1, 1])
+plt.show()
+```
+
+Ignoring the signs, 17 is much larger than 7.45. Does that mean the relationship between age and height is "stronger" than between age and naps? Not necessarily. The covariance depends on the scale of the variables. Heights are measured in tens (50-68), while naps are single digits (0-8). The larger numbers in heights naturally produce a larger covariance.
+
+We cannot compare covariances directly because they have no fixed range. We need a **standardized** version.
+
+### Definition
+
+The **correlation coefficient** (also called Pearson's $\rho$) normalizes the covariance by dividing by the product of the standard deviations:
+
+$$
+\rho_{XY} = \frac{\text{Cov}(X, Y)}{\sigma_X \cdot \sigma_Y} = \frac{\text{Cov}(X, Y)}{\sqrt{\text{Var}(X)} \cdot \sqrt{\text{Var}(Y)}}
+$$
+
+This value is always between $-1$ and $1$:
+
+::: {.callout-note}
+## When to Use $n$ vs. $n-1$
+There are two contexts for computing variance and covariance:
+
+- **Known probability distribution** (like the games above): you use the expected value formula $\text{Cov}(X,Y) = \sum p_i(x_i - \mu_x)(y_i - \mu_y)$. When all outcomes are equally likely, this simplifies to dividing by $n$. There is no correction needed because you have the complete distribution.
+- **Sample from a dataset** (like the children age/height data): you divide by $n-1$ (Bessel's correction). This corrects for the bias introduced by estimating the mean from the same data. This is what pandas and numpy use by default.
+
+The correlation coefficient comes out the same either way, since the same factor appears in both numerator and denominator.
+:::
+
+| $\rho$ | Meaning |
+|---------|---------|
+| $+1$ | Perfect positive linear relationship (points on a line going up) |
+| $0$ | No linear relationship |
+| $-1$ | Perfect negative linear relationship (points on a line going down) |
+
+### Computing Correlation for Our Datasets
+
+```{python}
+#| echo: false
+#| warning: false
+import numpy as np
+from IPython.display import display, Math
+
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+heights = np.array([50, 52, 55, 57, 60, 62, 64, 65, 67, 68])
+grades = np.array([5, 7, 8, 3, 1, 1, 6, 10, 2, 7])
+naps = np.array([8, 7, 6, 5, 4, 3, 2, 1, 1, 0])
+
+var_x = ages.var(ddof=1)
+var_y1 = heights.var(ddof=1)
+var_y2 = grades.var(ddof=1)
+var_y3 = naps.var(ddof=1)
+
+cov_height = ((ages - ages.mean()) * (heights - heights.mean())).sum() / (len(ages) - 1)
+cov_grades = ((ages - ages.mean()) * (grades - grades.mean())).sum() / (len(ages) - 1)
+cov_naps = ((ages - ages.mean()) * (naps - naps.mean())).sum() / (len(ages) - 1)
+
+rho_height = cov_height / (np.sqrt(var_x) * np.sqrt(var_y1))
+rho_grades = cov_grades / (np.sqrt(var_x) * np.sqrt(var_y2))
+rho_naps = cov_naps / (np.sqrt(var_x) * np.sqrt(var_y3))
+
+display(Math(rf"\rho_{{X, Y_1}} = \frac{{{cov_height:.2f}}}{{\sqrt{{{var_x:.2f}}} \cdot \sqrt{{{var_y1:.2f}}}}} = {rho_height:.3f} \quad \text{{(Age vs. Height)}}"))
+display(Math(rf"\rho_{{X, Y_3}} = \frac{{{cov_naps:.2f}}}{{\sqrt{{{var_x:.2f}}} \cdot \sqrt{{{var_y3:.2f}}}}} = {rho_naps:.3f} \quad \text{{(Age vs. Naps)}}"))
+display(Math(rf"\rho_{{X, Y_2}} = \frac{{{cov_grades:.2f}}}{{\sqrt{{{var_x:.2f}}} \cdot \sqrt{{{var_y2:.2f}}}}} = {rho_grades:.3f} \quad \text{{(Age vs. Grades)}}"))
+```
+
+Despite the large difference in raw covariance (17 vs. 7.45), the correlation coefficients have similar magnitudes (~0.89 vs. ~0.89). Both age-height and age-naps have strong linear relationships of similar strength, just in opposite directions. Age-grades has a correlation near zero, confirming no linear trend.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+ages = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+heights = np.array([50, 52, 55, 57, 60, 62, 64, 65, 67, 68])
+grades = np.array([5, 7, 8, 3, 1, 1, 6, 10, 2, 7])
+naps = np.array([8, 7, 6, 5, 4, 3, 2, 1, 1, 0])
+
+var_x = ages.var(ddof=1)
+cov_height = ((ages - ages.mean()) * (heights - heights.mean())).sum() / (len(ages) - 1)
+cov_naps = ((ages - ages.mean()) * (naps - naps.mean())).sum() / (len(ages) - 1)
+cov_grades = ((ages - ages.mean()) * (grades - grades.mean())).sum() / (len(ages) - 1)
+rho_h = cov_height / (np.sqrt(var_x) * np.sqrt(heights.var(ddof=1)))
+rho_n = cov_naps / (np.sqrt(var_x) * np.sqrt(naps.var(ddof=1)))
+rho_g = cov_grades / (np.sqrt(var_x) * np.sqrt(grades.var(ddof=1)))
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+for ax, y, rho, title, color in zip(axes, [heights, grades, naps],
+    [rho_h, rho_g, rho_n],
+    ['Age vs. Height', 'Age vs. Grades', 'Age vs. Naps'],
+    ['#4682B4', '#2E8B57', '#CC7000']):
+    ax.scatter(ages, y, s=60, color=color, zorder=3, edgecolors='white')
+    ax.set_xlabel('Age', fontsize=12)
+    ax.set_title(f'{title}\n$\\rho = {rho:.3f}$', fontsize=11, color='gray')
+    ax.grid(linestyle='--', alpha=0.3)
+    # Best fit line
+    m, b = np.polyfit(ages, y, 1)
+    ax.plot(ages, m * ages + b, color=color, linewidth=2, linestyle='--', alpha=0.6)
+
+plt.tight_layout()
+plt.show()
+```
+
+### Call Center Example
+
+```{python}
+#| echo: false
+#| warning: false
+import numpy as np
+from IPython.display import display, Math
+
+np.random.seed(42)
+n1, n2 = 500, 500
+x1 = np.random.beta(2, 5, n1) * 10
+y1 = np.random.beta(5, 2, n1) * 10
+x2 = np.random.beta(5, 2, n2) * 10
+y2 = np.random.beta(2, 5, n2) * 10
+X = np.concatenate([x1, x2])
+Y = np.concatenate([y1, y2])
+
+cov_xy = ((X - X.mean()) * (Y - Y.mean())).sum() / (len(X) - 1)
+rho = cov_xy / (np.sqrt(X.var(ddof=1)) * np.sqrt(Y.var(ddof=1)))
+
+display(Math(rf"\rho_{{X,Y}} = \frac{{\text{{Cov}}(X,Y)}}{{\sigma_X \cdot \sigma_Y}} = {rho:.3f}"))
+```
+
+The correlation of approximately $-0.64$ confirms a moderately strong negative linear relationship: longer wait times are associated with lower customer satisfaction.
+
+### Summary
+
+| Measure | Formula | Range | What it tells you |
+|---------|---------|-------|-------------------|
+| Covariance | $\mathbb{E}[(X-\mu_X)(Y-\mu_Y)]$ | $(-\infty, +\infty)$ | Direction of relationship |
+| Correlation | $\frac{\text{Cov}(X,Y)}{\sigma_X \sigma_Y}$ | $[-1, +1]$ | Direction **and** strength |
+
+: Covariance vs. Correlation {tbl-colwidths="[15,30,15,40]"}
+
+### Review Questions {.unnumbered}
+
+**5. Why is correlation preferred over covariance when comparing relationships across different datasets?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because covariance depends on the scale of the variables (height in inches vs. height in centimeters would give different covariances for the same data). Correlation normalizes by the standard deviations, producing a dimensionless number between -1 and 1 that allows direct comparison regardless of units or scale.
+:::
+
+---
+
+**6. Two datasets have covariances of 500 and 2. Can you conclude that the first has a stronger linear relationship?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+No. The larger covariance might simply reflect larger-scale variables. You need to compute the correlation coefficients to compare the strength of the relationships. It is entirely possible that the dataset with covariance 2 has a correlation closer to $\pm 1$ than the one with covariance 500.
+:::
+
+---
+
+**7. A dataset has $\rho = -0.95$. What does the scatter plot look like?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The points lie very close to a straight line with a negative slope (going down from left to right). The value -0.95 is close to -1, indicating a near-perfect negative linear relationship with very little scatter around the trend line.
+:::
+
+---
+
+**8. Can two variables have a strong relationship but a correlation of 0?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Yes. Correlation only measures **linear** relationships. If $Y = X^2$ (a perfect parabolic relationship), the correlation can be 0 because there is no linear trend. The variables are perfectly related, just not in a straight-line way.
+:::
+
+---
+
+**9. Which of the following statements regarding the correlation coefficient are true? Select all that apply.**
+
+a. It is a positive real number.
+b. It can be any real number.
+c. It measures how linearly correlated two variables are.
+d. It is a real number between $-1$ and $1$.
+
+::: {.callout-tip collapse="true"}
+## Answer
+**c and d.** The correlation coefficient always lies between $-1$ and $+1$ (so a and b are both wrong). It specifically measures the strength and direction of the *linear* relationship between two variables. A correlation of 0 does not mean no relationship, only no linear relationship.
+:::
+
+---
+
+**10. Suppose that the joint probability distribution of two random variables $X$ and $Y$ is: $P(X=0, Y=0) = 0.2$, $P(X=0, Y=1) = 0.1$, $P(X=1, Y=0) = 0.1$, $P(X=1, Y=1) = 0.6$. What is the covariance between $X$ and $Y$?**
+
+a. $-0.04$
+b. $0.11$
+c. $0.02$
+d. $0.04$
+
+::: {.callout-tip collapse="true"}
+## Answer
+**b.** $\mathbb{E}[X] = 0(0.3) + 1(0.7) = 0.7$. $\mathbb{E}[Y] = 0(0.3) + 1(0.7) = 0.7$. $\mathbb{E}[XY] = 0 \cdot 0(0.2) + 0 \cdot 1(0.1) + 1 \cdot 0(0.1) + 1 \cdot 1(0.6) = 0.6$. $\text{Cov}(X,Y) = \mathbb{E}[XY] - \mathbb{E}[X]\mathbb{E}[Y] = 0.6 - 0.7 \times 0.7 = 0.6 - 0.49 = 0.11$.
+:::
+
+
+## Multivariate Gaussian Distribution
+
+You have already learned the [normal (Gaussian) distribution](normal-distribution.qmd) for one variable. But what happens when you have more than one variable? The extension is called the **multivariate Gaussian distribution**, and it appears everywhere in machine learning.
+
+### From One Variable to Many
+
+Recall the univariate Gaussian PDF with mean $\mu$ and standard deviation $\sigma$:
+
+$$
+f(x) = \frac{1}{\sqrt{2\pi}\,\sigma} \exp\left(-\frac{1}{2}\frac{(x - \mu)^2}{\sigma^2}\right)
+$$
+
+Now suppose you have two variables. For example, $H$ = height of an adult (inches) and $W$ = weight of an adult (pounds). If you look at each variable separately (the marginals), both are approximately Gaussian. But what does the **joint** distribution look like?
+
+### Independent vs. Dependent Variables
+
+If the two variables were independent, the joint PDF would simply be the product of the marginals. The resulting surface would be a perfectly symmetric bell (circular level curves when viewed from above).
+
+But height and weight are **not** independent. Taller people tend to weigh more (positive covariance). This dependence **elongates** the bell along a diagonal, producing elliptical level curves tilted in the direction of the correlation.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import multivariate_normal
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+# Independent case (diagonal covariance)
+mean = [0, 0]
+cov_indep = [[1, 0], [0, 1]]
+x, y = np.mgrid[-3:3:.05, -3:3:.05]
+pos = np.dstack((x, y))
+
+rv_indep = multivariate_normal(mean, cov_indep)
+axes[0].contourf(x, y, rv_indep.pdf(pos), levels=15, cmap='Blues')
+axes[0].set_title('Independent (Cov = 0)\nCircular level curves', fontsize=12, color='gray')
+axes[0].set_xlabel('$X_1$')
+axes[0].set_ylabel('$X_2$')
+axes[0].set_aspect('equal')
+axes[0].grid(linestyle='--', alpha=0.3)
+
+# Dependent case (positive covariance)
+cov_dep = [[1, 0.8], [0.8, 1]]
+rv_dep = multivariate_normal(mean, cov_dep)
+axes[1].contourf(x, y, rv_dep.pdf(pos), levels=15, cmap='Blues')
+axes[1].set_title('Positive Covariance (Cov = 0.8)\nElliptical level curves', fontsize=12, color='gray')
+axes[1].set_xlabel('$X_1$')
+axes[1].set_ylabel('$X_2$')
+axes[1].set_aspect('equal')
+axes[1].grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+The left plot shows independent variables (covariance = 0): the level curves are circles. The right plot shows positively correlated variables (covariance = 0.8): the level curves are ellipses tilted along the diagonal. The covariance matrix controls this shape.
+
+### Formula
+
+The univariate Gaussian PDF (for reference):
+
+$$
+f_X(x) = \frac{1}{\sqrt{2\pi}\,\sigma} \exp\left(-\frac{1}{2}\frac{(x - \mu)^2}{\sigma^2}\right)
+$$
+
+The multivariate Gaussian distribution for a random vector $\mathbf{x} = [x_1, x_2, \ldots, x_n]^T$ with mean vector $\boldsymbol{\mu} = [\mu_1, \mu_2, \ldots, \mu_n]^T$ and covariance matrix $\Sigma$:
+
+$$
+f_{\mathbf{X}}(x_1, x_2, \ldots, x_n) = \frac{1}{(2\pi)^{n/2} \, |\Sigma|^{1/2}} \exp\left(-\frac{1}{2}(\mathbf{x} - \boldsymbol{\mu})^T \Sigma^{-1} (\mathbf{x} - \boldsymbol{\mu})\right)
+$$
+
+Breaking down each component:
+
+| Component | Role |
+|-----------|------|
+| $\mathbf{x} = [x_1, x_2, \ldots, x_n]^T$ | The random vector (all variables together) |
+| $\boldsymbol{\mu} = [\mu_1, \mu_2, \ldots, \mu_n]^T$ | Mean vector (center of the bell in each dimension) |
+| $\Sigma$ | Covariance matrix (controls spread and tilt of the bell) |
+| $|\Sigma|$ | Determinant of the covariance matrix (total volume of spread) |
+| $(2\pi)^{n/2} |\Sigma|^{1/2}$ | Normalization constant (ensures the total volume under the surface is 1) |
+| $\Sigma^{-1}$ | Inverse covariance matrix (rescaling and standardization) |
+| $(\mathbf{x}-\boldsymbol{\mu})^T \Sigma^{-1} (\mathbf{x}-\boldsymbol{\mu})$ | Mahalanobis distance (how far $\mathbf{x}$ is from the center, accounting for correlations) |
+
+: {tbl-colwidths="[30,70]"}
+
+Comparing with the univariate case:
+
+| Univariate | Multivariate |
+|-----------|-------------|
+| $x$ (scalar) | $\mathbf{x}$ (vector) |
+| $\mu$ (scalar) | $\boldsymbol{\mu}$ (mean vector) |
+| $\sigma^2$ (scalar variance) | $\Sigma$ (covariance matrix) |
+| $\frac{1}{\sqrt{2\pi}\sigma}$ | $\frac{1}{(2\pi)^{n/2} |\Sigma|^{1/2}}$ |
+| $(x-\mu)^2 / \sigma^2$ | $(\mathbf{x}-\boldsymbol{\mu})^T \Sigma^{-1} (\mathbf{x}-\boldsymbol{\mu})$ |
+
+The key insight: every scalar quantity in the univariate formula is replaced by its matrix/vector equivalent. The variance $\sigma^2$ becomes the covariance matrix $\Sigma$. The squared distance $(x-\mu)^2/\sigma^2$ becomes the **Mahalanobis distance** $(\mathbf{x}-\boldsymbol{\mu})^T \Sigma^{-1} (\mathbf{x}-\boldsymbol{\mu})$, which accounts for correlations between variables.
+
+### Role of the Covariance Matrix
+
+The covariance matrix $\Sigma$ controls the shape and orientation of the distribution:
+
+- **Diagonal entries** ($\Sigma_{ii}$) control the spread along each axis (variances).
+- **Off-diagonal entries** ($\Sigma_{ij}$) control the tilt/elongation (covariances).
+- **Determinant** $|\Sigma|$ captures the overall "volume" of the spread. Larger determinant means more spread out.
+- **Inverse** $\Sigma^{-1}$ standardizes and rescales the distances, accounting for both variances and correlations.
+
+When the covariance matrix is diagonal (all off-diagonal entries are zero), the variables are independent and the contours are axis-aligned ellipses (or circles if all variances are equal).
+
+### Review Questions {.unnumbered}
+
+**11. What shape do the level curves of a bivariate Gaussian take when the two variables are independent?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Circles (or axis-aligned ellipses if the variances differ). When the covariance is zero, there is no tilt, and each variable spreads independently along its own axis.
+:::
+
+---
+
+**12. In the multivariate Gaussian formula, what role does $\Sigma^{-1}$ play?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+It standardizes and rescales the distance between $\mathbf{x}$ and $\boldsymbol{\mu}$, accounting for both the individual variances and the correlations between variables. It transforms the Euclidean distance into the Mahalanobis distance, which measures "how many standard deviations away" a point is in all directions simultaneously.
+:::
+
+---
+
+**13. If the covariance matrix has a large determinant, what does that tell you about the distribution?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The distribution is more spread out (occupies a larger volume in the space). The determinant of the covariance matrix captures the overall scale of the spread. A small determinant means the data is tightly clustered, while a large determinant means it is widely dispersed.
+:::
+
+
+## Lab: When Statistics Lie
+
+Summary statistics like the mean, variance, and correlation are powerful tools, but relying solely on these numbers can be misleading. Datasets with identical summary statistics can have wildly different underlying structures. This section demonstrates why you should always supplement numerical summaries with visualization.
+
+The examples below use two well-known datasets: [Anscombe's Quartet](https://en.wikipedia.org/wiki/Anscombe%27s_quartet) and the [Datasaurus Dozen](https://damassets.autodesk.net/content/dam/autodesk/research/publications-assets/pdf/same-stats-different-graphs.pdf). Both are artificially constructed to show that statistics alone can fail to capture important information.
+
+Data files: [`df_anscombe.csv`](https://drive.google.com/file/d/19JIRhXiRhPcTMq7msbTcmqa6HHFZ2uOZ/view?usp=sharing), [`datasaurus.csv`](https://drive.google.com/file/d/1xyNHcsMz58O2OloQJgUnjhXsQG3A4tO4/view?usp=sharing), [`utils.py`](https://drive.google.com/file/d/1LSyZDaAT1K-DF3kWNrnqQ4JG_IMd-XYh/view?usp=sharing)
+
+::: {.callout-tip collapse="true"}
+## Helper Code (utils.py)
+```python
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from IPython.display import display
+import ipywidgets as widgets
+from ipywidgets import interact, HBox, VBox
+import matplotlib.gridspec as gridspec
+
+df_anscombe = pd.read_csv('df_anscombe.csv')
+df_datasaurus = pd.read_csv("datasaurus.csv")
+
+def plot_anscombes_quartet():
+    fig, axs = plt.subplots(2, 2, figsize=(8, 5), tight_layout=True)
+    i = 1
+    fig.suptitle("Anscombe's quartet", fontsize=16)
+    for line in axs:
+        for ax in line:
+            ax.scatter(df_anscombe[df_anscombe.group == i]['x'],
+                      df_anscombe[df_anscombe.group == i]['y'])
+            ax.set_title(f'Group {i}')
+            ax.set_ylim(2, 15)
+            ax.set_xlim(0, 21)
+            ax.set_xlabel('x')
+            ax.set_ylabel('y')
+            i += 1
+```
+:::
+
+### Anscombe's Quartet
+
+Anscombe's Quartet is a famous collection of four datasets that share nearly identical summary statistics but look completely different when plotted.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+df_ans = pd.read_csv('../../media/df_anscombe.csv')
+```
+
+The dataset has three columns: `x`, `y`, and `group` (numbered 1 through 4). Each group contains 11 observations. Here are the summary statistics for each group:
+
+```{python}
+#| echo: false
+#| warning: false
+from IPython.display import display
+
+stats = df_ans.groupby('group').agg(
+    mean_x=('x', 'mean'),
+    mean_y=('y', 'mean'),
+    std_x=('x', 'std'),
+    std_y=('y', 'std'),
+    correlation=('x', lambda g: df_ans.loc[g.index, 'x'].corr(df_ans.loc[g.index, 'y']))
+).round(3)
+
+display(stats)
+```
+
+All four groups share nearly identical statistics: mean $x$ = 9, mean $y \approx 7.5$, std $x \approx 3.32$, std $y \approx 2.03$, and correlation $\approx 0.816$. Based on these numbers alone, you might conclude that all four groups behave the same way. But look at the scatter plots:
+
+```{python}
+#| echo: false
+#| warning: false
+fig, axs = plt.subplots(2, 2, figsize=(9, 6), tight_layout=True)
+fig.suptitle("Anscombe's Quartet", fontsize=12, color='gray')
+
+colors = ['#4682B4', '#2E8B57', '#CC7000', '#CC0000']
+
+i = 1
+for row in axs:
+    for ax in row:
+        group_data = df_ans[df_ans.group == i]
+        ax.scatter(group_data['x'], group_data['y'], s=50,
+                   color=colors[i-1], zorder=3, edgecolors='white', linewidth=0.5)
+        ax.set_title(f'Group {i}', fontsize=12, color='gray')
+        ax.set_ylim(2, 15)
+        ax.set_xlim(0, 21)
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        ax.grid(linestyle='--', alpha=0.4)
+        i += 1
+
+plt.show()
+```
+
+The four groups are strikingly different:
+
+- **Group 1** shows a straightforward linear relationship.
+- **Group 2** is a clear non-linear (quadratic) relationship.
+- **Group 3** has a linear pattern with one extreme outlier.
+- **Group 4** has all points at a single $x$ value except for one outlier that drives the correlation.
+
+Identical statistics, wildly different patterns.
+
+### Datasaurus Dozen
+
+The Datasaurus Dozen takes this idea even further: 13 datasets that all share nearly identical summary statistics but form completely different shapes.
+
+```{python}
+#| echo: false
+#| warning: false
+df_dino = pd.read_csv('../../media/datasaurus.csv')
+
+group_dino = df_dino[df_dino['group'] == 'dino']
+group_away = df_dino[df_dino['group'] == 'away']
+
+comparison = pd.DataFrame({
+    'Statistic': ['Mean x', 'Mean y', 'Std x', 'Std y', 'Correlation'],
+    'dino': [
+        f"{group_dino['x'].mean():.2f}",
+        f"{group_dino['y'].mean():.2f}",
+        f"{group_dino['x'].std():.2f}",
+        f"{group_dino['y'].std():.2f}",
+        f"{group_dino['x'].corr(group_dino['y']):.3f}"
+    ],
+    'away': [
+        f"{group_away['x'].mean():.2f}",
+        f"{group_away['y'].mean():.2f}",
+        f"{group_away['x'].std():.2f}",
+        f"{group_away['y'].std():.2f}",
+        f"{group_away['x'].corr(group_away['y']):.3f}"
+    ]
+})
+
+display(comparison)
+```
+
+The "dino" and "away" datasets have nearly identical statistics. Now see what they actually look like:
+
+```{python}
+#| echo: false
+#| warning: false
+datasets = df_dino['group'].unique()
+n_datasets = len(datasets)
+
+fig, axs = plt.subplots(3, 5, figsize=(14, 8), tight_layout=True)
+fig.suptitle("Datasaurus Dozen: same statistics, different shapes", fontsize=12, color='gray')
+
+colors_cycle = ['#4682B4', '#2E8B57', '#CC7000', '#CC0000'] * 4
+
+for idx, ax in enumerate(axs.flat):
+    if idx < n_datasets:
+        group_data = df_dino[df_dino['group'] == datasets[idx]]
+        ax.scatter(group_data['x'], group_data['y'], s=8,
+                   color=colors_cycle[idx % 4], alpha=0.7)
+        ax.set_title(datasets[idx], fontsize=10, color='gray')
+        ax.set_xlim(0, 105)
+        ax.set_ylim(0, 105)
+        ax.grid(linestyle='--', alpha=0.4)
+        ax.set_xticks([])
+        ax.set_yticks([])
+    else:
+        ax.axis('off')
+
+plt.show()
+```
+
+Every one of these 13 datasets has approximately the same mean, standard deviation, and correlation. Yet the shapes include a dinosaur, a star, parallel lines, a circle, and many other distinct patterns. No amount of summary statistics would reveal these differences.
+
+**The lesson is simple: always visualize your data.**

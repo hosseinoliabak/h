@@ -1,0 +1,239 @@
+---
+title: "Lab: Rideshare Exploratory Data Analysis 2"
+date: "2026-06-26"
+difficulty: 2
+order: 20
+categories: [probability, lab]
+---
+
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+## Introduction
+
+This lab is a continuation of the Week 1 rideshare notebook. In Week 1 you loaded the raw rideshare dataset, performed basic data cleaning, created histograms, and explored probability and conditional probability. This week you will go further by applying descriptive statistics and more advanced visualization techniques to the cleaned dataset.
+
+**Learning objectives:**
+
+- Compute and interpret descriptive statistics (mean, median, standard deviation, quartiles)
+- Construct and interpret box plots
+- Explore conditional distributions by grouping on a categorical variable
+- Visualize joint distributions using scatter plots
+- Compute and interpret correlation
+
+Download the dataset: [rideshare_2022_cleaned.csv](https://drive.google.com/file/d/1CBJ3_65KzPuR5JWjeWe3cTuSlKyaAeFi/view?usp=sharing)
+
+## Summary Statistics
+
+```{python}
+#| echo: true
+#| warning: false
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+df = pd.read_csv('../../media/rideshare_2022_cleaned.csv', parse_dates=['trip_start_timestamp', 'date'])
+df.head()
+```
+
+The `describe()` method provides a quick summary of each numeric column, including count, mean, standard deviation, minimum, quartiles, and maximum.
+
+```{python}
+#| echo: true
+#| warning: false
+df.describe()
+```
+
+A few observations from the summary statistics:
+
+- The mean trip distance is approximately 7 miles, but the median is only about 4 miles. This gap indicates a right-skewed distribution with some very long trips pulling the mean upward.
+- The mean trip duration is roughly 1,089 seconds (about 18 minutes).
+- The median fare is \$15, while the mean is about \$18.58. Again, the mean exceeds the median because of outliers on the high end.
+- The mean tip is \$1.26, but the 50th percentile (median) tip is \$0. This tells us that more than half of all rides receive no tip at all.
+- Maximum values are extreme (367 miles, \$637 fare, \$100 tip), confirming that there are significant outliers in the data.
+
+## Box Plots
+
+A box plot displays the five-number summary (minimum, Q1, median, Q3, maximum) along with outliers. The box spans the interquartile range (IQR = Q3 - Q1), the line inside the box marks the median, and whiskers extend to the farthest data point within 1.5 times the IQR from the box edges. Points beyond the whiskers are plotted individually as outliers.
+
+### Fare Distribution
+
+```{python}
+#| echo: true
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+
+fig, ax = plt.subplots(figsize=(6, 4))
+bp = ax.boxplot(df['fare'].dropna(), vert=True, patch_artist=True,
+                boxprops=dict(facecolor='#4682B4', alpha=0.7),
+                medianprops=dict(color='#CC0000', linewidth=2),
+                flierprops=dict(marker='o', markerfacecolor='#CC7000', markersize=3, alpha=0.3))
+ax.set_ylabel('Fare ($)')
+ax.set_title('Box Plot of Fare', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xticks([])
+plt.tight_layout()
+plt.show()
+```
+
+The fare box plot reveals a long right tail. The box itself is relatively compact (roughly \$10 to \$22.50), but there are many outliers stretching to over \$600. This is characteristic of transportation data where most trips are short but a few are very expensive.
+
+### Tip Distribution
+
+```{python}
+#| echo: true
+#| warning: false
+fig, ax = plt.subplots(figsize=(6, 4))
+bp = ax.boxplot(df['tip'].dropna(), vert=True, patch_artist=True,
+                boxprops=dict(facecolor='#2E8B57', alpha=0.7),
+                medianprops=dict(color='#CC0000', linewidth=2),
+                flierprops=dict(marker='o', markerfacecolor='#CC7000', markersize=3, alpha=0.3))
+ax.set_ylabel('Tip ($)')
+ax.set_title('Box Plot of Tip', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+ax.set_xticks([])
+plt.tight_layout()
+plt.show()
+```
+
+The tip box plot is even more dramatic. Since the median tip is \$0 and Q1 is also \$0, the lower portion of the box collapses. Every non-zero tip appears as an outlier in this representation. This highlights why it is often useful to analyze tippers separately from non-tippers.
+
+## Conditional Distributions by Weekday
+
+A conditional distribution describes how a variable is distributed given a specific condition. Here we examine how tips and fares vary by day of the week. Formally, we are looking at distributions like $P(\text{tip} \mid \text{weekday} = \text{Monday})$.
+
+### Tips by Weekday
+
+```{python}
+#| echo: true
+#| warning: false
+WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+fig, ax = plt.subplots(figsize=(10, 5))
+data_by_day = [df[df['weekday'] == day]['tip'].dropna().values for day in WEEKDAYS]
+bp = ax.boxplot(data_by_day, labels=WEEKDAYS, patch_artist=True,
+                boxprops=dict(facecolor='#2E8B57', alpha=0.7),
+                medianprops=dict(color='#CC0000', linewidth=2),
+                flierprops=dict(marker='o', markerfacecolor='#CC7000', markersize=2, alpha=0.2))
+ax.set_xlabel('Day of the Week')
+ax.set_ylabel('Tip ($)')
+ax.set_title('Conditional Distribution of Tips by Weekday', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+Examining the box plots of tips split by weekday, the distributions look quite similar across all days. The median is \$0 on every day (since most riders do not tip in the app). The spread of outliers is comparable on weekdays and weekends, suggesting that tipping behavior does not change much depending on the day of the week. This is consistent with what we observed in Week 1 when computing conditional tipping probabilities.
+
+### Fares by Weekday
+
+```{python}
+#| echo: true
+#| warning: false
+fig, ax = plt.subplots(figsize=(10, 5))
+data_by_day_fare = [df[df['weekday'] == day]['fare'].dropna().values for day in WEEKDAYS]
+bp = ax.boxplot(data_by_day_fare, labels=WEEKDAYS, patch_artist=True,
+                boxprops=dict(facecolor='#4682B4', alpha=0.7),
+                medianprops=dict(color='#CC0000', linewidth=2),
+                flierprops=dict(marker='o', markerfacecolor='#CC7000', markersize=2, alpha=0.2))
+ax.set_xlabel('Day of the Week')
+ax.set_ylabel('Fare ($)')
+ax.set_title('Conditional Distribution of Fares by Weekday', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+The fare distributions by weekday show slightly more variation. Weekend days (Friday, Saturday, Sunday) tend to have a somewhat higher median fare and more high-value outliers, which makes intuitive sense since weekend trips may include longer rides to and from entertainment venues or airports.
+
+## Joint Distribution and Correlation
+
+A joint distribution describes the relationship between two variables simultaneously. We can visualize joint distributions using scatter plots and quantify the linear relationship using correlation.
+
+### Scatter Plot: Tip vs. Trip Miles
+
+To focus on the relationship between tip amount and distance, we filter to rides where a tip was actually given.
+
+```{python}
+#| echo: true
+#| warning: false
+%config InlineBackend.figure_formats = ['png']
+
+df_tippers = df[df['tip'] > 0]
+
+fig, ax = plt.subplots(figsize=(8, 6))
+ax.scatter(df_tippers['trip_miles'], df_tippers['tip'],
+           alpha=0.1, s=5, color='#4682B4')
+ax.set_xlabel('Trip Miles')
+ax.set_ylabel('Tip ($)')
+ax.set_title('Joint Distribution: Tip vs. Trip Miles (Tippers Only)', fontsize=12, color='gray')
+ax.grid(True, linestyle='--', alpha=0.4)
+plt.tight_layout()
+plt.show()
+```
+
+The scatter plot shows a clear positive relationship: longer rides tend to receive higher tips. The bulk of the data is concentrated in the lower-left region (short trips with small tips), but the upward trend is visible throughout. There is also considerable spread, meaning that trip distance alone does not fully determine the tip amount.
+
+Note: Because this plot contains over 10,000 points, we render it as PNG rather than SVG to keep file sizes manageable.
+
+### Computing Correlation
+
+The Pearson correlation coefficient quantifies the strength and direction of the linear relationship between two variables. It ranges from -1 (perfect negative linear relationship) to +1 (perfect positive linear relationship), with 0 indicating no linear relationship.
+
+```{python}
+#| echo: true
+#| warning: false
+correlation = df_tippers['tip'].corr(df_tippers['trip_miles'])
+print(f"Correlation between tip and trip_miles (tippers only): {correlation:.3f}")
+```
+
+The correlation of approximately 0.637 indicates a moderate positive linear relationship between trip distance and tip amount. This makes sense: riders who tip often base it on a percentage of the fare, and fare increases with distance. However, the correlation is not close to 1.0, meaning other factors (generosity, service quality, payment method) also influence tipping behavior.
+
+## Pickup Locations Map
+
+Geographic visualization can reveal spatial patterns in rideshare data. Below is an interactive map showing a random sample of 500 pickup locations.
+
+```{python}
+#| echo: true
+#| warning: false
+import folium
+
+# Sample 500 points with valid coordinates
+df_geo = df.dropna(subset=['pickup_centroid_latitude', 'pickup_centroid_longitude'])
+df_sample = df_geo.sample(n=500, random_state=42)
+
+# Create a map centered on Chicago
+m = folium.Map(location=[41.88, -87.63], zoom_start=11)
+
+# Add markers for sampled pickup locations
+for _, row in df_sample.iterrows():
+    folium.CircleMarker(
+        location=[row['pickup_centroid_latitude'], row['pickup_centroid_longitude']],
+        radius=3,
+        color='#4682B4',
+        fill=True,
+        fill_color='#4682B4',
+        fill_opacity=0.6,
+        weight=1
+    ).add_to(m)
+
+m
+```
+
+The map reveals that rideshare pickups are heavily concentrated in downtown Chicago and along the North Side corridor. The Loop, Near North Side, and areas near O'Hare Airport show particularly high density. This spatial concentration reflects where rideshare demand is highest: business districts, entertainment areas, and transportation hubs.
+
+## Key Takeaways
+
+- **Descriptive statistics** reveal that rideshare data is heavily right-skewed, with means consistently exceeding medians due to extreme outliers.
+- **Box plots** provide a compact visualization of the five-number summary and make outliers immediately visible.
+- **Conditional distributions** (splitting by weekday) show that tipping behavior is relatively stable across days, while fares are slightly higher on weekends.
+- **Joint distributions** (scatter plots) reveal the positive relationship between trip distance and tip amount.
+- **Correlation** (approximately 0.637 for tip vs. trip miles among tippers) quantifies this relationship as moderately positive.
+- **Geographic visualization** shows that rideshare pickups are concentrated in downtown Chicago and major transit corridors.
+
+In future weeks, you will build on these techniques by fitting probability distributions, performing hypothesis tests, and building predictive models.
