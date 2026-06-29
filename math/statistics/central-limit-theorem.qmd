@@ -1,0 +1,313 @@
+---
+title: "Central Limit Theorem"
+date: "2026-06-28"
+difficulty: 3
+order: 3
+categories: [statistics]
+---
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+The normal distribution appears in a lot of places. Here is one that perhaps you did not expect.
+
+Take *any* distribution, no matter how skewed. Now take a few samples (always the same number), compute their average, and repeat this many times. Plot all those averages. What do you get? A normal distribution, regardless of what distribution you started with.
+
+This is one of the most important results in statistics. It is called the **Central Limit Theorem** (CLT).
+
+## Discrete Example: Coin Flips
+
+Consider a fair coin where the random variable $X$ is the number of heads in $n$ flips. For a single coin flip, $X = 1$ (heads) or $X = 0$ (tails), each with probability $\frac{1}{2}$. This is a discrete random variable with a flat distribution.
+
+What happens to the distribution as we increase the number of coin flips?
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import binom
+
+fig, axes = plt.subplots(2, 3, figsize=(14, 7))
+axes = axes.flatten()
+
+ns = [1, 2, 3, 4, 10, 30]
+p = 0.5
+
+for idx, n in enumerate(ns):
+    ax = axes[idx]
+    x = np.arange(0, n + 1)
+    pmf = binom.pmf(x, n, p)
+
+    ax.bar(x, pmf, color='#4682B4', alpha=0.7, edgecolor='white', width=0.6)
+
+    # Overlay normal curve for larger n
+    if n >= 4:
+        mu = n * p
+        sigma = np.sqrt(n * p * (1 - p))
+        x_cont = np.linspace(-0.5, n + 0.5, 200)
+        from scipy.stats import norm
+        ax.plot(x_cont, norm.pdf(x_cont, mu, sigma), color='#CC0000',
+                linewidth=2, linestyle='--', label=f'$N({mu:.1f}, {sigma**2:.2f})$')
+        ax.legend(fontsize=8, loc='upper right')
+
+    ax.set_xlabel('Number of heads', fontsize=10)
+    ax.set_ylabel('Probability', fontsize=10)
+    ax.set_title(f'$n = {n}$ flips', fontsize=11, color='gray')
+    ax.set_ylim(0, max(pmf) * 1.3)
+    ax.grid(linestyle='--', alpha=0.3, axis='y')
+
+plt.tight_layout()
+plt.show()
+```
+
+As you can see, with just 1 coin the distribution is flat (equal chance of 0 or 1 heads). But as $n$ increases, the shape looks more and more like a bell curve. By $n = 10$, it is already very close to a normal distribution.
+
+## Why This Works
+
+Counting the number of heads in $n$ coin flips is the same as **adding** $n$ Bernoulli random variables:
+
+$$
+S_n = X_1 + X_2 + \cdots + X_n
+$$
+
+where each $X_i = 1$ (heads) or $X_i = 0$ (tails). The Central Limit Theorem says that as $n$ increases, the distribution of this sum looks more and more like a Gaussian.
+
+## Mean and Variance
+
+For $n$ coin flips with probability $p$ of heads:
+
+- **Mean:** $\mu = np$
+- **Variance:** $\sigma^2 = np(1 - p)$
+
+For a fair coin ($p = 0.5$):
+
+| $n$ (flips) | Mean ($np$) | Variance ($np(1-p)$) |
+|:-----------:|:-----------:|:--------------------:|
+| 1 | 0.5 | 0.25 |
+| 2 | 1.0 | 0.50 |
+| 3 | 1.5 | 0.75 |
+| 4 | 2.0 | 1.00 |
+| 10 | 5.0 | 2.50 |
+
+As $n$ becomes sufficiently large, the distribution of the number of heads converges to:
+
+$$
+S_n \sim N(np,\; np(1-p))
+$$
+
+### Review Questions {.unnumbered}
+
+**1. What does the Central Limit Theorem say in plain language?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+If you take a large enough number of i.i.d. random variables and compute their sum (or average), the distribution of that sum will be approximately normal, regardless of the original distribution of the individual variables.
+:::
+
+---
+
+**2. For 100 fair coin flips, what are the mean and standard deviation of the number of heads?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Mean $= np = 100 \times 0.5 = 50$. Variance $= np(1-p) = 100 \times 0.5 \times 0.5 = 25$. Standard deviation $= \sqrt{25} = 5$. So the number of heads is approximately $N(50, 25)$, meaning most of the time you will get between 45 and 55 heads (within one standard deviation).
+:::
+
+---
+
+**3. Why is counting heads in $n$ flips equivalent to summing $n$ Bernoulli variables?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Each flip produces a Bernoulli random variable: $X_i = 1$ if heads, $X_i = 0$ if tails. The total number of heads is $S_n = X_1 + X_2 + \cdots + X_n$. This is a sum of i.i.d. variables, which is exactly the setup the CLT describes.
+:::
+
+## Continuous Example: Wait Times
+
+The CLT does not only work for discrete variables. Let us see it with a continuous random variable.
+
+Consider a tech support line where the wait time $X$ follows a uniform distribution between 0 and 15 minutes:
+
+$$
+X \sim \mathcal{U}(0, 15)
+$$
+
+Every interval of the same length has the same probability of occurring, giving a flat probability density function.
+
+Now suppose you record the wait time on $n$ calls and compute the average:
+
+$$
+\bar{X}_n = \frac{1}{n}\sum_{i=1}^{n} X_i
+$$
+
+What does the distribution of $\bar{X}_n$ look like as $n$ increases?
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+np.random.seed(42)
+n_experiments = 10000
+
+fig, axes = plt.subplots(2, 3, figsize=(14, 7))
+axes = axes.flatten()
+
+ns = [1, 2, 3, 4, 5, 30]
+pop_mean = 7.5
+pop_var = 18.75  # Var of Uniform(0,15) = (15-0)^2 / 12
+
+for idx, n in enumerate(ns):
+    ax = axes[idx]
+
+    # Simulate: average of n uniform(0,15) samples, repeated many times
+    samples = np.random.uniform(0, 15, size=(n_experiments, n))
+    averages = samples.mean(axis=1)
+
+    ax.hist(averages, bins=50, density=True, color='#4682B4', alpha=0.6,
+            edgecolor='white', linewidth=0.5)
+
+    # KDE (empirical smooth fit) - green line
+    from scipy.stats import gaussian_kde
+    kde = gaussian_kde(averages)
+    x_kde = np.linspace(averages.min() - 0.5, averages.max() + 0.5, 300)
+    ax.plot(x_kde, kde(x_kde), color='#2E8B57', linewidth=2, label='KDE')
+
+    # Overlay theoretical normal curve - orange line
+    sigma_n = np.sqrt(pop_var / n)
+    x_range = np.linspace(pop_mean - 4*sigma_n, pop_mean + 4*sigma_n, 300)
+    ax.plot(x_range, norm.pdf(x_range, pop_mean, sigma_n), color='#CC7000',
+            linewidth=2, label=f'$N(7.5, {pop_var/n:.2f})$')
+
+    ax.set_xlabel(r'$\bar{X}_n$', fontsize=10)
+    ax.set_ylabel('Density', fontsize=10)
+    ax.set_title(f'$n = {n}$', fontsize=11, color='gray')
+    ax.set_xlim(-2, 17)
+    ax.legend(fontsize=8, loc='upper right')
+    ax.grid(linestyle='--', alpha=0.3, axis='y')
+
+plt.tight_layout()
+plt.show()
+```
+
+For $n = 1$, the histogram looks uniform (flat). For $n = 2$, it becomes triangular. By $n = 4$ or $5$, it is nearly indistinguishable from a Gaussian. The red dashed line shows the normal distribution with the same mean and variance. As $n$ increases, the fit gets better and better.
+
+## Mean and Variance of the Sample Average
+
+You might ask: what are the mean and variance of the variable $\bar{X}_n$ (the average of $n$ calls)?
+
+Remember, $\bar{X}_n$ is defined as:
+
+$$
+\bar{X}_n = \frac{1}{n}\sum_{i=1}^{n} X_i
+$$
+
+### Mean of $\bar{X}_n$
+
+The mean of $\bar{X}_n$ is, by definition, the expectation of the average of $n$ variables. By linearity of expectation, you can pull the $\frac{1}{n}$ out and take the expectation of each $X_i$ separately. Since all variables are identically distributed (they all come from the same population), each $\mathbb{E}[X_i] = \mu$. So you get:
+
+$$
+\mu_{\bar{X}_n} = \mathbb{E}[\bar{X}_n] = \frac{1}{n} \sum_{i=1}^{n} \mathbb{E}[X_i] = \frac{1}{n} \cdot n\,\mathbb{E}[X] = \mathbb{E}[X]
+$$
+
+The mean of the average is just the population mean $\mathbb{E}[X]$. For the uniform(0, 15) distribution, this is 7.5 no matter how many calls you average. This is what you saw in the histograms: they are always centered at 7.5.
+
+### Variance of $\bar{X}_n$
+
+For the variance, the constant $\frac{1}{n}$ comes out **squared** (recall from the [probability section](../probability/variance.qmd) that $\text{Var}(aX) = a^2 \text{Var}(X)$). Also, because the variables are **independent**, the variance of the sum becomes the sum of the variances. This gives:
+
+$$
+\sigma^2_{\bar{X}_n} = \text{Var}(\bar{X}_n) = \frac{1}{n^2} \sum_{i=1}^{n} \text{Var}(X_i) = \frac{1}{n^2} \cdot n\sigma_X^2 = \frac{\sigma_X^2}{n}
+$$
+
+This is very interesting: the mean stays the same, but the **variance gets smaller and smaller** as $n$ grows. This makes sense because the more variables you average, the more likely you are to be close to the population mean, so there is less spread.
+
+For the uniform(0, 15) distribution, the population variance is $\sigma_X^2 = 18.75$. So:
+
+| $n$ | Mean of $\bar{X}_n$ | Variance of $\bar{X}_n$ ($= \sigma_X^2/n$) |
+|:---:|:---:|:---:|
+| 1 | 7.5 | 18.75 |
+| 2 | 7.5 | 9.375 |
+| 5 | 7.5 | 3.75 |
+| 10 | 7.5 | 1.875 |
+| 30 | 7.5 | 0.625 |
+
+This is exactly what you saw in the histograms: as $n$ increases, the distribution gets narrower and narrower around 7.5.
+
+## Standardizing and Formal Statement
+
+One common way to visualize the CLT is by **standardizing**. Since the mean is always $\mu$ but the variance depends on $n$ (it is $\sigma^2/n$), it is easier to compare distributions for different values of $n$ when you standardize the average.
+
+By standardizing (subtracting the mean and dividing by the standard deviation), you get:
+
+$$
+\text{As } n \to \infty: \quad \frac{\frac{1}{n}\sum_{i=1}^{n} X_i - \mathbb{E}[X]}{\sigma_X} \sqrt{n} \sim \mathcal{N}(0, 1^2)
+$$
+
+This says: no matter what the original distribution looks like, the standardized average converges to a **standard normal** distribution.
+
+There is a practical benefit to this. If you do not actually know the population mean and variance, you still know that as $n$ increases, the average will approximately have a Gaussian distribution. Standardizing lets you work with $\mathcal{N}(0, 1)$ tables regardless of the original parameters.
+
+Equivalently, in terms of sums rather than averages:
+
+$$
+\text{As } n \to \infty: \quad \frac{\sum_{i=1}^{n} X_i - n\mathbb{E}[X]}{\sqrt{n}\,\sigma_X} \sim \mathcal{N}(0, 1^2)
+$$
+
+You can arrive at this by taking the common factor $\frac{1}{n}$ and rearranging terms.
+
+This result holds regardless of the original distribution of $X$, as long as the variables are i.i.d. with finite mean and variance. This is the Central Limit Theorem.
+
+## Rule of Thumb: $n \geq 30$
+
+In practice, the CLT approximation is usually reliable when $n \geq 30$. However:
+
+- If the original distribution is already symmetric (like the uniform), the normal shape appears quickly (even $n = 4$ or $5$ may suffice).
+- If the original distribution is highly skewed, you may need $n$ much larger than 30 for the bell shape to emerge.
+
+### Review Questions {.unnumbered}
+
+**4. Why does the variance of $\bar{X}_n$ decrease as $n$ increases?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because $\text{Var}(\bar{X}_n) = \frac{\sigma_X^2}{n}$. As you average more variables, individual deviations cancel each other out, producing a tighter distribution around the true mean. This is the mathematical reason behind the Law of Large Numbers as well.
+:::
+
+---
+
+**5. A population has mean $\mu = 50$ and variance $\sigma^2 = 100$. If you take samples of size $n = 25$ and compute the average, what are the mean and standard deviation of that average?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Mean of $\bar{X}_{25} = \mathbb{E}[X] = 50$. Variance $= \sigma_X^2/n = 100/25 = 4$. Standard deviation $= \sqrt{4} = 2$. So the sample average has a much tighter distribution ($\sigma = 2$) than the individual observations ($\sigma = 10$).
+:::
+
+---
+
+**6. The CLT says "any distribution." Are there any requirements?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+The variables must be i.i.d. with a finite mean and finite variance. If the variance is infinite (as in some heavy-tailed distributions), the CLT does not apply. In practice, most real-world data has finite variance, so the CLT applies broadly.
+:::
+
+## Summary
+
+| Concept | Description |
+|---------|-------------|
+| Central Limit Theorem | The sum (or average) of many i.i.d. random variables converges to a normal distribution |
+| Applies to | Any distribution (discrete or continuous), as long as $n$ is large enough |
+| Mean of $\bar{X}_n$ | Same as population mean: $\mathbb{E}[X]$ |
+| Variance of $\bar{X}_n$ | Population variance divided by $n$: $\sigma_X^2/n$ |
+| Standardized form | $\frac{\frac{1}{n}\sum X_i - \mathbb{E}[X]}{\sigma_X}\sqrt{n} \sim \mathcal{N}(0, 1)$ |
+| Rule of thumb | Usually need $n \geq 30$, but symmetric distributions converge faster |
