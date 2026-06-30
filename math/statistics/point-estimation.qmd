@@ -1,0 +1,836 @@
+---
+title: "Point Estimation and Maximum Likelihood"
+date: "2026-06-29"
+difficulty: 3
+order: 4
+categories: [statistics]
+---
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+</style>
+```
+
+In the previous lessons, you learned how to compute sample statistics (mean, proportion, variance) and how the Law of Large Numbers and Central Limit Theorem guarantee that these estimates improve with more data. Now we move to a more general question: given some data, how do you estimate the parameters of the model that generated it?
+
+This is the concept of **estimation**. It comes in different flavors, but we will start with **point estimation** and introduce the most common method: **Maximum Likelihood Estimation (MLE)**. MLE is widely used in machine learning to train models.
+
+## Intuition: Popcorn on the Floor
+
+Imagine you walk into a living room and see popcorn scattered on the floor next to the couch. Which event is most likely to have happened?
+
+- People watching a movie
+- People playing board games
+- Somebody taking a nap
+
+To answer this, you think about which scenario would produce popcorn with the highest probability:
+
+- $P(\text{popcorn} \mid \text{movies})$ = **high** (movies and popcorn go together)
+- $P(\text{popcorn} \mid \text{board games})$ = **medium** (possible but less common)
+- $P(\text{popcorn} \mid \text{nap})$ = **low** (napping does not produce popcorn)
+
+You pick the scenario that made the evidence (popcorn) most likely. That scenario is **movies**. This reasoning is called **maximum likelihood**: you find the explanation that maximizes the probability of the observed evidence.
+
+## From Popcorn to Machine Learning
+
+In machine learning, you have data and several possible models that could have generated it. You estimate:
+
+- $P(\text{data} \mid \text{Model 1})$
+- $P(\text{data} \mid \text{Model 2})$
+- $P(\text{data} \mid \text{Model 3})$
+
+Whichever model gives the data the **highest probability** is the one you pick. You are maximizing:
+
+$$
+\hat{\theta} = \arg\max_\theta \; P(\text{data} \mid \theta)
+$$
+
+where $\theta$ represents the model parameters.
+
+### Linear Regression Example
+
+Imagine you have some data points and three possible lines (models). If you had a way to generate points based on a line (where points appear close to the line with some probability), then the line that gives your observed points the highest probability is the one MLE selects.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+np.random.seed(42)
+x = np.linspace(0, 10, 15)
+y_true = 2 * x + 1
+y = y_true + np.random.normal(0, 2, len(x))
+
+fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+
+models = [
+    (2.0, 1.0, 'Model 1 (good fit)'),
+    (0.5, 5.0, 'Model 2 (poor fit)'),
+    (3.5, -5.0, 'Model 3 (poor fit)')
+]
+
+for ax, (m, b, title) in zip(axes, models):
+    ax.scatter(x, y, s=50, color='#4682B4', zorder=5, edgecolors='white')
+    x_line = np.linspace(0, 10, 100)
+    ax.plot(x_line, m * x_line + b, color='#CC0000', linewidth=2.5)
+
+    # Show distances
+    y_pred = m * x + b
+    for xi, yi, yp in zip(x, y, y_pred):
+        ax.plot([xi, xi], [yi, yp], color='gray', linewidth=0.8, alpha=0.5)
+
+    ax.set_xlabel('x', fontsize=11)
+    ax.set_ylabel('y', fontsize=11)
+    ax.set_title(title, fontsize=11, color='gray')
+    ax.set_xlim(-0.5, 10.5)
+    ax.grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+Model 1 has points clustered close to the line (high probability of the data under this model). Models 2 and 3 have large gaps between the points and the line (low probability). MLE picks Model 1.
+
+## What Comes Next
+
+In the following sections, we will formalize MLE with concrete examples:
+
+- **MLE for a Bernoulli distribution** (estimating the probability of heads from coin flip data)
+- **MLE for a Gaussian distribution** (estimating mean and variance from data)
+- **MLE for linear regression** (finding the best-fit line)
+- **Regularization** (preventing overfitting)
+- **Bayesian estimation (MAP)** (incorporating prior beliefs)
+
+## MLE: Bernoulli Example
+
+Suppose you toss a coin 10 times and get 8 heads and 2 tails. You have three possible coins:
+
+| Coin | $P(\text{heads})$ |
+|:----:|:-----------------:|
+| Coin 1 | 0.7 |
+| Coin 2 | 0.5 |
+| Coin 3 | 0.3 |
+
+Which coin most likely produced 8 heads and 2 tails?
+
+### Comparing the Three Coins
+
+The probability that each coin generates exactly 8 heads and 2 tails:
+
+- Coin 1: $0.7^8 \times 0.3^2 = 0.0051$
+- Coin 2: $0.5^{10} = 0.0010$
+- Coin 3: $0.3^8 \times 0.7^2 = 0.00003$
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+coins = ['Coin 1\n(p=0.7)', 'Coin 2\n(p=0.5)', 'Coin 3\n(p=0.3)']
+probs = [0.7**8 * 0.3**2, 0.5**10, 0.3**8 * 0.7**2]
+colors = ['#2E8B57', '#4682B4', '#CC7000']
+
+fig, ax = plt.subplots(figsize=(8, 4.5))
+bars = ax.bar(coins, probs, color=colors, alpha=0.8, edgecolor='white', width=0.5)
+ax.set_ylabel('$P(8H, 2T \\mid \\text{coin})$', fontsize=12)
+ax.set_title('Likelihood of 8 heads, 2 tails for each coin', fontsize=12, color='gray')
+ax.grid(linestyle='--', alpha=0.3, axis='y')
+ax.set_ylim(0, max(probs) * 1.25)
+
+# Annotate values
+for bar, prob in zip(bars, probs):
+    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.0001,
+            f'{prob:.5f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+```
+
+Coin 1 has the highest likelihood, so if we had to pick one of these three, we would choose Coin 1.
+
+### Finding the Optimal $p$
+
+But can we do better? What if we are not restricted to just these three coins? Let us find the value of $p$ that maximizes the probability of seeing 8 heads and 2 tails.
+
+The **likelihood** as a function of $p$ is:
+
+$$
+L(p) = p^8 \cdot (1 - p)^2
+$$
+
+This is hard to maximize directly (products of small numbers). A standard trick is to take the **logarithm**, which turns products into sums. You saw this exact technique in the [calculus section on log loss](../calculus/log-loss.qmd#logarithm-trick), where the logarithm converted a product of probabilities into a sum that is much easier to differentiate:
+
+$$
+\ell(p) = \log L(p) = 8\log(p) + 2\log(1 - p)
+$$
+
+This is called the **log-likelihood**. Maximizing $\ell(p)$ is equivalent to maximizing $L(p)$ because the logarithm is a strictly increasing function.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+
+p = np.linspace(0.01, 0.99, 300)
+log_likelihood = 8 * np.log(p) + 2 * np.log(1 - p)
+
+fig, ax = plt.subplots(figsize=(8, 4.5))
+ax.plot(p, log_likelihood, color='#4682B4', linewidth=2.5)
+ax.axvline(0.8, color='#CC0000', linewidth=2, linestyle='--', label=r'$\hat{p} = 0.8$')
+ax.scatter([0.8], [8*np.log(0.8) + 2*np.log(0.2)], s=100, color='#CC0000', zorder=5)
+
+# Mark the three coins
+for pi, label, color in [(0.7, 'Coin 1', '#2E8B57'), (0.5, 'Coin 2', '#4682B4'), (0.3, 'Coin 3', '#CC7000')]:
+    ll = 8*np.log(pi) + 2*np.log(1-pi)
+    ax.scatter([pi], [ll], s=60, color=color, zorder=5)
+    ax.annotate(label, (pi, ll), textcoords='offset points', xytext=(5, -15), fontsize=9, color=color)
+
+ax.set_xlabel('$p$ (probability of heads)', fontsize=12)
+ax.set_ylabel('Log-likelihood $\\ell(p)$', fontsize=12)
+ax.set_title('Log-likelihood function for 8 heads, 2 tails', fontsize=12, color='gray')
+ax.legend(fontsize=11)
+ax.grid(linestyle='--', alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+### Taking the Derivative
+
+To find the maximum, take the derivative and set it to zero:
+
+$$
+\frac{d\ell}{dp} = \frac{8}{p} - \frac{2}{1 - p} = 0
+$$
+
+The $\frac{8}{p}$ comes from differentiating $8\log(p)$. The $-\frac{2}{1-p}$ comes from the chain rule on $2\log(1-p)$.
+
+Solving:
+
+$$
+\frac{8}{p} = \frac{2}{1-p} \quad \Rightarrow \quad 8(1-p) = 2p \quad \Rightarrow \quad 8 - 8p = 2p \quad \Rightarrow \quad p = \frac{8}{10} = 0.8
+$$
+
+So the MLE estimate is $\hat{p} = 0.8$. The best possible coin has a probability of heads equal to 80%. This makes intuitive sense: 8 out of 10 flips were heads.
+
+### General Case
+
+For $n$ coin flips with $k$ heads, each flip is a Bernoulli variable with parameter $p$:
+
+$$
+X_i \overset{i.i.d.}{\sim} \text{Bernoulli}(p)
+$$
+
+The likelihood is:
+
+$$
+L(p) = \prod_{i=1}^{n} p^{x_i}(1-p)^{1-x_i} = p^k(1-p)^{n-k}
+$$
+
+The log-likelihood is:
+
+$$
+\ell(p) = k\log(p) + (n-k)\log(1-p)
+$$
+
+Taking the derivative and setting it to zero:
+
+$$
+\frac{d\ell}{dp} = \frac{k}{p} - \frac{n-k}{1-p} = 0
+$$
+
+Solving gives:
+
+$$
+\hat{p} = \frac{k}{n}
+$$
+
+The MLE estimate for the probability of heads is simply the fraction of heads observed. This is the sample mean of the Bernoulli observations.
+
+### Review Questions {.unnumbered}
+
+**4. You flip a coin 20 times and get 15 heads. What is the MLE estimate for $p$?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+$\hat{p} = \frac{k}{n} = \frac{15}{20} = 0.75$. The MLE estimate is the proportion of heads observed.
+:::
+
+---
+
+**5. Why do we maximize the log-likelihood instead of the likelihood itself?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because the likelihood is a product of many small numbers, which is computationally difficult and numerically unstable. Taking the logarithm converts products into sums, making the function easier to differentiate and maximize. Since the logarithm is strictly increasing, the value of $p$ that maximizes $\log L(p)$ also maximizes $L(p)$.
+:::
+
+---
+
+**6. Why does the MLE result $\hat{p} = k/n$ make intuitive sense?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+If you observed $k$ heads out of $n$ flips, the most natural estimate for the probability of heads is the observed proportion $k/n$. MLE formalizes this intuition: the parameter value that makes the observed data most probable is exactly the observed frequency.
+:::
+
+## MLE: Gaussian Example
+
+Now let us apply the same idea to a continuous distribution. Suppose you observe two data points: $x_1 = 1$ and $x_2 = -1$. These were sampled from some normal distribution. Which normal distribution most likely generated them?
+
+### Comparing Two Candidate Distributions
+
+Consider two candidate normal distributions that may have generated the data:
+
+- $N(\mu = 10,\; \sigma = 1)$: mean 10, standard deviation 1
+- $N(\mu = 2,\; \sigma = 1)$: mean 2, standard deviation 1
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+x_obs = np.array([1, -1])
+x_range = np.linspace(-4, 14, 300)
+
+fig, axes = plt.subplots(2, 1, figsize=(10, 6))
+
+for ax, mu, title in [(axes[0], 10, '$N(10, 1)$'), (axes[1], 2, '$N(2, 1)$')]:
+    pdf = norm.pdf(x_range, mu, 1)
+    ax.plot(x_range, pdf, color='#4682B4', linewidth=2)
+    ax.fill_between(x_range, pdf, alpha=0.1, color='#4682B4')
+
+    # Plot observations and their likelihoods
+    individual_likelihoods = []
+    for xi in x_obs:
+        li = norm.pdf(xi, mu, 1)
+        individual_likelihoods.append(li)
+        ax.plot([xi, xi], [0, li], color='#CC0000', linewidth=2, linestyle='--')
+        ax.scatter([xi], [li], s=60, color='#CC0000', zorder=5)
+        ax.scatter([xi], [0], s=40, color='#CC0000', zorder=5, marker='^')
+        ax.text(xi, li + 0.02, f'{li:.4f}', fontsize=9, color='#CC0000',
+                ha='center', va='bottom')
+
+    likelihood = np.prod(individual_likelihoods)
+    ax.set_title(f'{title}: Likelihood = {individual_likelihoods[0]:.4f} × {individual_likelihoods[1]:.4f} = {likelihood:.6f}',
+                 fontsize=11, color='gray')
+    ax.set_xlabel('x', fontsize=10)
+    ax.set_ylabel('Density', fontsize=10)
+    ax.set_xticks(range(-4, 15, 2))
+    ax.set_xlim(-4, 14)
+    ax.grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+The heights of the curve at the data points are the likelihoods. The bottom curve ($N(2, 1)$) produces both points with higher likelihood, so it wins.
+
+### Estimating the Mean
+
+Now consider three Gaussians, all with $\sigma = 1$ but different means: $\mu = -1$, $\mu = 0$, $\mu = 1$.
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+x_obs = np.array([1, -1])
+x_range = np.linspace(-5, 5, 300)
+
+fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+mus = [-1, 0, 1]
+colors = ['#CC7000', '#2E8B57', '#4682B4']
+
+for ax, mu, color in zip(axes, mus, colors):
+    pdf = norm.pdf(x_range, mu, 1)
+    ax.plot(x_range, pdf, color=color, linewidth=2)
+    ax.fill_between(x_range, pdf, alpha=0.1, color=color)
+
+    # Likelihoods at data points
+    likelihoods = norm.pdf(x_obs, mu, 1)
+    for xi, li in zip(x_obs, likelihoods):
+        ax.plot([xi, xi], [0, li], color='#CC0000', linewidth=1.5, linestyle='--')
+        ax.scatter([xi], [li], s=50, color='#CC0000', zorder=5)
+        ax.text(xi, li + 0.02, f'{li:.3f}', fontsize=9, color='#CC0000', ha='center', va='bottom')
+
+    product = np.prod(likelihoods)
+    ax.set_title(f'$\\mu = {mu}$\nProduct = {product:.4f}', fontsize=11, color='gray')
+    ax.set_xlabel('x', fontsize=10)
+    ax.set_ylim(0, 0.5)
+    ax.grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+The likelihoods at each data point are shown as red dashed lines. We multiply them (since the observations are independent):
+
+- $\mu = -1$: $0.399 \times 0.054 = 0.022$
+- $\mu = 0$: $0.242 \times 0.242 = 0.059$ ← **highest**
+- $\mu = 1$: $0.054 \times 0.399 = 0.022$
+
+The Gaussian with $\mu = 0$ wins. Notice that $\mu = 0$ is exactly the **sample mean** of the data: $\bar{x} = \frac{1 + (-1)}{2} = 0$.
+
+This is the key result: **the MLE estimate for the mean of a Gaussian is the sample mean**.
+
+### Estimating the Variance
+
+Now that we know the best mean is $\mu = 0$, which standard deviation fits best? Consider three Gaussians with $\mu = 0$ and $\sigma = 0.5$, $\sigma = 1$, $\sigma = 2$:
+
+```{python}
+#| echo: false
+#| warning: false
+%config InlineBackend.figure_formats = ['svg']
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+x_obs = np.array([1, -1])
+x_range = np.linspace(-5, 5, 300)
+
+fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+sigmas = [0.5, 1, 2]
+colors = ['#CC7000', '#2E8B57', '#4682B4']
+
+for ax, sigma, color in zip(axes, sigmas, colors):
+    pdf = norm.pdf(x_range, 0, sigma)
+    ax.plot(x_range, pdf, color=color, linewidth=2)
+    ax.fill_between(x_range, pdf, alpha=0.1, color=color)
+
+    likelihoods = norm.pdf(x_obs, 0, sigma)
+    for xi, li in zip(x_obs, likelihoods):
+        ax.plot([xi, xi], [0, li], color='#CC0000', linewidth=1.5, linestyle='--')
+        ax.scatter([xi], [li], s=50, color='#CC0000', zorder=5)
+        ax.text(xi, li + 0.02, f'{li:.3f}', fontsize=9, color='#CC0000', ha='center', va='bottom')
+
+    product = np.prod(likelihoods)
+    ax.set_title(f'$\\sigma = {sigma}$\nProduct = {product:.4f}', fontsize=11, color='gray')
+    ax.set_xlabel('x', fontsize=10)
+    ax.set_ylim(0, 0.9)
+    ax.grid(linestyle='--', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+- $\sigma = 0.5$: likelihoods are very low (points are far from the center relative to the narrow spread)
+- $\sigma = 1$: **highest product** (the spread matches the data)
+- $\sigma = 2$: lower (the curve is too wide, so each point has low density)
+
+The winner is $\sigma = 1$. Now notice: the variance of the observations is $\frac{(1-0)^2 + (-1-0)^2}{2} = 1$, which equals $\sigma^2 = 1$. The MLE estimate for the variance is the sample variance (dividing by $n$, the biased version).
+
+### MLE Results for Gaussian
+
+For data $x_1, x_2, \ldots, x_n$ sampled from $N(\mu, \sigma^2)$:
+
+$$
+\hat{\mu}_{MLE} = \frac{1}{n}\sum_{i=1}^n x_i = \bar{x}
+$$
+
+$$
+\hat{\sigma}^2_{MLE} = \frac{1}{n}\sum_{i=1}^n (x_i - \bar{x})^2
+$$
+
+The MLE for the mean is the sample mean. The MLE for the variance is the sample variance **dividing by $n$** (not $n-1$). This is the biased estimator $\widehat{\text{Var}}(X)$ we saw in the [sample variance](sample-variance.qmd) section. MLE naturally produces the biased estimate.
+
+::: {.callout-note collapse="true"}
+## Full Derivation (Calculus)
+
+Given $n$ samples $X_i \overset{i.i.d.}{\sim} N(\mu, \sigma^2)$, the likelihood is:
+
+$$
+L(\mu, \sigma; \mathbf{x}) = \prod_{i=1}^n \frac{1}{\sqrt{2\pi}\,\sigma} e^{-\frac{1}{2}\frac{(x_i - \mu)^2}{\sigma^2}} = \frac{1}{(\sqrt{2\pi})^n \sigma^n} e^{-\frac{1}{2\sigma^2}\sum_{i=1}^n(x_i - \mu)^2}
+$$
+
+The log-likelihood is:
+
+$$
+\ell(\mu, \sigma) = -\frac{n}{2}\log(2\pi) - n\log(\sigma) - \frac{1}{2\sigma^2}\sum_{i=1}^n(x_i - \mu)^2
+$$
+
+**Partial derivative w.r.t. $\mu$:**
+
+$$
+\frac{\partial \ell}{\partial \mu} = \frac{1}{\sigma^2}\left(\sum_{i=1}^n x_i - n\mu\right) = 0
+$$
+
+Since $\sigma > 0$, this gives $\sum x_i - n\mu = 0$, so:
+
+$$
+\hat{\mu} = \frac{\sum_{i=1}^n x_i}{n} = \bar{x}
+$$
+
+**Partial derivative w.r.t. $\sigma$:**
+
+$$
+\frac{\partial \ell}{\partial \sigma} = -\frac{n}{\sigma} + \frac{1}{\sigma^3}\sum_{i=1}^n(x_i - \mu)^2 = 0
+$$
+
+Multiplying by $\sigma$ and substituting $\hat{\mu} = \bar{x}$:
+
+$$
+-n + \frac{1}{\sigma^2}\sum_{i=1}^n(x_i - \bar{x})^2 = 0
+$$
+
+Solving:
+
+$$
+\hat{\sigma}^2 = \frac{\sum_{i=1}^n (x_i - \bar{x})^2}{n}
+$$
+
+Note: this divides by $n$ (not $n-1$), confirming that MLE gives the biased variance estimator.
+:::
+
+### Worked Example: Heights of 18-Year-Olds
+
+Suppose you measure the heights (in inches) of 10 people:
+
+$$
+66.75, \; 70.24, \; 67.19, \; 67.09, \; 63.65, \; 64.64, \; 69.81, \; 69.79, \; 73.52, \; 71.74
+$$
+
+```{python}
+#| echo: true
+#| warning: false
+import numpy as np
+
+heights = np.array([66.75, 70.24, 67.19, 67.09, 63.65, 64.64, 69.81, 69.79, 73.52, 71.74])
+
+mu_hat = heights.mean()
+sigma_hat = np.sqrt(np.sum((heights - mu_hat)**2) / len(heights))
+
+print(f"MLE for mu: {mu_hat:.3f}")
+print(f"MLE for sigma: {sigma_hat:.3f}")
+```
+
+So the MLE estimates are $\hat{\mu} = 68.442$ and $\hat{\sigma} = 2.954$. The best-fit Gaussian for this data is $N(68.442, \; 2.954^2)$.
+
+### Review Questions {.unnumbered}
+
+**7. You observe data points $\{3, 5, 7\}$. What is the MLE estimate for the mean of a Gaussian that generated them?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+$\hat{\mu} = \bar{x} = \frac{3 + 5 + 7}{3} = 5$. The MLE estimate for the Gaussian mean is always the sample mean.
+:::
+
+---
+
+**8. Why does MLE for a Gaussian variance give the biased estimate (dividing by $n$) rather than the unbiased estimate (dividing by $n-1$)?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+MLE maximizes the likelihood of the data given the parameters. The value of $\sigma^2$ that maximizes the likelihood happens to be $\frac{1}{n}\sum(x_i - \bar{x})^2$. This is a property of the method itself. MLE does not account for the bias introduced by estimating $\mu$ from the same data. The unbiased correction ($n-1$) comes from a different consideration (Bessel's correction).
+:::
+
+---
+
+**9. In the three-Gaussian comparison for estimating the mean, why did $\mu = 0$ win over $\mu = -1$ and $\mu = 1$?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+With data points at $1$ and $-1$, the Gaussian centered at $\mu = 0$ gives both points equal and relatively high likelihood (both are 1 unit from the center). The other Gaussians are closer to one point but far from the other, making one likelihood high but the other very low. Since we multiply likelihoods, having one very low value drags the product down. The balanced center ($\mu = 0 = \bar{x}$) gives the best overall product.
+:::
+
+### Review Questions {.unnumbered}
+
+**1. What is the core idea behind Maximum Likelihood Estimation?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Given observed data, find the model parameters that make the observed data most probable. You maximize $P(\text{data} \mid \theta)$ over all possible values of $\theta$.
+:::
+
+---
+
+**2. In the popcorn example, why do we pick "movies" as the explanation?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Because among the three scenarios (movies, board games, nap), watching movies has the highest conditional probability of producing popcorn on the floor. We are selecting the scenario that maximizes the likelihood of the observed evidence.
+:::
+
+---
+
+**3. How does MLE apply to choosing between different regression lines?**
+
+::: {.callout-tip collapse="true"}
+## Answer
+Each line (model) implies a probability for the observed data points (the closer the points are to the line, the higher the probability). MLE picks the line that assigns the highest overall probability to the observed data.
+:::
+
+## Interactive Tool: Likelihood Functions
+
+Use this tool to visualize likelihood functions. Choose a distribution, adjust the true population parameter, pick a sample size, and see how the MLE estimate compares to the true parameter.
+
+```{ojs}
+//| echo: false
+
+html`<style>
+.mle-tool {
+  border: 2px solid #ddd; border-radius: 8px; padding: 20px; margin: 1em 0;
+  background: #fafafa; font-family: 'PT Sans', sans-serif;
+}
+.mle-tool .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 14px; }
+.mle-tool label { font-weight: 600; margin-right: 4px; font-size: 0.95em; }
+.mle-tool select, .mle-tool input[type="number"] {
+  padding: 5px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em;
+}
+.mle-tool input[type="number"] { width: 80px; }
+.mle-tool input[type="range"] { width: 200px; }
+.mle-tool button {
+  padding: 7px 16px; border: 1px solid #22176F; background: #fff; color: #22176F;
+  border-radius: 4px; font-size: 0.9em; font-weight: 600; cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.mle-tool button:hover { background: #22176F; color: #fff; }
+.mle-panel { border: 1px solid #ddd; border-radius: 6px; padding: 16px; margin: 10px 0; background: #fff; }
+.mle-legend { font-size: 0.9em; margin-top: 6px; padding: 8px; background: #f9f9f9; border-radius: 4px; }
+.mle-legend span { margin-right: 18px; }
+</style>`
+```
+
+```{ojs}
+//| echo: false
+
+mutable mleSamples = []
+mutable mleTrigger = 0
+
+viewof mleControls = {
+  const div = html`<div class="mle-tool">
+    <div class="row">
+      <label>Choose the example:</label>
+      <select id="mle-dist" style="min-width:280px;font-size:1em;padding:6px 12px;">
+        <option value="bernoulli">Discrete distribution - Bernoulli</option>
+        <option value="normal">Continuous distribution - Normal</option>
+      </select>
+    </div>
+    <div class="row" id="mle-params-row"></div>
+    <div class="row">
+      <label>Sample size:</label>
+      <input type="range" id="mle-n-slider" min="1" max="100" value="10" style="width:220px;">
+      <span id="mle-n-val" style="min-width:30px;font-weight:bold;">10</span>
+      <button id="mle-go">Estimate MLE</button>
+      <button id="mle-stop">Stop</button>
+      <button id="mle-refresh">Refresh</button>
+    </div>
+  </div>`;
+
+  const distEl = div.querySelector('#mle-dist');
+  const paramsRow = div.querySelector('#mle-params-row');
+  const nSlider = div.querySelector('#mle-n-slider');
+  const nVal = div.querySelector('#mle-n-val');
+
+  function updateParams() {
+    if (distEl.value === "bernoulli") {
+      paramsRow.innerHTML = `
+        <label>Parameters:</label>
+        <span>The value of population parameter p =</span>
+        <input type="number" id="mle-p" value="0.3" min="0.01" max="0.99" step="0.05" style="width:70px;">
+      `;
+    } else {
+      paramsRow.innerHTML = `
+        <label>Parameters:</label>
+        <span>Values of population parameters μ =</span>
+        <input type="number" id="mle-mu" value="0" step="0.5" style="width:70px;">
+        <span>and known σ =</span>
+        <input type="number" id="mle-sigma" value="1" min="0.1" step="0.1" style="width:70px;">
+      `;
+    }
+  }
+  updateParams();
+  distEl.addEventListener('change', () => {
+    updateParams();
+    mutable mleSamples = [];
+    mutable mleTrigger = mutable mleTrigger + 1;
+  });
+
+  nSlider.addEventListener('input', () => { nVal.textContent = nSlider.value; });
+
+  div.querySelector('#mle-go').addEventListener('click', () => {
+    const n = parseInt(nSlider.value);
+    const dist = distEl.value;
+    let newSamples;
+
+    if (dist === "bernoulli") {
+      const p = parseFloat(div.querySelector('#mle-p').value);
+      newSamples = Array.from({length: n}, () => Math.random() < p ? 1 : 0);
+    } else {
+      const mu = parseFloat(div.querySelector('#mle-mu').value);
+      const sigma = parseFloat(div.querySelector('#mle-sigma').value);
+      newSamples = [];
+      for (let i = 0; i < n; i++) {
+        const u1 = Math.random(), u2 = Math.random();
+        newSamples.push(mu + sigma * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2));
+      }
+    }
+    mutable mleSamples = [...mutable mleSamples, ...newSamples];
+    mutable mleTrigger = mutable mleTrigger + 1;
+  });
+
+  div.querySelector('#mle-refresh').addEventListener('click', () => {
+    mutable mleSamples = [];
+    mutable mleTrigger = mutable mleTrigger + 1;
+  });
+
+  return div;
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot = import("https://esm.sh/@observablehq/plot@0.6")
+
+mleViz = {
+  const _ = mleTrigger;
+  const samples = mleSamples;
+  const n = samples.length;
+
+  if (n === 0) {
+    return html`<div class="mle-panel" style="text-align:center;padding:50px;color:gray;">
+      Click <strong>Estimate MLE</strong> to generate samples and visualize the likelihood function.
+      <br><br>Each click adds more samples (cumulative). Click <strong>Refresh</strong> to start over.
+    </div>`;
+  }
+
+  // Detect distribution from samples (bernoulli = all 0s and 1s)
+  const isBern = samples.every(s => s === 0 || s === 1);
+
+  if (isBern) {
+    const k = samples.reduce((a, b) => a + b, 0);
+    const pHat = k / n;
+
+    // Get true p from the control (fallback to pHat)
+    const pInput = document.querySelector('#mle-p');
+    const trueP = pInput ? parseFloat(pInput.value) : pHat;
+
+    // Log-likelihood curve
+    const llPts = [];
+    for (let pi = 0.005; pi <= 0.995; pi += 0.005) {
+      const ll = k * Math.log(pi) + (n - k) * Math.log(1 - pi);
+      llPts.push({p: pi, ll});
+    }
+
+    return html`<div>
+      <div class="mle-panel">${
+        Plot.plot({
+          width: 640, height: 280, marginLeft: 55, marginBottom: 45, marginRight: 20,
+          x: {label: "θ", domain: [0, 1], ticks: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]},
+          y: {label: "log(L)", grid: true},
+          marks: [
+            Plot.line(llPts, {x: "p", y: "ll", stroke: "#4682B4", strokeWidth: 2.5}),
+            Plot.ruleX([pHat], {stroke: "#CC7000", strokeWidth: 2.5, strokeDasharray: "6,3"}),
+            Plot.ruleX([trueP], {stroke: "#333", strokeWidth: 2, strokeDasharray: "3,3"}),
+          ]
+        })
+      }</div>
+      <div class="mle-legend">
+        <span><strong>n = ${n}</strong></span>
+        <span style="color:#CC7000;">⚊⚊ p̂ = ${pHat.toFixed(3)}</span>
+        <span style="color:#333;">⚊⚊ p = ${trueP.toFixed(2)}</span>
+      </div>
+      <div class="mle-panel" style="margin-top:10px;">${
+        Plot.plot({
+          width: 640, height: 180, marginLeft: 55, marginBottom: 40,
+          x: {label: "x", domain: [-0.5, 1.5], ticks: [0, 1]},
+          y: {label: "f", domain: [0, 1.5]},
+          marks: [
+            Plot.barY([{x: "0", y: 1 - pHat}, {x: "1", y: pHat}], {x: "x", y: "y", fill: "#D4A843", opacity: 0.7}),
+            Plot.dot([{x: "0", y: 1 - pHat}, {x: "1", y: pHat}], {x: "x", y: "y", r: 6, fill: "#333"}),
+            Plot.ruleY([0], {stroke: "#333"}),
+          ]
+        })
+      }</div>
+    </div>`;
+
+  } else {
+    // Normal
+    const xbar = samples.reduce((a, b) => a + b, 0) / n;
+
+    const muInput = document.querySelector('#mle-mu');
+    const sigmaInput = document.querySelector('#mle-sigma');
+    const trueMu = muInput ? parseFloat(muInput.value) : xbar;
+    const sigma = sigmaInput ? parseFloat(sigmaInput.value) : 1;
+
+    // Log-likelihood as function of mu
+    const spread = Math.max(3 * sigma, Math.abs(xbar - trueMu) + 2 * sigma);
+    const muMin = Math.min(xbar, trueMu) - spread;
+    const muMax = Math.max(xbar, trueMu) + spread;
+    const llPts = [];
+    for (let m = muMin; m <= muMax; m += (muMax - muMin) / 300) {
+      let ll = -n * Math.log(sigma) - n * 0.5 * Math.log(2 * Math.PI);
+      for (const xi of samples) ll += -0.5 * ((xi - m) / sigma) ** 2;
+      llPts.push({mu: m, ll});
+    }
+
+    // PDF curve
+    const pdfMin = trueMu - 4 * sigma;
+    const pdfMax = trueMu + 4 * sigma;
+    const pdfPts = [];
+    for (let x = pdfMin; x <= pdfMax; x += (pdfMax - pdfMin) / 200) {
+      const y = (1 / (sigma * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * ((x - trueMu) / sigma) ** 2);
+      pdfPts.push({x, y});
+    }
+
+    // Sample histogram
+    const binWidth = sigma * 0.4;
+    const bins = {};
+    for (const xi of samples) {
+      const b = Math.round(xi / binWidth) * binWidth;
+      bins[b] = (bins[b] || 0) + 1;
+    }
+    const histData = Object.entries(bins).map(([x, c]) => ({x: +x, y: c / (n * binWidth)}));
+
+    return html`<div>
+      <div class="mle-panel">${
+        Plot.plot({
+          width: 640, height: 280, marginLeft: 60, marginBottom: 45, marginRight: 20,
+          x: {label: "θ (μ)"},
+          y: {label: "log(L)", grid: true},
+          marks: [
+            Plot.line(llPts, {x: "mu", y: "ll", stroke: "#4682B4", strokeWidth: 2.5}),
+            Plot.ruleX([xbar], {stroke: "#CC7000", strokeWidth: 2.5, strokeDasharray: "6,3"}),
+            Plot.ruleX([trueMu], {stroke: "#333", strokeWidth: 2, strokeDasharray: "3,3"}),
+          ]
+        })
+      }</div>
+      <div class="mle-legend">
+        <span><strong>n = ${n}</strong></span>
+        <span style="color:#CC7000;">⚊⚊ μ̂ = ${xbar.toFixed(2)}</span>
+        <span style="color:#333;">⚊⚊ μ = ${trueMu.toFixed(1)}</span>
+      </div>
+      <div class="mle-panel" style="margin-top:10px;">${
+        Plot.plot({
+          width: 640, height: 200, marginLeft: 55, marginBottom: 40,
+          x: {label: "x", domain: [pdfMin, pdfMax]},
+          y: {label: "f", domain: [0, Math.max(...pdfPts.map(d => d.y)) * 1.4]},
+          marks: [
+            Plot.barY(histData, {x: "x", y: "y", fill: "#D4A843", opacity: 0.6}),
+            Plot.line(pdfPts, {x: "x", y: "y", stroke: "#333", strokeWidth: 2}),
+            Plot.ruleX([trueMu], {stroke: "#333", strokeWidth: 1.5, strokeDasharray: "3,3"}),
+            Plot.ruleX([trueMu - sigma], {stroke: "#666", strokeWidth: 1, strokeDasharray: "2,4"}),
+            Plot.ruleX([trueMu + sigma], {stroke: "#666", strokeWidth: 1, strokeDasharray: "2,4"}),
+            Plot.ruleY([0], {stroke: "#333"}),
+            Plot.dot(samples.map(s => ({x: s, y: 0})), {x: "x", y: "y", r: 3.5, fill: "#333"}),
+          ]
+        })
+      }</div>
+    </div>`;
+  }
+}
+```
