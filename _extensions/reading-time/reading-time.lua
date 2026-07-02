@@ -9,11 +9,11 @@ local WPM = 150
 
 -- Difficulty multipliers: how much longer dense content takes to absorb
 local DIFFICULTY_MULTIPLIERS = {
-  [1] = 0.8,
-  [2] = 0.9,
-  [3] = 1.0,
-  [4] = 1.6,
-  [5] = 2.2,
+  [1] = 0.85,
+  [2] = 1.0,
+  [3] = 1.2,
+  [4] = 1.5,
+  [5] = 2.0,
 }
 
 -- Use an absolute path derived from the project root for the shared JSON.
