@@ -341,11 +341,17 @@ document.addEventListener("DOMContentLoaded", function () {
   -- Build difficulty indicator: filled circles ● and empty circles ○
   local difficulty_html = ""
   if doc.meta["difficulty"] then
-    local filled = string.rep("●", difficulty)
-    local empty = string.rep("○", 5 - difficulty)
+    local dots = ""
+    for i = 1, 5 do
+      if i <= difficulty then
+        dots = dots .. '<span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span>'
+      else
+        dots = dots .. '<span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span>'
+      end
+    end
     difficulty_html = [[
     var diffDiv = document.createElement("div");
-    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p>]] .. filled .. empty .. [[</p></div>';
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p>]] .. dots .. [[</p></div>';
     meta.appendChild(diffDiv);
 ]]
   end
