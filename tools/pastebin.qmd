@@ -2,7 +2,6 @@
 title: "Pastebin"
 toc: false
 show-reading-time: false
-image: pastebin-thumb.svg
 ---
 
 ```{=html}
@@ -511,7 +510,19 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   }
 
   var lastRoomConnect = 0;
+  var rapidSwitchCount = 0;
+  var lastRapidReset = Date.now();
   var roomError = document.getElementById('room-error');
+
+  function getCooldown() {
+    // Reset rapid count after 60s of inactivity
+    if (Date.now() - lastRoomConnect > 60000) {
+      rapidSwitchCount = 0;
+    }
+    if (rapidSwitchCount < 3) return 3000;
+    if (rapidSwitchCount < 6) return 10000;
+    return 30000;
+  }
 
   function validateRoomName(name) {
     if (name.length > 32) {
@@ -577,7 +588,26 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     }
 
     var now = Date.now();
-    if (now - lastRoomConnect < 3000) {
+    var cooldown = getCooldown();
+    if (now - lastRoomConnect < cooldown) {
+      var remaining = Math.ceil((cooldown - (now - lastRoomConnect)) / 1000);
+      roomError.innerHTML = 'Please wait <span style="font-weight:600;">' + remaining + 's</span> before switching rooms...';
+      roomError.style.display = 'block';
+      rapidSwitchCount++;
+      // Countdown
+      var countdownInterval = setInterval(function() {
+        var timeLeft = Math.ceil((cooldown - (Date.now() - lastRoomConnect)) / 1000);
+        if (timeLeft <= 0) {
+          clearInterval(countdownInterval);
+          roomError.innerHTML = '<span style="color:#2E8B57; cursor:pointer; font-weight:600;" id="retry-connect">✓ Ready — click to connect</span>';
+          document.getElementById('retry-connect').addEventListener('click', function() {
+            roomError.style.display = 'none';
+            connectToRoom(roomInput.value);
+          });
+        } else {
+          roomError.innerHTML = 'Please wait <span style="font-weight:600;">' + timeLeft + 's</span> before switching rooms...';
+        }
+      }, 500);
       return;
     }
     lastRoomConnect = now;
@@ -769,8 +799,9 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
       return;
     }
     charCounter.style.display = 'block';
-    var remaining = CHAR_LIMIT - pasteArea.value.length;
-    charCounter.textContent = remaining.toLocaleString() + ' characters remaining';
+    var used = pasteArea.value.length;
+    var remaining = CHAR_LIMIT - used;
+    charCounter.textContent = used.toLocaleString() + ' / ' + CHAR_LIMIT.toLocaleString() + ' characters (' + remaining.toLocaleString() + ' remaining)';
     if (remaining <= 0) {
       charCounter.style.color = '#dc3545';
     } else if (remaining < 50000) {
