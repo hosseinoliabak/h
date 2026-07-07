@@ -4,11 +4,21 @@ document.addEventListener("DOMContentLoaded", function() {
   // Find all <strong> elements that start with a number followed by a dot
   var strongs = document.querySelectorAll("p > strong");
   for (var i = 0; i < strongs.length; i++) {
-    var text = strongs[i].textContent;
-    var match = text.match(/^(\d+)\.\s/);
-    if (match) {
-      counter++;
-      strongs[i].textContent = text.replace(/^\d+\.\s/, counter + ". ");
+    var strong = strongs[i];
+    var match = strong.textContent.match(/^(\d+)\.\s/);
+    if (!match) continue;
+
+    counter++;
+    var newPrefix = counter + ". ";
+
+    // Replace only the leading number in the first text node.
+    // Do NOT use strong.textContent = ... — that strips child elements like <code>.
+    for (var j = 0; j < strong.childNodes.length; j++) {
+      var node = strong.childNodes[j];
+      if (node.nodeType === Node.TEXT_NODE && /^\d+\.\s/.test(node.textContent)) {
+        node.textContent = node.textContent.replace(/^\d+\.\s/, newPrefix);
+        break;
+      }
     }
   }
 });
