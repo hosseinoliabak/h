@@ -1,0 +1,759 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"Lab: Regression with a Perceptron\"\n",
+        "description: \"In this lab, we will put the optimization ideas from calculus (derivatives, gradient descent, loss functions) into practice by implementing a neural...\"\n",
+        "date: \"2026-06-14\"\n",
+        "difficulty: 3\n",
+        "order: 13\n",
+        "categories: [calculus]\n",
+        "---\n",
+        "\n",
+        "In this lab, we will put the optimization ideas from calculus (derivatives, gradient descent, loss functions) into practice by implementing a neural network from scratch. We will start with the simplest possible case, a single perceptron doing simple linear regression, and then extend it to multiple inputs. This lab is a companion to the [Optimization in Neural Networks](optimization-in-neural-networks.qmd) theory page."
+      ],
+      "id": "faea6e47"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "%config InlineBackend.figure_formats = ['svg']\n",
+        "\n",
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "import pandas as pd\n",
+        "\n",
+        "# Set a seed so that our results are reproducible.\n",
+        "np.random.seed(3)"
+      ],
+      "id": "5766b9a1",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Part 1. Simple Linear Regression (TV Advertising → Sales)\n",
+        "\n",
+        "### Loading and Exploring Data\n",
+        "\n",
+        "We will use a [Kaggle dataset](https://www.kaggle.com/code/devzohaib/simple-linear-regression/notebook) that tracks how much a company spent on TV advertising (in thousands of dollars) and how many units it sold. Our goal is to predict sales from the TV budget."
+      ],
+      "id": "ac31ce2e"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "path = \"../../media/tvmarketing.csv\"\n",
+        "adv = pd.read_csv(path)\n",
+        "adv.head()"
+      ],
+      "id": "7c9c1274",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "A scatter plot reveals that there is a positive relationship between TV spending and sales."
+      ],
+      "id": "22582ef1"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots()\n",
+        "ax.scatter(adv[\"TV\"], adv[\"Sales\"], color=\"#4682B4\", alpha=0.6, edgecolors=\"none\")\n",
+        "ax.set_xlabel(\"TV Advertising Budget ($k)\")\n",
+        "ax.set_ylabel(\"Sales (units)\")\n",
+        "ax.set_title(\"TV Advertising vs. Sales\", fontsize=12, color=\"gray\")\n",
+        "ax.grid(linestyle=\"--\", alpha=0.4)\n",
+        "plt.show()"
+      ],
+      "id": "5f625a88",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Normalizing Data\n",
+        "\n",
+        "Neural networks train more efficiently when feature values are on similar scales. We normalize each column by subtracting its mean and dividing by its standard deviation. This is called **z-score normalization** (sometimes called standardization). After normalization, each feature has a mean of 0 and a standard deviation of 1."
+      ],
+      "id": "eae5a26d"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "adv_norm = (adv - np.mean(adv)) / np.std(adv)"
+      ],
+      "id": "099bf85b",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Here is the same scatter plot after normalization. Notice that the shape is identical, but the axis values have changed."
+      ],
+      "id": "ee7e337b"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots()\n",
+        "ax.scatter(adv_norm[\"TV\"], adv_norm[\"Sales\"], color=\"#4682B4\", alpha=0.6, edgecolors=\"none\")\n",
+        "ax.set_xlabel(\"TV (normalized)\")\n",
+        "ax.set_ylabel(\"Sales (normalized)\")\n",
+        "ax.set_title(\"Normalized TV vs. Sales\", fontsize=12, color=\"gray\")\n",
+        "ax.grid(linestyle=\"--\", alpha=0.4)\n",
+        "plt.show()"
+      ],
+      "id": "79712736",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Reshape the data into row vectors (shape $1 \\times m$) as required by our neural network."
+      ],
+      "id": "9cb44136"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "X_norm = adv_norm[\"TV\"]\n",
+        "Y_norm = adv_norm[\"Sales\"]\n",
+        "\n",
+        "X_norm = np.array(X_norm).reshape((1, len(X_norm)))\n",
+        "Y_norm = np.array(Y_norm).reshape((1, len(Y_norm)))\n",
+        "\n",
+        "print(\"Shape of X_norm:\", X_norm.shape)\n",
+        "print(\"Shape of Y_norm:\", Y_norm.shape)\n",
+        "print(f\"We have m = {X_norm.shape[1]} training examples.\")"
+      ],
+      "id": "ff88335d",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Defining Neural Network Structure\n",
+        "\n",
+        "We define a helper function that returns the size of the input layer ($n_x$) and the output layer ($n_y$) based on the shapes of our data arrays."
+      ],
+      "id": "fbcba803"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def layer_sizes(X, Y):\n",
+        "    \"\"\"\n",
+        "    Arguments:\n",
+        "    X -- input dataset of shape (input size, number of examples)\n",
+        "    Y -- labels of shape (output size, number of examples)\n",
+        "\n",
+        "    Returns:\n",
+        "    n_x -- the size of the input layer\n",
+        "    n_y -- the size of the output layer\n",
+        "    \"\"\"\n",
+        "    n_x = X.shape[0]\n",
+        "    n_y = Y.shape[0]\n",
+        "    return (n_x, n_y)\n",
+        "\n",
+        "(n_x, n_y) = layer_sizes(X_norm, Y_norm)\n",
+        "print(\"Size of input layer: n_x =\", n_x)\n",
+        "print(\"Size of output layer: n_y =\", n_y)"
+      ],
+      "id": "5d3e36d9",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Initializing Parameters\n",
+        "\n",
+        "We initialize the weight matrix $W$ with small random values and the bias vector $b$ with zeros. The shapes are determined by the layer sizes."
+      ],
+      "id": "89ed011e"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def initialize_parameters(n_x, n_y):\n",
+        "    \"\"\"\n",
+        "    Returns:\n",
+        "    parameters -- dictionary containing:\n",
+        "        W -- weight matrix of shape (n_y, n_x)\n",
+        "        b -- bias vector of shape (n_y, 1)\n",
+        "    \"\"\"\n",
+        "    W = np.random.randn(n_y, n_x) * 0.01\n",
+        "    b = np.zeros((n_y, 1))\n",
+        "\n",
+        "    parameters = {\"W\": W, \"b\": b}\n",
+        "    return parameters\n",
+        "\n",
+        "parameters = initialize_parameters(n_x, n_y)\n",
+        "print(\"W =\", parameters[\"W\"])\n",
+        "print(\"b =\", parameters[\"b\"])"
+      ],
+      "id": "5492e36c",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Forward Propagation\n",
+        "\n",
+        "Forward propagation computes the predicted output. For a single perceptron with no activation function, this is simply a linear combination.\n",
+        "\n",
+        "$$Z = WX + b$$\n",
+        "$$\\hat{Y} = Z$$"
+      ],
+      "id": "fcd3dc62"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def forward_propagation(X, parameters):\n",
+        "    \"\"\"\n",
+        "    Arguments:\n",
+        "    X -- input data of size (n_x, m)\n",
+        "    parameters -- dictionary with W and b\n",
+        "\n",
+        "    Returns:\n",
+        "    Y_hat -- predicted output of shape (n_y, m)\n",
+        "    \"\"\"\n",
+        "    W = parameters[\"W\"]\n",
+        "    b = parameters[\"b\"]\n",
+        "\n",
+        "    Z = np.matmul(W, X) + b\n",
+        "    Y_hat = Z\n",
+        "\n",
+        "    return Y_hat\n",
+        "\n",
+        "Y_hat = forward_propagation(X_norm, parameters)\n",
+        "print(\"First 5 predictions:\", Y_hat[0, 0:5])"
+      ],
+      "id": "5d69cfb1",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Computing Cost (Mean Squared Error)\n",
+        "\n",
+        "The cost function measures how far our predictions are from the true values. We use the sum of squares cost (also called MSE with a $\\frac{1}{2}$ factor for cleaner derivatives).\n",
+        "\n",
+        "$$\\mathcal{L}(w, b) = \\frac{1}{2m}\\sum_{i=1}^{m}(\\hat{y}^{(i)} - y^{(i)})^2$$"
+      ],
+      "id": "7b05d6a2"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def compute_cost(Y_hat, Y):\n",
+        "    \"\"\"\n",
+        "    Computes the cost function as a sum of squares.\n",
+        "\n",
+        "    Arguments:\n",
+        "    Y_hat -- predicted output of shape (n_y, m)\n",
+        "    Y -- true labels of shape (n_y, m)\n",
+        "\n",
+        "    Returns:\n",
+        "    cost -- sum of squares scaled by 1/(2*m)\n",
+        "    \"\"\"\n",
+        "    m = Y_hat.shape[1]\n",
+        "    cost = np.sum((Y_hat - Y)**2) / (2 * m)\n",
+        "    return cost\n",
+        "\n",
+        "print(\"Initial cost:\", compute_cost(Y_hat, Y_norm))"
+      ],
+      "id": "ad284234",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Backward Propagation\n",
+        "\n",
+        "This is where the calculus from the theory section becomes code. We compute the partial derivatives of the cost function with respect to $W$ and $b$.\n",
+        "\n",
+        "$$\\frac{\\partial \\mathcal{L}}{\\partial W} = \\frac{1}{m}(\\hat{Y} - Y)X^T$$\n",
+        "\n",
+        "$$\\frac{\\partial \\mathcal{L}}{\\partial b} = \\frac{1}{m}\\sum_{i=1}^{m}(\\hat{y}^{(i)} - y^{(i)})$$"
+      ],
+      "id": "2848d53b"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def backward_propagation(Y_hat, X, Y):\n",
+        "    \"\"\"\n",
+        "    Computes gradients for W and b.\n",
+        "\n",
+        "    Arguments:\n",
+        "    Y_hat -- predicted output of shape (n_y, m)\n",
+        "    X -- input data of shape (n_x, m)\n",
+        "    Y -- true labels of shape (n_y, m)\n",
+        "\n",
+        "    Returns:\n",
+        "    grads -- dictionary with dW and db\n",
+        "    \"\"\"\n",
+        "    m = X.shape[1]\n",
+        "\n",
+        "    dZ = Y_hat - Y\n",
+        "    dW = (1 / m) * np.dot(dZ, X.T)\n",
+        "    db = (1 / m) * np.sum(dZ, axis=1, keepdims=True)\n",
+        "\n",
+        "    grads = {\"dW\": dW, \"db\": db}\n",
+        "    return grads\n",
+        "\n",
+        "grads = backward_propagation(Y_hat, X_norm, Y_norm)\n",
+        "print(\"dW =\", grads[\"dW\"])\n",
+        "print(\"db =\", grads[\"db\"])"
+      ],
+      "id": "caaff064",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Updating Parameters\n",
+        "\n",
+        "Using gradient descent, we update the parameters by stepping in the direction opposite to the gradient.\n",
+        "\n",
+        "$$W = W - \\alpha \\frac{\\partial \\mathcal{L}}{\\partial W}$$\n",
+        "\n",
+        "$$b = b - \\alpha \\frac{\\partial \\mathcal{L}}{\\partial b}$$\n",
+        "\n",
+        "Here, $\\alpha$ is the **learning rate**, which controls the size of each update step."
+      ],
+      "id": "d5bf90ad"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def update_parameters(parameters, grads, learning_rate=1.2):\n",
+        "    \"\"\"\n",
+        "    Updates parameters using gradient descent.\n",
+        "\n",
+        "    Arguments:\n",
+        "    parameters -- dictionary with W and b\n",
+        "    grads -- dictionary with dW and db\n",
+        "    learning_rate -- step size for gradient descent\n",
+        "\n",
+        "    Returns:\n",
+        "    parameters -- dictionary with updated W and b\n",
+        "    \"\"\"\n",
+        "    W = parameters[\"W\"]\n",
+        "    b = parameters[\"b\"]\n",
+        "\n",
+        "    dW = grads[\"dW\"]\n",
+        "    db = grads[\"db\"]\n",
+        "\n",
+        "    W = W - learning_rate * dW\n",
+        "    b = b - learning_rate * db\n",
+        "\n",
+        "    parameters = {\"W\": W, \"b\": b}\n",
+        "    return parameters\n",
+        "\n",
+        "parameters_updated = update_parameters(parameters, grads)\n",
+        "print(\"W updated =\", parameters_updated[\"W\"])\n",
+        "print(\"b updated =\", parameters_updated[\"b\"])"
+      ],
+      "id": "ae50d8f7",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Putting It All Together\n",
+        "\n",
+        "The `nn_model()` function integrates all steps (structure definition, initialization, and the training loop) into a single callable unit."
+      ],
+      "id": "19273cf1"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def nn_model(X, Y, num_iterations=10, learning_rate=1.2, print_cost=False):\n",
+        "    \"\"\"\n",
+        "    Builds and trains a single-perceptron neural network.\n",
+        "\n",
+        "    Arguments:\n",
+        "    X -- input data of shape (n_x, m)\n",
+        "    Y -- true labels of shape (n_y, m)\n",
+        "    num_iterations -- number of gradient descent iterations\n",
+        "    learning_rate -- step size for parameter updates\n",
+        "    print_cost -- if True, print cost every iteration\n",
+        "\n",
+        "    Returns:\n",
+        "    parameters -- learned W and b\n",
+        "    \"\"\"\n",
+        "    n_x = layer_sizes(X, Y)[0]\n",
+        "    n_y = layer_sizes(X, Y)[1]\n",
+        "\n",
+        "    parameters = initialize_parameters(n_x, n_y)\n",
+        "\n",
+        "    for i in range(0, num_iterations):\n",
+        "        # Forward propagation\n",
+        "        Y_hat = forward_propagation(X, parameters)\n",
+        "\n",
+        "        # Compute cost\n",
+        "        cost = compute_cost(Y_hat, Y)\n",
+        "\n",
+        "        # Backward propagation\n",
+        "        grads = backward_propagation(Y_hat, X, Y)\n",
+        "\n",
+        "        # Update parameters\n",
+        "        parameters = update_parameters(parameters, grads, learning_rate)\n",
+        "\n",
+        "        if print_cost:\n",
+        "            print(f\"Cost after iteration {i}: {cost:.6f}\")\n",
+        "\n",
+        "    return parameters"
+      ],
+      "id": "aa0047e7",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Training and Observing Cost Decrease"
+      ],
+      "id": "6275a26d"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "parameters_simple = nn_model(X_norm, Y_norm, num_iterations=30, learning_rate=1.2, print_cost=True)\n",
+        "print(\"W =\", parameters_simple[\"W\"])\n",
+        "print(\"b =\", parameters_simple[\"b\"])"
+      ],
+      "id": "2d42fb62",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Notice how the cost decreases rapidly in the first few iterations and then plateaus. This means the model has **converged**, meaning further iterations will not improve the fit significantly.\n",
+        "\n",
+        "### Making Predictions and Plotting\n",
+        "\n",
+        "We build a prediction function that handles normalization and denormalization. This allows us to feed in raw (un-normalized) values and get predictions in the original units."
+      ],
+      "id": "0ff85923"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def predict(X, Y, parameters, X_pred):\n",
+        "    \"\"\"\n",
+        "    Makes predictions using the trained model, handling normalization.\n",
+        "\n",
+        "    Arguments:\n",
+        "    X -- original training inputs (pandas Series or DataFrame)\n",
+        "    Y -- original training labels (pandas Series)\n",
+        "    parameters -- trained W and b\n",
+        "    X_pred -- new input values to predict on\n",
+        "\n",
+        "    Returns:\n",
+        "    Y_pred -- predictions in original scale\n",
+        "    \"\"\"\n",
+        "    W = parameters[\"W\"]\n",
+        "    b = parameters[\"b\"]\n",
+        "\n",
+        "    if isinstance(X, pd.Series):\n",
+        "        X_mean = np.mean(X)\n",
+        "        X_std = np.std(X)\n",
+        "        X_pred_norm = ((X_pred - X_mean) / X_std).reshape((1, len(X_pred)))\n",
+        "    else:\n",
+        "        X_mean = np.array(X.mean()).reshape((X.shape[1], 1))\n",
+        "        X_std = np.array(X.std(ddof=0)).reshape((X.shape[1], 1))\n",
+        "        X_pred_norm = (X_pred - X_mean) / X_std\n",
+        "\n",
+        "    Y_pred_norm = np.matmul(W, X_pred_norm) + b\n",
+        "    Y_pred = Y_pred_norm * np.std(Y) + np.mean(Y)\n",
+        "\n",
+        "    return Y_pred[0]"
+      ],
+      "id": "be6e536c",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "X_pred = np.array([50, 120, 280])\n",
+        "Y_pred = predict(adv[\"TV\"], adv[\"Sales\"], parameters_simple, X_pred)\n",
+        "print(f\"TV marketing expenses: {X_pred}\")\n",
+        "print(f\"Predicted sales: {Y_pred}\")"
+      ],
+      "id": "c82da417",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Now we can visualize the regression line alongside the original data."
+      ],
+      "id": "d7c324c2"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots()\n",
+        "ax.scatter(adv[\"TV\"], adv[\"Sales\"], color=\"#4682B4\", alpha=0.5, edgecolors=\"none\", label=\"Data\")\n",
+        "\n",
+        "X_line = np.arange(np.min(adv[\"TV\"]), np.max(adv[\"TV\"]) * 1.1, 0.1)\n",
+        "Y_line = predict(adv[\"TV\"], adv[\"Sales\"], parameters_simple, X_line)\n",
+        "ax.plot(X_line, Y_line, color=\"#CC0000\", linewidth=2, label=\"Regression line\")\n",
+        "ax.scatter(X_pred, Y_pred, color=\"#CC7000\", s=80, zorder=5, label=\"Predictions\")\n",
+        "\n",
+        "ax.set_xlabel(\"TV Advertising Budget ($k)\")\n",
+        "ax.set_ylabel(\"Sales (units)\")\n",
+        "ax.set_title(\"Simple Linear Regression with Perceptron\", fontsize=12, color=\"gray\")\n",
+        "ax.legend()\n",
+        "ax.grid(linestyle=\"--\", alpha=0.4)\n",
+        "plt.show()"
+      ],
+      "id": "6e4e69d1",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Part 2. Multiple Linear Regression (House Size + Quality → Price)\n",
+        "\n",
+        "Now we will extend our single-perceptron model to handle **two** input features. The beauty of our implementation is that we do not need to change the forward propagation, backward propagation, or parameter update code at all. The matrix operations generalize naturally.\n",
+        "\n",
+        "### Loading House Prices Data\n",
+        "\n",
+        "We use the [Kaggle House Prices dataset](https://www.kaggle.com/c/house-prices-advanced-regression-techniques). From it, we select two features to predict sale price.\n",
+        "\n",
+        "- **GrLivArea** (above grade living area, in square feet)\n",
+        "- **OverallQual** (overall quality rating from 1 to 10)"
+      ],
+      "id": "3e2e4d00"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "df = pd.read_csv(\"../../media/house_prices_train.csv\")\n",
+        "X_multi = df[[\"GrLivArea\", \"OverallQual\"]]\n",
+        "Y_multi = df[\"SalePrice\"]"
+      ],
+      "id": "ed9f8bc0",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "display(X_multi.head())\n",
+        "display(Y_multi.head())"
+      ],
+      "id": "093c86f0",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Before training, it helps to visualize the relationship between each feature and the target variable."
+      ],
+      "id": "1e37debf"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, axes = plt.subplots(1, 2, figsize=(12, 5))\n",
+        "\n",
+        "axes[0].scatter(X_multi[\"GrLivArea\"], Y_multi, color=\"#4682B4\", alpha=0.4, edgecolors=\"none\")\n",
+        "axes[0].set_xlabel(\"Ground Living Area (sq ft)\")\n",
+        "axes[0].set_ylabel(\"Sale Price ($)\")\n",
+        "axes[0].set_title(\"Living Area vs. Price\", fontsize=12, color=\"gray\")\n",
+        "axes[0].grid(linestyle=\"--\", alpha=0.4)\n",
+        "\n",
+        "axes[1].scatter(X_multi[\"OverallQual\"], Y_multi, color=\"#2E8B57\", alpha=0.4, edgecolors=\"none\")\n",
+        "axes[1].set_xlabel(\"Overall Quality (1-10)\")\n",
+        "axes[1].set_ylabel(\"Sale Price ($)\")\n",
+        "axes[1].set_title(\"Quality vs. Price\", fontsize=12, color=\"gray\")\n",
+        "axes[1].grid(linestyle=\"--\", alpha=0.4)\n",
+        "\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "e4b20862",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Both plots show a clear positive relationship. Larger houses and higher quality ratings both correlate with higher prices. This confirms that these two features are good candidates for our model.\n",
+        "\n",
+        "### Normalizing Data\n",
+        "\n",
+        "Just like before, we normalize each column to have mean 0 and standard deviation 1."
+      ],
+      "id": "d4f410f2"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "X_multi_norm = (X_multi - X_multi.mean()) / X_multi.std(ddof=0)\n",
+        "Y_multi_norm = (Y_multi - Y_multi.mean()) / Y_multi.std(ddof=0)"
+      ],
+      "id": "f6cad8a2",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "We reshape the data so that $X$ has shape $(2, m)$ and $Y$ has shape $(1, m)$."
+      ],
+      "id": "cc50abb8"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "X_multi_norm = np.array(X_multi_norm).T\n",
+        "Y_multi_norm = np.array(Y_multi_norm).reshape((1, len(Y_multi_norm)))\n",
+        "\n",
+        "print(\"Shape of X:\", X_multi_norm.shape)\n",
+        "print(\"Shape of Y:\", Y_multi_norm.shape)\n",
+        "print(f\"We have m = {X_multi_norm.shape[1]} training examples.\")"
+      ],
+      "id": "3f46b9dc",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Training with 2 Input Nodes\n",
+        "\n",
+        "We pass the new data directly to `nn_model()`. Because the input shape is $(2, m)$ instead of $(1, m)$, `layer_sizes()` will automatically set $n_x = 2$. Everything else works exactly the same."
+      ],
+      "id": "579f14e9"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "parameters_multi = nn_model(X_multi_norm, Y_multi_norm, num_iterations=100, learning_rate=1.2, print_cost=True)\n",
+        "print(\"W =\", parameters_multi[\"W\"])\n",
+        "print(\"b =\", parameters_multi[\"b\"])"
+      ],
+      "id": "fcb36b3a",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The weight vector $W$ now has two components. The first weight corresponds to `GrLivArea` and the second to `OverallQual`. Notice that `OverallQual` has a larger weight, which makes sense because overall quality is a strong predictor of price.\n",
+        "\n",
+        "### Making Predictions and Evaluating"
+      ],
+      "id": "68a5b500"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "X_pred_multi = np.array([[1710, 7], [1200, 6], [2200, 8]]).T\n",
+        "Y_pred_multi = predict(X_multi, Y_multi, parameters_multi, X_pred_multi)\n",
+        "\n",
+        "print(f\"Ground living area (sq ft): {X_pred_multi[0]}\")\n",
+        "print(f\"Overall quality (1-10): {X_pred_multi[1]}\")\n",
+        "print(f\"Predicted sale price ($): {np.round(Y_pred_multi)}\")"
+      ],
+      "id": "920a688d",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "These predictions align with intuition. A larger house with higher quality commands a higher price.\n",
+        "\n",
+        "We did it. With a single perceptron and gradient descent, we built both a simple linear regression model and a multiple linear regression model. The key insight is that the same mathematical framework (forward propagation → cost → backward propagation → update) scales naturally from one input to many inputs, thanks to linear algebra."
+      ],
+      "id": "2b99d446"
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3 (ipykernel)",
+      "path": "/home/parallels/website/.venv/share/jupyter/kernels/python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}

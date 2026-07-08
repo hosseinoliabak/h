@@ -1,0 +1,599 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"Lab: Neural Network with Two Layers\"\n",
+        "description: \"In this lab, you will build a neural network with two layers and train it to solve a classification problem that a single perceptron cannot handle. By...\"\n",
+        "date: \"2026-06-18\"\n",
+        "difficulty: 4\n",
+        "order: 22\n",
+        "categories: [calculus]\n",
+        "---\n",
+        "\n",
+        "In this lab, you will build a neural network with two layers and train it to solve a classification problem that a single perceptron cannot handle. By the end of this lab, you will be able to:\n",
+        "\n",
+        "- Implement a neural network with two layers for a classification problem\n",
+        "- Implement forward propagation using matrix multiplication\n",
+        "- Perform backward propagation to update the network weights\n",
+        "\n",
+        "## 1. Classification Problem\n",
+        "\n",
+        "### Why One Perceptron Is Not Enough\n",
+        "\n",
+        "In previous work, we trained a single perceptron to solve a \"linear\" classification problem. A single perceptron finds a straight line in the plane that separates two classes. But what if one line is not enough?\n",
+        "\n",
+        "Consider this classic XOR-like problem: you have four data points, and the two classes are arranged so that no single straight line can separate them.\n",
+        "\n",
+        "| Point | Class |\n",
+        "|-------|-------|\n",
+        "| (0, 0) | Red (0) |\n",
+        "| (0, 1) | Blue (1) |\n",
+        "| (1, 0) | Blue (1) |\n",
+        "| (1, 1) | Red (0) |\n",
+        "\n",
+        "The red points sit at opposite corners of a square, and the blue points sit at the other two corners. You need **two** decision boundaries (two lines) to separate them correctly."
+      ],
+      "id": "8526df94"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "%config InlineBackend.figure_formats = ['svg']\n",
+        "\n",
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "from sklearn.datasets import make_blobs\n",
+        "\n",
+        "np.random.seed(3)"
+      ],
+      "id": "c301e7b4",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Let us plot this XOR problem with two decision boundary lines:"
+      ],
+      "id": "a8032010"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "%config InlineBackend.figure_formats = ['svg']\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(8, 6))\n",
+        "xmin, xmax = -0.2, 1.4\n",
+        "x_line = np.arange(xmin, xmax, 0.1)\n",
+        "\n",
+        "# Data points from two classes\n",
+        "ax.scatter(0, 0, color=\"r\", s=100, zorder=5)\n",
+        "ax.scatter(0, 1, color=\"b\", s=100, zorder=5)\n",
+        "ax.scatter(1, 0, color=\"b\", s=100, zorder=5)\n",
+        "ax.scatter(1, 1, color=\"r\", s=100, zorder=5)\n",
+        "\n",
+        "ax.set_xlim([xmin, xmax])\n",
+        "ax.set_ylim([-0.1, 1.1])\n",
+        "ax.set_xlabel('$x_1$')\n",
+        "ax.set_ylabel('$x_2$')\n",
+        "ax.set_title('XOR Problem: Two Lines Needed', fontsize=12, color='gray')\n",
+        "\n",
+        "# Two decision boundary lines\n",
+        "ax.plot(x_line, -1 * x_line + 1.5, color=\"black\", linestyle='--', label='Decision boundary 1')\n",
+        "ax.plot(x_line, -1 * x_line + 0.5, color=\"black\", linestyle='-.', label='Decision boundary 2')\n",
+        "ax.legend()\n",
+        "ax.grid(linestyle='--', alpha=0.4)\n",
+        "plt.show()"
+      ],
+      "id": "beb2236e",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "A single perceptron can only draw one line. To classify the XOR pattern correctly, we need at least two perceptrons in a hidden layer, each drawing its own line, and then a third perceptron in the output layer that combines their results.\n",
+        "\n",
+        "### Dataset\n",
+        "\n",
+        "Now let us generate a larger dataset with this same XOR structure. We use `make_blobs` from scikit-learn to create 400 data points in four clusters, arranged in an XOR pattern."
+      ],
+      "id": "660d551e"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "%config InlineBackend.figure_formats = ['svg']\n",
+        "\n",
+        "m = 400\n",
+        "centers = [[-1, 1], [1, 1], [1, -1], [-1, -1]]\n",
+        "X_raw, cluster_labels = make_blobs(\n",
+        "    n_samples=m,\n",
+        "    centers=centers,\n",
+        "    cluster_std=0.4,\n",
+        "    random_state=3\n",
+        ")\n",
+        "\n",
+        "# Assign labels in XOR pattern:\n",
+        "# Clusters 0 and 3 are class 0 (red)\n",
+        "# Clusters 1 and 2 are class 1 (blue)\n",
+        "Y_raw = np.array([0 if label in [0, 3] else 1 for label in cluster_labels])\n",
+        "\n",
+        "# Reshape for our neural network: X should be (2, m) and Y should be (1, m)\n",
+        "X = X_raw.T\n",
+        "Y = Y_raw.reshape(1, m)\n",
+        "\n",
+        "print(f\"Shape of X: {X.shape}\")\n",
+        "print(f\"Shape of Y: {Y.shape}\")\n",
+        "print(f\"Number of training examples: {m}\")"
+      ],
+      "id": "6a8e0c55",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "%config InlineBackend.figure_formats = ['svg']\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(8, 6))\n",
+        "colors = np.where(Y.ravel() == 0, '#CC0000', '#4682B4')\n",
+        "ax.scatter(X[0, :], X[1, :], c=colors, edgecolors='k', s=40)\n",
+        "ax.set_xlabel('$x_1$')\n",
+        "ax.set_ylabel('$x_2$')\n",
+        "ax.set_title('XOR-Pattern Dataset', fontsize=12, color='gray')\n",
+        "ax.grid(linestyle='--', alpha=0.4)\n",
+        "plt.show()"
+      ],
+      "id": "50a53720",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "You can see four clusters. The red points (class 0) are in the top-left and bottom-right, while the blue points (class 1) are in the top-right and bottom-left. No single straight line can separate these two classes.\n",
+        "\n",
+        "## 2. Neural Network Architecture\n",
+        "\n",
+        "### Network Structure\n",
+        "\n",
+        "Our two-layer neural network has:\n",
+        "\n",
+        "- **Input layer**: 2 features ($x_1$, $x_2$), so size $n_x = 2$\n",
+        "- **Hidden layer**: 2 neurons with sigmoid activation, so size $n_h = 2$\n",
+        "- **Output layer**: 1 neuron with sigmoid activation, so size $n_y = 1$\n",
+        "\n",
+        "Each hidden neuron draws one \"line\" through the data, and the output neuron combines them to make the final prediction.\n",
+        "\n",
+        "### Forward Propagation\n",
+        "\n",
+        "Forward propagation computes the output of the network given the input. The formulas are:\n",
+        "\n",
+        "$$Z^{[1]} = W^{[1]}X + b^{[1]}$$\n",
+        "\n",
+        "$$A^{[1]} = \\sigma(Z^{[1]})$$\n",
+        "\n",
+        "$$Z^{[2]} = W^{[2]}A^{[1]} + b^{[2]}$$\n",
+        "\n",
+        "$$A^{[2]} = \\sigma(Z^{[2]})$$\n",
+        "\n",
+        "where $\\sigma(z) = \\frac{1}{1 + e^{-z}}$ is the sigmoid function.\n",
+        "\n",
+        "Here:\n",
+        "\n",
+        "- $W^{[1]}$ has shape $(n_h, n_x) = (2, 2)$\n",
+        "- $b^{[1]}$ has shape $(n_h, 1) = (2, 1)$\n",
+        "- $W^{[2]}$ has shape $(n_y, n_h) = (1, 2)$\n",
+        "- $b^{[2]}$ has shape $(n_y, 1) = (1, 1)$\n",
+        "\n",
+        "### Cost Function\n",
+        "\n",
+        "We use the log loss (binary cross-entropy) cost function:\n",
+        "\n",
+        "$$J = -\\frac{1}{m}\\sum_{i=1}^{m}\\left[Y^{(i)}\\log(A^{[2](i)}) + (1-Y^{(i)})\\log(1-A^{[2](i)})\\right]$$\n",
+        "\n",
+        "This measures how far our predictions $A^{[2]}$ are from the true labels $Y$.\n",
+        "\n",
+        "### Backward Propagation\n",
+        "\n",
+        "To train the network, we compute how the cost changes with respect to each parameter. The derivative formulas are:\n",
+        "\n",
+        "$$dZ^{[2]} = A^{[2]} - Y$$\n",
+        "\n",
+        "$$dW^{[2]} = \\frac{1}{m} dZ^{[2]} (A^{[1]})^T$$\n",
+        "\n",
+        "$$db^{[2]} = \\frac{1}{m} \\sum dZ^{[2]}$$\n",
+        "\n",
+        "$$dZ^{[1]} = (W^{[2]})^T dZ^{[2]} \\cdot A^{[1]} \\cdot (1 - A^{[1]})$$\n",
+        "\n",
+        "$$dW^{[1]} = \\frac{1}{m} dZ^{[1]} X^T$$\n",
+        "\n",
+        "$$db^{[1]} = \\frac{1}{m} \\sum dZ^{[1]}$$\n",
+        "\n",
+        "where $\\cdot$ denotes element-wise multiplication in the $dZ^{[1]}$ formula. The term $A^{[1]} \\cdot (1 - A^{[1]})$ is the derivative of the sigmoid function.\n",
+        "\n",
+        "## 3. Implementation\n",
+        "\n",
+        "Now let us implement each piece step by step.\n",
+        "\n",
+        "### 3.1 Sigmoid Function\n",
+        "\n",
+        "The sigmoid function squashes any real number into the range (0, 1). It is used as the activation function in both layers."
+      ],
+      "id": "1a5286c6"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "\n",
+        "def sigmoid(z):\n",
+        "    return 1 / (1 + np.exp(-z))"
+      ],
+      "id": "fbd50666",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.2 Network Structure\n",
+        "\n",
+        "This helper function returns the sizes of each layer."
+      ],
+      "id": "8848186b"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "\n",
+        "def layer_sizes(X, Y):\n",
+        "    n_x = X.shape[0]  # input layer size (number of features)\n",
+        "    n_h = 2           # hidden layer size\n",
+        "    n_y = Y.shape[0]  # output layer size\n",
+        "    return (n_x, n_h, n_y)"
+      ],
+      "id": "9a24b7c5",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.3 Initialize Parameters\n",
+        "\n",
+        "We initialize weights to small random values (to break symmetry) and biases to zero."
+      ],
+      "id": "7511fbbf"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "\n",
+        "def initialize_parameters(n_x, n_h, n_y):\n",
+        "    W1 = np.random.randn(n_h, n_x) * 0.01\n",
+        "    b1 = np.zeros((n_h, 1))\n",
+        "    W2 = np.random.randn(n_y, n_h) * 0.01\n",
+        "    b2 = np.zeros((n_y, 1))\n",
+        "    return {\"W1\": W1, \"b1\": b1, \"W2\": W2, \"b2\": b2}"
+      ],
+      "id": "e0a50156",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Why multiply by 0.01? If the weights start too large, the sigmoid outputs will be near 0 or 1, where the gradient is almost zero. Small weights keep us in the \"active\" region of the sigmoid at the start of training.\n",
+        "\n",
+        "### 3.4 Forward Propagation\n",
+        "\n",
+        "This function computes the output of the network for all training examples at once using matrix multiplication."
+      ],
+      "id": "a221f9a6"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "\n",
+        "def forward_propagation(X, parameters):\n",
+        "    W1 = parameters[\"W1\"]\n",
+        "    b1 = parameters[\"b1\"]\n",
+        "    W2 = parameters[\"W2\"]\n",
+        "    b2 = parameters[\"b2\"]\n",
+        "    \n",
+        "    Z1 = np.dot(W1, X) + b1\n",
+        "    A1 = sigmoid(Z1)\n",
+        "    Z2 = np.dot(W2, A1) + b2\n",
+        "    A2 = sigmoid(Z2)\n",
+        "    \n",
+        "    cache = {\"Z1\": Z1, \"A1\": A1, \"Z2\": Z2, \"A2\": A2}\n",
+        "    return A2, cache"
+      ],
+      "id": "53cb31b7",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.5 Cost Function\n",
+        "\n",
+        "This computes the log loss across all training examples."
+      ],
+      "id": "e3c2375a"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "\n",
+        "def compute_cost(A2, Y):\n",
+        "    m = Y.shape[1]\n",
+        "    cost = -(1/m) * np.sum(Y * np.log(A2) + (1 - Y) * np.log(1 - A2))\n",
+        "    return float(np.squeeze(cost))"
+      ],
+      "id": "dd7d9582",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.6 Backward Propagation\n",
+        "\n",
+        "This function computes the gradients (partial derivatives) of the cost with respect to each parameter."
+      ],
+      "id": "0bb7bde1"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "\n",
+        "def backward_propagation(parameters, cache, X, Y):\n",
+        "    m = X.shape[1]\n",
+        "    W2 = parameters[\"W2\"]\n",
+        "    A1 = cache[\"A1\"]\n",
+        "    A2 = cache[\"A2\"]\n",
+        "    \n",
+        "    dZ2 = A2 - Y\n",
+        "    dW2 = (1/m) * np.dot(dZ2, A1.T)\n",
+        "    db2 = (1/m) * np.sum(dZ2, axis=1, keepdims=True)\n",
+        "    dZ1 = np.dot(W2.T, dZ2) * A1 * (1 - A1)\n",
+        "    dW1 = (1/m) * np.dot(dZ1, X.T)\n",
+        "    db1 = (1/m) * np.sum(dZ1, axis=1, keepdims=True)\n",
+        "    \n",
+        "    return {\"dW1\": dW1, \"db1\": db1, \"dW2\": dW2, \"db2\": db2}"
+      ],
+      "id": "9efd1f6c",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.7 Update Parameters\n",
+        "\n",
+        "Gradient descent updates each parameter by subtracting the learning rate times the gradient."
+      ],
+      "id": "66dbe24a"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "\n",
+        "def update_parameters(parameters, grads, learning_rate=1.2):\n",
+        "    parameters[\"W1\"] -= learning_rate * grads[\"dW1\"]\n",
+        "    parameters[\"b1\"] -= learning_rate * grads[\"db1\"]\n",
+        "    parameters[\"W2\"] -= learning_rate * grads[\"dW2\"]\n",
+        "    parameters[\"b2\"] -= learning_rate * grads[\"db2\"]\n",
+        "    return parameters"
+      ],
+      "id": "67c349d4",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.8 Full Model\n",
+        "\n",
+        "This function puts everything together: initialize, then loop through forward propagation, cost computation, backward propagation, and parameter updates."
+      ],
+      "id": "972f1d5a"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "\n",
+        "def nn_model(X, Y, n_h, num_iterations=10000, learning_rate=1.2, print_cost=False):\n",
+        "    np.random.seed(3)\n",
+        "    n_x, _, n_y = layer_sizes(X, Y)\n",
+        "    parameters = initialize_parameters(n_x, n_h, n_y)\n",
+        "    \n",
+        "    for i in range(num_iterations):\n",
+        "        A2, cache = forward_propagation(X, parameters)\n",
+        "        cost = compute_cost(A2, Y)\n",
+        "        grads = backward_propagation(parameters, cache, X, Y)\n",
+        "        parameters = update_parameters(parameters, grads, learning_rate)\n",
+        "        \n",
+        "        if print_cost and i % 1000 == 0:\n",
+        "            print(f\"Cost after iteration {i}: {cost:.4f}\")\n",
+        "    \n",
+        "    return parameters"
+      ],
+      "id": "bc56c77d",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 4. Training and Results\n",
+        "\n",
+        "### Training\n",
+        "\n",
+        "Let us train our neural network with 2 hidden neurons, a learning rate of 1.2, and 10,000 iterations."
+      ],
+      "id": "7723dd85"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "\n",
+        "parameters = nn_model(X, Y, n_h=2, num_iterations=10000, learning_rate=1.2, print_cost=True)"
+      ],
+      "id": "974a2734",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The cost decreases with each iteration, which means the network is learning.\n",
+        "\n",
+        "### Prediction Function\n",
+        "\n",
+        "To make predictions, we run forward propagation and threshold the output at 0.5."
+      ],
+      "id": "19329c8c"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "\n",
+        "def predict(parameters, X):\n",
+        "    A2, _ = forward_propagation(X, parameters)\n",
+        "    return (A2 > 0.5).astype(int)"
+      ],
+      "id": "3ac9b2af",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Decision Boundary\n",
+        "\n",
+        "Let us visualize the decision boundary that our trained network has learned."
+      ],
+      "id": "be272712"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "%config InlineBackend.figure_formats = ['svg']\n",
+        "\n",
+        "def plot_decision_boundary(parameters, X, Y):\n",
+        "    x_min, x_max = X[0, :].min() - 0.5, X[0, :].max() + 0.5\n",
+        "    y_min, y_max = X[1, :].min() - 0.5, X[1, :].max() + 0.5\n",
+        "    h = 0.01\n",
+        "    xx, yy = np.meshgrid(np.arange(x_min, x_max, h), np.arange(y_min, y_max, h))\n",
+        "    Z = predict(parameters, np.c_[xx.ravel(), yy.ravel()].T)\n",
+        "    Z = Z.reshape(xx.shape)\n",
+        "    \n",
+        "    fig, ax = plt.subplots(figsize=(8, 6))\n",
+        "    from matplotlib.colors import ListedColormap\n",
+        "    ax.contourf(xx, yy, Z, cmap=ListedColormap(['#FFCCCC', '#CCE5FF']), alpha=0.5)\n",
+        "    colors = np.where(Y.ravel() == 0, '#CC0000', '#4682B4')\n",
+        "    ax.scatter(X[0, :], X[1, :], c=colors, edgecolors='k', s=40)\n",
+        "    ax.set_xlabel('$x_1$')\n",
+        "    ax.set_ylabel('$x_2$')\n",
+        "    ax.set_title('Decision Boundary', fontsize=12, color='gray')\n",
+        "    plt.show()\n",
+        "\n",
+        "plot_decision_boundary(parameters, X, Y)"
+      ],
+      "id": "723db06e",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Accuracy\n",
+        "\n",
+        "Let us compute the accuracy of our trained model on the training data."
+      ],
+      "id": "4a4803c3"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "#| echo: true\n",
+        "\n",
+        "predictions = predict(parameters, X)\n",
+        "accuracy = np.mean(predictions == Y) * 100\n",
+        "print(f\"Accuracy: {accuracy:.2f}%\")"
+      ],
+      "id": "343ef9d9",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The neural network with just two hidden neurons can learn the XOR-pattern decision boundary that a single perceptron never could. This is the power of adding layers to a network: each layer can learn increasingly complex features of the data."
+      ],
+      "id": "b3e593f3"
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3 (ipykernel)",
+      "path": "/home/parallels/website/.venv/share/jupyter/kernels/python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}

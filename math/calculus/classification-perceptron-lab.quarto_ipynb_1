@@ -1,0 +1,530 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"Lab: Classification with a Perceptron\"\n",
+        "description: \"In this lab, we will implement a single-perceptron neural network for binary classification. This is the companion lab to the Classification with a...\"\n",
+        "date: \"2026-06-15\"\n",
+        "difficulty: 3\n",
+        "order: 15\n",
+        "categories: [calculus]\n",
+        "---\n",
+        "\n",
+        "In this lab, we will implement a single-perceptron neural network for binary classification. This is the companion lab to the [Classification with a Perceptron](classification-perceptron.qmd) theory page. We will reuse the same building blocks from the [Regression with a Perceptron lab](perceptron-regression-lab.qmd), but with two key changes: the sigmoid activation function and the log loss cost function."
+      ],
+      "id": "537f1fbc"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "from matplotlib import colors\n",
+        "from sklearn.datasets import make_blobs\n",
+        "\n",
+        "np.random.seed(3)"
+      ],
+      "id": "888f9cf0",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Part 1. A Simple Classification Problem\n",
+        "\n",
+        "We start with a tiny dataset of 30 training examples. Each example has two binary features ($x_1, x_2 \\in \\{0, 1\\}$). The classification rule is: the label is 1 (red class) if $x_1 = 0$ AND $x_2 = 1$. Otherwise, the label is 0 (blue class)."
+      ],
+      "id": "94b94926"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "m = 30\n",
+        "\n",
+        "X = np.random.randint(0, 2, (2, m))\n",
+        "Y = np.logical_and(X[0] == 0, X[1] == 1).astype(int).reshape((1, m))\n",
+        "\n",
+        "print(\"Shape of X:\", X.shape)\n",
+        "print(\"Shape of Y:\", Y.shape)\n",
+        "print(f\"We have m = {X.shape[1]} training examples.\")\n",
+        "print(f\"Number of class 1 (red): {Y.sum()}\")\n",
+        "print(f\"Number of class 0 (blue): {m - Y.sum()}\")"
+      ],
+      "id": "8ccc36dd",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Let us visualize the data. The blue points belong to class 0 and the red points belong to class 1."
+      ],
+      "id": "12970b2d"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "%config InlineBackend.figure_formats = ['svg']\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(6, 5))\n",
+        "\n",
+        "# Plot each class\n",
+        "for i in range(m):\n",
+        "    color = '#CC0000' if Y[0, i] == 1 else '#4682B4'\n",
+        "    ax.scatter(X[0, i], X[1, i], color=color, s=100, zorder=5)\n",
+        "\n",
+        "ax.set_xlabel(r'$x_1$', fontsize=12)\n",
+        "ax.set_ylabel(r'$x_2$', fontsize=12)\n",
+        "ax.set_title('Simple Binary Classification', fontsize=12, color='gray')\n",
+        "ax.set_xlim([-0.2, 1.4])\n",
+        "ax.set_ylim([-0.1, 1.1])\n",
+        "ax.grid(linestyle='--', alpha=0.4)\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "2eefd5c7",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "We can see that only the point at $(0, 1)$ is red. A good decision boundary would be a line that separates this point from the others. We will train a perceptron with sigmoid activation to find that line automatically.\n",
+        "\n",
+        "## Part 2. Defining the Sigmoid Activation\n",
+        "\n",
+        "The sigmoid function maps any real number to the interval $(0, 1)$.\n",
+        "\n",
+        "$$\\sigma(z) = \\frac{1}{1 + e^{-z}}$$"
+      ],
+      "id": "7c4d30d0"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def sigmoid(z):\n",
+        "    return 1 / (1 + np.exp(-z))\n",
+        "\n",
+        "print(\"sigmoid(-2) =\", sigmoid(-2))\n",
+        "print(\"sigmoid(0) =\", sigmoid(0))\n",
+        "print(\"sigmoid(3.5) =\", sigmoid(3.5))"
+      ],
+      "id": "942ea070",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "It works element-wise on NumPy arrays, which makes it convenient for vectorized operations.\n",
+        "\n",
+        "## Part 3. Building the Neural Network\n",
+        "\n",
+        "The structure is identical to the regression perceptron, with one difference in forward propagation: after computing the linear combination $Z = WX + b$, we apply the sigmoid to get the output $A = \\sigma(Z)$.\n",
+        "\n",
+        "### Defining Network Structure"
+      ],
+      "id": "2fee6083"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def layer_sizes(X, Y):\n",
+        "    n_x = X.shape[0]\n",
+        "    n_y = Y.shape[0]\n",
+        "    return (n_x, n_y)\n",
+        "\n",
+        "(n_x, n_y) = layer_sizes(X, Y)\n",
+        "print(\"Input layer size: n_x =\", n_x)\n",
+        "print(\"Output layer size: n_y =\", n_y)"
+      ],
+      "id": "7a56da6d",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Initializing Parameters"
+      ],
+      "id": "8b05b692"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def initialize_parameters(n_x, n_y):\n",
+        "    W = np.random.randn(n_y, n_x) * 0.01\n",
+        "    b = np.zeros((n_y, 1))\n",
+        "    return {\"W\": W, \"b\": b}\n",
+        "\n",
+        "parameters = initialize_parameters(n_x, n_y)\n",
+        "print(\"W =\", parameters[\"W\"])\n",
+        "print(\"b =\", parameters[\"b\"])"
+      ],
+      "id": "cf495da9",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Forward Propagation (with Sigmoid)\n",
+        "\n",
+        "This is the key difference from the regression lab. Instead of outputting $Z$ directly, we pass it through the sigmoid.\n",
+        "\n",
+        "$$Z = WX + b$$\n",
+        "$$A = \\sigma(Z)$$"
+      ],
+      "id": "f8fe1697"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def forward_propagation(X, parameters):\n",
+        "    W = parameters[\"W\"]\n",
+        "    b = parameters[\"b\"]\n",
+        "    Z = np.matmul(W, X) + b\n",
+        "    A = sigmoid(Z)\n",
+        "    return A\n",
+        "\n",
+        "A = forward_propagation(X, parameters)\n",
+        "print(\"First 5 outputs:\", A[0, :5])"
+      ],
+      "id": "8c6d4660",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Computing Cost (Log Loss)\n",
+        "\n",
+        "For classification, we use the log loss (binary cross-entropy) instead of squared error.\n",
+        "\n",
+        "$$\\mathcal{L}(W, b) = -\\frac{1}{m}\\sum_{i=1}^{m}\\left[y^{(i)}\\ln(a^{(i)}) + (1 - y^{(i)})\\ln(1 - a^{(i)})\\right]$$"
+      ],
+      "id": "a8dc23ba"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def compute_cost(A, Y):\n",
+        "    m = Y.shape[1]\n",
+        "    logprobs = -np.multiply(np.log(A), Y) - np.multiply(np.log(1 - A), 1 - Y)\n",
+        "    cost = (1 / m) * np.sum(logprobs)\n",
+        "    return cost\n",
+        "\n",
+        "print(\"Initial cost:\", compute_cost(A, Y))"
+      ],
+      "id": "4f0b1228",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Backward Propagation\n",
+        "\n",
+        "As derived in the theory page, the gradients simplify beautifully thanks to the sigmoid and log loss working together:\n",
+        "\n",
+        "$$\\frac{\\partial \\mathcal{L}}{\\partial W} = \\frac{1}{m}(A - Y)X^T$$\n",
+        "\n",
+        "$$\\frac{\\partial \\mathcal{L}}{\\partial b} = \\frac{1}{m}\\sum_{i=1}^{m}(a^{(i)} - y^{(i)})$$"
+      ],
+      "id": "0dc5aaa5"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def backward_propagation(A, X, Y):\n",
+        "    m = X.shape[1]\n",
+        "    dZ = A - Y\n",
+        "    dW = (1 / m) * np.dot(dZ, X.T)\n",
+        "    db = (1 / m) * np.sum(dZ, axis=1, keepdims=True)\n",
+        "    return {\"dW\": dW, \"db\": db}\n",
+        "\n",
+        "grads = backward_propagation(A, X, Y)\n",
+        "print(\"dW =\", grads[\"dW\"])\n",
+        "print(\"db =\", grads[\"db\"])"
+      ],
+      "id": "42cfa581",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Updating Parameters"
+      ],
+      "id": "fae300c5"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def update_parameters(parameters, grads, learning_rate=1.2):\n",
+        "    W = parameters[\"W\"]\n",
+        "    b = parameters[\"b\"]\n",
+        "    dW = grads[\"dW\"]\n",
+        "    db = grads[\"db\"]\n",
+        "\n",
+        "    W = W - learning_rate * dW\n",
+        "    b = b - learning_rate * db\n",
+        "\n",
+        "    return {\"W\": W, \"b\": b}"
+      ],
+      "id": "3b13f466",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Putting It All Together"
+      ],
+      "id": "0dd15d6e"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def nn_model(X, Y, num_iterations=50, learning_rate=1.2, print_cost=False):\n",
+        "    n_x, n_y = layer_sizes(X, Y)\n",
+        "    parameters = initialize_parameters(n_x, n_y)\n",
+        "\n",
+        "    for i in range(num_iterations):\n",
+        "        A = forward_propagation(X, parameters)\n",
+        "        cost = compute_cost(A, Y)\n",
+        "        grads = backward_propagation(A, X, Y)\n",
+        "        parameters = update_parameters(parameters, grads, learning_rate)\n",
+        "\n",
+        "        if print_cost:\n",
+        "            print(f\"Cost after iteration {i}: {cost:.6f}\")\n",
+        "\n",
+        "    return parameters"
+      ],
+      "id": "688d94e7",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Training"
+      ],
+      "id": "20e29a50"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "parameters = nn_model(X, Y, num_iterations=50, learning_rate=1.2, print_cost=True)\n",
+        "print(\"W =\", parameters[\"W\"])\n",
+        "print(\"b =\", parameters[\"b\"])"
+      ],
+      "id": "d533d9b4",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The cost decreases steadily, which means the model is learning. After training, we can make predictions by thresholding the sigmoid output at 0.5.\n",
+        "\n",
+        "### Making Predictions"
+      ],
+      "id": "17c68518"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def predict(X, parameters):\n",
+        "    A = forward_propagation(X, parameters)\n",
+        "    predictions = (A > 0.5).astype(int)\n",
+        "    return predictions\n",
+        "\n",
+        "X_pred = np.array([[1, 1, 0, 0],\n",
+        "                   [0, 1, 0, 1]])\n",
+        "Y_pred = predict(X_pred, parameters)\n",
+        "\n",
+        "print(f\"Inputs (columns):\\n{X_pred}\")\n",
+        "print(f\"Predictions:\\n{Y_pred}\")"
+      ],
+      "id": "45041570",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "The model correctly identifies that only the input $(0, 1)$ belongs to class 1.\n",
+        "\n",
+        "## Part 4. Performance on a Larger Dataset\n",
+        "\n",
+        "Now let us test our model on a more realistic dataset with many more points, generated using `make_blobs`."
+      ],
+      "id": "76819bf4"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "m_larger = 500\n",
+        "X_larger, Y_larger_flat = make_blobs(n_samples=m_larger, centers=[[2, 2], [-2, -2]],\n",
+        "                                      cluster_std=1.2, random_state=42)\n",
+        "X_larger = X_larger.T\n",
+        "Y_larger = Y_larger_flat.reshape((1, m_larger))\n",
+        "\n",
+        "print(\"Shape of X_larger:\", X_larger.shape)\n",
+        "print(\"Shape of Y_larger:\", Y_larger.shape)"
+      ],
+      "id": "67f4bf93",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots(figsize=(7, 6))\n",
+        "scatter = ax.scatter(X_larger[0], X_larger[1], c=Y_larger_flat,\n",
+        "                     cmap='coolwarm', alpha=0.7, edgecolors='none')\n",
+        "ax.set_xlabel(r'$x_1$', fontsize=12)\n",
+        "ax.set_ylabel(r'$x_2$', fontsize=12)\n",
+        "ax.set_title('Larger Classification Dataset', fontsize=12, color='gray')\n",
+        "ax.grid(linestyle='--', alpha=0.4)\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "691f0950",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Training on the Larger Dataset"
+      ],
+      "id": "6ac1ab28"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "parameters_larger = nn_model(X_larger, Y_larger, num_iterations=100,\n",
+        "                             learning_rate=0.5, print_cost=True)\n",
+        "print(\"W =\", parameters_larger[\"W\"])\n",
+        "print(\"b =\", parameters_larger[\"b\"])"
+      ],
+      "id": "803b2bf2",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Visualizing the Decision Boundary"
+      ],
+      "id": "38de61ca"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots(figsize=(7, 6))\n",
+        "\n",
+        "# Plot data points\n",
+        "scatter = ax.scatter(X_larger[0], X_larger[1], c=Y_larger_flat,\n",
+        "                     cmap='coolwarm', alpha=0.6, edgecolors='none')\n",
+        "\n",
+        "# Plot decision boundary: W[0]*x1 + W[1]*x2 + b = 0\n",
+        "W = parameters_larger[\"W\"]\n",
+        "b_val = parameters_larger[\"b\"][0, 0]\n",
+        "x1_range = np.linspace(X_larger[0].min() - 1, X_larger[0].max() + 1, 100)\n",
+        "# W[0,0]*x1 + W[0,1]*x2 + b = 0  =>  x2 = -(W[0,0]*x1 + b) / W[0,1]\n",
+        "x2_boundary = -(W[0, 0] * x1_range + b_val) / W[0, 1]\n",
+        "ax.plot(x1_range, x2_boundary, color='black', linewidth=2, label='Decision boundary')\n",
+        "\n",
+        "ax.set_xlabel(r'$x_1$', fontsize=12)\n",
+        "ax.set_ylabel(r'$x_2$', fontsize=12)\n",
+        "ax.set_title('Trained Classification Perceptron', fontsize=12, color='gray')\n",
+        "ax.set_xlim([X_larger[0].min() - 1, X_larger[0].max() + 1])\n",
+        "ax.set_ylim([X_larger[1].min() - 1, X_larger[1].max() + 1])\n",
+        "ax.legend(fontsize=11)\n",
+        "ax.grid(linestyle='--', alpha=0.4)\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "22e11343",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### Accuracy"
+      ],
+      "id": "a0bdf469"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "predictions = predict(X_larger, parameters_larger)\n",
+        "accuracy = np.mean(predictions == Y_larger) * 100\n",
+        "print(f\"Accuracy on training set: {accuracy:.1f}%\")"
+      ],
+      "id": "98a02cd6",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "With a single perceptron and gradient descent using log loss, we can solve linearly separable classification problems. The same architecture and code from the regression lab carries over with minimal changes: replace the identity activation with sigmoid, and replace squared error with log loss. The clean gradient formulas $(\\hat{y} - y) \\cdot x_i$ make implementation straightforward."
+      ],
+      "id": "59fa9333"
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3 (ipykernel)",
+      "path": "/home/parallels/website/.venv/share/jupyter/kernels/python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}
