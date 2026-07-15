@@ -125,6 +125,7 @@
 
     db.ref("pageviews").once("value").then(function (snap) {
       var counts = snap.val() || {};
+      // Only pages with real recorded views, ranked highest-first, capped at 5.
       var ranked = Object.keys(counts)
         .filter(function (key) { return pageMap[key]; })
         .map(function (key) { return { key: key, count: counts[key], info: pageMap[key] }; })
