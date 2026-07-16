@@ -7,6 +7,34 @@
 
 local WPM = 150
 
+-- Group an integer with thousands separators: 5300 -> "5,300"
+local function commafy(n)
+  local s = tostring(n)
+  local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+  return (out:gsub("^,", ""))
+end
+
+-- JS that stamps the weekday onto the Published date and, when an order is
+-- given, sets the Published cell's grid order. Shared by index and content pages.
+local function published_js(order)
+  local order_line = order and ('if (pw) pw.style.order = "' .. order .. '";') or ""
+  return [[
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      ]] .. order_line .. [[
+      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+]]
+end
+
 -- Difficulty multipliers: how much longer dense content takes to absorb
 local DIFFICULTY_MULTIPLIERS = {
   [1] = 0.85,
@@ -300,6 +328,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var div = document.createElement("div");
     div.innerHTML = '<div class="quarto-title-meta-heading">Total Reading Time</div><div class="quarto-title-meta-contents"><p>]] .. time_label .. [[</p></div>';
     meta.appendChild(div);
+]] .. published_js(nil) .. [[
   }
 });
 </script>
@@ -310,7 +339,8 @@ document.addEventListener("DOMContentLoaded", function () {
   end
 
   -- Non-index pages: compute reading time from Pandoc AST
-  local word_minutes = math.ceil(count_words(doc.blocks) / WPM)
+  local words = count_words(doc.blocks)
+  local word_minutes = math.ceil(words / WPM)
   local questions, figures, code_minutes, other_minutes = count_extras_from_source(basename)
 
   local extra = 0
@@ -351,12 +381,25 @@ document.addEventListener("DOMContentLoaded", function () {
     end
     difficulty_html = [[
     var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
     diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p>]] .. dots .. [[</p></div>';
     meta.appendChild(diffDiv);
 ]]
   end
 
-  -- Inject reading time and difficulty into title meta
+  -- Word-count label for the Length cell (rounded to the nearest 100 once past 1k)
+  local display_words = words
+  if words >= 1000 then display_words = math.floor((words + 50) / 100) * 100 end
+  local words_label = "~" .. commafy(display_words) .. " words"
+  local length_html = [[
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>]] .. words_label .. [[</p></div>';
+    meta.appendChild(lenDiv);
+]]
+
+  -- Inject reading time, length, difficulty and the weekday-stamped date.
+  -- Grid order: Length (1) · Published (2) · Reading Time (3) · Difficulty (4).
   local label = "~" .. minutes .. " min read"
   local tooltip = "Estimated based on " .. WPM .. " words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level."
   local script = pandoc.RawBlock("html", [[
@@ -365,9 +408,10 @@ document.addEventListener("DOMContentLoaded", function () {
   var meta = document.querySelector(".quarto-title-meta");
   if (meta) {
     var div = document.createElement("div");
+    div.style.order = "3";
     div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>]] .. label .. [[ <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">]] .. tooltip .. [[</span></span></p></div>';
     meta.appendChild(div);
-]] .. difficulty_html .. [[
+]] .. length_html .. difficulty_html .. published_js("2") .. [[
   }
 });
 </script>

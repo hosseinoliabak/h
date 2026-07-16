@@ -5,6 +5,8 @@ date: "2026-06-23"
 difficulty: 2
 order: 10
 categories: [probability]
+fig-format: png   # pandas plots over the 2199-row dataset balloon to ~24 MB as SVG; keep raster here
+fig-dpi: 150      # default ~100 dpi looks blurry next to the site's SVG pages
 ---
 
 Welcome to the Pandas tutorial lab. This is the first notebook of the exploratory data analysis (EDA) series, where you will get hands-on practice applying skills from the course to a real data problem. Here you will see and try out some basics of Pandas and get familiar with useful functions that you will use across other labs and assignments.
@@ -56,6 +58,8 @@ In a DataFrame, data is stored in a two-dimensional grid (rows and columns). The
 #| echo: true
 df.index
 ```
+
+As you can see, the index is a range of numbers between 0 (inclusive) and 2199 (not inclusive). Now look at the column names.
 
 ```{python}
 #| echo: true
@@ -140,6 +144,18 @@ Passing a slice selects matching rows and returns a DataFrame with all columns.
 df[2:5]
 ```
 
+### Iterating Over Rows
+
+If you ever need to walk through the DataFrame row by row, you can use the `.iterrows()` method. For each row it gives you a pair: the index of the row and the row itself as a `Series`. The cell below uses `next()` to pull out just the first row.
+
+```{python}
+#| echo: true
+index, row = next(df.iterrows())
+row
+```
+
+Keep in mind that looping over rows one at a time is slow for large datasets. Pandas is designed so that most operations (like the column arithmetic you will see later in this lab) work on entire columns at once, so you rarely need an explicit loop.
+
 ### Boolean Indexing
 
 What if you are interested only in data from a certain year, or where a value in a column is greater than some threshold? You can use boolean indexing.
@@ -174,18 +190,72 @@ Keep in mind that not all summary statistics always make sense. You have data fo
 
 ### DataFrame.plot()
 
-If you want to plot data, you can use `df.plot()`. By default it uses the index as the x-axis and plots all numeric columns as y-axes.
+If you want to plot data, you can use `df.plot()`. By default it uses the index as the x-axis and plots all numeric columns as y-axes. Run the cell below and look closely at the result before reading on.
 
 ```{python}
 #| echo: true
 df.plot()
 ```
 
-In this case, the plot is not very useful because the index has no specific meaning, and column values differ greatly (years around 2000 vs. other columns with much lower values).
+At first glance something seems wrong: the legend lists ten columns, but you can only see about three lines. Where did the rest go?
+
+Look at the y-axis. It has to stretch all the way up to about 2022 to fit the `year` column, and that choice of scale hides almost everything else:
+
+- The blue band at the top is `year`. It looks fuzzy because the years 2005–2022 repeat over and over, once for each country.
+- The purple line hovering just above zero is `healthy_life_expectancy_at_birth`, with values roughly between 7 and 75.
+- All eight remaining columns (life ladder, log GDP, social support, and so on) have values between about $-0.3$ and $12$. On an axis that reaches 2022, that entire range is squeezed into a couple of pixels, so those eight lines are drawn right on top of each other and look like a single flat line at zero.
+
+So the plot is not very useful here: the index has no specific meaning, and the columns live on wildly different scales. But it teaches an important lesson — before plotting everything at once, check whether your columns are even comparable. Try setting some parameters of the `.plot()` method to see what it allows you to do (for example, `logy=True` or a list of columns via `y=...`). You can find all the options in the [DataFrame.plot documentation](https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.plot.html).
+
+### Scatter Plots
+
+Pandas can produce genuinely useful plots — you just need to choose the variables yourself. The cell below draws a scatter plot with `kind='scatter'` and specifically chosen x and y variables. On the x-axis there is the logarithm of GDP per capita (measuring the wealth of a country), and on the y-axis there is the life ladder — an estimate of self-assessed life quality on a scale of 1 to 10, taken from surveys.
+
+```{python}
+#| echo: true
+df.plot(kind='scatter', x='log_gdp_per_capita', y='life_ladder')
+```
+
+You can see that there is some sort of trend between the wealth of a country and the happiness of its population: wealthier countries tend to have higher life ladder scores. You will explore this kind of relationship much more deeply in later sections on [covariance and correlation](covariance-correlation.qmd).
+
+### Coloring the Points
+
+Sometimes it is very insightful to color the points to highlight the ones you are most interested in. One way to do this in plain Pandas is to build a color for every row yourself. The cell below creates a dictionary mapping a few chosen countries to colors, then uses a list comprehension to look up the color for each row — `cmap.get(c, 'yellow')` returns the country's color if it is in the dictionary, and `'yellow'` otherwise.
+
+```{python}
+#| echo: true
+# Create a dictionary to map the country names to colors
+cmap = {
+    'Brazil': 'Green',
+    'Slovenia': 'Orange',
+    'India': 'purple'
+}
+
+df.plot(
+    kind='scatter',
+    x='log_gdp_per_capita',
+    y='life_ladder',
+    c=[cmap.get(c, 'yellow') for c in df.country_name],  # Set the colors
+    s=2  # Set the size of the points
+)
+```
+
+Even though higher GDP generally means a higher value on the life ladder, this is not a universal truth. Compare Slovenia (orange) with Brazil (green): people in Brazil earn less, but through the years they report being on average happier than Slovenians.
+
+### Histograms
+
+Another very useful thing you can do with plots is visualize the distribution of your data: which values are common and which are rare. You will study distributions in detail in later sections, but you can already plot a histogram with `df.hist()`. Note that if you call it on the whole DataFrame, it draws a histogram for every numeric column — so it is often better to name the column you want.
+
+```{python}
+#| echo: true
+df.hist("life_ladder")
+```
+
+What you see is the distribution of values in the `life_ladder` column. What do you think about it at first glance — are people generally happy with their quality of life? Be careful before answering: each value here is not a single person's answer, but an already aggregated score for a whole country in a given year. To answer the question properly, you would need to dig deeper into where each value comes from.
 
 ### Seaborn Scatterplot
 
-A more useful approach is to create a scatter plot with specifically chosen variables. Below, you will plot log GDP per capita on the x-axis and the life ladder (self-assessed life quality on a scale of 1 to 10) on the y-axis, filtering for selected countries and coloring by country name.
+Beyond what Pandas offers, you can use external libraries to easily produce more advanced plots. One such library is [Seaborn](https://seaborn.pydata.org/), which you already imported at the beginning of this lab as `sns`. Remember the manual color dictionary you built above? Seaborn does the same job in one line with the `hue` parameter — and it adds a legend automatically. Below, you filter for a few selected countries and color the points by country name.
 
 ```{python}
 #| echo: true
@@ -197,17 +267,23 @@ df_selected = df[df["country_name"].isin(countries)]
 sns.scatterplot(data=df_selected, x="log_gdp_per_capita", y="life_ladder", hue="country_name")
 ```
 
-You can see that there is some sort of trend between the wealth of a country and the happiness of its population. Wealthier countries tend to have higher life ladder scores.
+Each country forms its own little cloud: within one country, wealth changes slowly over the years while happiness moves around it. Comparing the clouds shows the same overall trend as before — wealthier countries tend to sit higher on the life ladder.
 
 ### Pairplot
 
-You can also use `sns.pairplot()` to visualize pairwise relationships between all numeric variables in the DataFrame. This can be useful for initial exploration, though it may take a while with larger datasets.
+You can also use `sns.pairplot()` to visualize pairwise relationships between all numeric variables in the DataFrame. With this kind of plot, you see a scatter plot for each pair of columns. On the diagonal (where a column would be plotted against itself), you get a histogram of that column instead — a scatter plot there would only show a straight line. This can be very useful for initial exploration, though it may take a while with larger datasets.
 
 ```{python}
 #| echo: true
 #| warning: false
+# The pairplot is a 10x10 grid, so render it at standard dpi to keep the file size down
+import matplotlib
+matplotlib.rcParams["figure.dpi"] = 96
+
 sns.pairplot(df)
 ```
+
+The scatter plots and histograms have very different shapes across columns. Some pairs form elongated clouds (a hint that the two variables may be correlated), others look like shapeless blobs. Think about what insights you could get from this kind of visualization — which pairs of variables would you investigate first?
 
 ## Operations on Columns
 
