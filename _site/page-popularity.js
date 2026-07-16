@@ -125,15 +125,19 @@
 
     db.ref("pageviews").once("value").then(function (snap) {
       var counts = snap.val() || {};
-      // Only pages with real recorded views, ranked highest-first, capped at 5.
-      var ranked = Object.keys(counts)
-        .filter(function (key) { return pageMap[key]; })
-        .map(function (key) { return { key: key, count: counts[key], info: pageMap[key] }; })
-        .sort(function (a, b) { return b.count - a.count; })
+      // Always show TOP_N rows: real view-counts ranked highest-first, then
+      // pad the remaining slots with not-yet-viewed sections (shown with an
+      // em-dash). No fabricated counts — padding rows genuinely have 0 views.
+      var ranked = Object.keys(pageMap)
+        .map(function (key) { return { key: key, count: counts[key] || 0, info: pageMap[key] }; })
+        .sort(function (a, b) {
+          if (b.count !== a.count) return b.count - a.count;
+          return a.info.label.localeCompare(b.info.label);
+        })
         .slice(0, TOP_N);
 
       if (ranked.length === 0) {
-        container.innerHTML = '<p class="empty-state">No views recorded yet.</p>';
+        container.innerHTML = '<p class="empty-state">No sections to show yet.</p>';
         return;
       }
 
@@ -146,7 +150,10 @@
         a.textContent = item.info.label;
         var count = document.createElement("span");
         count.className = "top-pages-count";
-        count.textContent = item.count + (item.count === 1 ? " view" : " views");
+        count.textContent = item.count > 0
+          ? item.count + (item.count === 1 ? " view" : " views")
+          : "—";
+        if (item.count === 0) count.classList.add("top-pages-count-none");
         li.appendChild(a);
         li.appendChild(count);
         ul.appendChild(li);
