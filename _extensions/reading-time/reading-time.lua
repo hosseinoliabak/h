@@ -6,6 +6,7 @@
 -- and displays a difficulty indicator.
 
 local WPM = 150
+local MAX_MINUTES = 180  -- cap: no single page is billed above 3 hours
 
 -- Group an integer with thousands separators: 5300 -> "5,300"
 local function commafy(n)
@@ -124,14 +125,20 @@ local function count_extras_from_source(basename)
   local code_lines = 0
   local in_code = false
   local is_hidden = false
+  local in_collapsed = false  -- code inside collapse="true" callouts is opt-in; do not bill it
   for line in content:gmatch("[^\n]+") do
+    if not in_code and line:match('^:::.*collapse="true"') then
+      in_collapsed = true
+    elseif not in_code and in_collapsed and line:match("^:::%s*$") then
+      in_collapsed = false
+    end
     if line:match("^```{python}") or line:match("^```{r}") then
       in_code = true; is_hidden = false
     elseif line:match("^```") and in_code then
       in_code = false; is_hidden = false
     elseif in_code then
       if line:match("#|%s*echo:%s*false") then is_hidden = true
-      elseif not is_hidden then code_lines = code_lines + 1 end
+      elseif not is_hidden and not in_collapsed then code_lines = code_lines + 1 end
     end
   end
   local code_minutes = math.ceil(code_lines / 4) * 2
@@ -360,6 +367,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   local multiplier = DIFFICULTY_MULTIPLIERS[difficulty] or 1.0
   local minutes = math.ceil(raw_minutes * multiplier)
+  if minutes > MAX_MINUTES then minutes = MAX_MINUTES end
 
   -- Save to shared JSON (single source of truth)
   -- Only save if we are in a subdirectory (not at project root)
@@ -401,7 +409,7 @@ document.addEventListener("DOMContentLoaded", function () {
   -- Inject reading time, length, difficulty and the weekday-stamped date.
   -- Grid order: Length (1) · Published (2) · Reading Time (3) · Difficulty (4).
   local label = "~" .. minutes .. " min read"
-  local tooltip = "Estimated based on " .. WPM .. " words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level."
+  local tooltip = "Estimated based on " .. WPM .. " words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level and capped at 3 hours."
   local script = pandoc.RawBlock("html", [[
 <script>
 document.addEventListener("DOMContentLoaded", function () {
