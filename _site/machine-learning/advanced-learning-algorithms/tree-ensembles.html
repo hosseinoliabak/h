@@ -1,0 +1,2422 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-07-17">
+<meta name="description" content="Tree ensembles from sampling with replacement to random forests and XGBoost, plus when to choose decision trees versus neural networks.">
+
+<title>Tree Ensembles – Hossein’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../machine-learning/advanced-learning-algorithms/lab-decision-trees.html" rel="next">
+<link href="../../machine-learning/advanced-learning-algorithms/decision-tree-learning.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-285f71f7c7ab2eebc0170294332e2983.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="https://cdn.jsdelivr.net/npm/requirejs@2.3.6/require.min.js" integrity="sha384-c9c+LnTbwQ3aujuU7ULEPVvgLs+Fn6fJUvIGTsuu1ZcCf11fiEubah0ttpca4ntM sha384-6V1/AdqZRWk1KAlWbKBlGhN7VG4iE/yAZcO6NZPMF8od0vukrvr0tg4qY6NSrItx" crossorigin="anonymous"></script>
+
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="Tree Ensembles – Hossein’s Notes">
+<meta property="og:description" content="Tree ensembles from sampling with replacement to random forests and XGBoost, plus when to choose decision trees versus neural networks.">
+<meta property="og:image" content="https://h.oliabak.com/machine-learning/advanced-learning-algorithms/tree-ensembles_files/figure-html/cell-3-output-1.svg">
+<meta property="og:site_name" content="Hossein’s Notes">
+<meta name="twitter:title" content="Tree Ensembles – Hossein’s Notes">
+<meta name="twitter:description" content="Tree ensembles from sampling with replacement to random forests and XGBoost, plus when to choose decision trees versus neural networks.">
+<meta name="twitter:image" content="https://h.oliabak.com/machine-learning/advanced-learning-algorithms/tree-ensembles_files/figure-html/cell-3-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Hossein’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-agentic-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Agentic AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-agentic-ai">    
+        <li>
+    <a class="dropdown-item" href="../../agentic/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../agentic/frameworks.html">
+ <span class="dropdown-text">Frameworks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../agentic/agent-architecture.html">
+ <span class="dropdown-text">Agent Architecture</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../agentic/async-io.html">
+ <span class="dropdown-text">Async I/O</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-viewer.html">
+ <span class="dropdown-text">SVG Viewer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/graph.html">
+ <span class="dropdown-text">Function Grapher</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text Generator</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../machine-learning/advanced-learning-algorithms/tree-ensembles.html">Tree Ensembles</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Advanced Learning Algorithms</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/neural-networks-intuition.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Neural Networks Intuition</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/neural-network-model.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Neural Network Model</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/forward-propagation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Forward Propagation</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/tensorflow-implementation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">TensorFlow Implementation</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/neural-networks-in-numpy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Neural Networks in NumPy</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/lab-digit-recognition.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Handwritten Digit Recognition</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/training-neural-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Training Neural Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/activation-functions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Functions</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/multiclass-classification.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multiclass Classification</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/advanced-optimization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Additional Neural Network Concepts</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/lab-digit-recognition-multiclass.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Handwritten Digit Recognition (Multiclass)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/model-evaluation-and-selection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Model Evaluation and Selection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/bias-and-variance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bias and Variance</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/machine-learning-development-process.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Machine Learning Development Process</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/skewed-datasets.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Skewed Datasets: Precision, Recall, and the F1 Score</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/lab-advice-for-applying-ml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Advice for Applying Machine Learning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/decision-trees.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Decision Trees</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/decision-tree-learning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Decision Tree Learning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/tree-ensembles.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Tree Ensembles</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/lab-decision-trees.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Decision Trees</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#sensitivity-of-a-single-tree" id="toc-sensitivity-of-a-single-tree" class="nav-link active" data-scroll-target="#sensitivity-of-a-single-tree">Sensitivity of a Single Tree</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#voting-with-an-ensemble-of-trees" id="toc-voting-with-an-ensemble-of-trees" class="nav-link" data-scroll-target="#voting-with-an-ensemble-of-trees">Voting with an Ensemble of Trees</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#sampling-with-replacement" id="toc-sampling-with-replacement" class="nav-link" data-scroll-target="#sampling-with-replacement">Sampling with Replacement</a>
+  <ul class="collapse">
+  <li><a href="#building-a-new-training-set" id="toc-building-a-new-training-set" class="nav-link" data-scroll-target="#building-a-new-training-set">Building a New Training Set</a></li>
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#random-forest-algorithm" id="toc-random-forest-algorithm" class="nav-link" data-scroll-target="#random-forest-algorithm">Random Forest Algorithm</a>
+  <ul class="collapse">
+  <li><a href="#bagged-decision-trees" id="toc-bagged-decision-trees" class="nav-link" data-scroll-target="#bagged-decision-trees">Bagged Decision Trees</a></li>
+  <li><a href="#from-bagging-to-a-random-forest" id="toc-from-bagging-to-a-random-forest" class="nav-link" data-scroll-target="#from-bagging-to-a-random-forest">From Bagging to a Random Forest</a></li>
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#xgboost" id="toc-xgboost" class="nav-link" data-scroll-target="#xgboost">XGBoost</a>
+  <ul class="collapse">
+  <li><a href="#boosting" id="toc-boosting" class="nav-link" data-scroll-target="#boosting">Boosting</a></li>
+  <li><a href="#xgboost-in-practice" id="toc-xgboost-in-practice" class="nav-link" data-scroll-target="#xgboost-in-practice">XGBoost in Practice</a></li>
+  <li><a href="#review-questions-4" id="toc-review-questions-4" class="nav-link" data-scroll-target="#review-questions-4">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#when-to-use-decision-trees" id="toc-when-to-use-decision-trees" class="nav-link" data-scroll-target="#when-to-use-decision-trees">When to Use Decision Trees</a>
+  <ul class="collapse">
+  <li><a href="#case-for-decision-trees" id="toc-case-for-decision-trees" class="nav-link" data-scroll-target="#case-for-decision-trees">Case for Decision Trees</a></li>
+  <li><a href="#case-for-neural-networks" id="toc-case-for-neural-networks" class="nav-link" data-scroll-target="#case-for-neural-networks">Case for Neural Networks</a></li>
+  </ul></li>
+  <li><a href="#course-wrap-up" id="toc-course-wrap-up" class="nav-link" data-scroll-target="#course-wrap-up">Course Wrap-Up</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-5" id="toc-review-questions-5" class="nav-link" data-scroll-target="#review-questions-5">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#lab-tree-ensembles-on-the-heart-disease-dataset" id="toc-lab-tree-ensembles-on-the-heart-disease-dataset" class="nav-link" data-scroll-target="#lab-tree-ensembles-on-the-heart-disease-dataset">Lab: Tree Ensembles on the Heart Disease Dataset</a>
+  <ul class="collapse">
+  <li><a href="#one-hot-encoding-with-pandas" id="toc-one-hot-encoding-with-pandas" class="nav-link" data-scroll-target="#one-hot-encoding-with-pandas">One-Hot Encoding with Pandas</a></li>
+  <li><a href="#splitting-the-dataset" id="toc-splitting-the-dataset" class="nav-link" data-scroll-target="#splitting-the-dataset">Splitting the Dataset</a></li>
+  <li><a href="#decision-tree" id="toc-decision-tree" class="nav-link" data-scroll-target="#decision-tree">Decision Tree</a></li>
+  <li><a href="#random-forest" id="toc-random-forest" class="nav-link" data-scroll-target="#random-forest">Random Forest</a></li>
+  <li><a href="#xgboost-1" id="toc-xgboost-1" class="nav-link" data-scroll-target="#xgboost-1">XGBoost</a></li>
+  <li><a href="#review-questions-6" id="toc-review-questions-6" class="nav-link" data-scroll-target="#review-questions-6">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Tree Ensembles</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">machine-learning</div>
+    <div class="quarto-category">neural-networks</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Tree ensembles from sampling with replacement to random forests and XGBoost, plus when to choose decision trees versus neural networks.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">July 17, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~143 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level and capped at 3 hours.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~7,000 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p>The <a href="../../machine-learning/advanced-learning-algorithms/decision-tree-learning.html">decision tree learning algorithm</a> builds one tree from a training set. One of the weaknesses of using a single decision tree is that it can be <strong>highly sensitive to small changes in the data</strong>. One solution that makes the algorithm less sensitive, more robust, is to build not one decision tree but a lot of them, a <strong>tree ensemble</strong>.</p>
+<section id="sensitivity-of-a-single-tree" class="level2">
+<h2 class="anchored" data-anchor-id="sensitivity-of-a-single-tree">Sensitivity of a Single Tree</h2>
+<p>With the running example, the best feature to split on at the root node turned out to be <strong>ear shape</strong>, resulting in the two subsets of pointy-eared and floppy-eared animals, with further sub-trees built on each. But take just <em>one</em> of the ten examples and change it to a different cat, instead of an animal with pointy ears, a round face, and whiskers absent, this new cat has <strong>floppy ears, a round face, and whiskers present</strong>. With just that single training example changed, the highest-information-gain feature to split on becomes the <strong>whiskers</strong> feature instead of the ear shape feature.</p>
+<div id="a5f16f65" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tree-ensembles_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>As a result, the subsets of data in the left and right sub-trees become totally different, and as the algorithm keeps running recursively, it builds out totally different sub-trees on each side. The fact that changing just one training example causes the algorithm to come up with a different split at the root, and therefore a totally different tree, makes the algorithm <strong>not that robust</strong>. (Running the information gain numbers confirms it. On the original data the gains are 0.28 for ear shape, 0.03 for face shape, and 0.12 for whiskers, and after changing that one example they become 0.12, 0.03, and 0.28, ear shape and whiskers swap places exactly.)</p>
+<p>That is why, when using decision trees, you often get a much better result, more accurate predictions, by training not just a single decision tree but a whole bunch of different ones.</p>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. What does it mean that a single decision tree is “not robust”?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Small changes in the training data can produce large changes in the learned model. In the example, replacing just one of the ten animals with a slightly different cat flipped the best root split from ear shape to whiskers, and from that point on the entire tree, both sub-trees and all the leaves, came out completely different.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does a different root split lead to a “totally different” tree rather than just a different first level?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the algorithm is recursive. The root split determines which subsets of examples flow into the left and right branches, and every later decision is computed from those subsets. Change the subsets at the top and every information gain calculation below sees different data, so the entire structure downstream changes with it.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="voting-with-an-ensemble-of-trees" class="level2">
+<h2 class="anchored" data-anchor-id="voting-with-an-ensemble-of-trees">Voting with an Ensemble of Trees</h2>
+<p>A <strong>tree ensemble</strong> just means a collection of multiple trees. The next sections cover how to construct one, but supposing you already had an ensemble of three trees, each one a plausible way to classify cat versus not cat, here is how it makes predictions. Run all three trees on the new example and get them to <strong>vote</strong> on the final prediction.</p>
+<p>Take a new test example with <strong>pointy ears, a not-round face shape, and whiskers present</strong>, and trace it through each tree.</p>
+<div id="9980148a" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tree-ensembles_files/figure-html/cell-4-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The first tree carries out its inference and predicts <strong>cat</strong>. The second tree’s inference follows its own path and predicts <strong>not cat</strong>. The third tree predicts <strong>cat</strong>. The three trees have made different predictions, so they vote, and the majority vote among the three predictions is <strong>cat</strong>. The final prediction of the ensemble is that this is a cat, which happens to be the correct prediction.</p>
+<p>The reason a tree ensemble works is that with lots of decision trees voting, the overall algorithm becomes <strong>less sensitive to what any single tree does</strong>, because each tree gets only one vote out of three, or one vote out of many. That makes the overall algorithm more robust.</p>
+<p>But how do you come up with all of these different, plausible, but slightly different decision trees to get them to vote? The next section introduces a technique from statistics called <strong>sampling with replacement</strong>, a key building block for constructing the ensemble.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. How does a tree ensemble make a prediction for a new example?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Run the example through every tree in the ensemble, collect each tree’s prediction, and take the majority vote as the final prediction. In the example, the three trees voted cat, not cat, and cat, so the ensemble predicted cat.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does voting across many trees make the algorithm more robust than a single tree?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Any single tree can be swayed by small quirks of the training data, as the flipped-root example showed. In an ensemble, each tree gets only one vote out of many, so no individual tree’s peculiarities can dominate the final prediction, and the errors of individual trees tend to get outvoted by the rest.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. A new animal has floppy ears, a round face, and no whiskers. Using the three trees in the figure above, what does each tree predict, and what is the ensemble’s final prediction?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Tree 1 sends absent whiskers directly to its not-cat leaf. Tree 2 sends floppy ears to its whiskers node, where absent whiskers gives not cat. Tree 3, however, sends the round face directly to its cat leaf, a dissenting vote. The tally is two votes for not cat against one for cat, so the ensemble predicts not cat by majority rather than unanimously.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="sampling-with-replacement" class="level2">
+<h2 class="anchored" data-anchor-id="sampling-with-replacement">Sampling with Replacement</h2>
+<p>Building a tree ensemble requires a technique called <strong>sampling with replacement</strong>. To illustrate it, imagine four tokens colored red, yellow, green, and blue, dropped into an (empty) black velvet bag. Sampling four times <em>with replacement</em> means shaking the bag, picking a token without looking, say green, and then, this is the “replacement” part, <strong>putting it back in</strong> before shaking and drawing again. The next draws might give yellow, then blue, then blue again, for the sequence green, yellow, blue, blue.</p>
+<p>Notice that blue came out twice, and red did not come out even a single time. Repeating the whole procedure gives different sequences each time, maybe red, yellow, red, green, or green, green, blue, red, or a draw like red, blue, yellow, green that happens to contain all four.</p>
+<div id="92eb249e" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tree-ensembles_files/figure-html/cell-5-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The <strong>with replacement</strong> part is critical. Without replacing each token after drawing it, pulling four tokens from a bag of four would always produce the same four tokens, just in a different order. Replacing each token before the next draw is what makes the outcome genuinely random.</p>
+<section id="building-a-new-training-set" class="level3">
+<h3 class="anchored" data-anchor-id="building-a-new-training-set">Building a New Training Set</h3>
+<p>The way sampling with replacement applies to tree ensembles is by constructing <strong>multiple random training sets</strong> that are all slightly different from the original training set. Take the 10 examples of cats and dogs and put them in a theoretical bag. (Please do not put a real cat or dog in a bag, that sounds inhumane, but a <em>training example</em> can go in a theoretical bag whenever you want.)</p>
+<p>Using this theoretical bag, create a new random training set of 10 examples, the exact same size as the original dataset. Reach in, pick a random training example, write it down, put it back, and draw again, 10 times in total.</p>
+<div id="db34f93a" class="cell" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tree-ensembles_files/figure-html/cell-6-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Along the way, the fifth training example drawn turns out to be identical to the second one, and that is fine. Keep going, and more repeats show up, and so on, until there are 10 training examples, <strong>some of which are repeats</strong>. Notice also that this new training set does not contain all 10 of the original training examples, and that is okay too. It is part of the sampling with replacement procedure.</p>
+<p>Sampling with replacement lets you construct a new training set that is a little bit similar to, but also pretty different from, the original training set. This turns out to be the key building block for building an ensemble of trees, which is what the next section covers.</p>
+</section>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. Why is the “with replacement” part of the procedure critical?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Without replacement, drawing 10 examples from a bag of 10 would always return exactly the original training set, just shuffled. Replacing each example before the next draw is what allows repeats and omissions, so every sampled training set comes out genuinely different, which is the entire point of the procedure.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. A new training set is created from 10 examples by sampling with replacement. Which properties does it have?</strong></p>
+<ol type="a">
+<li><p>It has 10 examples, all distinct, in a random order</p></li>
+<li><p>It has 10 examples, possibly with repeats, and possibly missing some of the originals</p></li>
+<li><p>It has fewer than 10 examples, since repeats get removed</p></li>
+<li><p>It always contains every original example at least once</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b.</strong> The new set has the same size as the original (10 draws), but because every draw goes back in the bag, some examples appear multiple times and, in consequence, others do not appear at all. Options (a) and (d) describe sampling <em>without</em> replacement, and repeats are kept, not removed (c).</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In the token demonstration, one sequence of four draws came out green, yellow, blue, blue. What does this single sequence illustrate about sampling with replacement?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Both characteristic behaviors at once. A token can be drawn more than once (blue appeared twice), and a token can fail to be drawn at all (red never appeared), even though every token was in the bag for every draw.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What does sampling with replacement refer to?</strong></p>
+<ol type="a">
+<li><p>Drawing a sequence of examples where, when picking the next example, first replacing all previously drawn examples into the set we are picking from</p></li>
+<li><p>Using a new sample of data to permanently overwrite (that is, to replace) the original data</p></li>
+<li><p>Drawing a sequence of examples where, when picking the next example, first removing all previously drawn examples from the set we are picking from</p></li>
+<li><p>A process of making an identical copy of the training set</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a.</strong> Every drawn example goes back into the bag before the next draw, which is what allows repeats and omissions. Option (c) describes sampling <em>without</em> replacement, which from a full-size draw would just return the original set, and options (b) and (d) misread “replacement” entirely, nothing about the original data gets overwritten or copied.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="random-forest-algorithm" class="level2">
+<h2 class="anchored" data-anchor-id="random-forest-algorithm">Random Forest Algorithm</h2>
+<p>With sampling with replacement providing new training sets that are a bit similar to, but also quite different from, the original training set, everything is in place to build a first tree ensemble algorithm, and then improve it into the <strong>random forest</strong> algorithm, a powerful ensemble method that works much better than a single decision tree.</p>
+<section id="bagged-decision-trees" class="level3">
+<h3 class="anchored" data-anchor-id="bagged-decision-trees">Bagged Decision Trees</h3>
+<p>Given a training set of size <span class="math inline">\(m\)</span>, generate the ensemble as follows, repeating <span class="math inline">\(B\)</span> times in total.</p>
+<p>For <span class="math inline">\(b = 1\)</span> to <span class="math inline">\(B\)</span>:</p>
+<ol type="1">
+<li>Use <strong>sampling with replacement</strong> to create a new training set of size <span class="math inline">\(m\)</span>. With 10 training examples, put all 10 in that virtual bag and sample with replacement 10 times to generate a new training set of 10 examples, some of them repeated, and that is okay.</li>
+<li><strong>Train a decision tree</strong> on the new dataset.</li>
+</ol>
+<p>The first sampled dataset produces one decision tree. Repeating the procedure produces another training set that again looks a bit like the original but is also a little different, and training on it gives a <strong>somewhat different</strong> decision tree, and so on, <span class="math inline">\(B\)</span> times.</p>
+<div id="41e32fe3" class="cell" data-execution_count="6">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tree-ensembles_files/figure-html/cell-7-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Having built an ensemble of, say, 100 different trees, a prediction works by having <strong>all the trees vote</strong> on the final answer, exactly as in the <a href="#voting-with-an-ensemble-of-trees">voting section</a> above. A typical choice of <span class="math inline">\(B\)</span>, the number of trees, is around 100, with recommendations ranging from about 64 to 128. Setting <span class="math inline">\(B\)</span> larger never <em>hurts</em> performance, but beyond a certain point the returns diminish, and performance does not get much better once <span class="math inline">\(B\)</span> is much larger than 100 or so. There is no point using, say, 1,000 trees, that just slows down the computation significantly without meaningfully increasing the performance.</p>
+<p>This specific creation of a tree ensemble is sometimes called a <strong>bagged decision tree</strong>, referring to putting the training examples in that virtual bag, which is also why the letters <span class="math inline">\(b\)</span> and <span class="math inline">\(B\)</span> are used for the loop.</p>
+</section>
+<section id="from-bagging-to-a-random-forest" class="level3">
+<h3 class="anchored" data-anchor-id="from-bagging-to-a-random-forest">From Bagging to a Random Forest</h3>
+<p>There is one modification that makes the algorithm work even better, and it changes bagged decision trees into the <strong>random forest</strong> algorithm. The key observation is that even with sampling with replacement, the trees often end up using the <strong>same split at the root node</strong> and very similar splits near the root. That did not happen in the <a href="#sensitivity-of-a-single-tree">one-example-change demonstration</a> above, where a small change produced a different root split, but for other training sets it is not uncommon that many or even all <span class="math inline">\(B\)</span> sampled training sets produce the same choice of feature at the root and at a few nodes nearby.</p>
+<p>The fix is to further <strong>randomize the feature choice</strong> at each node, which causes the set of trees to become more different from each other, so that when they vote, the result is even more accurate. At every node, when choosing a feature to split on, if <span class="math inline">\(n\)</span> features are available, rather than picking from all <span class="math inline">\(n\)</span> features, pick a random subset of <span class="math inline">\(k &lt; n\)</span> features, and allow the algorithm to choose only from that subset. Out of those <span class="math inline">\(k\)</span> features, choose the one with the highest information gain as usual.</p>
+<div id="d54ea07e" class="cell" data-execution_count="7">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tree-ensembles_files/figure-html/cell-8-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>When <span class="math inline">\(n\)</span> is large, say dozens or even hundreds of features, a typical choice for <span class="math inline">\(k\)</span> is <span class="math inline">\(\sqrt{n}\)</span>. With only three features, as in the cat example, the technique does not have much to work with, and it tends to be used for larger problems with more features. With this further change, the algorithm becomes the <strong>random forest</strong>, which typically works much better than, and is much more robust than, a single decision tree.</p>
+<p>One way to think about why it is more robust is that the sampling with replacement procedure already causes the algorithm to <strong>explore a lot of small changes to the data</strong> while training the different trees, and the vote <strong>averages over</strong> all of those changes. Any further little change to the training set is therefore less likely to have a huge impact on the output of the overall random forest, because it is a change the ensemble has, in a sense, already averaged over.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Where does a machine learning engineer go camping?
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>In a random forest.</p>
+</div>
+</div>
+<p>The random forest is an effective algorithm. Beyond it, there is one other algorithm that works even better, a <strong>boosted</strong> decision tree, and the next section covers a boosted tree algorithm called <strong>XGBoost</strong>.</p>
+</section>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. Write out the bagged decision tree algorithm, and explain where the name “bagged” (and the letter <span class="math inline">\(B\)</span>) comes from.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>For <span class="math inline">\(b = 1\)</span> to <span class="math inline">\(B\)</span>, sample with replacement from the <span class="math inline">\(m\)</span> training examples to create a new training set of size <span class="math inline">\(m\)</span>, then train a decision tree on it. Predictions are made by letting all <span class="math inline">\(B\)</span> trees vote. The name refers to the virtual bag the training examples get drawn from, which is also why the loop variable is <span class="math inline">\(b\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What is a typical choice for the number of trees <span class="math inline">\(B\)</span>, and why not use far more, say 1,000?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Around 100, with common recommendations in the range of roughly 64 to 128. Increasing <span class="math inline">\(B\)</span> never hurts accuracy, but beyond about 100 trees the returns diminish, so 1,000 trees mostly just slows the computation down significantly without meaningfully improving performance.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What single modification turns bagged decision trees into the random forest algorithm, and what problem does it solve?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>At every node, instead of considering all <span class="math inline">\(n\)</span> features, pick a random subset of <span class="math inline">\(k &lt; n\)</span> features (typically <span class="math inline">\(k = \sqrt{n}\)</span> for large <span class="math inline">\(n\)</span>) and choose the highest-information-gain feature only from that subset. It solves the problem that resampled training sets often still produce the same split at the root and near-root nodes, so the trees come out too similar; randomizing the allowed features makes the trees more different from each other, which makes their vote more accurate.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. For the random forest, how do you build each individual tree so that they are not all identical to each other?</strong></p>
+<ol type="a">
+<li><p>Sample the training data without replacement</p></li>
+<li><p>Train the algorithm multiple times on the same training set, which will naturally result in different trees</p></li>
+<li><p>Sample the training data with replacement and select a random subset of features to build each tree</p></li>
+<li><p>If you are training <span class="math inline">\(B\)</span> trees, train each one on <span class="math inline">\(1/B\)</span> of the training set, so each tree is trained on a distinct set of examples</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-14" class="callout-14-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>c.</strong> The two sources of randomness that define the random forest are sampling each tree’s training set with replacement and letting each node choose its split from a random subset of features. Option (b) is a trap, the tree-building algorithm is deterministic, so training repeatedly on the same set produces the exact same tree every time. Sampling <em>without</em> replacement (a) from all <span class="math inline">\(m\)</span> examples just returns the original training set reshuffled, and disjoint <span class="math inline">\(1/B\)</span> slices (d) would starve every tree of data.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In your own words, why is a random forest more robust to small changes in the training data than a single decision tree?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The resampling procedure already trains the trees on many slightly perturbed versions of the data, and the majority vote averages over all of those perturbations. A further small change to the training set looks like just one more of the variations the ensemble has already explored and averaged over, so it is unlikely to swing the overall prediction, whereas a single tree can restructure completely, as the flipped-root example showed.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="xgboost" class="level2">
+<h2 class="anchored" data-anchor-id="xgboost">XGBoost</h2>
+<p>Over the years, machine learning researchers have come up with a lot of different ways to build decision trees and tree ensembles. Today, by far the most commonly used implementation of decision tree ensembles is an algorithm called <strong>XGBoost</strong>. It runs quickly, the open source implementations are easy to use, and it has been used very successfully to win many machine learning competitions as well as in many commercial applications.</p>
+<section id="boosting" class="level3">
+<h3 class="anchored" data-anchor-id="boosting">Boosting</h3>
+<p>XGBoost builds on a modification of the <a href="#bagged-decision-trees">bagged decision tree algorithm</a> that makes it work much better. The loop is the same, for <span class="math inline">\(b = 1\)</span> to <span class="math inline">\(B\)</span>, create a training set of size <span class="math inline">\(m\)</span> and train a decision tree on it, with one change applied on every iteration <em>except the first</em>. When sampling, instead of picking from all <span class="math inline">\(m\)</span> examples with equal probability <span class="math inline">\(\frac{1}{m}\)</span>, make it <strong>more likely to pick misclassified examples</strong> that the previously trained trees do poorly on.</p>
+<p>In training and education there is an idea called <strong>deliberate practice</strong>. If you are learning to master a piece on the piano, rather than practicing the entire five-minute piece over and over, which is quite time-consuming, you play the piece once and then focus your attention on just the parts you are not yet playing well, practicing those smaller parts over and over. That turns out to be a more efficient way to learn. <strong>Boosting</strong> applies the same idea. Look at what the decision trees trained so far are still not doing well on, and when building the next decision tree, focus more attention on exactly those examples.</p>
+<p>In detail, after building the first tree, go back to the <strong>original training set</strong>, note, the original one, not a set generated through sampling with replacement, and run the tree on all 10 examples, marking each prediction correct or incorrect. On the second time through the loop, sampling with replacement still generates a set of 10 examples, but each draw now gives a <strong>higher chance</strong> of picking one of the examples the tree is still misclassifying.</p>
+<div id="4f100d14" class="cell" data-execution_count="8">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tree-ensembles_files/figure-html/cell-9-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>This focuses the second decision tree’s attention, through a process like deliberate practice, on the examples the algorithm is still not doing well on. The boosting procedure does this for a total of <span class="math inline">\(B\)</span> times. On each iteration, look at what the ensemble of trees <span class="math inline">\(1, 2, \dots, b-1\)</span> is not yet doing well on, and when building tree number <span class="math inline">\(b\)</span>, give a higher probability to the examples the previously built ensemble still gets wrong. This helps the learning algorithm learn to do better <strong>more quickly</strong>. The mathematical details of exactly how much to increase the probability of picking one example versus another are quite complex, but you do not have to worry about them to use boosted tree implementations.</p>
+</section>
+<section id="xgboost-in-practice" class="level3">
+<h3 class="anchored" data-anchor-id="xgboost-in-practice">XGBoost in Practice</h3>
+<p>Of the different ways of implementing boosting, the most widely used today is <strong>XGBoost</strong>, which stands for e<strong>X</strong>treme <strong>G</strong>radient <strong>Boost</strong>ing, an open source implementation of boosted trees that is very fast and efficient. A few things are worth knowing about it.</p>
+<ul>
+<li>It has a <strong>good choice of default splitting criteria and stopping criteria</strong>.</li>
+<li>One of its innovations is <strong>built-in regularization</strong> to prevent overfitting.</li>
+<li>In machine learning competitions, such as on the widely used competition site Kaggle, XGBoost is often highly competitive. XGBoost and deep learning algorithms seem to be the two types of algorithms that win a lot of these competitions.</li>
+<li>One technical note. Rather than actually doing sampling with replacement, XGBoost <strong>assigns different weights to different training examples</strong>, so it does not need to generate a lot of randomly chosen training sets, which makes it even a bit more efficient. The intuition above about focusing on misclassified examples is still exactly right.</li>
+</ul>
+<p>The details of XGBoost are quite complex to implement, which is why most practitioners use the open source library. This is all it takes to use it, shown here on the cat classification data.</p>
+<div id="5d8f54b7" class="cell" data-execution_count="10">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> xgboost <span class="im">import</span> XGBClassifier</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> XGBClassifier()</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>model.fit(X_train, y_train)</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>y_pred <span class="op">=</span> model.predict(X_test)</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(y_pred)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1]</code></pre>
+</div>
+</div>
+<p>The trained boosted ensemble predicts that the test animal (pointy ears, round face, whiskers present) is a cat. If you want to use XGBoost for <strong>regression</strong> rather than classification, the classifier line simply becomes <code>XGBRegressor</code>, and the rest of the code works similarly.</p>
+<p>That is the XGBoost algorithm. One topic remains for this part of the course, deciding when to use a decision tree versus a neural network.</p>
+</section>
+<section id="review-questions-4" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-4">Review Questions</h3>
+<p><strong>1. What is the key change boosting makes to the bagged decision tree loop, and on which iterations does it apply?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-16-contents" aria-controls="callout-16" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-16" class="callout-16-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>On every iteration except the first, the sampling is no longer uniform. Instead of picking each of the <span class="math inline">\(m\)</span> examples with probability <span class="math inline">\(\frac{1}{m}\)</span>, examples that the ensemble of previously built trees (<span class="math inline">\(1\)</span> through <span class="math inline">\(b-1\)</span>) still misclassifies get a higher probability of being picked, so the next tree focuses on them.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. How does the deliberate practice analogy explain boosting?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-17-contents" aria-controls="callout-17" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-17" class="callout-17-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>A pianist mastering a piece improves faster by repeatedly practicing just the passages they play badly rather than the whole piece each time. Boosting does the same, each new tree concentrates its training on the examples the current ensemble handles worst, which helps the algorithm learn to do better more quickly than treating all examples equally every time.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. After training the first tree, on which dataset are its predictions checked to decide which examples get boosted, and why does that matter?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-18-contents" aria-controls="callout-18" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-18" class="callout-18-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>On the <em>original</em> training set of all 10 examples, not on the resampled set the tree was trained on. That matters because the goal is to find where the ensemble is failing on the actual data it must ultimately do well on, including examples that may not have appeared in the tree’s own sampled training set.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Which of the following are true of XGBoost? (Choose all that apply.)</strong></p>
+<ol type="a">
+<li><p>The name stands for eXtreme Gradient Boosting</p></li>
+<li><p>It has built-in regularization to help prevent overfitting</p></li>
+<li><p>It literally performs sampling with replacement to build each tree’s training set</p></li>
+<li><p>It assigns different weights to training examples instead of resampling, which is more efficient</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-19-contents" aria-controls="callout-19" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-19" class="callout-19-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a, b, and d.</strong> Option (c) is the one technical falsehood, XGBoost keeps the boosting intuition of focusing on hard examples, but implements it by weighting examples rather than actually generating many resampled training sets, which avoids that overhead. Its default split and stopping criteria and built-in regularization are part of why it works so well out of the box.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="when-to-use-decision-trees" class="level2">
+<h2 class="anchored" data-anchor-id="when-to-use-decision-trees">When to Use Decision Trees</h2>
+<p>Both decision trees, including tree ensembles, and <a href="../../machine-learning/advanced-learning-algorithms/neural-network-model.html">neural networks</a> are very powerful, very effective learning algorithms. When should you pick one or the other? Here are the pros and cons of each.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 34%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: left;">Decision trees and tree ensembles</th>
+<th style="text-align: left;">Neural networks</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><strong>Tabular (structured) data</strong></td>
+<td style="text-align: left;">Work well</td>
+<td style="text-align: left;">Work well</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>Unstructured data</strong> (images, audio, text)</td>
+<td style="text-align: left;">Not recommended</td>
+<td style="text-align: left;">Preferred</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>Training speed</strong></td>
+<td style="text-align: left;">Fast</td>
+<td style="text-align: left;">Can be slow</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>Human interpretability</strong></td>
+<td style="text-align: left;">Small single trees, yes</td>
+<td style="text-align: left;">Limited</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>Transfer learning</strong></td>
+<td style="text-align: left;">No</td>
+<td style="text-align: left;">Yes, often critical</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>Building multi-model systems</strong></td>
+<td style="text-align: left;">One tree at a time</td>
+<td style="text-align: left;">Networks can be trained together</td>
+</tr>
+</tbody>
+</table>
+<section id="case-for-decision-trees" class="level3">
+<h3 class="anchored" data-anchor-id="case-for-decision-trees">Case for Decision Trees</h3>
+<p>Decision trees and tree ensembles often work well on <strong>tabular data</strong>, also called <strong>structured data</strong>, meaning datasets that look like a giant spreadsheet. In the housing price prediction application, for instance, the dataset had features for the size of the house, the number of bedrooms, the number of floors, and the age of the home. Data like that, stored in a spreadsheet with categorical or continuous-valued features, suits decision trees well, for both <strong>classification and regression</strong> tasks, predicting a discrete category or predicting a number.</p>
+<p>In contrast, decision trees and tree ensembles are <strong>not recommended on unstructured data</strong>, data such as images, video, audio, and text that you are less likely to store in a spreadsheet format. Neural networks tend to work better there.</p>
+<p>One huge advantage of decision trees is that they can be <strong>very fast to train</strong>. Recall the <a href="../../machine-learning/advanced-learning-algorithms/machine-learning-development-process.html#the-iterative-loop-of-machine-learning-development">iterative loop of machine learning development</a>. If a model takes many hours to train, that limits how quickly you can go around the loop and improve the algorithm. Because trees and tree ensembles tend to train quickly, they let you iterate faster.</p>
+<p>Finally, small decision trees can be <strong>human interpretable</strong>. A single decision tree with only a few dozen nodes can be printed out and read, showing exactly how it makes its decisions. That said, the interpretability of decision trees is sometimes a bit overstated. An ensemble of 100 trees, each with hundreds of nodes, is difficult to read, and understanding it may need separate visualization techniques.</p>
+<p>If you have decided to use a decision tree or a tree ensemble, <strong>XGBoost</strong> is a solid default for most applications. The one slight downside of a tree ensemble is that it is a bit more expensive than a single decision tree, so with a very constrained computational budget a single tree might be the pick, but otherwise, a tree ensemble, and XGBoost in particular, is almost always the better choice.</p>
+</section>
+<section id="case-for-neural-networks" class="level3">
+<h3 class="anchored" data-anchor-id="case-for-neural-networks">Case for Neural Networks</h3>
+<p>Neural networks, in contrast, work well on <strong>all types of data</strong>, tabular (structured) data, unstructured data, and mixed data containing both structured and unstructured components. On tabular data, neural networks and decision trees are often both competitive, but on unstructured data, images, video, audio, and text, a neural network really is the preferred algorithm, not a decision tree or tree ensemble.</p>
+<p>On the downside, neural networks may be <strong>slower</strong> to train than a decision tree. A large neural network can just take a long time.</p>
+<p>Other benefits of neural networks include working with <a href="../../machine-learning/advanced-learning-algorithms/machine-learning-development-process.html#transfer-learning">transfer learning</a>, which is really important, because for many applications only a small dataset is available, and being able to carry out pre-training on a much larger dataset can be critical to getting competitive performance. Finally, when building a system of multiple machine learning models working together, it can be easier to string together and train multiple neural networks than multiple decision trees. The reasons are quite technical and beyond the scope of these notes, but they relate to the fact that multiple networks strung together can all be trained jointly with gradient descent, whereas decision trees can only be trained one at a time.</p>
+</section>
+</section>
+<section id="course-wrap-up" class="level2">
+<h2 class="anchored" data-anchor-id="course-wrap-up">Course Wrap-Up</h2>
+<p>That completes the notes for this course on Advanced Learning Algorithms, how to build and use both neural networks and decision trees, along with a variety of practical advice for getting these algorithms to work well. Everything so far has been <strong>supervised learning</strong>, which needs labeled datasets with the labels <span class="math inline">\(y\)</span> in the training set. There is another set of very powerful algorithms, <strong>unsupervised learning</strong> algorithms, which do not even need labels <span class="math inline">\(y\)</span> to figure out very interesting patterns in the data, and they are the subject of the next course in the specialization.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>For the Star Wars fans
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>May the forest be with you.</p>
+</div>
+</div>
+<section id="review-questions-5" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-5">Review Questions</h3>
+<p><strong>1. What is the difference between structured and unstructured data, and which algorithm family suits each?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-21-contents" aria-controls="callout-21" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-21" class="callout-21-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Structured (tabular) data looks like a giant spreadsheet of categorical or continuous features, like the housing dataset with size, bedrooms, floors, and age; both decision trees and neural networks are competitive there. Unstructured data, images, video, audio, and text, does not fit a spreadsheet, and neural networks are the preferred algorithm for it; decision trees are not recommended.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does fast training give decision trees a practical advantage beyond just saving compute?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-22-contents" aria-controls="callout-22" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-22" class="callout-22-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because of the iterative loop of machine learning development. Every improvement cycle requires training, running diagnostics, and adjusting. A model that trains in minutes lets you go around that loop many more times than one that trains for hours, which often matters more for final performance than any single training run.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Is “decision trees are interpretable” always a fair claim?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-23-contents" aria-controls="callout-23" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-23" class="callout-23-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Only partly. A single small tree, a few dozen nodes, can genuinely be printed and read to see exactly how it decides. But the claim gets overstated for ensembles, since 100 trees with hundreds of nodes each are not readable directly and require separate visualization techniques to understand.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You have a small labeled dataset for a new image classification task. Which algorithm family does that point toward, and for which two reasons?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-24-contents" aria-controls="callout-24" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-24" class="callout-24-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Neural networks. First, images are unstructured data, where neural networks are preferred and trees are not recommended. Second, the dataset is small, so transfer learning, pre-training on a much larger dataset and fine-tuning, may be critical for competitive performance, and transfer learning is a technique that works with neural networks, not decision trees.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why can multiple neural networks in a larger system be easier to train together than multiple decision trees?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-25-contents" aria-controls="callout-25" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-25" class="callout-25-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Networks strung together can all be trained jointly with gradient descent, since everything stays differentiable end to end, whereas decision trees do not train by gradient descent and can only be trained one tree at a time. The full details are technical, but that is the essence.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You are choosing between a decision tree and a neural network for a classification task where the input <span class="math inline">\(x\)</span> is a 100x100 resolution image. Which would you choose?</strong></p>
+<ol type="a">
+<li><p>A decision tree, because the input is unstructured and decision trees typically work better with unstructured data</p></li>
+<li><p>A decision tree, because the input is structured data and decision trees typically work better with structured data</p></li>
+<li><p>A neural network, because the input is unstructured data and neural networks typically work better with unstructured data</p></li>
+<li><p>A neural network, because the input is structured data and neural networks typically work better with structured data</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-26-contents" aria-controls="callout-26" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-26" class="callout-26-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>c.</strong> An image is unstructured data, it is not a spreadsheet of meaningful named columns, and neural networks are the preferred algorithm for images, video, audio, and text. Both halves of the answer must be right, the data type (unstructured) and the algorithm suited to it (neural network), which rules out the other three options.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="lab-tree-ensembles-on-the-heart-disease-dataset" class="level2">
+<h2 class="anchored" data-anchor-id="lab-tree-ensembles-on-the-heart-disease-dataset">Lab: Tree Ensembles on the Heart Disease Dataset</h2>
+<p>This lab puts everything on this page into practice on a real dataset, using pandas to one-hot encode categorical features and scikit-learn and XGBoost to train a decision tree, a random forest, and a boosted tree model.</p>
+<p>The dataset is the <a href="https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction">Heart Failure Prediction Dataset</a> from Kaggle (<a href="../../media/heart.csv">local copy</a>). Cardiovascular disease is the number one cause of death globally, and people at high cardiovascular risk need early detection and management. The dataset contains 11 features that can be used to predict possible heart disease, including the patient’s age and sex, chest pain type, resting blood pressure, cholesterol, fasting blood sugar, resting ECG results, maximum heart rate, exercise-induced angina, and ST slope, with the target <code>HeartDisease</code> equal to 1 or 0. Note that this is exactly the kind of <strong>tabular data</strong> that the <a href="#when-to-use-decision-trees">previous section</a> said decision trees do well on.</p>
+<div id="d86dbacc" class="cell" data-execution_count="11">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.tree <span class="im">import</span> DecisionTreeClassifier</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.ensemble <span class="im">import</span> RandomForestClassifier</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.model_selection <span class="im">import</span> train_test_split</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.metrics <span class="im">import</span> accuracy_score</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> xgboost <span class="im">import</span> XGBClassifier</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>RANDOM_STATE <span class="op">=</span> <span class="dv">55</span>  <span class="co"># we pass it to every sklearn call to ensure reproducibility</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>df <span class="op">=</span> pd.read_csv(<span class="st">"../../media/heart.csv"</span>)</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>df.head()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="11">
+<div>
+
+
+<table class="dataframe caption-top table table-sm table-striped small" data-border="1">
+<thead>
+<tr class="header">
+<th data-quarto-table-cell-role="th"></th>
+<th data-quarto-table-cell-role="th">Age</th>
+<th data-quarto-table-cell-role="th">Sex</th>
+<th data-quarto-table-cell-role="th">ChestPainType</th>
+<th data-quarto-table-cell-role="th">RestingBP</th>
+<th data-quarto-table-cell-role="th">Cholesterol</th>
+<th data-quarto-table-cell-role="th">FastingBS</th>
+<th data-quarto-table-cell-role="th">RestingECG</th>
+<th data-quarto-table-cell-role="th">MaxHR</th>
+<th data-quarto-table-cell-role="th">ExerciseAngina</th>
+<th data-quarto-table-cell-role="th">Oldpeak</th>
+<th data-quarto-table-cell-role="th">ST_Slope</th>
+<th data-quarto-table-cell-role="th">HeartDisease</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">0</th>
+<td>40</td>
+<td>M</td>
+<td>ATA</td>
+<td>140</td>
+<td>289</td>
+<td>0</td>
+<td>Normal</td>
+<td>172</td>
+<td>N</td>
+<td>0.0</td>
+<td>Up</td>
+<td>0</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">1</th>
+<td>49</td>
+<td>F</td>
+<td>NAP</td>
+<td>160</td>
+<td>180</td>
+<td>0</td>
+<td>Normal</td>
+<td>156</td>
+<td>N</td>
+<td>1.0</td>
+<td>Flat</td>
+<td>1</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">2</th>
+<td>37</td>
+<td>M</td>
+<td>ATA</td>
+<td>130</td>
+<td>283</td>
+<td>0</td>
+<td>ST</td>
+<td>98</td>
+<td>N</td>
+<td>0.0</td>
+<td>Up</td>
+<td>0</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">3</th>
+<td>48</td>
+<td>F</td>
+<td>ASY</td>
+<td>138</td>
+<td>214</td>
+<td>0</td>
+<td>Normal</td>
+<td>108</td>
+<td>Y</td>
+<td>1.5</td>
+<td>Flat</td>
+<td>1</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">4</th>
+<td>54</td>
+<td>M</td>
+<td>NAP</td>
+<td>150</td>
+<td>195</td>
+<td>0</td>
+<td>Normal</td>
+<td>122</td>
+<td>N</td>
+<td>0.0</td>
+<td>Up</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<section id="one-hot-encoding-with-pandas" class="level3">
+<h3 class="anchored" data-anchor-id="one-hot-encoding-with-pandas">One-Hot Encoding with Pandas</h3>
+<p>Five of the variables, <code>Sex</code>, <code>ChestPainType</code>, <code>RestingECG</code>, <code>ExerciseAngina</code>, and <code>ST_Slope</code>, are <strong>categorical</strong>, holding values like <code>M</code>/<code>F</code> or chest pain types like <code>ATA</code> and <code>ASY</code> rather than numbers, so they must be <a href="../../machine-learning/advanced-learning-algorithms/decision-tree-learning.html#one-hot-encoding-of-categorical-features">one-hot encoded</a> before the models can use them.</p>
+<p>Pandas has a built-in method for this, the function <code>pd.get_dummies</code>. The arguments used here are <code>data</code>, the DataFrame to be used, <code>prefix</code>, a list of prefixes so each new column’s name shows which variable it came from, and <code>columns</code>, the list of columns to encode (<code>prefix</code> and <code>columns</code> must have the same length). The function replaces each listed column with its one-hot columns and keeps every other column as it is.</p>
+<div id="798e91b2" class="cell" data-execution_count="12">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>cat_variables <span class="op">=</span> [<span class="st">'Sex'</span>,</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>                 <span class="st">'ChestPainType'</span>,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>                 <span class="st">'RestingECG'</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>                 <span class="st">'ExerciseAngina'</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>                 <span class="st">'ST_Slope'</span>]</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>df <span class="op">=</span> pd.get_dummies(data<span class="op">=</span>df,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>                    prefix<span class="op">=</span>cat_variables,</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>                    columns<span class="op">=</span>cat_variables)</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>df.head()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="12">
+<div>
+
+
+<table class="dataframe caption-top table table-sm table-striped small" data-border="1">
+<thead>
+<tr class="header">
+<th data-quarto-table-cell-role="th"></th>
+<th data-quarto-table-cell-role="th">Age</th>
+<th data-quarto-table-cell-role="th">RestingBP</th>
+<th data-quarto-table-cell-role="th">Cholesterol</th>
+<th data-quarto-table-cell-role="th">FastingBS</th>
+<th data-quarto-table-cell-role="th">MaxHR</th>
+<th data-quarto-table-cell-role="th">Oldpeak</th>
+<th data-quarto-table-cell-role="th">HeartDisease</th>
+<th data-quarto-table-cell-role="th">Sex_F</th>
+<th data-quarto-table-cell-role="th">Sex_M</th>
+<th data-quarto-table-cell-role="th">ChestPainType_ASY</th>
+<th data-quarto-table-cell-role="th">...</th>
+<th data-quarto-table-cell-role="th">ChestPainType_NAP</th>
+<th data-quarto-table-cell-role="th">ChestPainType_TA</th>
+<th data-quarto-table-cell-role="th">RestingECG_LVH</th>
+<th data-quarto-table-cell-role="th">RestingECG_Normal</th>
+<th data-quarto-table-cell-role="th">RestingECG_ST</th>
+<th data-quarto-table-cell-role="th">ExerciseAngina_N</th>
+<th data-quarto-table-cell-role="th">ExerciseAngina_Y</th>
+<th data-quarto-table-cell-role="th">ST_Slope_Down</th>
+<th data-quarto-table-cell-role="th">ST_Slope_Flat</th>
+<th data-quarto-table-cell-role="th">ST_Slope_Up</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">0</th>
+<td>40</td>
+<td>140</td>
+<td>289</td>
+<td>0</td>
+<td>172</td>
+<td>0.0</td>
+<td>0</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+<td>...</td>
+<td>False</td>
+<td>False</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+<td>False</td>
+<td>False</td>
+<td>True</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">1</th>
+<td>49</td>
+<td>160</td>
+<td>180</td>
+<td>0</td>
+<td>156</td>
+<td>1.0</td>
+<td>1</td>
+<td>True</td>
+<td>False</td>
+<td>False</td>
+<td>...</td>
+<td>True</td>
+<td>False</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">2</th>
+<td>37</td>
+<td>130</td>
+<td>283</td>
+<td>0</td>
+<td>98</td>
+<td>0.0</td>
+<td>0</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+<td>...</td>
+<td>False</td>
+<td>False</td>
+<td>False</td>
+<td>False</td>
+<td>True</td>
+<td>True</td>
+<td>False</td>
+<td>False</td>
+<td>False</td>
+<td>True</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">3</th>
+<td>48</td>
+<td>138</td>
+<td>214</td>
+<td>0</td>
+<td>108</td>
+<td>1.5</td>
+<td>1</td>
+<td>True</td>
+<td>False</td>
+<td>True</td>
+<td>...</td>
+<td>False</td>
+<td>False</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">4</th>
+<td>54</td>
+<td>150</td>
+<td>195</td>
+<td>0</td>
+<td>122</td>
+<td>0.0</td>
+<td>0</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+<td>...</td>
+<td>True</td>
+<td>False</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+<td>True</td>
+<td>False</td>
+<td>False</td>
+<td>False</td>
+<td>True</td>
+</tr>
+</tbody>
+</table>
+
+<p>5 rows × 21 columns</p>
+</div>
+</div>
+</div>
+<p>The target is <code>HeartDisease</code>, and every other variable is a candidate input feature. The dataset started with 11 features; after one-hot encoding, there are a few more.</p>
+<div id="634e9467" class="cell" data-execution_count="13">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>features <span class="op">=</span> [x <span class="cf">for</span> x <span class="kw">in</span> df.columns <span class="cf">if</span> x <span class="kw">not</span> <span class="kw">in</span> <span class="st">'HeartDisease'</span>]  <span class="co"># removing the target variable</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="bu">len</span>(features))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>20</code></pre>
+</div>
+</div>
+</section>
+<section id="splitting-the-dataset" class="level3">
+<h3 class="anchored" data-anchor-id="splitting-the-dataset">Splitting the Dataset</h3>
+<p>The dataset gets split into train and validation sets with <code>train_test_split</code>, keeping 80 percent for training. The default <code>shuffle=True</code> stays on, since this dataset has no time dependency.</p>
+<div id="8a6b1b04" class="cell" data-execution_count="14">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>X_train, X_val, y_train, y_val <span class="op">=</span> train_test_split(df[features], df[<span class="st">'HeartDisease'</span>],</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>                                                  train_size<span class="op">=</span><span class="fl">0.8</span>, random_state<span class="op">=</span>RANDOM_STATE)</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'train samples: </span><span class="sc">{</span><span class="bu">len</span>(X_train)<span class="sc">}</span><span class="ss">'</span>)</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'validation samples: </span><span class="sc">{</span><span class="bu">len</span>(X_val)<span class="sc">}</span><span class="ss">'</span>)</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'target proportion: </span><span class="sc">{</span><span class="bu">sum</span>(y_train)<span class="op">/</span><span class="bu">len</span>(y_train)<span class="sc">:.4f}</span><span class="ss">'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>train samples: 734
+validation samples: 184
+target proportion: 0.5518</code></pre>
+</div>
+</div>
+</section>
+<section id="decision-tree" class="level3">
+<h3 class="anchored" data-anchor-id="decision-tree">Decision Tree</h3>
+<p>First, the single decision tree, now using the scikit-learn implementation <code>DecisionTreeClassifier</code>. It has several hyperparameters; this lab investigates two of them, without doing feature selection or full hyperparameter tuning.</p>
+<ul>
+<li><code>min_samples_split</code>, the minimum number of samples required to split an internal node. Choosing a higher value reduces the number of splits, which may help reduce overfitting. (This is the “number of examples below a threshold” <a href="../../machine-learning/advanced-learning-algorithms/decision-trees.html#decision-2-when-to-stop-splitting">stopping criterion</a> from the lectures.)</li>
+<li><code>max_depth</code>, the maximum depth of the tree. Choosing a lower value also reduces the number of splits and may reduce overfitting.</li>
+</ul>
+<p>Sweep <code>min_samples_split</code> first, recording accuracy on the train and validation sets for each value.</p>
+<div id="c3bf9741" class="cell" data-execution_count="15">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>plt.style.use(<span class="st">"../../deeplearning.mplstyle"</span>)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>min_samples_split_list <span class="op">=</span> [<span class="dv">2</span>, <span class="dv">10</span>, <span class="dv">30</span>, <span class="dv">50</span>, <span class="dv">100</span>, <span class="dv">200</span>, <span class="dv">300</span>, <span class="dv">700</span>]  <span class="co"># integer = actual number of samples</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>max_depth_list <span class="op">=</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>, <span class="dv">8</span>, <span class="dv">16</span>, <span class="dv">32</span>, <span class="dv">64</span>, <span class="va">None</span>]  <span class="co"># None means no depth limit</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>accuracy_list_train <span class="op">=</span> []</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>accuracy_list_val <span class="op">=</span> []</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> min_samples_split <span class="kw">in</span> min_samples_split_list:</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    <span class="co"># the fit method returns the fitted estimator, so define and fit in one line</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>    model <span class="op">=</span> DecisionTreeClassifier(min_samples_split<span class="op">=</span>min_samples_split,</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>                                   random_state<span class="op">=</span>RANDOM_STATE).fit(X_train, y_train)</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>    accuracy_list_train.append(accuracy_score(model.predict(X_train), y_train))</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>    accuracy_list_val.append(accuracy_score(model.predict(X_val), y_val))</span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>plt.title(<span class="st">'Train x Validation metrics'</span>)</span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>plt.xlabel(<span class="st">'min_samples_split'</span>)</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>plt.ylabel(<span class="st">'accuracy'</span>)</span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>plt.xticks(ticks<span class="op">=</span><span class="bu">range</span>(<span class="bu">len</span>(min_samples_split_list)), labels<span class="op">=</span>min_samples_split_list)</span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>plt.plot(accuracy_list_train)</span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>plt.plot(accuracy_list_val)</span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>plt.legend([<span class="st">'Train'</span>, <span class="st">'Validation'</span>])</span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tree-ensembles_files/figure-html/cell-16-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Note how increasing <code>min_samples_split</code> reduces overfitting. Moving from small values toward the middle of the range, the training accuracy comes down toward the validation accuracy even where the validation accuracy itself barely moves, which is exactly a reduction in overfitting. The same experiment with <code>max_depth</code>:</p>
+<div id="cd8c4ae9" class="cell" data-execution_count="16">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>accuracy_list_train <span class="op">=</span> []</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>accuracy_list_val <span class="op">=</span> []</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> max_depth <span class="kw">in</span> max_depth_list:</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>    model <span class="op">=</span> DecisionTreeClassifier(max_depth<span class="op">=</span>max_depth,</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>                                   random_state<span class="op">=</span>RANDOM_STATE).fit(X_train, y_train)</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    accuracy_list_train.append(accuracy_score(model.predict(X_train), y_train))</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    accuracy_list_val.append(accuracy_score(model.predict(X_val), y_val))</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>plt.title(<span class="st">'Train x Validation metrics'</span>)</span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>plt.xlabel(<span class="st">'max_depth'</span>)</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>plt.ylabel(<span class="st">'accuracy'</span>)</span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>plt.xticks(ticks<span class="op">=</span><span class="bu">range</span>(<span class="bu">len</span>(max_depth_list)), labels<span class="op">=</span>max_depth_list)</span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>plt.plot(accuracy_list_train)</span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>plt.plot(accuracy_list_val)</span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>plt.legend([<span class="st">'Train'</span>, <span class="st">'Validation'</span>])</span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tree-ensembles_files/figure-html/cell-17-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Reducing <code>max_depth</code> helps reduce overfitting, and the curve shows the whole <a href="../../machine-learning/advanced-learning-algorithms/bias-and-variance.html">bias/variance</a> story in one picture. When <code>max_depth</code> is very small, both training and validation accuracy are low, the tree cannot make enough splits to distinguish positives from negatives and underfits. When <code>max_depth</code> grows large, training accuracy climbs while validation accuracy falls away from it, the signature of overfitting. The validation accuracy peaks at a modest depth, around 4. Based on the two sweeps, a reasonable choice is <code>max_depth = 4</code> and <code>min_samples_split = 50</code>.</p>
+<div id="2896f179" class="cell" data-execution_count="17">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>decision_tree_model <span class="op">=</span> DecisionTreeClassifier(min_samples_split<span class="op">=</span><span class="dv">50</span>,</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>                                             max_depth<span class="op">=</span><span class="dv">4</span>,</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>                                             random_state<span class="op">=</span>RANDOM_STATE).fit(X_train, y_train)</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Metrics train:</span><span class="ch">\n\t</span><span class="ss">Accuracy score: </span><span class="sc">{</span>accuracy_score(decision_tree_model.predict(X_train), y_train)<span class="sc">:.4f}</span><span class="ss">"</span>)</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Metrics validation:</span><span class="ch">\n\t</span><span class="ss">Accuracy score: </span><span class="sc">{</span>accuracy_score(decision_tree_model.predict(X_val), y_val)<span class="sc">:.4f}</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Metrics train:
+    Accuracy score: 0.8665
+Metrics validation:
+    Accuracy score: 0.8696</code></pre>
+</div>
+</div>
+<p>Little sign of overfitting, the train and validation accuracies sit close together, even though the metrics themselves are not spectacular.</p>
+</section>
+<section id="random-forest" class="level3">
+<h3 class="anchored" data-anchor-id="random-forest">Random Forest</h3>
+<p>Now the <a href="#random-forest-algorithm">random forest</a>, also from scikit-learn. All the hyperparameters of the decision tree exist here too, since a random forest is an ensemble of decision trees, plus one more, <code>n_estimators</code>, the number of trees (<span class="math inline">\(B\)</span> from the lectures). Two implementation notes connect back to the theory.</p>
+<ul>
+<li>Following the lectures, with <span class="math inline">\(n\)</span> features, each split considers a random <span class="math inline">\(\sqrt{n}\)</span> of them; scikit-learn exposes this as the <code>max_features</code> parameter.</li>
+<li>The parameter <code>n_jobs</code> controls how many CPU cores fit trees in parallel. Since the trees are independent of each other, this can speed up training without changing the result, though using close to all of the machine’s cores can impact its overall performance.</li>
+</ul>
+<p>The same sweep runs for each of the three hyperparameters in turn, leaving the others at their defaults.</p>
+<div id="ec8b8077" class="cell" data-execution_count="18">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>min_samples_split_list <span class="op">=</span> [<span class="dv">2</span>, <span class="dv">10</span>, <span class="dv">30</span>, <span class="dv">50</span>, <span class="dv">100</span>, <span class="dv">200</span>, <span class="dv">300</span>, <span class="dv">700</span>]</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>max_depth_list <span class="op">=</span> [<span class="dv">2</span>, <span class="dv">4</span>, <span class="dv">8</span>, <span class="dv">16</span>, <span class="dv">32</span>, <span class="dv">64</span>, <span class="va">None</span>]</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>n_estimators_list <span class="op">=</span> [<span class="dv">10</span>, <span class="dv">50</span>, <span class="dv">100</span>, <span class="dv">500</span>]</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>fig, axes <span class="op">=</span> plt.subplots(<span class="dv">1</span>, <span class="dv">3</span>, figsize<span class="op">=</span>(<span class="dv">12</span>, <span class="fl">3.8</span>))</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>sweeps <span class="op">=</span> [(<span class="st">"min_samples_split"</span>, min_samples_split_list),</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>          (<span class="st">"max_depth"</span>, max_depth_list),</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>          (<span class="st">"n_estimators"</span>, n_estimators_list)]</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> ax, (param, values) <span class="kw">in</span> <span class="bu">zip</span>(axes, sweeps):</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>    acc_train, acc_val <span class="op">=</span> [], []</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> v <span class="kw">in</span> values:</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>        model <span class="op">=</span> RandomForestClassifier(<span class="op">**</span>{param: v},</span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>                                       random_state<span class="op">=</span>RANDOM_STATE).fit(X_train, y_train)</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>        acc_train.append(accuracy_score(model.predict(X_train), y_train))</span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>        acc_val.append(accuracy_score(model.predict(X_val), y_val))</span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>    ax.plot(acc_train)</span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>    ax.plot(acc_val)</span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>    ax.set_xticks(<span class="bu">range</span>(<span class="bu">len</span>(values)))</span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a>    ax.set_xticklabels(values, fontsize<span class="op">=</span><span class="dv">8</span>)</span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a>    ax.set_xlabel(param)</span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a>    ax.set_ylabel(<span class="st">'accuracy'</span>)</span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a>    ax.legend([<span class="st">'Train'</span>, <span class="st">'Validation'</span>], fontsize<span class="op">=</span><span class="dv">8</span>)</span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a>fig.suptitle(<span class="st">'Train x Validation metrics'</span>, fontsize<span class="op">=</span><span class="dv">11</span>)</span>
+<span id="cb13-24"><a href="#cb13-24" aria-hidden="true" tabindex="-1"></a>fig.tight_layout()</span>
+<span id="cb13-25"><a href="#cb13-25" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tree-ensembles_files/figure-html/cell-19-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The patterns match the single tree. Raising <code>min_samples_split</code> narrows the gap between train and validation accuracy, and the ensemble is noticeably less sensitive to <code>max_depth</code> than the single tree was. For <code>n_estimators</code>, accuracy improves early and then flattens, the diminishing returns predicted in the <a href="#bagged-decision-trees">random forest section</a>, which is why the default of 100 trees is a sensible choice. Fitting a random forest with a reasonable set of values:</p>
+<div id="d5914c22" class="cell" data-execution_count="19">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>random_forest_model <span class="op">=</span> RandomForestClassifier(n_estimators<span class="op">=</span><span class="dv">100</span>,</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>                                             max_depth<span class="op">=</span><span class="dv">16</span>,</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>                                             min_samples_split<span class="op">=</span><span class="dv">10</span>,</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>                                             random_state<span class="op">=</span>RANDOM_STATE).fit(X_train, y_train)</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Metrics train:</span><span class="ch">\n\t</span><span class="ss">Accuracy score: </span><span class="sc">{</span>accuracy_score(random_forest_model.predict(X_train), y_train)<span class="sc">:.4f}</span><span class="ss">"</span>)</span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Metrics validation:</span><span class="ch">\n\t</span><span class="ss">Accuracy score: </span><span class="sc">{</span>accuracy_score(random_forest_model.predict(X_val), y_val)<span class="sc">:.4f}</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Metrics train:
+    Accuracy score: 0.9305
+Metrics validation:
+    Accuracy score: 0.8913</code></pre>
+</div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Sweeping one hyperparameter at a time is a shortcut
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>These sweeps varied one hyperparameter while leaving the others at their defaults. Ideally, every <em>combination</em> would be checked. With 3 hyperparameters and 4 values each, that is <span class="math inline">\(4 \times 4 \times 4 = 64\)</span> combinations, versus the <span class="math inline">\(4 + 4 + 4 = 12\)</span> runs done here. scikit-learn’s <a href="https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GridSearchCV.html">GridSearchCV</a> automates trying all combinations, and its <code>refit</code> parameter automatically refits a model on the best one.</p>
+</div>
+</div>
+</section>
+<section id="xgboost-1" class="level3">
+<h3 class="anchored" data-anchor-id="xgboost-1">XGBoost</h3>
+<p>Finally, the gradient boosting model, <a href="#xgboost">XGBoost</a>. The boosting methods train several trees, but instead of the trees being uncorrelated with each other, they are fit one after another, each trying to reduce the remaining error. The model has the same parameters as a decision tree, plus a <strong>learning rate</strong>, the size of the step of the gradient descent method XGBoost uses internally to minimize the error on each training step.</p>
+<p>One interesting feature of XGBoost is that during fitting it can take an evaluation dataset. On each round, it measures its evaluation metric on that set, and once the metric stops improving for a number of rounds (the <code>early_stopping_rounds</code> parameter), training stops. More rounds mean more estimators, and too many estimators can overfit, so stopping when the validation metric stalls limits the number of trees. The evaluation set must come out of the <em>training</em> data, the validation set must stay untouched, so 80 percent of the training set goes to fitting and 20 percent to evaluation.</p>
+<div id="98b224d4" class="cell" data-execution_count="20">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>n <span class="op">=</span> <span class="bu">int</span>(<span class="bu">len</span>(X_train) <span class="op">*</span> <span class="fl">0.8</span>)  <span class="co"># 80% to fit, 20% to evaluate</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>X_train_fit, X_train_eval <span class="op">=</span> X_train[:n], X_train[n:]</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>y_train_fit, y_train_eval <span class="op">=</span> y_train[:n], y_train[n:]</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>xgb_model <span class="op">=</span> XGBClassifier(n_estimators<span class="op">=</span><span class="dv">500</span>, learning_rate<span class="op">=</span><span class="fl">0.1</span>,</span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>                          early_stopping_rounds<span class="op">=</span><span class="dv">10</span>, random_state<span class="op">=</span>RANDOM_STATE)</span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>xgb_model.fit(X_train_fit, y_train_fit,</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>              eval_set<span class="op">=</span>[(X_train_eval, y_train_eval)], verbose<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"best round: </span><span class="sc">{</span>xgb_model<span class="sc">.</span>best_iteration<span class="sc">}</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>best round: 17</code></pre>
+</div>
+</div>
+<p>The model was allowed up to 500 estimators, but it stopped long before that. Here is how the early stopping works. The model keeps track of the round with the best (lowest) evaluation metric so far. Each later round’s metric is compared against that best one, and if 10 rounds in a row fail to beat it, training stops. The <code>best_iteration</code> attribute printed above shows which round had the best metric, and training ran exactly 10 rounds past it. One subtlety, the model is returned at its <em>last</em> training state, not rolled back to the best round.</p>
+<div id="c6e9152e" class="cell" data-execution_count="21">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Metrics train:</span><span class="ch">\n\t</span><span class="ss">Accuracy score: </span><span class="sc">{</span>accuracy_score(xgb_model.predict(X_train), y_train)<span class="sc">:.4f}</span><span class="ss">"</span>)</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Metrics validation:</span><span class="ch">\n\t</span><span class="ss">Accuracy score: </span><span class="sc">{</span>accuracy_score(xgb_model.predict(X_val), y_val)<span class="sc">:.4f}</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Metrics train:
+    Accuracy score: 0.9319
+Metrics validation:
+    Accuracy score: 0.8533</code></pre>
+</div>
+</div>
+<p>In this run, the random forest comes out ahead on validation accuracy, with the single decision tree in the middle and XGBoost a bit behind. The original course notebook, running an older XGBoost version, saw the random forest and XGBoost perform similarly, and boosted trees are sensitive to settings such as the learning rate and the early stopping configuration, so some tuning (with GridSearchCV, for example) would likely close the gap. Either way, the tour is complete, a decision tree, a random forest, and XGBoost, all trained on a real tabular dataset with scikit-learn and the XGBoost library.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>API note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The original course notebook passes <code>early_stopping_rounds</code> to the <code>.fit()</code> method. In XGBoost 2.0 and later, that argument moved to the <code>XGBClassifier</code> constructor, which is what the code above does. The behavior is identical.</p>
+</div>
+</div>
+</section>
+<section id="review-questions-6" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-6">Review Questions</h3>
+<p><strong>1. Increasing <code>min_samples_split</code> or decreasing <code>max_depth</code> both fight overfitting. Explain the mechanism they share.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-29-contents" aria-controls="callout-29" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-29" class="callout-29-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Both limit how far the tree can keep splitting, which keeps the tree smaller. A tree that cannot carve the training set into tiny groups cannot memorize noise, so training accuracy comes down toward validation accuracy. They correspond directly to two of the lecture’s stopping criteria, the minimum number of examples at a node and the maximum depth.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In the <code>max_depth</code> sweep, describe what happens at very small depths, at the peak, and at large depths, in bias/variance terms.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-30-contents" aria-controls="callout-30" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-30" class="callout-30-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>At very small depths both training and validation accuracy are poor, the tree cannot make enough splits to separate the classes, which is underfitting (high bias). Validation accuracy peaks at a moderate depth. At large depths, training accuracy keeps climbing while validation accuracy drops away from it, which is overfitting (high variance).</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. XGBoost was configured with <code>n_estimators=500</code> and <code>early_stopping_rounds=10</code>, and <code>best_iteration</code> came out to some round <span class="math inline">\(r\)</span>. At which round did training actually stop, and which state of the model is returned?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-31-contents" aria-controls="callout-31" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-31" class="callout-31-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Training stopped at round <span class="math inline">\(r + 10\)</span>, after 10 consecutive rounds failed to improve on round <span class="math inline">\(r\)</span>’s evaluation metric. The returned model is its state at that last round, not rolled back to the best round <span class="math inline">\(r\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why is the XGBoost evaluation set carved out of the training data rather than using the validation set <code>(X_val, y_val)</code>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-32-contents" aria-controls="callout-32" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-32" class="callout-32-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because early stopping is a training decision. It chooses how many estimators the final model has. If the validation set drove that decision, it would no longer be an untouched measure of generalization, the same reason the cross-validation and test sets are kept separate in the model selection process. So a slice of the training data serves as the evaluation set, and <code>(X_val, y_val)</code> is used only for the final honest accuracy measurement.</p>
+</div>
+</div>
+</div>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 94%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">94% completed (2076 of 2196 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../machine-learning/advanced-learning-algorithms/decision-tree-learning.html" class="pagination-link" aria-label="Decision Tree Learning">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Decision Tree Learning</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../machine-learning/advanced-learning-algorithms/lab-decision-trees.html" class="pagination-link" aria-label="Lab: Decision Trees">
+        <span class="nav-page-text">Lab: Decision Trees</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
