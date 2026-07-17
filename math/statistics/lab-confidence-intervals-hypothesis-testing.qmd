@@ -276,40 +276,19 @@ For the final section of this lab, we switch from inference (confidence interval
 
 First, let us look at the relationship between fare and two potential predictor variables: trip duration (in seconds) and trip distance (in miles). Scatter plots help us see whether the relationships are roughly linear.
 
-A quick note before plotting: this dataset has a handful of extreme trips (the longest is almost 35,000 seconds — nearly 10 hours — and the priciest fare is $637.50) while 99% of trips are under about 3,800 seconds and $70. If we let matplotlib auto-scale the axes to fit those few outliers, virtually all of the data gets squashed into the bottom-left corner. So we zoom each axis to the **99th percentile** — a concept you already know from this course — and accept that 1% of points fall outside the view.
+We plot the full data range, including the extreme trips (the longest is almost 35,000 seconds — nearly 10 hours — and the priciest fare is $637.50). Most trips crowd into the lower-left corner, with a scattering of unusual trips beyond.
 
 ```{python}
 #| echo: true
 #| warning: false
-# Zoom to the 99th percentile so the bulk of the data is visible
-x_lim_seconds = df['trip_seconds'].quantile(0.99)
-x_lim_miles = df['trip_miles'].quantile(0.99)
-y_lim_fare = df['fare'].quantile(0.99)
-
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-# Fare vs trip_seconds. With ~700k points, even a faint alpha saturates when
-# zoomed in, so we lower it to 0.01 to keep the density gradient visible.
-axes[0].scatter(df['trip_seconds'], df['fare'], alpha=0.01, s=1, color='#4682B4')
-axes[0].set_xlim(0, x_lim_seconds)
-axes[0].set_ylim(0, y_lim_fare)
-axes[0].set_xlabel('Trip Duration (seconds)')
-axes[0].set_ylabel('Fare ($)')
-axes[0].set_title('Fare vs Trip Duration (99th percentile view)')
-
-# Fare vs trip_miles
-axes[1].scatter(df['trip_miles'], df['fare'], alpha=0.01, s=1, color='#4682B4')
-axes[1].set_xlim(0, x_lim_miles)
-axes[1].set_ylim(0, y_lim_fare)
-axes[1].set_xlabel('Trip Distance (miles)')
-axes[1].set_ylabel('Fare ($)')
-axes[1].set_title('Fare vs Trip Distance (99th percentile view)')
-
+fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+df.plot.scatter('fare', 'trip_seconds', ax=ax[0])
+df.plot.scatter('fare', 'trip_miles', ax=ax[1])
 plt.tight_layout()
 plt.show()
 ```
 
-Both plots show a positive relationship: longer trips and farther trips tend to cost more — notice how the higher fare levels only begin to appear at longer durations and distances. The horizontal banding is real, not an artifact: fares in this dataset are quantized in $2.50 steps. The extreme outliers still exist beyond the edges of the view — we simply chose not to let them dictate the scale. The general trend is clear, which suggests a linear model could work reasonably well.
+Both plots show a positive relationship: more expensive trips tend to be longer and cover more distance. A handful of extreme outliers sit far from the main cloud, but the general trend is clear, which suggests a linear model could work reasonably well.
 
 We use `statsmodels` to fit an Ordinary Least Squares (OLS) regression model. The formula `fare ~ trip_seconds + trip_miles` means we are predicting fare using both trip duration and trip distance as inputs.
 
@@ -355,31 +334,32 @@ example_fare = predict_fare(duration_minutes=15, distance_miles=5)
 print(f"Predicted fare for a 15-minute, 5-mile trip: ${example_fare:.2f}")
 ```
 
-Finally, let us visualize how well the model fits by plotting the actual fares against the predicted fares. If the model were perfect, all points would fall on the diagonal line.
+Finally, let us visualize how well the model fits by plotting the original data and the model's predictions against trip duration. If the model captures the relationship well, the prediction cloud should follow the trend of the original data.
 
 ```{python}
 #| echo: true
 #| warning: false
-# Get predictions for all trips
-df['predicted_fare'] = model.predict(df)
+# Get the x and y data that you used to fit the model and drop nan values
+x_y = df[["trip_miles", "trip_seconds", "fare"]].dropna()
 
-# Same trick as before: zoom to the 99th percentile so the cloud is readable
-fare_lim = df['fare'].quantile(0.99)
+# Change this row if you want to choose another x variable (trip_miles or trip_seconds) to plot
+x_variable = "trip_seconds"
 
-fig, ax = plt.subplots(figsize=(8, 8))
-ax.scatter(df['fare'], df['predicted_fare'], alpha=0.05, s=1, color='#4682B4')
-ax.plot([0, fare_lim], [0, fare_lim], color='#CC0000', linestyle='--', linewidth=2, label='Perfect prediction')
-ax.set_xlim(0, fare_lim)
-ax.set_ylim(0, fare_lim)
-ax.set_xlabel('Actual Fare ($)')
-ax.set_ylabel('Predicted Fare ($)')
-ax.set_title('Actual vs Predicted Fare (99th percentile view)')
-ax.legend()
-plt.tight_layout()
+# Get the plotting data
+x_plot = x_y[x_variable]
+y_plot = x_y["fare"]
+y_result = model.predict()
+
+# Plot the data
+plt.scatter(x_plot, y_plot, label="Original Data")
+plt.scatter(x_plot, y_result, label="Prediction")
+plt.xlabel(" ".join(x_variable.split("_")).title(), fontsize=14)
+plt.ylabel("Fare", fontsize=14)
+plt.legend(fontsize=14)
 plt.show()
 ```
 
-The points cluster around the diagonal, which means the model is doing a reasonable job. However, you can see that the predictions are not perfect — the cloud spreads noticeably around the line, and the fit gets worse for the expensive trips beyond this view. This is normal: no model captures every real-world factor. Other variables like time of day, surge pricing, or route taken also affect the fare but are not included in our simple two-variable model.
+The orange predictions follow the upward trend of the blue original data, which means the model is doing a reasonable job of capturing the average relationship. However, the predictions are not perfect — the blue points spread widely around the orange cloud, especially for longer trips. This is normal: no model captures every real-world factor. Other variables like time of day, surge pricing, or route taken also affect the fare but are not included in our simple two-variable model.
 
 ## Summary
 
