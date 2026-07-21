@@ -409,6 +409,23 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 .prog-row .pr-perf { color:#888; font-size:12px; }
 .prog-row .pr-pgn { border:none; background:transparent; cursor:pointer; font-size:13px; padding:2px; }
 .bt-rec { display:block; font-size:11px; color:#9aa; }
+.cloud-box {
+  border:1.5px solid #e0e0e0; border-radius:10px; padding:10px 14px; margin-bottom:16px; font-size:13.5px;
+}
+.cloud-box > div { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.cloud-lead { font-weight:600; }
+.cloud-box input {
+  padding:7px 11px; border:1.5px solid #e0e0e0; border-radius:8px; font:inherit; font-size:13.5px; width:170px;
+}
+.cloud-box input:focus { outline:none; border-color:#2c7be5; }
+#joinBtn, #restoreBtn {
+  border:none; background:#2c7be5; color:#fff; border-radius:7px; padding:7px 14px; cursor:pointer; font:inherit; font-size:13px; font-weight:700;
+}
+.cloud-link { border:none; background:transparent; color:#2c7be5; cursor:pointer; font:inherit; font-size:12.5px; text-decoration:underline; padding:0; }
+.cloud-note { flex-basis:100%; font-size:12px; color:#999; }
+.cloud-code { color:#666; font-size:12.5px; }
+.cloud-code b { font-family:'Courier New',monospace; letter-spacing:1px; }
+.lb-me { background:rgba(44,123,229,.07); border-radius:6px; }
 
 /* ---------- game layout ---------- */
 .game-area { display:none; margin-top:12px; }
@@ -572,6 +589,30 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
       <button id="resumeBtn">Resume</button>
       <button id="discardBtn">Discard</button>
     </div>
+
+    <div class="cloud-box" id="cloudBox">
+      <div id="cloudJoin">
+        <span class="cloud-lead">🏆 Join the online leaderboard:</span>
+        <input type="text" id="nameInput" maxlength="20" placeholder="Your name" autocomplete="off">
+        <button id="joinBtn">Join</button>
+        <button class="cloud-link" id="showRestore">restore with a code</button>
+        <span class="cloud-note">Optional. Saves your name and last 10 games (with PGN) online. Skip it to stay fully local.</span>
+      </div>
+      <div id="cloudRestore" style="display:none;">
+        <span class="cloud-lead">Enter your player code:</span>
+        <input type="text" id="codeInput" maxlength="14" placeholder="XXXX-XXXX-XXXX" autocomplete="off">
+        <button id="restoreBtn">Restore</button>
+        <button class="cloud-link" id="hideRestore">back</button>
+      </div>
+      <div id="cloudOn" style="display:none;">
+        <span class="cloud-lead">Playing online as <b id="cloudName"></b></span>
+        <span class="cloud-code">code <b id="cloudCode"></b></span>
+        <button class="cloud-link" id="copyCode">copy code</button>
+        <button class="cloud-link" id="signOut">sign out</button>
+        <span class="cloud-note">Keep the code somewhere safe. Enter it on another device to bring your record with you.</span>
+      </div>
+    </div>
+
     <span class="cs-label">Choose your opponent</span>
     <div class="bot-grid" id="botGrid"></div>
     <div class="bot-profile" id="botProfile"></div>
@@ -617,7 +658,12 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
       </div>
       <div class="prog-stats" id="progStats"></div>
       <div class="prog-list" id="progList"></div>
-      <div class="engine-note">Stored only in this browser. Nothing is uploaded.</div>
+      <div class="engine-note" id="progNote">Stored in this browser. Join the leaderboard above to also keep your last 10 games online.</div>
+    </div>
+
+    <div class="prog-box" id="leaderBox" style="display:none;">
+      <div class="prog-head"><span class="cs-label" style="margin:0;">Leaderboard</span></div>
+      <div class="prog-list" id="lbList"></div>
     </div>
   </div>
 
@@ -687,9 +733,30 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
     Powered by <a href="https://github.com/official-stockfish/Stockfish" target="_blank" rel="noopener">Stockfish</a> (GPLv3, via
     <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">stockfish.js</a>) and
     <a href="https://github.com/jhlywa/chess.js" target="_blank" rel="noopener">chess.js</a>.
-    Piece images by Colin M.L. Burnett (CC&nbsp;BY-SA&nbsp;3.0). Everything runs locally in your browser.
+    Piece images by Colin M.L. Burnett (CC&nbsp;BY-SA&nbsp;3.0). The engine and coach run locally in your browser;
+    the optional leaderboard stores only your chosen name and last 10 games online.
   </div>
 </div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check-compat.js"></script>
+<script>
+/* same Firebase project as the Pastebin tool; the chess page only touches /chess/ */
+try {
+  firebase.initializeApp({
+    apiKey: "AIzaSyDpRFBtX8LUmZmEX7VcIeMxQKQOtLVdf-A",
+    authDomain: "oliabak-paste.firebaseapp.com",
+    databaseURL: "https://oliabak-paste-default-rtdb.firebaseio.com",
+    projectId: "oliabak-paste",
+    storageBucket: "oliabak-paste.firebasestorage.app",
+    messagingSenderId: "968986695208",
+    appId: "1:968986695208:web:fc5f3d37911810b2e0471d"
+  });
+  firebase.appCheck().activate('6LdhmdosAAAAAGh4ojYqXCU0JOeVo3X-R1qmMaZq', true);
+  window.__chessFdb = firebase.database();
+} catch (e) { window.__chessFdb = null; }
+</script>
 
 <script type="module">
 import { Chess } from './chess-assets/chess.js';
@@ -1101,6 +1168,129 @@ function renderProgress() {
     };
   });
 }
+/* ---------- online identity + leaderboard (optional, Firebase) ---------- */
+const fdb = window.__chessFdb || null;
+const CLOUD_KEY = 'chess-coach-cloud-v1';
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+let cloudProfile = null;
+try { cloudProfile = JSON.parse(lsGet(CLOUD_KEY)); } catch (e) {}
+if (cloudProfile && (!cloudProfile.key || !cloudProfile.name)) cloudProfile = null;
+
+function sanitizeName(s) {
+  return String(s || '').replace(/[^A-Za-z0-9 -]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20);
+}
+function genPlayerKey() {
+  const buf = new Uint8Array(12);
+  (window.crypto || {}).getRandomValues ? crypto.getRandomValues(buf) : buf.forEach((_, i) => buf[i] = Math.floor(Math.random() * 256));
+  return Array.from(buf, b => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
+}
+const fmtCode = k => k.replace(/(.{4})(.{4})(.{4})/, '$1-$2-$3');
+
+function renderCloudBox() {
+  const on = !!(cloudProfile && fdb);
+  $('cloudJoin').style.display = on ? 'none' : 'flex';
+  $('cloudRestore').style.display = 'none';
+  $('cloudOn').style.display = on ? 'flex' : 'none';
+  if (on) {
+    $('cloudName').textContent = cloudProfile.name;   // textContent only: never HTML
+    $('cloudCode').textContent = fmtCode(cloudProfile.key);
+  }
+  if (!fdb) $('cloudBox').style.display = 'none';
+}
+$('showRestore').onclick = () => { $('cloudJoin').style.display = 'none'; $('cloudRestore').style.display = 'flex'; };
+$('hideRestore').onclick = () => { $('cloudJoin').style.display = 'flex'; $('cloudRestore').style.display = 'none'; };
+$('joinBtn').onclick = () => {
+  const nm = sanitizeName($('nameInput').value);
+  if (nm.length < 2) { $('nameInput').style.borderColor = '#e74c3c'; return; }
+  cloudProfile = { key: genPlayerKey(), name: nm };
+  lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
+  if (fdb) fdb.ref('chess/players/' + cloudProfile.key).update({ name: nm, updatedAt: Date.now() }).catch(() => {});
+  renderCloudBox();
+};
+$('restoreBtn').onclick = () => {
+  const code = String($('codeInput').value || '').toUpperCase().replace(/[^A-Z2-9]/g, '');
+  if (code.length !== 12 || !fdb) { $('codeInput').style.borderColor = '#e74c3c'; return; }
+  fdb.ref('chess/players/' + code).once('value').then(snap => {
+    const v = snap.val();
+    if (!v || !v.name) { $('codeInput').style.borderColor = '#e74c3c'; $('codeInput').value = ''; $('codeInput').placeholder = 'code not found'; return; }
+    cloudProfile = { key: code, name: sanitizeName(v.name) || 'Player' };
+    lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
+    /* bring the cloud games into this browser's local history (dedupe by timestamp) */
+    if (Array.isArray(v.recent)) {
+      const h = loadHist();
+      const seen = new Set(h.map(g => g.t));
+      for (const g of v.recent) if (g && g.t && !seen.has(g.t)) h.push(g);
+      h.sort((a, b) => a.t - b.t);
+      saveHist(h);
+      renderProgress(); buildBotGrid();
+    }
+    renderCloudBox();
+  }).catch(() => { $('codeInput').style.borderColor = '#e74c3c'; });
+};
+$('copyCode').onclick = () => {
+  navigator.clipboard.writeText(fmtCode(cloudProfile.key)).then(() => {
+    $('copyCode').textContent = 'copied!'; setTimeout(() => { $('copyCode').textContent = 'copy code'; }, 1400);
+  });
+};
+$('signOut').onclick = () => {
+  try { localStorage.removeItem(CLOUD_KEY); } catch (e) {}
+  cloudProfile = null; renderCloudBox();
+};
+renderCloudBox();
+
+/* push the finished game to the cloud: keeps only the last 10, with PGN */
+function cloudSync(rec) {
+  if (!cloudProfile || !fdb) return;
+  const slim = { t: rec.t, bot: rec.bot, color: rec.color, result: rec.result, tc: rec.tc,
+                 perf: rec.perf || null, moves: rec.moves, pgn: (rec.pgn || '').slice(0, 7500) };
+  fdb.ref('chess/players/' + cloudProfile.key).transaction(cur => {
+    cur = cur || {};
+    const recent = [slim].concat(cur.recent || []).slice(0, 10);
+    const perfs = recent.filter(g => g && g.perf).map(g => g.perf.elo);
+    const won = slim.result !== '1/2-1/2' && (slim.result === '1-0') === (slim.color === 'w');
+    const draw = slim.result === '1/2-1/2';
+    const bo = BOTS.find(b => b.id === slim.bot);
+    let bestWin = cur.bestWin || null;
+    if (won && bo) { const prev = BOTS.find(b => b.id === bestWin); if (!prev || bo.elo > prev.elo) bestWin = bo.id; }
+    return {
+      name: cloudProfile.name,
+      games: (cur.games || 0) + 1,
+      wins: (cur.wins || 0) + (won ? 1 : 0),
+      draws: (cur.draws || 0) + (draw ? 1 : 0),
+      losses: (cur.losses || 0) + (!won && !draw ? 1 : 0),
+      level: perfs.length ? Math.round(perfs.slice(0, 5).reduce((a, b) => a + b, 0) / Math.min(perfs.length, 5) / 50) * 50 : null,
+      bestWin, updatedAt: Date.now(), recent,
+    };
+  }).then(() => loadLeaderboard()).catch(() => {});
+}
+
+function loadLeaderboard() {
+  if (!fdb) return;
+  fdb.ref('chess/players').orderByChild('level').limitToLast(20).once('value').then(snap => {
+    const rows = [];
+    snap.forEach(ch => {
+      const v = ch.val();
+      if (v && typeof v.level === 'number' && v.name) rows.push({ ...v, _key: ch.key });
+    });
+    if (!rows.length) { $('leaderBox').style.display = 'none'; return; }
+    rows.sort((a, b) => b.level - a.level);
+    const list = $('lbList');
+    list.innerHTML = '';
+    rows.forEach((v, i) => {
+      const div = document.createElement('div');
+      div.className = 'prog-row' + (cloudProfile && v._key === cloudProfile.key ? ' lb-me' : '');
+      const mk = (cls, txt) => { const s = document.createElement('span'); s.className = cls; s.textContent = txt; return s; };
+      div.append(mk('pr-date', '#' + (i + 1)),
+                 mk('pr-vs', String(v.name).slice(0, 20)),          // textContent: user names stay inert
+                 mk('pr-res', '~' + v.level),
+                 mk('pr-perf', `${v.wins || 0}W ${v.draws || 0}D ${v.losses || 0}L · ${v.games || 0} games`));
+      list.appendChild(div);
+    });
+    $('leaderBox').style.display = 'block';
+  }).catch(() => { $('leaderBox').style.display = 'none'; });
+}
+loadLeaderboard();
+
 let clearArmed = false;
 $('clearHist').onclick = () => {
   if (!clearArmed) { clearArmed = true; $('clearHist').textContent = 'really clear everything?'; setTimeout(() => { clearArmed = false; $('clearHist').textContent = 'clear history'; }, 2800); return; }
@@ -2131,10 +2321,12 @@ function recordGame(result, reason) {
   let pgn = ''; try { pgn = game.pgn(); } catch (e) {}
   const est = estimateElo();
   const h = loadHist();
-  h.push({ t: Date.now(), bot: bot.id, color: playerColor, tc: chosen.tc, result, reason,
-           perf: est ? { elo: est.elo, acpl: est.acpl, n: est.n } : null,
-           moves: game.history().length, pgn });
+  const rec = { t: Date.now(), bot: bot.id, color: playerColor, tc: chosen.tc, result, reason,
+                perf: est ? { elo: est.elo, acpl: est.acpl, n: est.n } : null,
+                moves: game.history().length, pgn };
+  h.push(rec);
   saveHist(h);
+  cloudSync(rec);
 }
 
 /* ---------- resume an unfinished game after a reload ---------- */
