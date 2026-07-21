@@ -383,6 +383,33 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 .cs-start:disabled { background:#a8c4ec; cursor:wait; }
 .engine-note { font-size:12.5px; color:#999; margin-top:8px; }
 
+/* resume + progress */
+.resume-box {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px;
+  border:2px solid #2c7be5; border-radius:10px; padding:10px 14px; background:rgba(44,123,229,.06); font-size:14px;
+}
+.resume-box button {
+  border:none; border-radius:7px; padding:6px 13px; cursor:pointer; font:inherit; font-size:13px; font-weight:700;
+}
+#resumeBtn { background:#2c7be5; color:#fff; }
+#discardBtn { background:#e0e0e0; color:#333; }
+.prog-box { border-top:1.5px solid #eee; margin-top:20px; padding-top:14px; }
+.prog-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.prog-clear { border:none; background:transparent; color:#bbb; font-size:12px; cursor:pointer; text-decoration:underline; }
+.prog-clear:hover { color:#e74c3c; }
+.prog-stats { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.prog-stats span { font-size:12.5px; border-radius:7px; padding:4px 10px; background:#f1f3f5; color:#444; }
+.prog-stats b { font-family:'Nunito',sans-serif; }
+.prog-list { max-height:170px; overflow-y:auto; font-size:13px; }
+.prog-row { display:flex; align-items:center; gap:8px; padding:4px 2px; border-bottom:1px dashed #eee; color:#555; }
+.prog-row .pr-date { color:#999; width:52px; flex-shrink:0; font-size:12px; }
+.prog-row .pr-res { font-weight:700; width:42px; flex-shrink:0; font-family:'Nunito',sans-serif; }
+.prog-row .pr-res.w { color:#27ae60; } .prog-row .pr-res.l { color:#e74c3c; } .prog-row .pr-res.d { color:#888; }
+.prog-row .pr-vs { flex:1; }
+.prog-row .pr-perf { color:#888; font-size:12px; }
+.prog-row .pr-pgn { border:none; background:transparent; cursor:pointer; font-size:13px; padding:2px; }
+.bt-rec { display:block; font-size:11px; color:#9aa; }
+
 /* ---------- game layout ---------- */
 .game-area { display:none; margin-top:12px; }
 .game-cols { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
@@ -540,6 +567,11 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 
   <!-- ============ SETUP ============ -->
   <div class="cs-card" id="setupCard">
+    <div class="resume-box" id="resumeBox" style="display:none;">
+      <span id="resumeText"></span>
+      <button id="resumeBtn">Resume</button>
+      <button id="discardBtn">Discard</button>
+    </div>
     <span class="cs-label">Choose your opponent</span>
     <div class="bot-grid" id="botGrid"></div>
     <div class="bot-profile" id="botProfile"></div>
@@ -577,6 +609,16 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 
     <button class="cs-start" id="startBtn" disabled="">Loading engine…</button>
     <div class="engine-note" id="engineNote">Downloading Stockfish (~7&nbsp;MB). It runs entirely in your browser; nothing is sent to a server.</div>
+
+    <div class="prog-box" id="progressBox" style="display:none;">
+      <div class="prog-head">
+        <span class="cs-label" style="margin:0;">Your progress</span>
+        <button class="prog-clear" id="clearHist">clear history</button>
+      </div>
+      <div class="prog-stats" id="progStats"></div>
+      <div class="prog-list" id="progList"></div>
+      <div class="engine-note">Stored only in this browser. Nothing is uploaded.</div>
+    </div>
   </div>
 
   <!-- ============ GAME ============ -->
@@ -632,6 +674,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
         <div class="panel-box moves-box" id="movesBox"><table><tbody id="movesBody"></tbody></table></div>
         <div class="act-row">
           <button id="resignBtn" class="danger">Resign</button>
+          <button id="offerDrawBtn">Offer draw</button>
           <button id="pgnBtn">Copy PGN</button>
           <button id="newBtn">New game</button>
         </div>
@@ -953,6 +996,8 @@ let hintsShown = 0, hintFull = 0, warnPlayed = 0, warnBack = 0;
 let minClockMs = Infinity;      // lowest the player's clock got
 let punishOps = [], punishPending = null;   // bot gifts and whether they were cashed
 let drawOffers = 0, lastDrawOfferPly = -99, drawDeclined = 0;   // quirk: draw offers
+let playerDrawOffers = 0, lastPlayerOfferPly = -99;             // draws offered by the player
+let resumed = false;                                            // current game was restored from storage
 
 /* ============================== setup screen ============================== */
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
@@ -977,15 +1022,93 @@ function applyBoardLook() {
   lsSet('chess-trainer-theme', chosen.theme);
 }
 const botGrid = $('botGrid');
-BOTS.forEach(b => {
-  const t = document.createElement('button');
-  t.className = 'bot-tile';
-  t.dataset.bot = b.id;
-  t.innerHTML = `<span class="bot-ava" style="background:${b.color}">${avatarSVG(b)}</span>
-                 <span><span class="bt-name">${bName(b)}</span><br><span class="bt-elo">${b.eloLabel || b.elo} Elo</span></span>`;
-  t.onclick = () => selectBot(b);
-  botGrid.appendChild(t);
-});
+/* ---------- local progress storage (this browser only) ---------- */
+const HIST_KEY = 'chess-trainer-history-v1', LIVE_KEY = 'chess-trainer-live-v1';
+function loadHist() { try { return JSON.parse(lsGet(HIST_KEY)) || []; } catch (e) { return []; } }
+function saveHist(h) { lsSet(HIST_KEY, JSON.stringify(h.slice(-60))); }
+function recordVs(botId) {
+  const r = { w:0, d:0, l:0 };
+  for (const g of loadHist()) {
+    if (g.bot !== botId) continue;
+    if (g.result === '1/2-1/2') r.d++;
+    else if ((g.result === '1-0') === (g.color === 'w')) r.w++;
+    else r.l++;
+  }
+  return r;
+}
+
+function buildBotGrid() {
+  botGrid.innerHTML = '';
+  BOTS.forEach(b => {
+    const t = document.createElement('button');
+    t.className = 'bot-tile';
+    t.dataset.bot = b.id;
+    const r = recordVs(b.id);
+    const rec = (r.w + r.d + r.l) ? `<span class="bt-rec">${r.w}W ${r.d}D ${r.l}L</span>` : '';
+    t.innerHTML = `<span class="bot-ava" style="background:${b.color}">${avatarSVG(b)}</span>
+                   <span><span class="bt-name">${bName(b)}</span><br><span class="bt-elo">${b.eloLabel || b.elo} Elo</span>${rec}</span>`;
+    t.onclick = () => selectBot(b);
+    botGrid.appendChild(t);
+  });
+  botGrid.querySelectorAll('.bot-tile').forEach(x => x.classList.toggle('sel', x.dataset.bot === bot.id));
+}
+buildBotGrid();
+function renderProgress() {
+  const h = loadHist();
+  const box = $('progressBox');
+  if (!h.length) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  let w = 0, d = 0, l = 0;
+  for (const g of h) {
+    if (g.result === '1/2-1/2') d++;
+    else if ((g.result === '1-0') === (g.color === 'w')) w++;
+    else l++;
+  }
+  const perfs = h.filter(g => g.perf).map(g => g.perf.elo);
+  const recent = perfs.slice(-5);
+  const level = recent.length ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length / 50) * 50 : null;
+  let trend = '';
+  if (perfs.length >= 6) {
+    const a = perfs.slice(-3).reduce((x, y) => x + y, 0) / 3;
+    const b = perfs.slice(-6, -3).reduce((x, y) => x + y, 0) / 3;
+    trend = a - b > 60 ? ' ↗' : b - a > 60 ? ' ↘' : ' →';
+  }
+  let best = null;
+  for (const g of h) {
+    if (g.result === '1/2-1/2' || (g.result === '1-0') !== (g.color === 'w')) continue;
+    const bo = BOTS.find(x => x.id === g.bot);
+    if (bo && (!best || bo.elo > best.elo)) best = bo;
+  }
+  $('progStats').innerHTML =
+    `<span>Games: <b>${h.length}</b></span><span>Record: <b>${w}W ${d}D ${l}L</b></span>`
+    + (level ? `<span>Level: <b>~${level}${trend}</b></span>` : '')
+    + (best ? `<span>Best win: <b>${bName(best)} (${best.eloLabel || best.elo})</b></span>` : '');
+  const rows = h.slice(-10).reverse().map((g, i) => {
+    const bo = BOTS.find(x => x.id === g.bot);
+    const won = g.result !== '1/2-1/2' && (g.result === '1-0') === (g.color === 'w');
+    const res = g.result === '1/2-1/2' ? ['d', '½-½'] : won ? ['w', 'Win'] : ['l', 'Loss'];
+    const date = new Date(g.t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return `<div class="prog-row"><span class="pr-date">${date}</span><span class="pr-res ${res[0]}">${res[1]}</span>
+      <span class="pr-vs">vs ${bo ? bName(bo) : g.bot} (${g.color === 'w' ? 'White' : 'Black'}, ${g.tc})</span>
+      <span class="pr-perf">${g.perf ? '~' + g.perf.elo : ''}</span>
+      ${g.pgn ? `<button class="pr-pgn" data-i="${h.length - 1 - i}" title="Copy PGN">📋</button>` : ''}</div>`;
+  }).join('');
+  $('progList').innerHTML = rows;
+  $('progList').querySelectorAll('.pr-pgn').forEach(btn => {
+    btn.onclick = () => {
+      const g = loadHist()[+btn.dataset.i];
+      if (g && g.pgn) navigator.clipboard.writeText(g.pgn).then(() => { btn.textContent = '✓'; setTimeout(() => { btn.textContent = '📋'; }, 1200); });
+    };
+  });
+}
+let clearArmed = false;
+$('clearHist').onclick = () => {
+  if (!clearArmed) { clearArmed = true; $('clearHist').textContent = 'really clear everything?'; setTimeout(() => { clearArmed = false; $('clearHist').textContent = 'clear history'; }, 2800); return; }
+  clearArmed = false; $('clearHist').textContent = 'clear history';
+  saveHist([]); renderProgress(); buildBotGrid();
+};
+renderProgress();
+
 function selectBot(b) {
   bot = b;
   botGrid.querySelectorAll('.bot-tile').forEach(x => x.classList.toggle('sel', x.dataset.bot === b.id));
@@ -1046,6 +1169,17 @@ $('resignBtn').onclick = () => {
   resignArmed = false; $('resignBtn').textContent = 'Resign';
   gameOver(playerColor === 'w' ? '0-1' : '1-0', 'You resigned.');
 };
+$('offerDrawBtn').onclick = () => {
+  if (phase !== 'player') return;
+  const ply = game.history().length;
+  if (ply - lastPlayerOfferPly < 10) { coachMsg.innerHTML = 'You offered recently. Let some moves pass first.'; return; }
+  lastPlayerOfferPly = ply; playerDrawOffers++;
+  if (Math.random() < 0.5) {
+    gameOver('1/2-1/2', `Draw by agreement. You offered and ${bName(bot)} accepted.`);
+  } else {
+    coachMsg.innerHTML = `${bName(bot)} declines the draw. Play on.`;
+  }
+};
 $('pgnBtn').onclick = () => {
   try {
     game.header('Event', `Training game vs ${bName(bot)}`, 'Site', 'h.oliabak.com',
@@ -1079,6 +1213,8 @@ function startGame() {
   turnElapsedBase = 0; hintsShown = 0; hintFull = 0; warnPlayed = 0; warnBack = 0;
   minClockMs = Infinity; punishOps = []; punishPending = null;
   drawOffers = 0; lastDrawOfferPly = -99; drawDeclined = 0; hideDrawOffer();
+  playerDrawOffers = 0; lastPlayerOfferPly = -99; resumed = false;
+  clearLive(); $('resumeBox').style.display = 'none';
   $('perfLine').style.display = 'none';
   setEvalDisplay(0, null);
   coachMsg.textContent = coachOn
@@ -1104,6 +1240,7 @@ function endToSetup() {
   engine.stopIf('analysis');
   $('endOverlay').classList.remove('show');
   gameArea.style.display = 'none'; setupCard.style.display = 'block';
+  renderProgress(); buildBotGrid();
 }
 
 function enterPlayerTurn(retry) {
@@ -1195,6 +1332,7 @@ function enterBotTurn() {
       const entry = pushLog(mv, other(playerColor), null);
       pendingBotGrade = { fen: game.fen(), entry, san: mv.san };
       renderBoard(); renderClocks();
+      saveLive();
       if (!checkGameEnd()) enterPlayerTurn();
     }, wait);
   });
@@ -1249,8 +1387,20 @@ function commitPlayerMove(moveObj, cls) {
     gradeQuietly(fenBefore, uci, entry, quietSnap);
   }
   renderBoard(); renderClocks();
+  saveLive();
   if (!checkGameEnd()) enterBotTurn();
 }
+
+/* ---------- live game snapshot (resume after closing the tab) ---------- */
+function saveLive() {
+  if (phase === 'over' || phase === 'setup') return;
+  lsSet(LIVE_KEY, JSON.stringify({
+    botId: bot.id, color: playerColor, tc: chosen.tc, coach: coachOn,
+    moves: game.history({ verbose: true }).map(m => m.from + m.to + (m.promotion || '')),
+    clocks: { w: Math.round(clocks.w), b: Math.round(clocks.b) }, savedAt: Date.now(),
+  }));
+}
+function clearLive() { try { localStorage.removeItem(LIVE_KEY); } catch (e) {} }
 
 /* Coach off: grade in the background — nothing shown until the final report. */
 function gradeQuietly(fenBefore, uci, entry, snap) {
@@ -1712,8 +1862,8 @@ function setEvalDisplay(whiteCp, mate) {
 /* ============================== move log & coach notes ============================== */
 const CLS_LABEL = { brilliant:'Brilliant', great:'Great', best:'Best', excellent:'Excellent', good:'Good', forced:'Forced', inaccuracy:'Inaccuracy', mistake:'Mistake', blunder:'Blunder' };
 const CLS_MARK  = { brilliant:'!!', great:'!', best:'✓', excellent:'✦', good:'', forced:'≡', inaccuracy:'?!', mistake:'?', blunder:'??' };
-function pushLog(mv, side, cls) {
-  const num = Math.ceil(game.history().length / 2);
+function pushLog(mv, side, cls, numOverride) {
+  const num = numOverride || Math.ceil(game.history().length / 2);
   const isWhiteMove = mv.color === 'w';
   let row = movesBody.lastElementChild;
   if (isWhiteMove || !row) {
@@ -1895,6 +2045,7 @@ function gmReviewHTML(playerWon, isDraw, est) {
     }
   }
   if (drawDeclined > 0) b4.push(`You declined a draw offer and played for more. I respect it.`);
+  if (playerDrawOffers > 0) b4.push(`You offered a draw ${playerDrawOffers === 1 ? 'once' : playerDrawOffers + ' times'}. A draw offer is a small confession.`);
   S.push(b4);
 
   const ryan = BOTS.find(b => b.id === 'ryan');
@@ -1965,7 +2116,77 @@ function gameOver(result, reason) {
   $('repNew').onclick = () => endToSetup();
   $('repClose').onclick = () => $('endOverlay').classList.remove('show');
   coachMsg.textContent = reason + ' Start a new game whenever you’re ready.';
+  recordGame(result, reason);
+  clearLive();
 }
+
+/* ---------- persist the finished game into local history ---------- */
+function recordGame(result, reason) {
+  try {
+    game.header('Event', `Training game vs ${bName(bot)}`, 'Site', 'h.oliabak.com',
+                'Date', new Date().toISOString().slice(0, 10).replace(/-/g, '.'),
+                'White', playerColor === 'w' ? 'You' : `${bName(bot)} (bot)`,
+                'Black', playerColor === 'b' ? 'You' : `${bName(bot)} (bot)`, 'Result', result);
+  } catch (e) {}
+  let pgn = ''; try { pgn = game.pgn(); } catch (e) {}
+  const est = estimateElo();
+  const h = loadHist();
+  h.push({ t: Date.now(), bot: bot.id, color: playerColor, tc: chosen.tc, result, reason,
+           perf: est ? { elo: est.elo, acpl: est.acpl, n: est.n } : null,
+           moves: game.history().length, pgn });
+  saveHist(h);
+}
+
+/* ---------- resume an unfinished game after a reload ---------- */
+function tryOfferResume() {
+  let live = null;
+  try { live = JSON.parse(lsGet(LIVE_KEY)); } catch (e) {}
+  if (!live || !live.moves || !live.moves.length || !BOTS.find(b => b.id === live.botId)) return;
+  const b = BOTS.find(x => x.id === live.botId);
+  $('resumeText').innerHTML = `You have an unfinished game vs <b>${bName(b)}</b> (${live.moves.length} moves, ${live.tc}).`;
+  $('resumeBox').style.display = 'flex';
+  $('resumeBtn').onclick = () => { $('resumeBox').style.display = 'none'; resumeGame(live); };
+  $('discardBtn').onclick = () => { clearLive(); $('resumeBox').style.display = 'none'; };
+}
+function resumeGame(live) {
+  gameSeq++;
+  bot = BOTS.find(x => x.id === live.botId);
+  playerColor = live.color === 'b' ? 'b' : 'w';
+  chosen.tc = live.tc || '15+10'; chosen.color = playerColor;
+  const [mins, inc] = chosen.tc.split('+').map(Number);
+  baseMs = mins * 60000; incMs = inc * 1000;
+  clocks = { w: Math.max(1000, (live.clocks && live.clocks.w) || baseMs),
+             b: Math.max(1000, (live.clocks && live.clocks.b) || baseMs) };
+  coachOn = live.coach !== false;
+  $('coachToggle').checked = coachOn;
+  $('hintBtn').disabled = !coachOn; $('lateHint').disabled = !coachOn;
+  game = new Chess();
+  moveLog = []; movesBody.innerHTML = '';
+  lastMove = null; ghost = null; selected = null; analysis = null; lastCaptureSquare = null;
+  botBaseline = null; pendingBotGrade = null;
+  turnElapsedBase = 0; hintsShown = 0; hintFull = 0; warnPlayed = 0; warnBack = 0;
+  minClockMs = Infinity; punishOps = []; punishPending = null;
+  drawOffers = 0; lastDrawOfferPly = -99; drawDeclined = 0; hideDrawOffer();
+  playerDrawOffers = 0; lastPlayerOfferPly = -99; resumed = true;
+  $('perfLine').style.display = 'none';
+  for (const u of live.moves) applyUci(u);
+  const hist = game.history({ verbose: true });
+  hist.forEach((m, i) => pushLog(m, m.color === playerColor ? playerColor : other(playerColor), null, Math.floor(i / 2) + 1));
+  if (hist.length) lastMove = { from: hist[hist.length - 1].from, to: hist[hist.length - 1].to };
+  setEvalDisplay(0, null);
+  coachMsg.textContent = 'Game restored. Your clock is where you left it.';
+  $('gAva').style.background = bot.color; $('gAva').innerHTML = avatarSVG(bot);
+  $('gBotName').textContent = bName(bot); $('gBotElo').textContent = `${bot.eloLabel || bot.elo} Elo · ${chosen.tc}`;
+  $('topWho').textContent = bName(bot); $('botWho').textContent = 'You';
+  $('endOverlay').classList.remove('show');
+  setupCard.style.display = 'none'; gameArea.style.display = 'block';
+  renderBoard(); renderClocks();
+  engine.newGame().then(() => {
+    startClock();
+    if (game.turn() === playerColor) enterPlayerTurn(); else enterBotTurn();
+  });
+}
+tryOfferResume();
 </script>
 
 
