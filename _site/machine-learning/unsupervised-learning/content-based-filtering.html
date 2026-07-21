@@ -1,0 +1,1513 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-07-21">
+<meta name="description" content="A second recommender algorithm: matching user features to item features with two neural networks whose outputs meet in a dot product, scaling to huge catalogs with retrieval and ranking, the ethics of recommenders, and the TensorFlow implementation.">
+
+<title>Content-Based Filtering – Hossein’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../machine-learning/unsupervised-learning/collaborative-filtering-in-practice.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-285f71f7c7ab2eebc0170294332e2983.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="https://cdn.jsdelivr.net/npm/requirejs@2.3.6/require.min.js" integrity="sha384-c9c+LnTbwQ3aujuU7ULEPVvgLs+Fn6fJUvIGTsuu1ZcCf11fiEubah0ttpca4ntM sha384-6V1/AdqZRWk1KAlWbKBlGhN7VG4iE/yAZcO6NZPMF8od0vukrvr0tg4qY6NSrItx" crossorigin="anonymous"></script>
+
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="Content-Based Filtering – Hossein’s Notes">
+<meta property="og:description" content="A second recommender algorithm: matching user features to item features with two neural networks whose outputs meet in a dot product, scaling to huge catalogs with retrieval and ranking, the ethics of recommenders, and the TensorFlow implementation.">
+<meta property="og:image" content="https://h.oliabak.com/machine-learning/unsupervised-learning/content-based-filtering_files/figure-html/cell-3-output-1.svg">
+<meta property="og:site_name" content="Hossein’s Notes">
+<meta name="twitter:title" content="Content-Based Filtering – Hossein’s Notes">
+<meta name="twitter:description" content="A second recommender algorithm: matching user features to item features with two neural networks whose outputs meet in a dot product, scaling to huge catalogs with retrieval and ranking, the ethics of recommenders, and the TensorFlow implementation.">
+<meta name="twitter:image" content="https://h.oliabak.com/machine-learning/unsupervised-learning/content-based-filtering_files/figure-html/cell-3-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Hossein’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-agentic-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Agentic AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-agentic-ai">    
+        <li>
+    <a class="dropdown-item" href="../../agentic/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../agentic/frameworks.html">
+ <span class="dropdown-text">Frameworks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../agentic/agent-architecture.html">
+ <span class="dropdown-text">Agent Architecture</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../agentic/async-io.html">
+ <span class="dropdown-text">Async I/O</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-viewer.html">
+ <span class="dropdown-text">SVG Viewer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/graph.html">
+ <span class="dropdown-text">Function Grapher</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../machine-learning/unsupervised-learning/content-based-filtering.html">Content-Based Filtering</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/unsupervised-learning/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/unsupervised-learning/clustering.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Clustering</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/unsupervised-learning/anomaly-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Anomaly Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/unsupervised-learning/collaborative-filtering.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Collaborative Filtering</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/unsupervised-learning/collaborative-filtering-in-practice.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Collaborative Filtering in Practice</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/unsupervised-learning/content-based-filtering.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Content-Based Filtering</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#collaborative-versus-content-based-filtering" id="toc-collaborative-versus-content-based-filtering" class="nav-link active" data-scroll-target="#collaborative-versus-content-based-filtering">Collaborative versus Content-Based Filtering</a>
+  <ul class="collapse">
+  <li><a href="#from-vecw-vecx-to-vecv_u-vecv_m" id="toc-from-vecw-vecx-to-vecv_u-vecv_m" class="nav-link" data-scroll-target="#from-vecw-vecx-to-vecv_u-vecv_m">From <span class="math inline">\(\vec{w}, \vec{x}\)</span> to <span class="math inline">\(\vec{v}_u, \vec{v}_m\)</span></a></li>
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#deep-learning-for-content-based-filtering" id="toc-deep-learning-for-content-based-filtering" class="nav-link" data-scroll-target="#deep-learning-for-content-based-filtering">Deep Learning for Content-Based Filtering</a>
+  <ul class="collapse">
+  <li><a href="#one-cost-function-for-both-networks" id="toc-one-cost-function-for-both-networks" class="nav-link" data-scroll-target="#one-cost-function-for-both-networks">One Cost Function for Both Networks</a></li>
+  <li><a href="#finding-similar-items-again" id="toc-finding-similar-items-again" class="nav-link" data-scroll-target="#finding-similar-items-again">Finding Similar Items, Again</a></li>
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#recommending-from-a-large-catalogue" id="toc-recommending-from-a-large-catalogue" class="nav-link" data-scroll-target="#recommending-from-a-large-catalogue">Recommending from a Large Catalogue</a>
+  <ul class="collapse">
+  <li><a href="#retrieval" id="toc-retrieval" class="nav-link" data-scroll-target="#retrieval">Retrieval</a></li>
+  <li><a href="#ranking" id="toc-ranking" class="nav-link" data-scroll-target="#ranking">Ranking</a></li>
+  <li><a href="#how-many-items-to-retrieve" id="toc-how-many-items-to-retrieve" class="nav-link" data-scroll-target="#how-many-items-to-retrieve">How Many Items to Retrieve?</a></li>
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#ethical-use-of-recommender-systems" id="toc-ethical-use-of-recommender-systems" class="nav-link" data-scroll-target="#ethical-use-of-recommender-systems">Ethical Use of Recommender Systems</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#tensorflow-implementation" id="toc-tensorflow-implementation" class="nav-link" data-scroll-target="#tensorflow-implementation">TensorFlow Implementation</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-4" id="toc-review-questions-4" class="nav-link" data-scroll-target="#review-questions-4">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Content-Based Filtering</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">machine-learning</div>
+    <div class="quarto-category">unsupervised-learning</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    A second recommender algorithm: matching user features to item features with two neural networks whose outputs meet in a dot product, scaling to huge catalogs with retrieval and ranking, the ethics of recommenders, and the TensorFlow implementation.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">July 21, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~71 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level and capped at 3 hours.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~4,000 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p><a href="../../machine-learning/unsupervised-learning/collaborative-filtering.html">Collaborative filtering</a> recommends items based on the ratings of users who gave ratings similar to yours, and its <a href="../../machine-learning/unsupervised-learning/collaborative-filtering-in-practice.html#limitations-of-collaborative-filtering">limitations</a>, the cold start problem and the inability to use side information, were exactly what it could not fix on its own. This page develops the algorithm that addresses them: <strong>content-based filtering</strong>, which recommends items by matching <strong>features of the user</strong> to <strong>features of the item</strong>, and which, built with neural networks the way this page builds it, is the approach behind many important commercial state-of-the-art recommender systems today.</p>
+<section id="collaborative-versus-content-based-filtering" class="level2">
+<h2 class="anchored" data-anchor-id="collaborative-versus-content-based-filtering">Collaborative versus Content-Based Filtering</h2>
+<p>The two approaches answer the same question, “what should this user see next?”, from different directions:</p>
+<ul>
+<li><strong>Collaborative filtering:</strong> recommend items based on ratings of users who gave similar ratings as you. The only input is the ratings matrix.</li>
+<li><strong>Content-based filtering:</strong> recommend items based on features of the user and features of the item, using those features to decide which users and items are a good match for each other.</li>
+</ul>
+<p>The bookkeeping notation carries over unchanged: <span class="math inline">\(r(i,j) = 1\)</span> still marks that user <span class="math inline">\(j\)</span> has rated item <span class="math inline">\(i\)</span>, and <span class="math inline">\(y^{(i,j)}\)</span> is still that rating where it exists. What is new is the pair of feature vectors that content-based filtering requires. For movie recommendations, features might look like this:</p>
+<p><strong>User features</strong>, collected into a vector <span class="math inline">\(\vec{x}_u^{(j)}\)</span> for user <span class="math inline">\(j\)</span>:</p>
+<ul>
+<li><strong>Age</strong> of the user.</li>
+<li><strong>Gender</strong>, as a one-hot feature (like the <a href="../../machine-learning/advanced-learning-algorithms/decision-tree-learning.html">one-hot encoding</a> used with decision trees), for example male / female / unknown.</li>
+<li><strong>Country</strong>, a one-hot feature with about 200 possible values.</li>
+<li><strong>Past behaviors</strong>, for example a thousand features recording which of the top thousand movies in the catalog the user has watched.</li>
+<li><strong>Average rating per genre</strong> that the user has given, across all the romance movies the user has rated, what was the average rating, and likewise for action and every other genre. Notice this feature <em>depends on the user’s ratings</em>, and there is nothing wrong with that; a feature vector built partly from the user’s own ratings is a completely fine way to describe a user.</li>
+</ul>
+<p><strong>Movie features</strong>, collected into a vector <span class="math inline">\(\vec{x}_m^{(i)}\)</span> for movie <span class="math inline">\(i\)</span>:</p>
+<ul>
+<li><strong>Year</strong> of the movie.</li>
+<li><strong>Genre or genres</strong> of the movie, if known.</li>
+<li><strong>Critic reviews</strong>, one or several features capturing what critics said.</li>
+<li><strong>Average rating</strong> of the movie, again a feature that depends on ratings, possibly broken out per country or per user demographic.</li>
+</ul>
+<p>The two vectors can be wildly different sizes, the user features might be 1500 numbers while the movie features are just 50, and that is fine.</p>
+<section id="from-vecw-vecx-to-vecv_u-vecv_m" class="level3">
+<h3 class="anchored" data-anchor-id="from-vecw-vecx-to-vecv_u-vecv_m">From <span class="math inline">\(\vec{w}, \vec{x}\)</span> to <span class="math inline">\(\vec{v}_u, \vec{v}_m\)</span></h3>
+<p>Collaborative filtering predicted user <span class="math inline">\(j\)</span>’s rating of movie <span class="math inline">\(i\)</span> as <span class="math inline">\(\vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)}\)</span>. Content-based filtering changes the cast of characters. First, drop <span class="math inline">\(b^{(j)}\)</span> entirely, it turns out this does not hurt performance at all. Then replace both remaining pieces with new vectors:</p>
+<p><span class="math display">\[
+\hat{y}^{(i,j)} = \vec{v}_u^{(j)} \cdot \vec{v}_m^{(i)}
+\]</span></p>
+<p>where <span class="math inline">\(\vec{v}_u^{(j)}\)</span> (v for vector, u for user) is a list of numbers <em>computed from the features</em> <span class="math inline">\(\vec{x}_u^{(j)}\)</span> of user <span class="math inline">\(j\)</span>, and <span class="math inline">\(\vec{v}_m^{(i)}\)</span> (m for movie) is a list of numbers computed from the features <span class="math inline">\(\vec{x}_m^{(i)}\)</span> of movie <span class="math inline">\(i\)</span>.</p>
+<p>To see why a dot product between such vectors is a sensible prediction, imagine the learned vectors turned out to be interpretable. Say <span class="math inline">\(\vec{v}_u^{(j)} = (4.9,\ 0.1,\ \dots)\)</span>, where the first number captures how much this user likes romance movies and the second how much they like action, and <span class="math inline">\(\vec{v}_m^{(i)} = (4.5,\ 0.2,\ \dots)\)</span>, where the numbers capture how much this movie <em>is</em> a romance or an action movie. Multiplying element-wise and summing rewards every dimension where the user’s taste and the movie’s content line up, a big number times a big number, and ignores dimensions where either is near zero.</p>
+<p>One constraint makes this work: although <span class="math inline">\(\vec{x}_u\)</span> and <span class="math inline">\(\vec{x}_m\)</span> can have very different sizes, <span class="math inline">\(\vec{v}_u\)</span> and <span class="math inline">\(\vec{v}_m\)</span> <strong>must have the same dimension</strong>, say 32 numbers each, or the dot product is not even defined. So the challenge is: given user features <span class="math inline">\(\vec{x}_u^{(j)}\)</span>, how do you compute a compact vector <span class="math inline">\(\vec{v}_u^{(j)}\)</span> that represents the user’s preferences, and given movie features <span class="math inline">\(\vec{x}_m^{(i)}\)</span>, how do you compute <span class="math inline">\(\vec{v}_m^{(i)}\)</span>? That is what the next section answers.</p>
+</section>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. In one sentence each, how does collaborative filtering decide what to recommend, and how does content-based filtering decide?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Collaborative filtering recommends items based on ratings from users who gave ratings similar to yours, working from the ratings matrix alone. Content-based filtering recommends items by matching features of the user against features of the item to find good user-item pairings.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Give an example of a user feature that depends on the user’s own ratings. Is such a feature allowed?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The average rating the user has given per genre, for example the average across all romance movies they have rated. Yes, it is allowed, constructing a feature vector that depends on the user’s ratings is a completely fine way to describe a user, and it can be a powerful feature.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. <span class="math inline">\(\vec{x}_u\)</span> might have 1500 numbers and <span class="math inline">\(\vec{x}_m\)</span> only 50. Which pair of vectors must nonetheless have matching sizes, and why?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The computed vectors <span class="math inline">\(\vec{v}_u\)</span> and <span class="math inline">\(\vec{v}_m\)</span> must have the same dimension (say, 32 each), because the prediction is their dot product <span class="math inline">\(\vec{v}_u^{(j)} \cdot \vec{v}_m^{(i)}\)</span>, which is only defined for vectors of equal length. The raw feature vectors they are computed from are free to differ in size.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="deep-learning-for-content-based-filtering" class="level2">
+<h2 class="anchored" data-anchor-id="deep-learning-for-content-based-filtering">Deep Learning for Content-Based Filtering</h2>
+<p>A good way to turn features into those matching vectors is deep learning, and this architecture is how many state-of-the-art commercial content-based systems are built. Two neural networks do the job:</p>
+<ul>
+<li>The <strong>user network</strong> takes the user features <span class="math inline">\(\vec{x}_u\)</span> as input (age, gender, country, and so on) and, through a few dense hidden layers, outputs <span class="math inline">\(\vec{v}_u\)</span>. The unusual part: the output layer has <strong>32 units</strong>, not 1, so the network’s output is a whole vector, not a single number.</li>
+<li>The <strong>item network</strong> (here, the movie network) takes <span class="math inline">\(\vec{x}_m\)</span> as input and outputs <span class="math inline">\(\vec{v}_m\)</span>, also 32 numbers.</li>
+</ul>
+<p>The two networks can have completely different hidden architectures, different numbers of layers, different units per layer; only the output layers must share the same dimension. Drawn as one diagram, the two networks run in parallel and meet at a dot product:</p>
+<div id="74a1e55d" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="content-based-filtering_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>For <strong>binary labels</strong> (did the user engage or not), the same one change as in <a href="../../machine-learning/unsupervised-learning/collaborative-filtering.html#generalizing-to-binary-labels">collaborative filtering</a> applies: pass the dot product through the sigmoid, <span class="math inline">\(g\big(\vec{v}_u^{(j)} \cdot \vec{v}_m^{(i)}\big)\)</span>, and read it as the probability that <span class="math inline">\(y^{(i,j)} = 1\)</span>.</p>
+<section id="one-cost-function-for-both-networks" class="level3">
+<h3 class="anchored" data-anchor-id="one-cost-function-for-both-networks">One Cost Function for Both Networks</h3>
+<p>This model has a lot of parameters, every layer of both networks has its usual weights, but there is <strong>no separate training procedure for the user and movie networks</strong>. A single cost function judges them jointly, and it is nearly the same one collaborative filtering used, a sum over every pair with a label:</p>
+<p><span class="math display">\[
+J = \sum_{(i,j)\,:\,r(i,j)=1} \left( \vec{v}_u^{(j)} \cdot \vec{v}_m^{(i)} - y^{(i,j)} \right)^2 \;+\; \text{(NN regularization term)}
+\]</span></p>
+<p>Different parameter values produce different vectors <span class="math inline">\(\vec{v}_u\)</span> and <span class="math inline">\(\vec{v}_m\)</span>, so minimizing <span class="math inline">\(J\)</span> with gradient descent or any other optimizer tunes <em>all</em> the parameters of <em>both</em> networks toward vectors whose dot products match the observed ratings. Adding the usual neural network regularization term keeps the parameters small.</p>
+</section>
+<section id="finding-similar-items-again" class="level3">
+<h3 class="anchored" data-anchor-id="finding-similar-items-again">Finding Similar Items, Again</h3>
+<p>Just as collaborative filtering’s learned features enabled <a href="../../machine-learning/unsupervised-learning/collaborative-filtering-in-practice.html#finding-related-items">related-item lookup</a>, the trained movie network gives every movie a description vector, and similar movies sit close together: movies <span class="math inline">\(k\)</span> similar to movie <span class="math inline">\(i\)</span> are those with small</p>
+<p><span class="math display">\[
+\left\lVert \vec{v}_m^{(k)} - \vec{v}_m^{(i)} \right\rVert^2
+\]</span></p>
+<p>One practical note that becomes important for scaling: this can all be <strong>pre-computed ahead of time</strong>. A compute server can run overnight, go through the entire catalog, and store the 10 or 20 most similar movies for every movie, so that when a user browses a movie tomorrow, the “similar to this” list is a plain table lookup, no neural network inference at serving time.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Two networks, one system
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Back when <a href="../../machine-learning/advanced-learning-algorithms/tree-ensembles.html">decision trees were compared with neural networks</a>, one advantage claimed for neural networks was that several of them can be plugged together and trained as one larger system. This architecture is exactly that advantage in action: a user network and a movie network, trained in concert through a single cost function, joined by nothing more than a dot product. One practical caveat from the trenches: developers building these systems commercially often spend much of their time carefully engineering the <em>features</em> fed into the two networks, and that investment tends to pay off.</p>
+</div>
+</div>
+<p>The one limitation of the algorithm as described so far: with a large catalog, running it naively is computationally very expensive. Every prediction requires neural network inference, and a big service has far too many items to score them all for every user. The fix is next.</p>
+</section>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. What is unusual about the output layers of the user and item networks, compared to the neural networks used for classification earlier in the course?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>They output a whole vector, for example 32 units, rather than a single unit. The networks’ job is not to predict a label directly but to compute the description vectors <span class="math inline">\(\vec{v}_u\)</span> and <span class="math inline">\(\vec{v}_m\)</span>, whose dot product then forms the prediction. The two networks’ hidden layers can differ freely; only the output dimensions must match.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. How are the parameters of the two networks trained, and what would be wrong with training each network separately?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>A single cost function sums the squared error <span class="math inline">\(\big(\vec{v}_u^{(j)} \cdot \vec{v}_m^{(i)} - y^{(i,j)}\big)^2\)</span> over all rated pairs (plus regularization), and gradient descent tunes all parameters of both networks at once to minimize it. There is no sensible separate target for either network alone, a “correct” <span class="math inline">\(\vec{v}_u\)</span> is only defined by how well its dot products with the <span class="math inline">\(\vec{v}_m\)</span> vectors predict ratings, so the networks can only be judged, and trained, jointly.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why is it significant that per-movie similarity lists can be pre-computed overnight?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because it moves the expensive part, computing <span class="math inline">\(\vec{v}_m\)</span> for every movie and finding the nearest vectors, out of the moment a user is on the site. At serving time, showing “movies similar to this one” is a lookup-table read, no inference needed. This pre-computation idea is also a key building block for scaling recommenders to huge catalogs.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="recommending-from-a-large-catalogue" class="level2">
+<h2 class="anchored" data-anchor-id="recommending-from-a-large-catalogue">Recommending from a Large Catalogue</h2>
+<p>A movie streaming site may have thousands of movies; an ad system, millions of ads; a music service, tens of millions of songs; a large shopping site, tens of millions of products. When a user shows up, their features <span class="math inline">\(\vec{x}_u\)</span> are available, but feeding <em>millions of items</em> through the item network and computing millions of dot products, every single time any user loads a page, is computationally infeasible.</p>
+<p>Large-scale recommender systems handle this with two steps, <strong>retrieval</strong> and <strong>ranking</strong>.</p>
+<section id="retrieval" class="level3">
+<h3 class="anchored" data-anchor-id="retrieval">Retrieval</h3>
+<p>The retrieval step quickly generates a large list of <em>plausible</em> candidates, aiming for broad coverage rather than precision. It is fine if the list includes items the user will not like; the goal is to make sure enough good candidates are in there somewhere. For a movie site, retrieval might assemble:</p>
+<ul>
+<li>For each of the last 10 movies the user watched, the <strong>10 most similar movies</strong>, exactly the pre-computed <span class="math inline">\(\lVert \vec{v}_m^{(k)} - \vec{v}_m^{(i)} \rVert^2\)</span> lookup from the previous section, so this costs a table read, not a network inference.</li>
+<li>The <strong>top 10 movies in each of the user’s 3 most-watched genres</strong>, say romance, comedy, and historical drama.</li>
+<li>The <strong>top 20 movies in the user’s country</strong>.</li>
+</ul>
+<p>Combine these into one list, remove duplicates, and remove movies the user has already watched or purchased. The result is maybe 100 or a few hundred plausible candidates, produced very fast.</p>
+</section>
+<section id="ranking" class="level3">
+<h3 class="anchored" data-anchor-id="ranking">Ranking</h3>
+<p>The ranking step takes that shortlist and scores it properly with the learned model: feed the user vector and each retrieved movie’s vector through the network, compute the predicted rating for every pair, and display the list sorted by predicted rating.</p>
+<p>One additional optimization makes ranking fast too. If <span class="math inline">\(\vec{v}_m\)</span> has been pre-computed for every movie in the catalog, then when a user arrives, only the <em>user</em> network needs to run, once, to get <span class="math inline">\(\vec{v}_u\)</span>. Ranking a few hundred retrieved movies is then just a few hundred dot products against stored vectors, quick enough to do while the page loads.</p>
+</section>
+<section id="how-many-items-to-retrieve" class="level3">
+<h3 class="anchored" data-anchor-id="how-many-items-to-retrieve">How Many Items to Retrieve?</h3>
+<p>Retrieving more items tends to improve results, the shortlist is more likely to contain the true best recommendations, but makes the system slower. The way to choose between retrieving 100, 500, or 1000 items is to run <strong>offline experiments</strong>: check whether retrieving more items actually causes the model’s predictions for the displayed items to improve (for example, whether the estimated <span class="math inline">\(P(y^{(i,j)} = 1)\)</span> of what ends up recommended gets meaningfully higher). If going from 100 to 500 retrieved items yields noticeably more relevant recommendations, the extra latency may be worth it. Together, retrieval for speed and ranking for accuracy let recommenders serve enormous catalogs with both fast and high-quality results.</p>
+</section>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. Why can’t a large service simply run the neural network over every item in the catalog each time a user arrives?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Catalogs run to millions or tens of millions of items (ads, songs, products), and running item-network inference plus a dot product for every one of them, on every page load, for every user, is computationally infeasible. The cost of scoring the full catalog per request is what the retrieval-plus-ranking split exists to avoid.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Describe what the retrieval step and the ranking step each do, and what each is optimized for.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Retrieval quickly assembles a broad list of a few hundred plausible candidates from cheap sources, pre-computed similar-item lookups for recently watched movies, top movies in the user’s favorite genres, top movies in their country, then deduplicates and drops already-seen items; it is optimized for speed and coverage, and false positives are acceptable. Ranking then scores just that shortlist with the learned model and sorts by predicted rating; it is optimized for accuracy, and it is affordable because it runs on hundreds of items, not millions.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. With <span class="math inline">\(\vec{v}_m\)</span> pre-computed for the whole catalog, how much neural network inference happens at serving time, and how would you decide how many items to retrieve?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>One inference: the user network runs once to produce <span class="math inline">\(\vec{v}_u\)</span>, and everything after that is dot products against stored movie vectors. The retrieval count (100 versus 500 versus 1000) is chosen by offline experiments, measuring whether retrieving more items leads to meaningfully more relevant recommendations, and trading that gain against the added slowness.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="ethical-use-of-recommender-systems" class="level2">
+<h2 class="anchored" data-anchor-id="ethical-use-of-recommender-systems">Ethical Use of Recommender Systems</h2>
+<p>Recommender systems are enormously profitable, and some of their use cases have left people and society worse off. The choices are worth examining, because “what should the system optimize?” is a genuine design decision. Consider a spectrum of goals a recommender might be configured for:</p>
+<ol type="1">
+<li>Recommend movies the user is most likely to <strong>rate 5 stars</strong>. Seems fine, this is showing users what they will enjoy.</li>
+<li>Recommend products the user is most likely to <strong>purchase</strong>. Also quite reasonable.</li>
+<li>Show ads most likely to be <strong>clicked, weighted by the advertiser’s bid</strong>, since ad revenue depends on clicks times price-per-click. Profit-maximizing, with possible negative implications.</li>
+<li>Recommend products that generate the <strong>largest profit</strong> for the company, ranking the high-margin item above the most relevant one. Many sites do this today, and the user has no way to tell.</li>
+<li>Maximize <strong>user engagement</strong>, the total time spent on the site, since more time means more ads shown.</li>
+</ol>
+<p>The first two seem innocuous; the last three may be fine, or may be genuinely problematic.</p>
+<p><strong>The ad-bidding amplifier.</strong> The advertising auction can amplify the best businesses, and the most harmful ones. In the travel industry, a company that gives users genuinely good trips tends to be more profitable, can therefore bid more for ads, gets more traffic, serves more users well, and becomes more profitable still, a virtuous cycle that statistically helps good companies. Now run the same loop on the payday loan industry, which charges extremely high interest rates, often to low-income individuals: the company most efficient at squeezing customers for every dollar is the most profitable, so it bids highest, so it gets the most traffic, so it can exploit even more people. The identical feedback loop amplifies the most exploitative player. There is no easy solution; one partial amelioration is refusing to sell ads to exploitative businesses, though defining “exploitative” precisely is itself a very difficult question.</p>
+<p><strong>Engagement maximization.</strong> It has been widely reported that maximizing watch time and time-on-site has led large social media and video platforms to amplify conspiracy theories and hate and toxicity, because that content is highly engaging, even when amplifying it harms individuals and society. A partial, imperfect amelioration is filtering out problematic content, hate speech, fraud, scams, certain violent content, though what exactly to filter is again surprisingly tricky to pin down, and remains something companies, individuals, and governments continue to wrestle with.</p>
+<p><strong>Transparency.</strong> Many users assume the app is recommending things it thinks <em>they</em> will like, and do not realize the ranking may instead be maximizing the company’s profit. Being transparent with users about the criteria behind recommendations is not always easy, but it builds trust and pushes these systems toward doing more good.</p>
+<p>Anyone building a recommender, or any learning system, should think through not only the benefit it creates but the harm it could do, invite diverse perspectives and open debate, and only build things that leave people and society better off.</p>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. Rank these recommender goals from least to most ethically fraught, and say why: maximize engagement; recommend movies likely to be rated 5 stars; rank products by company profit.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Recommending movies likely to be rated 5 stars is the most innocuous, it directly serves the user’s own enjoyment. Ranking products by company profit is more fraught: the user assumes relevance but is being shown high-margin items, without transparency about the criteria. Maximizing engagement has proven the most harmful in practice, since highly engaging content includes conspiracy theories and toxic material, which the system then amplifies at scale.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Explain how the same ad-auction feedback loop can help society in one industry and harm it in another.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The loop is: more profitable → can bid more for ads → more traffic → more customers → more profitable. In travel, profitability tends to come from serving users well, so the loop amplifies good companies, a virtuous cycle. In payday lending, profitability comes from squeezing customers most efficiently, so the very same loop sends the most traffic to the most exploitative company. The auction amplifies whatever makes a business profitable, regardless of whether that thing is good for users.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Name two ameliorations discussed for recommender harms, and the shared difficulty both run into.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Refusing to sell ads to exploitative businesses, and filtering out problematic content such as hate speech, fraud, and scams. Both run into the same difficulty: drawing the definitional line, deciding precisely what counts as “exploitative” or “problematic” is itself a hard, contested problem that requires ongoing debate among companies, individuals, and governments.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="tensorflow-implementation" class="level2">
+<h2 class="anchored" data-anchor-id="tensorflow-implementation">TensorFlow Implementation</h2>
+<p>The two-tower architecture maps onto TensorFlow neatly, and most of the pieces are familiar from the <a href="../../machine-learning/advanced-learning-algorithms/tensorflow-implementation.html">neural network pages</a>. Each tower is an ordinary <code>Sequential</code> stack of dense layers, relu activations for the hidden layers, and a final layer of 32 units with <em>no</em> activation, since it outputs the raw description vector. The new functions appear on the numbered lines:</p>
+<div id="000489c6" class="cell" data-execution_count="3">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="annotated-cell-1"><pre class="sourceCode python code-annotation-code code-with-copy code-annotated"><code class="sourceCode python"><span id="annotated-cell-1-1"><a href="#annotated-cell-1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tensorflow <span class="im">as</span> tf</span>
+<span id="annotated-cell-1-2"><a href="#annotated-cell-1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="annotated-cell-1-3"><a href="#annotated-cell-1-3" aria-hidden="true" tabindex="-1"></a>num_user_features <span class="op">=</span> <span class="dv">14</span></span>
+<span id="annotated-cell-1-4"><a href="#annotated-cell-1-4" aria-hidden="true" tabindex="-1"></a>num_item_features <span class="op">=</span> <span class="dv">16</span></span>
+<span id="annotated-cell-1-5"><a href="#annotated-cell-1-5" aria-hidden="true" tabindex="-1"></a>num_outputs <span class="op">=</span> <span class="dv">32</span></span>
+<span id="annotated-cell-1-6"><a href="#annotated-cell-1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="annotated-cell-1-7"><a href="#annotated-cell-1-7" aria-hidden="true" tabindex="-1"></a>user_NN <span class="op">=</span> tf.keras.models.Sequential([</span>
+<span id="annotated-cell-1-8"><a href="#annotated-cell-1-8" aria-hidden="true" tabindex="-1"></a>    tf.keras.layers.Dense(<span class="dv">256</span>, activation<span class="op">=</span><span class="st">"relu"</span>),</span>
+<span id="annotated-cell-1-9"><a href="#annotated-cell-1-9" aria-hidden="true" tabindex="-1"></a>    tf.keras.layers.Dense(<span class="dv">128</span>, activation<span class="op">=</span><span class="st">"relu"</span>),</span>
+<span id="annotated-cell-1-10"><a href="#annotated-cell-1-10" aria-hidden="true" tabindex="-1"></a>    tf.keras.layers.Dense(num_outputs),</span>
+<span id="annotated-cell-1-11"><a href="#annotated-cell-1-11" aria-hidden="true" tabindex="-1"></a>])</span>
+<span id="annotated-cell-1-12"><a href="#annotated-cell-1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="annotated-cell-1-13"><a href="#annotated-cell-1-13" aria-hidden="true" tabindex="-1"></a>item_NN <span class="op">=</span> tf.keras.models.Sequential([</span>
+<span id="annotated-cell-1-14"><a href="#annotated-cell-1-14" aria-hidden="true" tabindex="-1"></a>    tf.keras.layers.Dense(<span class="dv">256</span>, activation<span class="op">=</span><span class="st">"relu"</span>),</span>
+<span id="annotated-cell-1-15"><a href="#annotated-cell-1-15" aria-hidden="true" tabindex="-1"></a>    tf.keras.layers.Dense(<span class="dv">128</span>, activation<span class="op">=</span><span class="st">"relu"</span>),</span>
+<span id="annotated-cell-1-16"><a href="#annotated-cell-1-16" aria-hidden="true" tabindex="-1"></a>    tf.keras.layers.Dense(num_outputs),</span>
+<span id="annotated-cell-1-17"><a href="#annotated-cell-1-17" aria-hidden="true" tabindex="-1"></a>])</span>
+<span id="annotated-cell-1-18"><a href="#annotated-cell-1-18" aria-hidden="true" tabindex="-1"></a></span>
+<a class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="1" onclick="event.preventDefault();">1</a><span id="annotated-cell-1-19" class="code-annotation-target"><a href="#annotated-cell-1-19" aria-hidden="true" tabindex="-1"></a>input_user <span class="op">=</span> tf.keras.layers.Input(shape<span class="op">=</span>(num_user_features,))</span>
+<span id="annotated-cell-1-20"><a href="#annotated-cell-1-20" aria-hidden="true" tabindex="-1"></a>vu <span class="op">=</span> user_NN(input_user)</span>
+<a class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="2" onclick="event.preventDefault();">2</a><span id="annotated-cell-1-21" class="code-annotation-target"><a href="#annotated-cell-1-21" aria-hidden="true" tabindex="-1"></a>vu <span class="op">=</span> tf.keras.layers.UnitNormalization(axis<span class="op">=</span><span class="dv">1</span>)(vu)</span>
+<span id="annotated-cell-1-22"><a href="#annotated-cell-1-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="annotated-cell-1-23"><a href="#annotated-cell-1-23" aria-hidden="true" tabindex="-1"></a>input_item <span class="op">=</span> tf.keras.layers.Input(shape<span class="op">=</span>(num_item_features,))</span>
+<span id="annotated-cell-1-24"><a href="#annotated-cell-1-24" aria-hidden="true" tabindex="-1"></a>vm <span class="op">=</span> item_NN(input_item)</span>
+<span id="annotated-cell-1-25"><a href="#annotated-cell-1-25" aria-hidden="true" tabindex="-1"></a>vm <span class="op">=</span> tf.keras.layers.UnitNormalization(axis<span class="op">=</span><span class="dv">1</span>)(vm)</span>
+<span id="annotated-cell-1-26"><a href="#annotated-cell-1-26" aria-hidden="true" tabindex="-1"></a></span>
+<a class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="3" onclick="event.preventDefault();">3</a><span id="annotated-cell-1-27" class="code-annotation-target"><a href="#annotated-cell-1-27" aria-hidden="true" tabindex="-1"></a>output <span class="op">=</span> tf.keras.layers.Dot(axes<span class="op">=</span><span class="dv">1</span>)([vu, vm])</span>
+<span id="annotated-cell-1-28"><a href="#annotated-cell-1-28" aria-hidden="true" tabindex="-1"></a></span>
+<a class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="4" onclick="event.preventDefault();">4</a><span id="annotated-cell-1-29" class="code-annotation-target"><a href="#annotated-cell-1-29" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> tf.keras.Model([input_user, input_item], output)</span>
+<span id="annotated-cell-1-30"><a href="#annotated-cell-1-30" aria-hidden="true" tabindex="-1"></a></span>
+<a class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="5" onclick="event.preventDefault();">5</a><span id="annotated-cell-1-31" class="code-annotation-target"><a href="#annotated-cell-1-31" aria-hidden="true" tabindex="-1"></a>cost_fn <span class="op">=</span> tf.keras.losses.MeanSquaredError()</span>
+<span id="annotated-cell-1-32"><a href="#annotated-cell-1-32" aria-hidden="true" tabindex="-1"></a>model.summary()</span><div class="code-annotation-gutter-bg"></div><div class="code-annotation-gutter"></div></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-annotation">
+<dl class="code-annotation-container-grid">
+<dt data-target-cell="annotated-cell-1" data-target-annotation="1">1</dt>
+<dd>
+<span data-code-cell="annotated-cell-1" data-code-lines="19" data-code-annotation="1"><strong><code>tf.keras.layers.Input</code></strong> declares an entry point for data and its shape. Feeding it through <code>user_NN</code> wires the user features into the tower that computes <span class="math inline">\(\vec{v}_u\)</span>.</span>
+</dd>
+<dt data-target-cell="annotated-cell-1" data-target-annotation="2">2</dt>
+<dd>
+<span data-code-cell="annotated-cell-1" data-code-lines="21" data-code-annotation="2"><strong><code>tf.keras.layers.UnitNormalization</code></strong> rescales the vector to have length one (normalizing its l2 norm). This extra step is not required by the math above, but it makes the algorithm work a bit better in practice. The course’s original code calls <strong><code>tf.linalg.l2_normalize</code></strong> here, which does the same thing; newer versions of Keras require the layer form when building a model this way.</span>
+</dd>
+<dt data-target-cell="annotated-cell-1" data-target-annotation="3">3</dt>
+<dd>
+<span data-code-cell="annotated-cell-1" data-code-lines="27" data-code-annotation="3"><strong><code>tf.keras.layers.Dot</code></strong> is a special Keras layer, where <code>Dense</code> computes activations, <code>Dot</code> just takes the dot product of the two vectors handed to it, producing the prediction <span class="math inline">\(\vec{v}_u \cdot \vec{v}_m\)</span>.</span>
+</dd>
+<dt data-target-cell="annotated-cell-1" data-target-annotation="4">4</dt>
+<dd>
+<span data-code-cell="annotated-cell-1" data-code-lines="29" data-code-annotation="4"><strong><code>tf.keras.Model</code></strong> ties everything into one trainable model by declaring its inputs (the user features and the item features) and its output (the dot product defined just above).</span>
+</dd>
+<dt data-target-cell="annotated-cell-1" data-target-annotation="5">5</dt>
+<dd>
+<span data-code-cell="annotated-cell-1" data-code-lines="31" data-code-annotation="5"><strong><code>tf.keras.losses.MeanSquaredError</code></strong> is the squared-error cost from the formula earlier, ready for training the whole two-tower model end to end.</span>
+</dd>
+</dl>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold">Model: "functional_2"</span>
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┓
+┃<span style="font-weight: bold"> Layer (type)        </span>┃<span style="font-weight: bold"> Output Shape      </span>┃<span style="font-weight: bold">    Param # </span>┃<span style="font-weight: bold"> Connected to      </span>┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━┩
+│ input_layer         │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">14</span>)        │          <span style="color: #00af00; text-decoration-color: #00af00">0</span> │ -                 │
+│ (<span style="color: #0087ff; text-decoration-color: #0087ff">InputLayer</span>)        │                   │            │                   │
+├─────────────────────┼───────────────────┼────────────┼───────────────────┤
+│ input_layer_2       │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">16</span>)        │          <span style="color: #00af00; text-decoration-color: #00af00">0</span> │ -                 │
+│ (<span style="color: #0087ff; text-decoration-color: #0087ff">InputLayer</span>)        │                   │            │                   │
+├─────────────────────┼───────────────────┼────────────┼───────────────────┤
+│ sequential          │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">32</span>)        │     <span style="color: #00af00; text-decoration-color: #00af00">40,864</span> │ input_layer[<span style="color: #00af00; text-decoration-color: #00af00">0</span>][<span style="color: #00af00; text-decoration-color: #00af00">0</span>] │
+│ (<span style="color: #0087ff; text-decoration-color: #0087ff">Sequential</span>)        │                   │            │                   │
+├─────────────────────┼───────────────────┼────────────┼───────────────────┤
+│ sequential_1        │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">32</span>)        │     <span style="color: #00af00; text-decoration-color: #00af00">41,376</span> │ input_layer_2[<span style="color: #00af00; text-decoration-color: #00af00">0</span>]… │
+│ (<span style="color: #0087ff; text-decoration-color: #0087ff">Sequential</span>)        │                   │            │                   │
+├─────────────────────┼───────────────────┼────────────┼───────────────────┤
+│ unit_normalization  │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">32</span>)        │          <span style="color: #00af00; text-decoration-color: #00af00">0</span> │ sequential[<span style="color: #00af00; text-decoration-color: #00af00">0</span>][<span style="color: #00af00; text-decoration-color: #00af00">0</span>]  │
+│ (<span style="color: #0087ff; text-decoration-color: #0087ff">UnitNormalization</span>) │                   │            │                   │
+├─────────────────────┼───────────────────┼────────────┼───────────────────┤
+│ unit_normalization… │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">32</span>)        │          <span style="color: #00af00; text-decoration-color: #00af00">0</span> │ sequential_1[<span style="color: #00af00; text-decoration-color: #00af00">0</span>][<span style="color: #00af00; text-decoration-color: #00af00">…</span> │
+│ (<span style="color: #0087ff; text-decoration-color: #0087ff">UnitNormalization</span>) │                   │            │                   │
+├─────────────────────┼───────────────────┼────────────┼───────────────────┤
+│ dot (<span style="color: #0087ff; text-decoration-color: #0087ff">Dot</span>)           │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">1</span>)         │          <span style="color: #00af00; text-decoration-color: #00af00">0</span> │ unit_normalizati… │
+│                     │                   │            │ unit_normalizati… │
+└─────────────────────┴───────────────────┴────────────┴───────────────────┘
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold"> Total params: </span><span style="color: #00af00; text-decoration-color: #00af00">82,240</span> (321.25 KB)
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold"> Trainable params: </span><span style="color: #00af00; text-decoration-color: #00af00">82,240</span> (321.25 KB)
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold"> Non-trainable params: </span><span style="color: #00af00; text-decoration-color: #00af00">0</span> (0.00 B)
+</pre>
+</div>
+</div>
+<p>The summary shows the two <code>Sequential</code> towers as single rows feeding the <code>Dot</code> layer, one trainable model, tens of thousands of parameters across both towers, judged by a single mean squared error. Unlike collaborative filtering, which needed a <a href="../../machine-learning/unsupervised-learning/collaborative-filtering-in-practice.html#adam-and-the-full-algorithm">custom training loop</a> because its cost did not fit the layer paradigm, this architecture is built entirely from standard layers, so the ordinary <code>compile</code> and <code>fit</code> workflow trains it. The practice lab puts these snippets to work in a full content-based recommender.</p>
+<section id="review-questions-4" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-4">Review Questions</h3>
+<p><strong>1. Why does this model train with the ordinary <code>compile</code>/<code>fit</code> workflow when collaborative filtering needed a custom training loop?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-14" class="callout-14-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because every piece of the two-tower architecture is a standard Keras layer: two <code>Sequential</code> stacks of <code>Dense</code> layers joined by a <code>Dot</code> layer, wrapped in a <code>Model</code> with a built-in <code>MeanSquaredError</code> loss. Collaborative filtering’s cost function, with its ratings mask and jointly-learned features, did not fit any standard layer type, so it needed the gradient-tape loop instead.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What does the l2 normalization step (<code>UnitNormalization</code>, or <code>tf.linalg.l2_normalize</code> in the course’s code) do to <span class="math inline">\(\vec{v}_u\)</span> and <span class="math inline">\(\vec{v}_m\)</span>, and is it required?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>It rescales each vector so its length (l2 norm) equals one, leaving only its direction. It is not required by the algorithm as derived, the dot product is defined either way, but normalizing both vectors makes the algorithm work a bit better in practice, so the implementation includes it.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The final <code>Dense</code> layer of each tower has 32 units and no activation function. Why no activation?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-16-contents" aria-controls="callout-16" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-16" class="callout-16-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The output layer’s job is to produce the raw description vector, <span class="math inline">\(\vec{v}_u\)</span> or <span class="math inline">\(\vec{v}_m\)</span>, whose entries may need to be any real numbers, positive or negative, large or small. An activation like relu or sigmoid would clip or squash those values. Any nonlinearity the model needs lives in the hidden layers’ relu activations; the final layer just projects down to the shared 32-dimensional space.</p>
+</div>
+</div>
+</div>
+<p>That wraps up recommender systems: collaborative filtering learned from ratings alone, content-based filtering matched user and item features through two neural networks, retrieval and ranking scaled it to real catalogs, and the ethics section asked what these systems <em>should</em> optimize. The remaining part of the course turns to a different frontier altogether, <strong>reinforcement learning</strong>, culminating in landing a simulated moon lander.</p>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 100%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">100% completed (656 of 656 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../machine-learning/unsupervised-learning/collaborative-filtering-in-practice.html" class="pagination-link" aria-label="Collaborative Filtering in Practice">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Collaborative Filtering in Practice</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
