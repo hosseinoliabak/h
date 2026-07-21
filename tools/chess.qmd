@@ -1,6 +1,6 @@
 ---
 title: "Chess Trainer"
-description: "Play chess against nineteen characters from absolute beginner (200) to full engine strength (2600+), each with their own personality, strengths, and weaknesses — plus a built-in coach: timed hints, mistake and blunder warnings before you commit a move, and a post-game grandmaster report. Runs entirely in your browser."
+description: "Play chess against nineteen characters from absolute beginner (200) to full engine strength (2600+), each with their own personality, strengths, and weaknesses, plus a built-in coach: timed hints, mistake and blunder warnings before you commit a move, and a post-game grandmaster report. Runs entirely in your browser."
 toc: false
 show-reading-time: false
 page-layout: full
@@ -131,6 +131,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 }
 .cb-back { background:#2c7be5; color:#fff; }
 .cb-play { background:#e0e0e0; color:#333; }
+.confirm-bar.draw-bar.show { display:flex; border-color:#2c7be5; background:rgba(44,123,229,.08); }
 .grading-note { display:none; margin-top:8px; font-size:13px; color:#888; }
 
 /* side panel */
@@ -260,7 +261,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
     </div>
 
     <button class="cs-start" id="startBtn" disabled>Loading engine…</button>
-    <div class="engine-note" id="engineNote">Downloading Stockfish (~7&nbsp;MB) — runs entirely in your browser, nothing is sent to a server.</div>
+    <div class="engine-note" id="engineNote">Downloading Stockfish (~7&nbsp;MB). It runs entirely in your browser; nothing is sent to a server.</div>
   </div>
 
   <!-- ============ GAME ============ -->
@@ -280,6 +281,11 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
             <span class="cb-text" id="confirmText"></span>
             <button class="cb-back" id="cbBack">Take back</button>
             <button class="cb-play" id="cbPlay">Play it anyway</button>
+          </div>
+          <div class="confirm-bar draw-bar" id="drawBar">
+            <span class="cb-text" id="drawText"></span>
+            <button class="cb-back" id="dbAccept">Accept ½–½</button>
+            <button class="cb-play" id="dbDecline">Decline</button>
           </div>
           <div class="grading-note" id="gradingNote">Coach is checking your move…</div>
         </div>
@@ -304,7 +310,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
             <button class="hint-btn" id="hintBtn">Hint</button>
             <span class="evaltxt" id="evalTxt">0.0</span>
           </div>
-          <label class="late-row"><input type="checkbox" id="lateHint"> Late hints — wait 20&nbsp;s / 40&nbsp;s before helping</label>
+          <label class="late-row"><input type="checkbox" id="lateHint"> Late hints: wait 20&nbsp;s / 40&nbsp;s before helping</label>
           <div class="coach-msg" id="coachMsg" style="margin-top:8px;">Make your move. If you think for a while, I'll point you in the right direction.</div>
           <div class="perf-line" id="perfLine" style="display:none;"></div>
         </div>
@@ -336,43 +342,43 @@ import { Chess } from './chess-assets/chess.js';
    profile: shown on the selection card — strengths, weaknesses, experience, fun fact. */
 const BOTS = [
   { id:'zack',    name:'Zack',    elo:200,  mode:'skill', skill:0, depth:1, randomP:.5,  color:'#a3b18a', blurb:'Chaotic optimist. Learned the rules yesterday and is thrilled about it.', think:{ min:1.5, max:5,   pLong:.05, longMax:10 },
-    profile:{ strengths:'Absolutely fearless; occasionally stumbles into a brilliancy.', weaknesses:'Hangs everything. Sometimes forgets he has a queen.', years:'2 weeks', fun:'Names every pawn. The first one he loses is always "Kevin".' } },
+    profile:{ strengths:'Absolutely fearless; occasionally stumbles into a brilliancy.', weaknesses:'Hangs everything. Sometimes forgets he has a queen.', years:'Age 31. He started two weeks ago.', fun:'Names every pawn. The first one he loses is always "Kevin".' } },
   { id:'alice',   name:'Alice',   elo:400,  mode:'skill', skill:0, depth:1, randomP:.3,  color:'#e8927c', blurb:'Sunday-afternoon beginner with big capture energy.',                     think:{ min:2,   max:5.5, pLong:.06, longMax:11 },
-    profile:{ strengths:'Loves capturing; knows en passant and will absolutely show it off.', weaknesses:'Back-rank naps. A magnet for scholar’s mate.', years:'3 months', fun:'All pieces must face the same way or she cannot think.' } },
+    profile:{ strengths:'Loves capturing; knows en passant and will absolutely show it off.', weaknesses:'Back-rank naps. A magnet for scholar’s mate.', years:'Age 7. Three months in and fully committed.', fun:'All pieces must face the same way or she cannot think.' } },
   { id:'bob',     name:'Bob',     elo:550,  mode:'skill', skill:0, depth:2, randomP:.18, color:'#e2b04a', blurb:'Weekend warrior. Builds a pawn wall and hides behind it.',               think:{ min:2,   max:6,   pLong:.07, longMax:13 },
-    profile:{ strengths:'Sturdy pawn chains; hard to checkmate quickly.', weaknesses:'Knight forks. Even his cutlery drawer makes him nervous.', years:'1 year, on and off since college', fun:'Blames every loss on a "mouse slip" — including over the board.' } },
+    profile:{ strengths:'Sturdy pawn chains; hard to checkmate quickly.', weaknesses:'Knight forks. Even his cutlery drawer makes him nervous.', years:'Age 19, in college. About one real year of chess since.', fun:'Blames every loss on a "mouse slip", even over the board.' } },
   { id:'charlie', name:'Charlie', elo:700,  mode:'skill', skill:1, depth:2, randomP:.1,  color:'#9ac356', blurb:'Park-bench hustler in training. All tricks, no theory.',                 think:{ min:2.2, max:7,   pLong:.08, longMax:15 },
-    profile:{ strengths:'One-move threats and cheap tricks that keep working.', weaknesses:'Anything two moves deep.', years:'2 years', fun:'Learned everything from 30-second video clips. It shows.' } },
+    profile:{ strengths:'One-move threats and cheap tricks that keep working.', weaknesses:'Anything two moves deep.', years:'Age 15. Two years of video clips later, here we are.', fun:'Learned everything from 30-second video clips. It shows.' } },
   { id:'daisy',   name:'Daisy',   elo:850,  mode:'skill', skill:1, depth:3, randomP:.05, color:'#56b8a2', blurb:'Café player. Attacks first, counts material later.',                think:{ min:2.4, max:7.5, pLong:.09, longMax:16 },
-    profile:{ strengths:'Brave gambits; genuinely dangerous with the initiative.', weaknesses:'Endgames put her to sleep. Literally, once.', years:'3 years', fun:'Brings her own flower-shaped chess clock to every game.' } },
+    profile:{ strengths:'Brave gambits; genuinely dangerous with the initiative.', weaknesses:'Endgames put her to sleep. Literally, once.', years:'Age 24. Three years of café battles.', fun:'Brings her own flower-shaped chess clock to every game.' } },
   { id:'ethan',   name:'Ethan',   elo:1000, mode:'skill', skill:2, depth:3,              color:'#5aa7d6', blurb:'Club newcomer who just discovered openings have names.',                 think:{ min:2.5, max:8,   pLong:.10, longMax:18 },
-    profile:{ strengths:'Knows the first six moves of five openings by heart.', weaknesses:'Chronic time-trouble addict — burns ten minutes on move nine.', years:'4 years', fun:'Says "interesting…" out loud right before every blunder.' } },
+    profile:{ strengths:'Knows the first six moves of five openings by heart.', weaknesses:'Chronic time-trouble addict who burns ten minutes on move nine.', years:'Age 30. Four years in the club.', fun:'Says "interesting…" out loud right before every blunder.' } },
   { id:'fiona',   name:'Fiona',   elo:1150, mode:'skill', skill:3, depth:4,              color:'#7b86dd', blurb:'Tactics gremlin. Sharp, quick, and slightly reckless.',                  think:{ min:2.8, max:9,   pLong:.11, longMax:20 },
-    profile:{ strengths:'Spots knight forks from a mile away.', weaknesses:'Strategy? Never heard of her. Quiet positions are her kryptonite.', years:'5 years', fun:'Does puzzle rush at red lights. As a passenger. Usually.' } },
-  { id:'grace',   name:'Grace',   elo:1300, mode:'skill', skill:5, depth:5,              color:'#b06fd0', blurb:'Solid club regular. Calm, careful, never falls for it twice.',           think:{ min:3,   max:10,  pLong:.12, longMax:24 },
-    profile:{ strengths:'Rock-solid defense; punishes overextension.', weaknesses:'Too cautious — has offered draws in winning positions.', years:'8 years', fun:'Her cat is named Zugzwang. The goldfish is Luft.' } },
+    profile:{ strengths:'Spots knight forks from a mile away.', weaknesses:'Strategy? Never heard of her. Quiet positions are her kryptonite.', years:'Age 12. Five years and a thousand puzzles later.', fun:'Does puzzle rush at red lights. As a passenger. Usually.' } },
+  { id:'grace',   name:'Grace',   elo:1300, mode:'skill', skill:5, depth:5,              color:'#b06fd0', blurb:'Solid club regular. Calm, careful, never falls for the same trick twice.',           think:{ min:3,   max:10,  pLong:.12, longMax:24 },
+    profile:{ strengths:'Rock-solid defense. Punishes overextension.', weaknesses:'So cautious that she offers draws in winning positions. Yes, she will do it to you.', years:'Age 35. Eight careful years.', fun:'Her cat is named Zugzwang. The goldfish is Luft.' }, quirks:{ drawOffer:{ p:.5, advantage:200, max:2, gapPlies:12 } } },
   { id:'henry',   name:'Henry',   elo:1450, mode:'elo',   uciElo:1450,                   color:'#c78a53', blurb:'Club veteran. Slow, steady, and grumpy about modern chess.',             think:{ min:3.5, max:11,  pLong:.12, longMax:30 },
-    profile:{ strengths:'Endgame grinder; wins rook endings a pawn down on stubbornness.', weaknesses:'Modern opening fashion. "In my day we played 1.e4 and meant it."', years:'20 years', fun:'Keeps score in a paper scorebook. Refuses pencils that have erasers.' } },
+    profile:{ strengths:'Endgame grinder; wins rook endings a pawn down on stubbornness.', weaknesses:'Modern opening fashion. "In my day we played 1.e4 and meant it."', years:'Age 41. Twenty years, all in the same club chair.', fun:'Keeps score in a paper scorebook. Refuses pencils that have erasers.' } },
   { id:'iris',    name:'Iris',    elo:1600, mode:'elo',   uciElo:1600,                   color:'#d67ab1', blurb:'Tournament regular with serious opening preparation.',                   think:{ min:3.5, max:12,  pLong:.12, longMax:35 },
-    profile:{ strengths:'Opening prep deeper than most rivers.', weaknesses:'Tilts hard after one bad game — avoid asking about round 4 in Reno.', years:'6 years', fun:'Wears lucky earrings. Lost one mid-tournament and still won: "turns out one is enough."' } },
-  { id:'jack',    name:'Jack',    elo:1750, mode:'elo',   uciElo:1750,                   color:'#647acb', blurb:'City-league star who plays every game like it’s blitz.',            think:{ min:4,   max:12.5,pLong:.13, longMax:38 },
-    profile:{ strengths:'Relentless attacker; smells a weak king through the board.', weaknesses:'Patience. Quiet maneuvering bores him into mistakes.', years:'10 years', fun:'Won a championship in this tie. Has worn it to every game since. Never washed it.' } },
-  { id:'kira',    name:'Kira',    elo:1900, mode:'elo',   uciElo:1900,                   color:'#a4586e', blurb:'Candidate-master hopeful with a calculator for a brain.',                think:{ min:4,   max:13,  pLong:.13, longMax:42 },
-    profile:{ strengths:'Razor-sharp calculation; counts to move twelve without blinking.', weaknesses:'Overthinks simple recaptures. Once spent 12 minutes on one.', years:'9 years', fun:'Streams her blitz games. Chat has seen her miss mate in one. Chat will never let it go.' } },
+    profile:{ strengths:'Opening prep deeper than most rivers.', weaknesses:'Tilts hard after one bad game. Do not ask about round 4 in Reno.', years:'Age 22. Six years, four of them spent on openings.', fun:'Wears lucky earrings. Lost one mid-tournament and still won: "turns out one is enough."' } },
+  { id:'jack',    name:'Jack',    elo:1750, mode:'elo',   uciElo:1750,                   color:'#647acb', blurb:'City-league legend, grandfather of five, attacks like a caffeinated teenager.',            think:{ min:4,   max:12.5,pLong:.13, longMax:38 },
+    profile:{ strengths:'Relentless attacker. Smells a weak king through the board.', weaknesses:'Patience. Quiet maneuvering bores him, and long endgames make him sleepy.', years:'Age 8. Seventy years later he is still attacking. He is 78.', fun:'Won the 1974 club championship in this tie. Has worn it to every game since. Never washed it.' } },
+  { id:'kira',    name:'Kira',    elo:1900, mode:'elo',   uciElo:1900,                   color:'#a4586e', blurb:'Grandmother of six. Streams blitz. Chat calls her The Nightmare.',                think:{ min:4,   max:13,  pLong:.13, longMax:42 },
+    profile:{ strengths:'Calculation as sharp as ever. Counts to move twelve without blinking.', weaknesses:'Overthinks simple recaptures. Once spent 12 minutes on one, live on stream.', years:'Age 9. Seventy-two years of calculation and counting. She is 81.', fun:'Bakes cookies for her opponents before the game, then flags them in the endgame.' } },
   { id:'liam',    name:'Liam',    elo:2000, mode:'elo',   uciElo:2000,                   color:'#6aa84f', blurb:'The club expert. Converts microscopic edges with a straight face.',      think:{ min:4,   max:14,  pLong:.14, longMax:45 },
-    profile:{ strengths:'Ruthless technique; a +0.5 against Liam feels terminal.', weaknesses:'Superstitious — quotes "knight on the rim is grim" even when it’s winning.', years:'12 years', fun:'Won his club title playing the same opening seven rounds in a row. Nobody dared ask why.' } },
+    profile:{ strengths:'Ruthless technique; a +0.5 against Liam feels terminal.', weaknesses:'Superstitious. Quotes "a knight on the rim is grim" even when the knight is winning.', years:'Age 21. Twelve years of quiet squeezing.', fun:'Won his club title playing the same opening seven rounds in a row. Nobody dared ask why.' } },
   { id:'maya',    name:'Maya',    elo:2100, mode:'elo',   uciElo:2100,  title:'WFM',     color:'#b5651d', blurb:'Positional artist. Your plan was refuted before you finished it.',       think:{ min:4.5, max:15,  pLong:.14, longMax:47 },
-    profile:{ strengths:'Prophylaxis. She answers questions you were about to ask.', weaknesses:'Finds king attacks vaguely impolite; would rather squeeze.', years:'14 years, since age 6', fun:'Annotates her games in fountain pen. Three colors. No mistakes.' } },
+    profile:{ strengths:'Prophylaxis. She answers questions you were about to ask.', weaknesses:'Finds king attacks vaguely impolite; would rather squeeze.', years:'Age 6. Fourteen years of fountain-pen annotations.', fun:'Annotates her games in fountain pen. Three colors. No mistakes.' } },
   { id:'noah',    name:'Noah',    elo:2200, mode:'elo',   uciElo:2200,  title:'CM',      color:'#4a90a4', blurb:'The theoretician. Knows 25 moves of theory in 40 openings.',             think:{ min:5,   max:16,  pLong:.15, longMax:50 },
-    profile:{ strengths:'Encyclopedic openings; plays the first 20 moves at blitz speed.', weaknesses:'A novelty on move 8 short-circuits him completely.', years:'15 years', fun:'Fell asleep reading Dvoretsky. Twice. Still recommends it "for the serious student."' } },
+    profile:{ strengths:'Encyclopedic openings; plays the first 20 moves at blitz speed.', weaknesses:'A novelty on move 8 short-circuits him completely.', years:'Age 13. Fifteen years, most of them inside books.', fun:'Fell asleep reading Dvoretsky. Twice. Still recommends it "for the serious student."' } },
   { id:'olivia',  name:'Olivia',  elo:2300, mode:'elo',   uciElo:2300,  title:'FM',      color:'#e6b422', blurb:'Attacking prodigy. Her sacrifices shouldn’t work. They do.',        think:{ min:5,   max:16,  pLong:.15, longMax:52 },
-    profile:{ strengths:'Intuitive sacrifices the engine only approves of ten moves later.', weaknesses:'Defense is, in her words, "someone else’s problem."', years:'11 years, first trophy at 8', fun:'Has a sacrifice named after her at her club. Declining "The Olivia" is considered rude.' } },
+    profile:{ strengths:'Intuitive sacrifices the engine only approves of ten moves later.', weaknesses:'Defense is, in her words, "someone else’s problem."', years:'Age 6. First trophy at 8, first named sacrifice at 15.', fun:'Has a sacrifice named after her at her club. Declining "The Olivia" is considered rude.' } },
   { id:'pablo',   name:'Pablo',   elo:2400, mode:'elo',   uciElo:2400,  title:'IM',      color:'#8d6e63', blurb:'Grand old technician. Squeezes water from stone, slowly.',               think:{ min:6,   max:18,  pLong:.16, longMax:58 },
-    profile:{ strengths:'Thirty years of polished endgames; converts anything dry.', weaknesses:'Fast time controls. "10+10? That is not chess, that is typing."', years:'35 years', fun:'Claims his mustache is insured. Strokes it exactly twice before every winning move.' } },
+    profile:{ strengths:'Thirty years of polished endgames; converts anything dry.', weaknesses:'Fast time controls. "10+10? That is not chess, that is typing."', years:'Age 10. Thirty-five years of endgames.', fun:'Claims his mustache is insured. Strokes it exactly twice before every winning move.' } },
   { id:'quinn',   name:'Quinn',   elo:2500, mode:'elo',   uciElo:2500,  title:'GM',      color:'#26a69a', blurb:'The young grandmaster. Universal style, no exploitable pattern.',        think:{ min:5,   max:17,  pLong:.15, longMax:58 },
-    profile:{ strengths:'Everything, in every position type. Genuinely hard to prepare against.', weaknesses:'Occasional overconfidence against "weaker" players. Relatively speaking.', years:'13 years — GM at 17', fun:'Plays guitar between rounds and insists arpeggios and combinations are the same thing.' } },
-  { id:'ryan',    name:'Ryan',    elo:2600, mode:'full',  movetime:1200, title:'GM',     color:'#d0556e', blurb:'The final boss. Full engine strength — good luck.', eloLabel:'2600+',    think:{ min:5,   max:18,  pLong:.15, longMax:60 },
-    profile:{ strengths:'All of them.', weaknesses:'None you will live long enough to reach.', years:'"Since before you."', fun:'Wears sunglasses indoors so opponents can’t see him not blinking. The crown is non-negotiable.' } },
+    profile:{ strengths:'Everything, in every position type. Genuinely hard to prepare against.', weaknesses:'Occasional overconfidence against "weaker" players. Relatively speaking.', years:'Age 4. GM at 17. Currently 17.', fun:'Plays guitar between rounds and insists arpeggios and combinations are the same thing.' } },
+  { id:'ryan',    name:'Ryan',    elo:2600, mode:'full',  movetime:1200, title:'GM',     color:'#d0556e', blurb:'The final boss. Full engine strength. Good luck.', eloLabel:'2600+',    think:{ min:5,   max:18,  pLong:.15, longMax:60 },
+    profile:{ strengths:'All of them.', weaknesses:'None that you will live long enough to reach.', years:'An age he refuses to disclose. "Since before you."', fun:'Wears sunglasses indoors so opponents can’t see him not blinking. The crown is non-negotiable.' } },
 ];
 /* FIDE-style display name: only titled players get a prefix (CM 2200+, IM 2400+, GM 2500+) */
 const bName = b => (b.title ? b.title + ' ' : '') + b.name;
@@ -401,8 +407,8 @@ const AVATARS = {
   grace:   { skin:'#eab68f', hair:'#4a4a4a', style:'bob',   glasses:true },
   henry:   { skin:'#a9714b', hair:'#3d2f23', style:'beard' },
   iris:    { skin:'#d29b6e', hair:'#1e1e24', style:'bob',   earrings:true },
-  jack:    { skin:'#f6d0b1', hair:'#241d18', style:'slick', collar:true },
-  kira:    { skin:'#f6d0b1', hair:'#4a2c6b', style:'side',  earrings:true },
+  jack:    { skin:'#f6d0b1', hair:'#cfcfcf', style:'slick', collar:true, glasses:true },
+  kira:    { skin:'#f6d0b1', hair:'#d8d8d8', style:'bun',   glasses:true, earrings:true },
   liam:    { skin:'#f7d3b3', hair:'#a5713f', style:'curly' },
   maya:    { skin:'#a9714b', hair:'#241d18', style:'bun',   glasses:true },
   noah:    { skin:'#f6d0b1', hair:'#1e1e24', style:'beard', glasses:true },
@@ -611,6 +617,7 @@ let turnElapsedBase = 0;        // think time carried across take-backs within o
 let hintsShown = 0, hintFull = 0, warnPlayed = 0, warnBack = 0;
 let minClockMs = Infinity;      // lowest the player's clock got
 let punishOps = [], punishPending = null;   // bot gifts and whether they were cashed
+let drawOffers = 0, lastDrawOfferPly = -99, drawDeclined = 0;   // quirk: draw offers
 
 /* ============================== setup screen ============================== */
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
@@ -659,7 +666,7 @@ function selectBot(b) {
     <div class="bp-grid">
       <div><b>💪 Strengths:</b> ${p.strengths}</div>
       <div><b>⚠️ Weaknesses:</b> ${p.weaknesses}</div>
-      <div><b>♟️ Playing for:</b> ${p.years}</div>
+      <div><b>♟️ Playing since:</b> ${p.years}</div>
       <div><b>🎲 Fun fact:</b> ${p.fun}</div>
     </div>`;
 }
@@ -736,11 +743,12 @@ function startGame() {
   botBaseline = null; pendingBotGrade = null;
   turnElapsedBase = 0; hintsShown = 0; hintFull = 0; warnPlayed = 0; warnBack = 0;
   minClockMs = Infinity; punishOps = []; punishPending = null;
+  drawOffers = 0; lastDrawOfferPly = -99; drawDeclined = 0; hideDrawOffer();
   $('perfLine').style.display = 'none';
   setEvalDisplay(0, null);
   coachMsg.textContent = coachOn
     ? 'Make your move. If you think for a while, I’ll point you in the right direction.'
-    : 'Coach is off — plain game.';
+    : 'Coach is off. Plain game.';
   $('gAva').style.background = bot.color; $('gAva').innerHTML = avatarSVG(bot);
   $('gBotName').textContent = bot.name; $('gBotElo').textContent = `${bot.eloLabel || bot.elo} Elo · ${chosen.tc}`;
   $('topWho').textContent = bot.name; $('botWho').textContent = 'You';
@@ -755,7 +763,7 @@ function startGame() {
 
 function endToSetup() {
   gameSeq++;
-  stopClock(); clearHints(); hideConfirm();
+  stopClock(); clearHints(); hideConfirm(); hideDrawOffer(false);
   $('thinkDots').classList.remove('on');
   phase = 'setup';
   engine.stopIf('analysis');
@@ -866,10 +874,11 @@ function finalizeBotGrade(playerPerspScore) {
   botBaseline = null;
   pg.entry.info = graded;
   if (['mistake', 'blunder'].includes(graded.cls)) punishPending = { num: pg.entry.num };
+  maybeOfferDraw(-playerPerspScore);
   renderBadge(pg.entry, coachOn);
   if (coachOn && (graded.cls === 'mistake' || graded.cls === 'blunder') && phase === 'player') {
-    coachMsg.innerHTML = `${bName(bot)} played <b class="mv">${pg.san}</b> — ` +
-      (graded.cls === 'blunder' ? 'a blunder <b>??</b>' : 'a mistake <b>?</b>') + ` Find the punishment!`;
+    coachMsg.innerHTML = `${bName(bot)} played <b class="mv">${pg.san}</b>. ` +
+      (graded.cls === 'blunder' ? 'That is a blunder <b>(??)</b>.' : 'That is a mistake <b>(?)</b>.') + ` Find the punishment!`;
   }
 }
 
@@ -923,7 +932,7 @@ function checkGameEnd() {
   if (game.isCheckmate()) {
     const winnerIsPlayer = game.turn() !== playerColor;
     gameOver(game.turn() === 'w' ? '0-1' : '1-0',
-             winnerIsPlayer ? `Checkmate — you beat ${bName(bot)}!` : `Checkmate — ${bName(bot)} wins.`);
+             winnerIsPlayer ? `Checkmate! You beat ${bName(bot)}!` : `Checkmate. ${bName(bot)} wins.`);
     return true;
   }
   if (game.isStalemate())            { gameOver('1/2-1/2', 'Draw by stalemate.'); return true; }
@@ -946,7 +955,7 @@ function startClock() {
       clocks[activeClock] = 0; renderClocks();
       const loserIsPlayer = activeClock === playerColor;
       gameOver(activeClock === 'w' ? '0-1' : '1-0',
-               loserIsPlayer ? 'You ran out of time.' : `${bName(bot)} ran out of time — you win!`);
+               loserIsPlayer ? 'You ran out of time.' : `${bName(bot)} ran out of time. You win!`);
       return;
     }
     renderClocks();
@@ -1148,6 +1157,7 @@ function classifyLoss(meBefore, meAfter, isEngineBest) {
 async function proposeMove(moveObj) {
   selected = null;
   clearHints();
+  hideDrawOffer(true);   // moving declines any pending draw offer
   /* game-ending moves commit instantly */
   const probe = new Chess(game.fen());
   probe.move({ from: moveObj.from, to: moveObj.to, promotion: moveObj.promotion });
@@ -1208,7 +1218,7 @@ function showConfirm(info, moveObj) {
   const word = info.cls === 'blunder' ? 'Blunder' : 'Mistake';
   const mark = info.cls === 'blunder' ? '??' : '?';
   const threat = info.replySan ? ` <b>${info.replySan}</b> is the punishment.` : '';
-  confirmText.innerHTML = `<b>${moveObj.san} ${mark} — ${word}.</b> Eval ${fmtEval(info.evalBefore)} → ${fmtEval(info.evalAfter)}.${threat} Take a closer look.`;
+  confirmText.innerHTML = `<b>${moveObj.san} ${mark} ${word}.</b> Eval ${fmtEval(info.evalBefore)} → ${fmtEval(info.evalAfter)}.${threat} Take a closer look.`;
 }
 function hideConfirm() { confirmBar.className = 'confirm-bar'; gradingNote.style.display = 'none'; }
 function resolveConfirm(playIt) {
@@ -1226,6 +1236,31 @@ function resolveConfirm(playIt) {
     enterPlayerTurn(true);  // restarts analysis of the same position; clock keeps running
   }
 }
+
+/* ============================== draw offers (bot quirk) ============================== */
+/* Some characters offer draws in positions where they are winning. Offer arrives
+   right after their move, chess-etiquette style; making a move declines it. */
+function maybeOfferDraw(botAdvantage) {
+  const q = bot.quirks && bot.quirks.drawOffer;
+  if (!q || phase !== 'player') return;
+  const ply = game.history().length;
+  if (drawOffers >= q.max || ply - lastDrawOfferPly < q.gapPlies || ply < 10) return;
+  if (botAdvantage < q.advantage || Math.random() >= q.p) return;
+  drawOffers++; lastDrawOfferPly = ply;
+  $('drawText').innerHTML = `🤝 <b>${bName(bot)} offers a draw.</b> She is clearly better and did it anyway. Free half point, or play on for the win she just declined?`;
+  $('drawBar').classList.add('show');
+}
+function hideDrawOffer(declined) {
+  const bar = $('drawBar');
+  if (declined && bar.classList.contains('show')) drawDeclined++;
+  bar.classList.remove('show');
+}
+$('dbAccept').onclick = () => {
+  if (phase !== 'player' || !$('drawBar').classList.contains('show')) return;
+  hideDrawOffer(false);
+  gameOver('1/2-1/2', `Draw by agreement. ${bName(bot)} offered it while winning, true to form.`);
+};
+$('dbDecline').onclick = () => hideDrawOffer(true);
 
 /* ============================== hints ============================== */
 function scheduleHints() {
@@ -1257,7 +1292,7 @@ function renderHints() {
     drawArrow(from, to);
     coachMsg.innerHTML = `Look at <b class="mv">${uciToSan(game.fen(), analysis.bestUci) || from + '–' + to}</b>.`;
   } else {
-    coachMsg.innerHTML = `Consider your piece on <b class="mv">${from}</b> — it has something to say.`;
+    coachMsg.innerHTML = `Your piece on <b class="mv">${from}</b> has something to say.`;
   }
 }
 function clearHints() {
@@ -1336,16 +1371,16 @@ function showCoachNote(cls, mv) {
   const swing = (typeof cls.evalBefore === 'number' && typeof cls.evalAfter === 'number')
     ? ` (${fmtEval(cls.evalBefore)} → ${fmtEval(cls.evalAfter)})` : '';
   if (c === 'best')
-    coachMsg.innerHTML = `<b class="mv">${mv.san}</b> ✓ — best move, exactly what I would play.${reply}`;
+    coachMsg.innerHTML = `<b class="mv">${mv.san}</b> ✓ Best move, exactly what I would play.${reply}`;
   else if (c === 'excellent')
-    coachMsg.innerHTML = `<b class="mv">${mv.san}</b> — excellent, practically as strong as the best move.${reply}`;
+    coachMsg.innerHTML = `<b class="mv">${mv.san}</b>: excellent, practically as strong as the best move.${reply}`;
   else if (c === 'good')
-    coachMsg.innerHTML = `<b class="mv">${mv.san}</b> — solid move${swing}.${reply}`;
+    coachMsg.innerHTML = `<b class="mv">${mv.san}</b>: solid move${swing}.${reply}`;
   else {
     const better = cls.betterSan ? ` <b class="mv">${cls.betterSan}</b> was stronger.` : '';
     const cost = cls.loss >= 100 && cls.loss < MATE / 2
       ? ` It gives up about ${(cls.loss / 100).toFixed(1)} pawns of advantage${swing}.` : `${swing}.`;
-    coachMsg.innerHTML = `<b class="mv">${mv.san}</b> — ${CLS_LABEL[c].toLowerCase()}.${cost}${better}${reply}`;
+    coachMsg.innerHTML = `<b class="mv">${mv.san}</b>: ${CLS_LABEL[c].toLowerCase()}.${cost}${better}${reply}`;
   }
 }
 /* ============================== rating estimate ============================== */
@@ -1413,15 +1448,15 @@ function gmReviewHTML(playerWon, isDraw, est) {
   /* result + level */
   const diff = est.elo - bot.elo;
   let p1;
-  if (bot.id === 'ryan') p1 = `You came straight for me — bold.`;
+  if (bot.id === 'ryan') p1 = `You came straight for me. Bold.`;
   else if (isDraw) p1 = `A draw with ${bName(bot)}. Half points teach half lessons.`;
-  else if (playerWon && diff >= 300) p1 = `You beat ${bName(bot)} — expected at your strength. The interesting part is how.`;
+  else if (playerWon && diff >= 300) p1 = `You beat ${bName(bot)}, which is expected at your strength. The interesting part is how.`;
   else if (playerWon && diff <= -200) p1 = `You took down ${bName(bot)} playing above your level. I notice these things.`;
   else if (playerWon) p1 = `A fair fight against ${bName(bot)}, and you took it. Earned.`;
-  else if (diff <= -300) p1 = `You lost to a stronger opponent. No shame in that — but no excuses either.`;
+  else if (diff <= -300) p1 = `You lost to a stronger opponent. No shame in that, but no excuses either.`;
   else if (diff >= 300) p1 = `Losing to ${bName(bot)} while playing ${est.elo}-level moves? The scoresheet does not care how pretty your moves were.`;
-  else p1 = `Losing to ${bName(bot)} at your level should sting a little. Good — let it.`;
-  S.push([p1 + ` Your moves averaged ${est.acpl} centipawns of loss — that is ~${est.elo} territory.`]);
+  else p1 = `Losing to ${bName(bot)} at your level should sting a little. Good. Let it.`;
+  S.push([p1 + ` Your moves averaged ${est.acpl} centipawns of loss. That is ~${est.elo} territory.`]);
 
   /* moves */
   const m2 = [];
@@ -1429,19 +1464,19 @@ function gmReviewHTML(playerWon, isDraw, est) {
   if (open.length >= 3) {
     const oa = Math.round(open.reduce((s, m) => s + Math.min(500, m.info.loss), 0) / open.length);
     m2.push(oa <= 35 ? `The opening was tidy (${oa} cp average loss).`
-                     : `You were already bleeding in the opening (${oa} cp average) — opening study is free rating.`);
+                     : `You were already bleeding in the opening (${oa} cp average). Opening study is free rating.`);
   }
   const errs = g.filter(m => ['mistake', 'blunder'].includes(m.info.cls));
   if (errs.length) {
     const worst = errs.slice().sort((a, b) => b.info.loss - a.info.loss)[0];
-    m2.push(`Worst moment: move ${worst.num}, ${worst.san}${worst.info.betterSan ? ` — ${worst.info.betterSan} was right there` : ''}.`);
+    m2.push(`Worst moment: move ${worst.num}, ${worst.san}.${worst.info.betterSan ? ` ${worst.info.betterSan} was right there.` : ''}`);
   } else {
-    m2.push(`No mistakes, no blunders. I have very little to criticize — which is rare.`);
+    m2.push(`No mistakes, no blunders. I have very little to criticize, which is rare.`);
   }
   if (punishOps.length) {
     const cashed = punishOps.filter(p => p.cashed).length;
     m2.push(cashed === punishOps.length
-      ? `${bName(bot)} handed you ${punishOps.length} gift${punishOps.length === 1 ? '' : 's'} and you punished every one. Ruthless — good.`
+      ? `${bName(bot)} handed you ${punishOps.length} gift${punishOps.length === 1 ? '' : 's'} and you punished every one. Ruthless. Good.`
       : `I counted ${punishOps.length} gift${punishOps.length === 1 ? '' : 's'} from ${bName(bot)}; you converted ${cashed}. A gift declined is a gift returned.`);
   }
   S.push(m2);
@@ -1452,31 +1487,32 @@ function gmReviewHTML(playerWon, isDraw, est) {
   const avgT = thinks.reduce((a, b) => a + b, 0) / thinks.length / 1000;
   t3.push(`You averaged ${avgT < 10 ? avgT.toFixed(1) : Math.round(avgT)} seconds a move.`);
   const rushed = errs.filter(m => (m.thinkMs || 0) < 5000).length;
-  if (rushed) t3.push(`${rushed} of your ${errs.length} serious error${errs.length === 1 ? '' : 's'} came after less than five seconds of thought — sit on your hands.`);
+  if (rushed) t3.push(`${rushed} of your ${errs.length} serious error${errs.length === 1 ? '' : 's'} came after less than five seconds of thought. Sit on your hands.`);
   const maxT = Math.max(...thinks);
   if (maxT >= 20000) {
     const long = g[thinks.indexOf(maxT)];
     t3.push(['best', 'excellent', 'good'].includes(long.info.cls)
       ? `The ${Math.round(maxT / 1000)}-second think on move ${long.num} paid off.`
-      : `You spent ${Math.round(maxT / 1000)} seconds on move ${long.num} and still went wrong — long thought needs direction, not just duration.`);
+      : `You spent ${Math.round(maxT / 1000)} seconds on move ${long.num} and still went wrong. Long thought needs direction, not just duration.`);
   }
-  if (minClockMs < 60000) t3.push(`You dipped under a minute on the clock — that is where games go to die.`);
+  if (minClockMs < 60000) t3.push(`You dipped under a minute on the clock. That is where games go to die.`);
   else if (!playerWon && !isDraw && clocks[playerColor] > baseMs * 0.4)
-    t3.push(`And you lost with ${Math.round(clocks[playerColor] / 60000)} minutes unspent. Time is material — spend it.`);
+    t3.push(`And you lost with ${Math.round(clocks[playerColor] / 60000)} minutes unspent. Time is material. Spend it.`);
   S.push(t3);
 
   /* behavior */
   const b4 = [];
-  if (!coachOn) b4.push(`No hints, no warnings, no safety net — proper tournament conditions. Respect.`);
+  if (!coachOn) b4.push(`No hints, no warnings, no safety net. Proper tournament conditions. Respect.`);
   else {
     b4.push(hintsShown === 0 ? `You never needed a hint.`
-      : `You leaned on ${hintsShown} hint${hintsShown === 1 ? '' : 's'}${hintFull ? ` (${hintFull} full reveal${hintFull === 1 ? '' : 's'})` : ''} — fine for training; at the board there are none.`);
+      : `You leaned on ${hintsShown} hint${hintsShown === 1 ? '' : 's'}${hintFull ? ` (${hintFull} full reveal${hintFull === 1 ? '' : 's'})` : ''}. Fine for training, but at the board there are none.`);
     const warns = warnPlayed + warnBack;
     if (warns) {
       if (warnPlayed === 0) b4.push(`Warned ${warns} time${warns === 1 ? '' : 's'}, you stepped back each time. Discipline.`);
       else b4.push(`You pushed through ${warnPlayed} of ${warns} warning${warns === 1 ? '' : 's'}. Stubbornness is not a strategy.`);
     }
   }
+  if (drawDeclined > 0) b4.push(`You declined a draw offer and played for more. I respect it.`);
   S.push(b4);
 
   const ryan = BOTS.find(b => b.id === 'ryan');
@@ -1495,7 +1531,7 @@ function gameOver(result, reason) {
   phase = 'over';
   gameSeq++;                     // cancel any in-flight bot think / analysis callbacks
   activeClock = null;
-  stopClock(); clearHints(); hideConfirm();
+  stopClock(); clearHints(); hideConfirm(); hideDrawOffer(false);
   $('thinkDots').classList.remove('on');
   engine.stopIf('analysis');
   ghost = null; renderBoard(); renderClocks();
@@ -1516,17 +1552,17 @@ function gameOver(result, reason) {
     if (worst.length) {
       html += `<div style="font-weight:700;font-size:13.5px;margin-bottom:2px;">Review these:</div>`;
       for (const m of worst)
-        html += `<div class="rep-mist">${m.num}. ${m.san} ${CLS_MARK[m.info.cls]} — better was <b>${m.info.betterSan || '…'}</b> (${fmtEval(m.info.evalBefore)} → ${fmtEval(m.info.evalAfter)})</div>`;
+        html += `<div class="rep-mist">${m.num}. ${m.san} ${CLS_MARK[m.info.cls]}, better was <b>${m.info.betterSan || '…'}</b> (${fmtEval(m.info.evalBefore)} → ${fmtEval(m.info.evalAfter)})</div>`;
     } else {
-      html += `<div class="rep-mist">Clean game — nothing to scold you for. 👏</div>`;
+      html += `<div class="rep-mist">Clean game. Nothing to scold you for. 👏</div>`;
     }
     const est = estimateElo();
     var repSug = null;
     if (est) {
-      html += `<div class="rep-mist" style="margin-top:8px;"><b>Estimated performance: ~${est.elo}</b> — avg loss ${est.acpl} cp over ${est.n} graded moves. One game is a very rough sample.</div>`;
+      html += `<div class="rep-mist" style="margin-top:8px;"><b>Estimated performance: ~${est.elo}</b> (avg loss ${est.acpl} cp over ${est.n} graded moves). One game is a very rough sample.</div>`;
       const sug = suggestBot(est.elo);
       if (sug && sug.id !== bot.id) repSug = sug;
-      else html += `<div class="rep-mist">You and ${bName(bot)} look well matched — run it back!</div>`;
+      else html += `<div class="rep-mist">You and ${bName(bot)} look well matched. Run it back!</div>`;
     }
     const botGraded = moveLog.filter(m => m.side !== playerColor && m.info && m.info.cls);
     const bMist = botGraded.filter(m => m.info.cls === 'mistake').length;
