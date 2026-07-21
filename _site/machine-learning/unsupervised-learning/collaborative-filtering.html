@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-07-20">
+<meta name="description" content="The first recommender systems algorithm: the movie-ratings notation, predicting ratings with per-user linear models, learning item features straight from the ratings, the combined cost function, and generalizing to binary labels.">
+
+<title>Collaborative Filtering – Hossein’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../machine-learning/unsupervised-learning/collaborative-filtering-in-practice.html" rel="next">
+<link href="../../machine-learning/unsupervised-learning/anomaly-detection.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-285f71f7c7ab2eebc0170294332e2983.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="Collaborative Filtering – Hossein’s Notes">
+<meta property="og:description" content="The first recommender systems algorithm: the movie-ratings notation, predicting ratings with per-user linear models, learning item features straight from the ratings, the combined cost function, and generalizing to binary labels.">
+<meta property="og:image" content="https://h.oliabak.com/machine-learning/unsupervised-learning/collaborative-filtering_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="Hossein’s Notes">
+<meta name="twitter:title" content="Collaborative Filtering – Hossein’s Notes">
+<meta name="twitter:description" content="The first recommender systems algorithm: the movie-ratings notation, predicting ratings with per-user linear models, learning item features straight from the ratings, the combined cost function, and generalizing to binary labels.">
+<meta name="twitter:image" content="https://h.oliabak.com/machine-learning/unsupervised-learning/collaborative-filtering_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Hossein’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-agentic-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Agentic AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-agentic-ai">    
+        <li>
+    <a class="dropdown-item" href="../../agentic/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../agentic/frameworks.html">
+ <span class="dropdown-text">Frameworks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../agentic/agent-architecture.html">
+ <span class="dropdown-text">Agent Architecture</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../agentic/async-io.html">
+ <span class="dropdown-text">Async I/O</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-viewer.html">
+ <span class="dropdown-text">SVG Viewer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/graph.html">
+ <span class="dropdown-text">Function Grapher</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Trainer</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../machine-learning/unsupervised-learning/collaborative-filtering.html">Collaborative Filtering</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/unsupervised-learning/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/unsupervised-learning/clustering.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Clustering</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/unsupervised-learning/anomaly-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Anomaly Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/unsupervised-learning/collaborative-filtering.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Collaborative Filtering</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/unsupervised-learning/collaborative-filtering-in-practice.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Collaborative Filtering in Practice</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#framing-the-problem" id="toc-framing-the-problem" class="nav-link active" data-scroll-target="#framing-the-problem">Framing the Problem</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#predicting-ratings-with-known-features" id="toc-predicting-ratings-with-known-features" class="nav-link" data-scroll-target="#predicting-ratings-with-known-features">Predicting Ratings with Known Features</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#learning-the-parameters-for-one-user-then-all-users" id="toc-learning-the-parameters-for-one-user-then-all-users" class="nav-link" data-scroll-target="#learning-the-parameters-for-one-user-then-all-users">Learning the Parameters for One User, Then All Users</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#learning-the-features-themselves" id="toc-learning-the-features-themselves" class="nav-link" data-scroll-target="#learning-the-features-themselves">Learning the Features Themselves</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#the-full-collaborative-filtering-cost-function" id="toc-the-full-collaborative-filtering-cost-function" class="nav-link" data-scroll-target="#the-full-collaborative-filtering-cost-function">The Full Collaborative Filtering Cost Function</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-4" id="toc-review-questions-4" class="nav-link" data-scroll-target="#review-questions-4">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#generalizing-to-binary-labels" id="toc-generalizing-to-binary-labels" class="nav-link" data-scroll-target="#generalizing-to-binary-labels">Generalizing to Binary Labels</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-5" id="toc-review-questions-5" class="nav-link" data-scroll-target="#review-questions-5">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Collaborative Filtering</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">machine-learning</div>
+    <div class="quarto-category">unsupervised-learning</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    The first recommender systems algorithm: the movie-ratings notation, predicting ratings with per-user linear models, learning item features straight from the ratings, the combined cost function, and generalizing to binary labels.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">July 20, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~81 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level and capped at 3 hours.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~4,400 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p>Clustering and anomaly detection were both unsupervised learning: no labels, just a search for structure in the data. This page turns to a different part of the course, <strong>recommender systems</strong>, the algorithms behind “you might also like” on a shopping site or a streaming service’s next-movie suggestions. Recommender systems get surprisingly little attention in academia relative to how much commercial value they move, a large fraction of sales at many online companies is driven directly by what gets recommended. The running example throughout is predicting <strong>movie ratings</strong>, and the first algorithm built up here is called <strong>collaborative filtering</strong>.</p>
+<section id="framing-the-problem" class="level2">
+<h2 class="anchored" data-anchor-id="framing-the-problem">Framing the Problem</h2>
+<p>Say you run a movie streaming website, and users rate movies from 0 to 5 stars. Here are four users, Alice, Bob, Carol, and Dave, and their ratings of five movies, with a question mark wherever a user has not rated (usually because they have not watched) a movie. The small gray number next to each row of stars is the numeric rating, the value the math below actually works with.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 13%">
+<col style="width: 21%">
+<col style="width: 21%">
+<col style="width: 21%">
+<col style="width: 21%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Movie</th>
+<th style="text-align: center;">Alice (1)</th>
+<th style="text-align: center;">Bob (2)</th>
+<th style="text-align: center;">Carol (3)</th>
+<th style="text-align: center;">Dave (4)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Love at Last</td>
+<td style="text-align: center;"><span class="star-filled">★★★★★</span> <span class="star-num">5</span></td>
+<td style="text-align: center;"><span class="star-filled">★★★★★</span> <span class="star-num">5</span></td>
+<td style="text-align: center;"><span class="star-empty">☆☆☆☆☆</span> <span class="star-num">0</span></td>
+<td style="text-align: center;"><span class="star-empty">☆☆☆☆☆</span> <span class="star-num">0</span></td>
+</tr>
+<tr class="even">
+<td>Romance Forever</td>
+<td style="text-align: center;"><span class="star-filled">★★★★★</span> <span class="star-num">5</span></td>
+<td style="text-align: center;">?</td>
+<td style="text-align: center;">?</td>
+<td style="text-align: center;"><span class="star-empty">☆☆☆☆☆</span> <span class="star-num">0</span></td>
+</tr>
+<tr class="odd">
+<td>Cute Puppies of Love</td>
+<td style="text-align: center;">?</td>
+<td style="text-align: center;"><span class="star-filled">★★★★</span><span class="star-empty">☆</span> <span class="star-num">4</span></td>
+<td style="text-align: center;"><span class="star-empty">☆☆☆☆☆</span> <span class="star-num">0</span></td>
+<td style="text-align: center;">?</td>
+</tr>
+<tr class="even">
+<td>Nonstop Car Chases</td>
+<td style="text-align: center;"><span class="star-empty">☆☆☆☆☆</span> <span class="star-num">0</span></td>
+<td style="text-align: center;"><span class="star-empty">☆☆☆☆☆</span> <span class="star-num">0</span></td>
+<td style="text-align: center;"><span class="star-filled">★★★★★</span> <span class="star-num">5</span></td>
+<td style="text-align: center;"><span class="star-filled">★★★★</span><span class="star-empty">☆</span> <span class="star-num">4</span></td>
+</tr>
+<tr class="odd">
+<td>Swords vs.&nbsp;Karate</td>
+<td style="text-align: center;"><span class="star-empty">☆☆☆☆☆</span> <span class="star-num">0</span></td>
+<td style="text-align: center;"><span class="star-empty">☆☆☆☆☆</span> <span class="star-num">0</span></td>
+<td style="text-align: center;"><span class="star-filled">★★★★★</span> <span class="star-num">5</span></td>
+<td style="text-align: center;"><span class="star-empty">☆☆☆☆☆</span> <span class="star-num">0</span></td>
+</tr>
+</tbody>
+</table>
+<p>The pattern is easy to spot by eye: Alice and Bob seem to like romance movies and dislike action movies, Carol and Dave are the opposite, and a good recommender should figure that out automatically from the ratings alone, without being told “these two movies are romance movies” in advance.</p>
+<p>A little notation, used throughout this page and reused in the next:</p>
+<ul>
+<li><span class="math inline">\(n_u\)</span> = number of users. Here <span class="math inline">\(n_u = 4\)</span>.</li>
+<li><span class="math inline">\(n_m\)</span> = number of movies (or, more generally, items). Here <span class="math inline">\(n_m = 5\)</span>.</li>
+<li><span class="math inline">\(r(i, j) = 1\)</span> if user <span class="math inline">\(j\)</span> has rated movie <span class="math inline">\(i\)</span>, and <span class="math inline">\(0\)</span> otherwise.</li>
+<li><span class="math inline">\(y^{(i,j)}\)</span> = the rating user <span class="math inline">\(j\)</span> gave movie <span class="math inline">\(i\)</span> (only meaningful when <span class="math inline">\(r(i, j) = 1\)</span>).</li>
+<li><span class="math inline">\(\vec{x}^{(i)}\)</span> = feature vector for movie <span class="math inline">\(i\)</span> (introduced in the next section).</li>
+<li><span class="math inline">\(m^{(j)}\)</span> = number of movies user <span class="math inline">\(j\)</span> has rated.</li>
+<li><span class="math inline">\(\vec{w}^{(j)}, b^{(j)}\)</span> = parameters for user <span class="math inline">\(j\)</span>, one linear model per user.</li>
+<li><span class="math inline">\(\vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)}\)</span> = the predicted rating of movie <span class="math inline">\(i\)</span> by user <span class="math inline">\(j\)</span>, built from these pieces below.</li>
+</ul>
+<p>So, for example, Alice is user 1, and she rated movie 1 (Love at Last) but not movie 3 (Cute Puppies of Love), so <span class="math inline">\(r(1,1) = 1\)</span> but <span class="math inline">\(r(3,1) = 0\)</span>. And <span class="math inline">\(y^{(3,2)} = 4\)</span>, movie 3 was rated 4 by user 2 (Bob).</p>
+<p>One way to frame the recommendation problem: look at the movies a user has <em>not</em> rated, predict how they would rate them, and recommend the ones with the highest predicted ratings. The next few sections build an algorithm that makes exactly that kind of prediction, first assuming the movies come with descriptive features, and then, more powerfully, learning those features directly from the ratings.</p>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. What do <span class="math inline">\(n_u\)</span>, <span class="math inline">\(n_m\)</span>, <span class="math inline">\(r(i,j)\)</span>, and <span class="math inline">\(y^{(i,j)}\)</span> each represent?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(n_u\)</span> is the number of users, <span class="math inline">\(n_m\)</span> is the number of movies (items). <span class="math inline">\(r(i,j) = 1\)</span> if user <span class="math inline">\(j\)</span> has rated movie <span class="math inline">\(i\)</span> and <span class="math inline">\(0\)</span> otherwise, it tracks which entries of the ratings table are actually filled in. <span class="math inline">\(y^{(i,j)}\)</span> is the rating value user <span class="math inline">\(j\)</span> gave movie <span class="math inline">\(i\)</span>, only meaningful where <span class="math inline">\(r(i,j) = 1\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In the table above, what are <span class="math inline">\(r(2,1)\)</span> and <span class="math inline">\(y^{(2,1)}\)</span>? What about <span class="math inline">\(r(2,3)\)</span>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(r(2,1) = 1\)</span> because Alice (user 1) rated movie 2, Romance Forever, and <span class="math inline">\(y^{(2,1)} = 5\)</span>, her rating. <span class="math inline">\(r(2,3) = 0\)</span> because Carol (user 3) has not rated movie 2, it shows a question mark.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. At a high level, how does a recommender system decide what to recommend to a user, once it can predict ratings?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>It looks at the movies (or items) the user has not yet rated, predicts what rating they would probably give each one, and recommends the ones with the highest predicted ratings, the ones the user is most likely to enjoy.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You have the following table of movie ratings, with numbering starting at 1, so the rating for Football Forever by Elissa is at <span class="math inline">\((1,1)\)</span>. What is the value of <span class="math inline">\(n_u\)</span>?</strong></p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 13%">
+<col style="width: 21%">
+<col style="width: 21%">
+<col style="width: 21%">
+<col style="width: 21%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Movie</th>
+<th style="text-align: center;">Elissa</th>
+<th style="text-align: center;">Zach</th>
+<th style="text-align: center;">Barry</th>
+<th style="text-align: center;">Terry</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Football Forever</td>
+<td style="text-align: center;"><span class="star-filled">★★★★★</span> <span class="star-num">5</span></td>
+<td style="text-align: center;"><span class="star-filled">★★★★</span><span class="star-empty">☆</span> <span class="star-num">4</span></td>
+<td style="text-align: center;"><span class="star-filled">★★★</span><span class="star-empty">☆☆</span> <span class="star-num">3</span></td>
+<td style="text-align: center;">?</td>
+</tr>
+<tr class="even">
+<td>Pies, Pies, Pies</td>
+<td style="text-align: center;"><span class="star-filled">★</span><span class="star-empty">☆☆☆☆</span> <span class="star-num">1</span></td>
+<td style="text-align: center;">?</td>
+<td style="text-align: center;"><span class="star-filled">★★★★★</span> <span class="star-num">5</span></td>
+<td style="text-align: center;"><span class="star-filled">★★★★</span><span class="star-empty">☆</span> <span class="star-num">4</span></td>
+</tr>
+<tr class="odd">
+<td>Linear Algebra Live</td>
+<td style="text-align: center;"><span class="star-filled">★★★★</span><span class="star-empty">☆</span> <span class="star-num">4</span></td>
+<td style="text-align: center;"><span class="star-filled">★★★★★</span> <span class="star-num">5</span></td>
+<td style="text-align: center;">?</td>
+<td style="text-align: center;"><span class="star-filled">★</span><span class="star-empty">☆☆☆☆</span> <span class="star-num">1</span></td>
+</tr>
+</tbody>
+</table>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(n_u = 4\)</span>, the number of users (Elissa, Zach, Barry, Terry). And <span class="math inline">\(n_m\)</span>, the number of movies (items), is <span class="math inline">\(3\)</span> in this table.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In the table above, what is the value of <span class="math inline">\(r(2,2)\)</span>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(r(2,2) = 0\)</span>. <span class="math inline">\(r(i,j)\)</span> is <span class="math inline">\(1\)</span> if movie <span class="math inline">\(i\)</span> has a rating from user <span class="math inline">\(j\)</span> and <span class="math inline">\(0\)</span> if it does not, and a question mark indicates there is no rating: user 2 (Zach) has not rated movie 2 (Pies, Pies, Pies).</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="predicting-ratings-with-known-features" class="level2">
+<h2 class="anchored" data-anchor-id="predicting-ratings-with-known-features">Predicting Ratings with Known Features</h2>
+<p>Suppose, temporarily, that each movie comes with descriptive features. Add two features to the table: <span class="math inline">\(x_1\)</span>, how much a movie is a romance movie, and <span class="math inline">\(x_2\)</span>, how much it is an action movie, each on a scale from 0 to 1.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Movie</th>
+<th style="text-align: center;"><span class="math inline">\(x_1\)</span> (romance)</th>
+<th style="text-align: center;"><span class="math inline">\(x_2\)</span> (action)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Love at Last</td>
+<td style="text-align: center;">0.90</td>
+<td style="text-align: center;">0.00</td>
+</tr>
+<tr class="even">
+<td>Romance Forever</td>
+<td style="text-align: center;">1.00</td>
+<td style="text-align: center;">0.01</td>
+</tr>
+<tr class="odd">
+<td>Cute Puppies of Love</td>
+<td style="text-align: center;">0.99</td>
+<td style="text-align: center;">0.00</td>
+</tr>
+<tr class="even">
+<td>Nonstop Car Chases</td>
+<td style="text-align: center;">0.10</td>
+<td style="text-align: center;">1.00</td>
+</tr>
+<tr class="odd">
+<td>Swords vs.&nbsp;Karate</td>
+<td style="text-align: center;">0.00</td>
+<td style="text-align: center;">0.90</td>
+</tr>
+</tbody>
+</table>
+<p>Write <span class="math inline">\(n\)</span> for the number of features, so <span class="math inline">\(n = 2\)</span> here, and <span class="math inline">\(\vec{x}^{(i)}\)</span> for the feature vector of movie <span class="math inline">\(i\)</span>, stacked as a column with one entry per feature. For instance, movie 1 (Love at Last) and movie 3 (Cute Puppies of Love) have</p>
+<p><span class="math display">\[
+\vec{x}^{(1)} = \begin{bmatrix} 0.9 \\ 0 \end{bmatrix}, \qquad
+\vec{x}^{(3)} = \begin{bmatrix} 0.99 \\ 0 \end{bmatrix}
+\]</span></p>
+<p>each vector’s top entry being the romance feature <span class="math inline">\(x_1\)</span> and bottom entry the action feature <span class="math inline">\(x_2\)</span>.</p>
+<p>With features in hand, predicting user <span class="math inline">\(j\)</span>’s rating for movie <span class="math inline">\(i\)</span> looks a lot like <a href="../../machine-learning/supervised-machine-learning/linear-regression-model.html">linear regression</a>: a separate parameter vector <span class="math inline">\(\vec{w}^{(j)}\)</span> and bias <span class="math inline">\(b^{(j)}\)</span> for every user, predicting</p>
+<p><span class="math display">\[
+\hat{y}^{(i,j)} = \vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)}
+\]</span></p>
+<p>For Alice, user 1, say the parameters turn out to be <span class="math inline">\(\vec{w}^{(1)} = (5, 0)\)</span> and <span class="math inline">\(b^{(1)} = 0\)</span>. Then the predicted rating for movie 3, Cute Puppies of Love, is</p>
+<p><span class="math display">\[
+\hat{y}^{(3,1)} = \vec{w}^{(1)} \cdot \vec{x}^{(3)} + b^{(1)} = (5)(0.99) + (0)(0) = 4.95
+\]</span></p>
+<p>which is a plausible guess: Alice gave 5 stars to the two romance movies she has seen and 0 to the two action movies, so predicting she would rate this other highly-romantic, zero-action movie at 4.95 fits the pattern nicely.</p>
+<div id="f9b39926" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="collaborative-filtering_files/figure-html/cell-2-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Alice’s model only cares about <span class="math inline">\(x_1\)</span> (romance), since <span class="math inline">\(w_2^{(1)} = 0\)</span>, which is exactly why every movie’s predicted rating rises smoothly from left to right and does not move at all going up (more action). Bob’s parameters would be similar, since he also favors romance movies, while Carol’s and Dave’s parameters would instead put all the weight on <span class="math inline">\(x_2\)</span>.</p>
+<p>More generally, add a superscript to keep the four users’ parameters distinct: <span class="math inline">\(\vec{w}^{(1)}, b^{(1)}\)</span> for Alice, <span class="math inline">\(\vec{w}^{(2)}, b^{(2)}\)</span> for Bob, and so on through <span class="math inline">\(\vec{w}^{(n_u)}, b^{(n_u)}\)</span>. User <span class="math inline">\(j\)</span>’s predicted rating for movie <span class="math inline">\(i\)</span> is</p>
+<p><span class="math display">\[
+\hat{y}^{(i,j)} = \vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)}
+\]</span></p>
+<p>This is a lot like linear regression, except instead of fitting one model, there is a <strong>separate linear regression model fit for every user</strong>, all sharing the same movie features <span class="math inline">\(\vec{x}^{(i)}\)</span>.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. Write the formula for user <span class="math inline">\(j\)</span>’s predicted rating of movie <span class="math inline">\(i\)</span>, and explain in words what makes this “a lot like linear regression, but different.”</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(\hat{y}^{(i,j)} = \vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)}\)</span>. It is like linear regression because the prediction is a linear function of the features <span class="math inline">\(\vec{x}^{(i)}\)</span>. It differs because there is not one shared model, every user <span class="math inline">\(j\)</span> gets their own parameters <span class="math inline">\(\vec{w}^{(j)}, b^{(j)}\)</span>, so the same movie gets a different predicted rating for each user.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. With <span class="math inline">\(\vec{w}^{(1)} = (5, 0)\)</span>, <span class="math inline">\(b^{(1)} = 0\)</span>, and movie features <span class="math inline">\((0.10, 1.00)\)</span> (Nonstop Car Chases), what rating does the model predict for Alice, and does that seem reasonable given her other ratings?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(\hat{y} = (5)(0.10) + (0)(1.00) + 0 = 0.5\)</span>. That is reasonable: Alice gave 0 stars to both action movies she has rated, so predicting a very low rating for another mostly-action movie fits her pattern.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="learning-the-parameters-for-one-user-then-all-users" class="level2">
+<h2 class="anchored" data-anchor-id="learning-the-parameters-for-one-user-then-all-users">Learning the Parameters for One User, Then All Users</h2>
+<p>Given the features <span class="math inline">\(\vec{x}^{(i)}\)</span>, how are the parameters <span class="math inline">\(\vec{w}^{(j)}, b^{(j)}\)</span> actually learned? Recall <span class="math inline">\(m^{(j)}\)</span> is the number of movies user <span class="math inline">\(j\)</span> has rated. Learning user <span class="math inline">\(j\)</span>’s parameters means minimizing a cost function that looks just like <a href="../../machine-learning/supervised-machine-learning/regularization.html">regularized linear regression</a>, except the sum only runs over the movies that user <span class="math inline">\(j\)</span> has actually rated, the ones where <span class="math inline">\(r(i,j) = 1\)</span>:</p>
+<p><span class="math display">\[
+\min_{\vec{w}^{(j)},\, b^{(j)}} J(\vec{w}^{(j)}, b^{(j)}) = \frac{1}{2m^{(j)}} \sum_{i \,:\, r(i,j)=1} \left( \vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)} - y^{(i,j)} \right)^2 + \underbrace{\textcolor[RGB]{232,89,12}{\frac{\lambda}{2m^{(j)}} \sum_{k=1}^{n} \left(w_k^{(j)}\right)^2}}_{\textcolor[RGB]{232,89,12}{\text{regularization term}}}
+\]</span></p>
+<p>The part in orange is the <strong>regularization term</strong>, the same one from regularized linear regression, there to keep the parameters small and prevent overfitting; it is colored the same way in every cost function on this page. The <span class="math inline">\(n\)</span> in it is the number of features, the number of entries in <span class="math inline">\(\vec{w}^{(j)}\)</span>. One simplification is customary in collaborative filtering: since <span class="math inline">\(m^{(j)}\)</span> is just a constant for a fixed user, dividing by it does not change which <span class="math inline">\(\vec{w}^{(j)}, b^{(j)}\)</span> minimize the cost, so the <span class="math inline">\(m^{(j)}\)</span> gets crossed out of both denominators, leaving</p>
+<p><span class="math display">\[
+J(\vec{w}^{(j)}, b^{(j)}) = \frac{1}{2} \sum_{i \,:\, r(i,j)=1} \left( \vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)} - y^{(i,j)} \right)^2 + \textcolor[RGB]{232,89,12}{\frac{\lambda}{2} \sum_{k=1}^{n} \left(w_k^{(j)}\right)^2}
+\]</span></p>
+<p>Minimizing <span class="math inline">\(J(\vec{w}^{(j)}, b^{(j)})\)</span> gives good parameters for user <span class="math inline">\(j\)</span> alone. To learn parameters for <em>every</em> user at once, sum this same cost over all <span class="math inline">\(n_u\)</span> users:</p>
+<p><span class="math display">\[
+\min_{\substack{\vec{w}^{(1)}, b^{(1)}, \dots \\ \vec{w}^{(n_u)}, b^{(n_u)}}} J\big(\vec{w}^{(1)}, b^{(1)}, \dots, \vec{w}^{(n_u)}, b^{(n_u)}\big) = \frac{1}{2} \sum_{j=1}^{n_u} \sum_{i \,:\, r(i,j)=1} \left( \vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)} - y^{(i,j)} \right)^2 + \textcolor[RGB]{232,89,12}{\frac{\lambda}{2} \sum_{j=1}^{n_u} \sum_{k=1}^{n} \left(w_k^{(j)}\right)^2}
+\]</span></p>
+<p>Running gradient descent (or any other optimizer) on this cost, as a function of all the <span class="math inline">\(\vec{w}^{(j)}, b^{(j)}\)</span> together, produces a good set of parameters for predicting every user’s ratings. It is still fitting a different linear regression model per user, just all learned in one pass.</p>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. Why does the sum in <span class="math inline">\(J(\vec{w}^{(j)}, b^{(j)})\)</span> only run over <span class="math inline">\(i\)</span> where <span class="math inline">\(r(i,j) = 1\)</span>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because most users have not rated most movies, and there is no target <span class="math inline">\(y^{(i,j)}\)</span> to compare against for an unrated movie. Restricting the sum to <span class="math inline">\(r(i,j)=1\)</span> means the cost only ever measures error against ratings that actually exist.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why can the <span class="math inline">\(\frac{1}{m^{(j)}}\)</span> normalization be dropped from the cost function without changing the learned parameters?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>For a fixed user <span class="math inline">\(j\)</span>, <span class="math inline">\(m^{(j)}\)</span> is just a constant, it does not depend on <span class="math inline">\(\vec{w}^{(j)}\)</span> or <span class="math inline">\(b^{(j)}\)</span>. Multiplying a cost function by a positive constant does not change which parameters minimize it, so dropping the <span class="math inline">\(\frac{1}{m^{(j)}}\)</span> factor leaves the same optimal <span class="math inline">\(\vec{w}^{(j)}, b^{(j)}\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. How does the single-user cost function turn into the cost function for learning all <span class="math inline">\(n_u\)</span> users’ parameters at once?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>By summing the single-user cost function over all <span class="math inline">\(n_u\)</span> users, <span class="math inline">\(j = 1\)</span> through <span class="math inline">\(n_u\)</span>. Minimizing the resulting sum as a function of every <span class="math inline">\(\vec{w}^{(j)}, b^{(j)}\)</span> together learns good parameters for all the users simultaneously, still one linear model per user.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="learning-the-features-themselves" class="level2">
+<h2 class="anchored" data-anchor-id="learning-the-features-themselves">Learning the Features Themselves</h2>
+<p>Everything so far assumed the movie features <span class="math inline">\(x_1\)</span> (romance) and <span class="math inline">\(x_2\)</span> (action) were handed over in advance. Where would such features actually come from, and what if nobody hand-labels every movie this way? This is where the algorithm gets genuinely interesting: if the <em>parameters</em> <span class="math inline">\(\vec{w}^{(j)}, b^{(j)}\)</span> for every user are already known, the <em>features</em> can be worked out from the ratings instead.</p>
+<p>Suppose, just for illustration, that the four users’ parameters are already known: <span class="math inline">\(\vec{w}^{(1)} = (5,0)\)</span>, <span class="math inline">\(\vec{w}^{(2)} = (5,0)\)</span>, <span class="math inline">\(\vec{w}^{(3)} = (0,5)\)</span>, <span class="math inline">\(\vec{w}^{(4)} = (0,5)\)</span>, all with <span class="math inline">\(b^{(j)} = 0\)</span>. (Alice and Bob’s models weight romance, Carol and Dave’s weight action, matching what was guessed by eye earlier.) Movie 1, Love at Last, was rated 5 by Alice, 5 by Bob, 0 by Carol, and 0 by Dave. What feature vector <span class="math inline">\(\vec{x}^{(1)}\)</span> would make <span class="math inline">\(\vec{w}^{(j)} \cdot \vec{x}^{(1)} \approx y^{(1,j)}\)</span> for all four users at once? Trying <span class="math inline">\(\vec{x}^{(1)} = (1, 0)\)</span>:</p>
+<p><span class="math display">\[
+\vec{w}^{(1)} \cdot \vec{x}^{(1)} = 5, \quad \vec{w}^{(2)} \cdot \vec{x}^{(1)} = 5, \quad \vec{w}^{(3)} \cdot \vec{x}^{(1)} = 0, \quad \vec{w}^{(4)} \cdot \vec{x}^{(1)} = 0
+\]</span></p>
+<div id="e3e145d5" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="collaborative-filtering_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>which matches every one of the four ratings for movie 1, so <span class="math inline">\((1, 0)\)</span> is a solid guess for its features. The same trick can be repeated for every other movie, each time using the four users’ known parameters and the ratings that particular movie received to reverse-engineer a good feature vector.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Why this needs multiple users
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>This only works because there are ratings from <strong>multiple users of the same movie</strong>. With a single user’s parameters, one equation like <span class="math inline">\(\vec{w}^{(1)} \cdot \vec{x}^{(1)} \approx 5\)</span> has infinitely many solutions for <span class="math inline">\(\vec{x}^{(1)}\)</span>, nowhere near enough information to pin it down. It is having <em>several</em> users’ worth of parameters and ratings for the same movie that turns this into a solvable system, and that shared, cross-user signal is exactly why the algorithm is called <strong>collaborative filtering</strong>: users collaborate, indirectly, to help the system learn what each item is actually like.</p>
+</div>
+</div>
+<p>Turning that intuition into a cost function: given parameters <span class="math inline">\(\vec{w}^{(1)}, b^{(1)}, \dots, \vec{w}^{(n_u)}, b^{(n_u)}\)</span> for all the users, the cost function for one movie’s feature vector <span class="math inline">\(\vec{x}^{(i)}\)</span> is</p>
+<p><span class="math display">\[
+J(\vec{x}^{(i)}) = \frac{1}{2} \sum_{j \,:\, r(i,j)=1} \left( \vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)} - y^{(i,j)} \right)^2 + \textcolor[RGB]{232,89,12}{\frac{\lambda}{2} \sum_{k=1}^{n} \left(x_k^{(i)}\right)^2}
+\]</span></p>
+<p>summing only over the users <span class="math inline">\(j\)</span> who actually rated movie <span class="math inline">\(i\)</span>. And to learn the features for <em>all</em> <span class="math inline">\(n_m\)</span> movies at once, sum this over every movie:</p>
+<p><span class="math display">\[
+J\big(\vec{x}^{(1)}, \dots, \vec{x}^{(n_m)}\big) = \frac{1}{2} \sum_{i=1}^{n_m} \sum_{j \,:\, r(i,j)=1} \left( \vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)} - y^{(i,j)} \right)^2 + \textcolor[RGB]{232,89,12}{\frac{\lambda}{2} \sum_{i=1}^{n_m} \sum_{k=1}^{n} \left(x_k^{(i)}\right)^2}
+\]</span></p>
+<p>Minimizing this as a function of <span class="math inline">\(\vec{x}^{(1)}\)</span> through <span class="math inline">\(\vec{x}^{(n_m)}\)</span>, given the parameters <span class="math inline">\(\vec{w}, b\)</span>, recovers a good set of features for every movie. This is remarkable: in most machine learning applications, features are handed in from outside, but here the algorithm <strong>learns the features itself</strong> from nothing but the ratings.</p>
+<p>Of course, this section assumed the parameters <span class="math inline">\(\vec{w}, b\)</span> were already known, which begs the question, and the previous section assumed the features <span class="math inline">\(\vec{x}\)</span> were already known, which begs the opposite question. Putting the two together resolves both at once.</p>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. Why can’t a single user’s ratings alone be used to work out a movie’s feature vector?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>One user gives one equation, <span class="math inline">\(\vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)} \approx y^{(i,j)}\)</span>, and a single linear equation in several unknown features has infinitely many solutions. It takes several users’ worth of parameters and ratings for the <em>same</em> movie to pin down <span class="math inline">\(\vec{x}^{(i)}\)</span>, which is the “collaborative” part of collaborative filtering.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Write the cost function for learning a single movie’s features <span class="math inline">\(\vec{x}^{(i)}\)</span>, given the users’ parameters. What does the sum over <span class="math inline">\(j\)</span> range over?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math display">\[J(\vec{x}^{(i)}) = \frac{1}{2}\sum_{j\,:\,r(i,j)=1}\left(\vec{w}^{(j)}\cdot\vec{x}^{(i)}+b^{(j)}-y^{(i,j)}\right)^2 + \textcolor[RGB]{232,89,12}{\frac{\lambda}{2}\sum_{k=1}^n \left(x_k^{(i)}\right)^2}\]</span> The sum over <span class="math inline">\(j\)</span> ranges only over the users who actually rated movie <span class="math inline">\(i\)</span>, that is, the <span class="math inline">\(j\)</span> with <span class="math inline">\(r(i,j)=1\)</span>.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="the-full-collaborative-filtering-cost-function" class="level2">
+<h2 class="anchored" data-anchor-id="the-full-collaborative-filtering-cost-function">The Full Collaborative Filtering Cost Function</h2>
+<p>Put the two ideas together, learning <span class="math inline">\(\vec{w}, b\)</span> given <span class="math inline">\(\vec{x}\)</span>, and learning <span class="math inline">\(\vec{x}\)</span> given <span class="math inline">\(\vec{w}, b\)</span>, and both cost functions turn out to contain the exact same error term, just summed in a different order. Summing over users first and, for each user, over the movies they rated, covers exactly the same set of rated pairs <span class="math inline">\((i, j)\)</span> as summing over movies first and, for each movie, over the users who rated it. Either way, it is a sum over every pair where <span class="math inline">\(r(i,j) = 1\)</span>. That means the two cost functions can be merged into one, a single cost function of <span class="math inline">\(\vec{w}, b\)</span>, <em>and</em> <span class="math inline">\(\vec{x}\)</span> together:</p>
+<p><span class="math display">\[
+\min_{\vec{w},\, b,\, \vec{x}} J(\vec{w}, b, \vec{x}) = \frac{1}{2} \sum_{(i,j)\,:\,r(i,j)=1} \left( \vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)} - y^{(i,j)} \right)^2 + \underbrace{\textcolor[RGB]{232,89,12}{\frac{\lambda}{2} \sum_{j=1}^{n_u} \sum_{k=1}^{n} \left(w_k^{(j)}\right)^2}}_{\textcolor[RGB]{232,89,12}{\text{regularizes } \vec{w}^{(j)}}} + \underbrace{\textcolor[RGB]{232,89,12}{\frac{\lambda}{2} \sum_{i=1}^{n_m} \sum_{k=1}^{n} \left(x_k^{(i)}\right)^2}}_{\textcolor[RGB]{232,89,12}{\text{regularizes } \vec{x}^{(i)}}}
+\]</span></p>
+<p>Minimizing this single cost function, as a function of <em>all three</em> sets of parameters at once, <span class="math inline">\(\vec{w}\)</span>, <span class="math inline">\(b\)</span>, and <span class="math inline">\(\vec{x}\)</span>, is the <strong>collaborative filtering algorithm</strong>. The name comes from exactly the intuition built up above: because multiple users collaboratively rate the same movies, the algorithm can work out good features for those movies, and those features in turn let it predict how <em>other</em> users, who have not yet rated that movie, are likely to rate it.</p>
+<p>Minimizing <span class="math inline">\(J\)</span> with gradient descent looks like the familiar update rule from <a href="../../machine-learning/supervised-machine-learning/gradient-descent.html">linear regression</a>, just applied to three kinds of parameters instead of one:</p>
+<p><span class="math display">\[
+w_k^{(j)} \leftarrow w_k^{(j)} - \alpha \frac{\partial}{\partial w_k^{(j)}} J(\vec{w}, b, \vec{x})
+\qquad
+b^{(j)} \leftarrow b^{(j)} - \alpha \frac{\partial}{\partial b^{(j)}} J(\vec{w}, b, \vec{x})
+\]</span></p>
+<p><span class="math display">\[
+x_k^{(i)} \leftarrow x_k^{(i)} - \alpha \frac{\partial}{\partial x_k^{(i)}} J(\vec{w}, b, \vec{x})
+\]</span></p>
+<p>The key conceptual shift from ordinary linear regression: there, <span class="math inline">\(\vec{x}\)</span> was fixed input data and only <span class="math inline">\(\vec{w}, b\)</span> were parameters to learn. Here, the features <span class="math inline">\(\vec{x}\)</span> are <em>also</em> parameters, updated by gradient descent right alongside <span class="math inline">\(\vec{w}\)</span> and <span class="math inline">\(b\)</span>, all three sets pulled toward whatever values best explain the observed ratings.</p>
+<section id="review-questions-4" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-4">Review Questions</h3>
+<p><strong>1. Why can the two separate cost functions (learning <span class="math inline">\(\vec{w}, b\)</span> given <span class="math inline">\(\vec{x}\)</span>, and learning <span class="math inline">\(\vec{x}\)</span> given <span class="math inline">\(\vec{w}, b\)</span>) be merged into a single cost function <span class="math inline">\(J(\vec{w}, b, \vec{x})\)</span>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-14" class="callout-14-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Both cost functions sum the exact same squared-error term over the exact same set of rated pairs <span class="math inline">\((i,j)\)</span> with <span class="math inline">\(r(i,j)=1\)</span>, just in a different summation order (users-then-movies versus movies-then-users). Since they cover identical terms, they can be written as one combined sum over all rated pairs, plus both regularization terms, giving a single <span class="math inline">\(J(\vec{w},b,\vec{x})\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What is the key difference between how <span class="math inline">\(\vec{x}\)</span> is treated in ordinary linear regression versus in collaborative filtering?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>In ordinary linear regression, <span class="math inline">\(\vec{x}\)</span> is fixed input data, only <span class="math inline">\(\vec{w}\)</span> and <span class="math inline">\(b\)</span> are learned. In collaborative filtering, the features <span class="math inline">\(\vec{x}\)</span> are themselves parameters, updated by gradient descent along with <span class="math inline">\(\vec{w}\)</span> and <span class="math inline">\(b\)</span>, all minimizing the same combined cost function together.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In one sentence, why is this algorithm called “collaborative” filtering?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-16-contents" aria-controls="callout-16" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-16" class="callout-16-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because it is only by pooling ratings from multiple users on the same items that the algorithm can work out good features for those items, users collaboratively supply the signal that lets the system learn what each movie is like and predict how still other users will rate it.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In which of the following situations will a collaborative filtering system be the most appropriate learning algorithm (compared to linear or logistic regression)?</strong></p>
+<ol type="a">
+<li>You run an online bookstore and collect the ratings of many users. You want to use this to identify what books are “similar” to each other (i.e., if a user likes a certain book, what are other books that they might also like?)</li>
+<li>You’re an artist and hand-paint portraits for your clients. Each client gets a different portrait (of themselves) and gives you 1–5 star rating feedback, and each client purchases at most 1 portrait. You’d like to predict what rating your next customer will give you.</li>
+<li>You subscribe to an online video streaming service, and are not satisfied with their movie suggestions. You download all your viewing for the last 10 years and rate each item. You assign each item a genre. Using your ratings and genre assignment, you learn to predict how you will rate new movies based on the genre.</li>
+<li>You manage an online bookstore and you have the book ratings from many users. You want to learn to predict the expected sales volume (number of books sold) as a function of the average rating of a book.</li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-17-contents" aria-controls="callout-17" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-17" class="callout-17-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>(a).</strong> Many users rating many overlapping books is exactly the setting collaborative filtering needs: it can learn feature values for every book from the shared ratings, and books with similar learned features are “similar” books. The others fit ordinary supervised learning instead: in (b) every item is rated by exactly one user, so there is no cross-user overlap for collaborative filtering to exploit; in (c) the features (genre) are already hand-assigned and there is a single user, plain regression on given features; and (d) is a straightforward one-feature regression from average rating to sales volume.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="generalizing-to-binary-labels" class="level2">
+<h2 class="anchored" data-anchor-id="generalizing-to-binary-labels">Generalizing to Binary Labels</h2>
+<p>So far the ratings have been star ratings, but a huge share of real recommender systems instead observe <strong>binary labels</strong>: did the user engage with an item or not, rather than a 1-to-5 star score. A label of 1 might mean a user watched a movie to the end, explicitly hit “like,” purchased a product after seeing it, or clicked an ad; a label of 0 means they were shown the item and did not engage; a question mark still means they have not been shown the item at all, so there is nothing to conclude. A few common ways binary labels get defined in practice:</p>
+<ul>
+<li><strong>Online shopping:</strong> 1 if the user purchased the item after being shown it, 0 if not, “?” if never shown.</li>
+<li><strong>Social media:</strong> 1 if the user liked or favorited an item after seeing it, 0 if not, “?” if not yet shown.</li>
+<li><strong>Implicit engagement:</strong> 1 if the user spent at least some threshold of time (say 30 seconds) with an item, 0 if they saw it and moved on quickly.</li>
+<li><strong>Online advertising:</strong> 1 if the user clicked a shown ad, 0 if they did not, “?” if the ad was never shown.</li>
+</ul>
+<p>Generalizing the algorithm to this setting follows exactly the same path that took <a href="../../machine-learning/supervised-machine-learning/logistic-regression.html">linear regression to logistic regression</a> for binary classification back in the first course. Instead of predicting the rating directly as <span class="math inline">\(\vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)}\)</span>, predict the <strong>probability</strong> that <span class="math inline">\(y^{(i,j)} = 1\)</span> by passing that same linear combination through the <a href="../../machine-learning/supervised-machine-learning/logistic-regression.html#sigmoid-function-in-detail">sigmoid function</a> <span class="math inline">\(g\)</span>:</p>
+<p><span class="math display">\[
+P\big(y^{(i,j)} = 1\big) = f_{(\vec{w},b,\vec{x})}(\vec{x}) = g\big(\vec{w}^{(j)} \cdot \vec{x}^{(i)} + b^{(j)}\big), \qquad g(z) = \frac{1}{1 + e^{-z}}
+\]</span></p>
+<p>The cost function needs the matching change too, replacing squared error with the <a href="../../machine-learning/supervised-machine-learning/cost-function-logistic-regression.html#logistic-loss">logistic loss</a> used for binary classification (also called <strong>binary cross-entropy</strong>):</p>
+<p><span class="math display">\[
+L\big(f_{(\vec{w},b,\vec{x})}(\vec{x}),\, y^{(i,j)}\big) = -y^{(i,j)} \log\big(f_{(\vec{w},b,\vec{x})}(\vec{x})\big) - \big(1 - y^{(i,j)}\big) \log\big(1 - f_{(\vec{w},b,\vec{x})}(\vec{x})\big)
+\]</span></p>
+<p>This is the loss for a single example, with <span class="math inline">\(f_{(\vec{w},b,\vec{x})}(\vec{x})\)</span> standing for the model’s predicted probability from above; the subscript spells out that the prediction depends on all three sets of parameters <span class="math inline">\(\vec{w}, b, \vec{x}\)</span>. Summing this loss over every rated pair, exactly the same set of pairs as before, gives the collaborative filtering cost function for binary labels:</p>
+<p><span class="math display">\[
+J(\vec{w}, b, \vec{x}) = \sum_{(i,j)\,:\,r(i,j)=1} L\Big(f_{(\vec{w},b,\vec{x})}(\vec{x}),\; y^{(i,j)}\Big)
+\]</span></p>
+<p>Minimizing this cost function as a function of <span class="math inline">\(\vec{w}\)</span>, <span class="math inline">\(b\)</span>, and <span class="math inline">\(\vec{x}\)</span>, exactly as before, gives a collaborative filtering system that predicts the <em>probability</em> a user will engage with an item, rather than a star rating. This single change significantly widens what the algorithm can be used for: most user interaction data on the web is naturally binary (clicked or not, purchased or not, liked or not) rather than a neatly filled-in star rating.</p>
+<section id="review-questions-5" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-5">Review Questions</h3>
+<p><strong>1. Give two examples of how a binary label of 1 versus 0 versus “?” might be defined on a real website.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-18-contents" aria-controls="callout-18" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-18" class="callout-18-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Any two of, for example: online shopping (1 = purchased after being shown, 0 = shown but not purchased, ? = not shown); social media (1 = liked/favorited, 0 = shown but not liked, ? = not shown); implicit engagement (1 = spent at least 30 seconds with the item, 0 = shown but disengaged quickly); online advertising (1 = clicked the ad, 0 = shown but not clicked, ? = ad never shown).</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. How does the prediction formula change when moving from star ratings to binary labels, and which earlier algorithm does this generalization mirror?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-19-contents" aria-controls="callout-19" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-19" class="callout-19-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Instead of predicting the rating directly as <span class="math inline">\(\vec{w}^{(j)}\cdot\vec{x}^{(i)}+b^{(j)}\)</span>, the model predicts the <em>probability</em> that <span class="math inline">\(y^{(i,j)}=1\)</span> as <span class="math inline">\(g(\vec{w}^{(j)}\cdot\vec{x}^{(i)}+b^{(j)})\)</span>, passing the same linear combination through the sigmoid function <span class="math inline">\(g\)</span>. This mirrors exactly how logistic regression generalizes linear regression for binary classification.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Which loss function replaces squared error in the binary-label cost function, and over which pairs <span class="math inline">\((i,j)\)</span> is it summed?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-20-contents" aria-controls="callout-20" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-20" class="callout-20-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The logistic loss (binary cross-entropy), <span class="math inline">\(L(f,y) = -y\log(f) - (1-y)\log(1-f)\)</span>, replacing squared error. It is summed over exactly the same set of pairs as before, every <span class="math inline">\((i,j)\)</span> with <span class="math inline">\(r(i,j)=1\)</span>, that is, every user-item pair where a label actually exists.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. For recommender systems with binary labels <span class="math inline">\(y\)</span>, which of these are reasonable ways of defining when <span class="math inline">\(y\)</span> should be 1 for a given user <span class="math inline">\(j\)</span> and item <span class="math inline">\(i\)</span>? (Check all that apply.)</strong></p>
+<ol type="a">
+<li><span class="math inline">\(y\)</span> is 1 if user <span class="math inline">\(j\)</span> purchases item <span class="math inline">\(i\)</span> (after being shown the item)</li>
+<li><span class="math inline">\(y\)</span> is 1 if user <span class="math inline">\(j\)</span> has been shown item <span class="math inline">\(i\)</span> by the recommendation engine</li>
+<li><span class="math inline">\(y\)</span> is 1 if user <span class="math inline">\(j\)</span> fav/likes/clicks on item <span class="math inline">\(i\)</span> (after being shown the item)</li>
+<li><span class="math inline">\(y\)</span> is 1 if user <span class="math inline">\(j\)</span> has not yet been shown item <span class="math inline">\(i\)</span> by the recommendation engine</li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-21-contents" aria-controls="callout-21" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-21" class="callout-21-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>(a) and (c).</strong> Purchasing an item, or faving/liking/clicking on it, is a real signal of the user’s preference for that item, engagement <em>after</em> being shown it. Merely being shown an item, (b), says nothing about whether the user liked it, and (d), not yet being shown an item, is exactly the situation the “?” entries represent, no label exists at all there.</p>
+</div>
+</div>
+</div>
+<p>That covers the core structure and cost function of collaborative filtering, for both star ratings and binary labels. There is more to making it work well in practice, including a subtlety around brand-new users with no ratings yet, and how to implement the whole thing efficiently, which the <a href="../../machine-learning/unsupervised-learning/collaborative-filtering-in-practice.html">next page</a> picks up.</p>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 71%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">71% completed (417 of 585 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../machine-learning/unsupervised-learning/anomaly-detection.html" class="pagination-link" aria-label="Anomaly Detection">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Anomaly Detection</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../machine-learning/unsupervised-learning/collaborative-filtering-in-practice.html" class="pagination-link" aria-label="Collaborative Filtering in Practice">
+        <span class="nav-page-text">Collaborative Filtering in Practice</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

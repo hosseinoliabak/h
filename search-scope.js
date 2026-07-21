@@ -1,14 +1,64 @@
 (function() {
   'use strict';
 
-  // Define search scopes based on site sections
-  var SCOPES = [
-    { label: 'All',           prefix: '' },
-    { label: 'Math',          prefix: 'math/' },
-    { label: 'AI',            prefix: 'ai/' },
-    { label: 'Networking',    prefix: 'networking/' },
-    { label: 'Tools',         prefix: 'tools/' }
-  ];
+  // Search scopes, derived from the navbar at load time (see buildScopes)
+  var SCOPES = [{ label: 'All', prefix: '' }];
+
+  // Resolve an href to a site-root-relative path, or null if external.
+  // Handles relative links on deep pages and Quarto's rewriting of navbar
+  // hrefs to absolute URLs.
+  function toSitePath(href) {
+    if (!href || href.charAt(0) === '#') return null;
+    try {
+      var url = new URL(href, window.location.href);
+      if (url.origin !== window.location.origin) return null;
+      return url.pathname.replace(/^\//, '');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Derive scopes from the navbar: one chip per top-level menu whose links
+  // predominantly live under a single directory (label = menu title,
+  // prefix = that directory). Tracks _quarto.yml automatically.
+  function buildScopes() {
+    var scopes = [{ label: 'All', prefix: '' }];
+
+    document.querySelectorAll('.navbar .navbar-nav > li.nav-item').forEach(function(li) {
+      var toggle = li.querySelector('.nav-link');
+      if (!toggle) return;
+      var label = toggle.textContent.trim();
+      if (!label) return;
+
+      var links = li.querySelectorAll('.dropdown-menu a[href]');
+      if (links.length === 0) links = [toggle];
+
+      var counts = {};
+      var totalInternal = 0;
+      links.forEach(function(a) {
+        var path = toSitePath(a.getAttribute('data-original-href') || a.getAttribute('href'));
+        if (path === null) return;
+        totalInternal++;
+        var slash = path.indexOf('/');
+        if (slash === -1) return;
+        var dir = path.slice(0, slash + 1);
+        counts[dir] = (counts[dir] || 0) + 1;
+      });
+
+      var best = null;
+      var bestCount = 0;
+      Object.keys(counts).forEach(function(dir) {
+        if (counts[dir] > bestCount) { best = dir; bestCount = counts[dir]; }
+      });
+
+      // Skip mixed menus (e.g. About) where no directory holds a majority
+      if (best && bestCount * 2 > totalInternal) {
+        scopes.push({ label: label, prefix: best });
+      }
+    });
+
+    return scopes;
+  }
 
   // Active scopes — empty array means "All" (no filtering)
   var activeScopes = [];
@@ -93,9 +143,11 @@
         return;
       }
 
-      var href = link.getAttribute('href');
-      // Normalize: remove leading ./ or / or ../
-      var normalized = href.replace(/^(\.\.\/)*/, '').replace(/^\.?\//, '');
+      var normalized = toSitePath(link.getAttribute('href'));
+      if (normalized === null) {
+        item.style.display = '';
+        return;
+      }
 
       var matches = activeScopes.some(function(prefix) {
         return normalized.startsWith(prefix);
@@ -133,6 +185,7 @@
 
   // Initialize
   document.addEventListener('DOMContentLoaded', function() {
+    SCOPES = buildScopes();
     activeScopes = detectCurrentSection();
     injectScopeBar();
   });

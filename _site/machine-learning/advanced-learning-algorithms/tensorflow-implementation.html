@@ -1,0 +1,2284 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-07-10">
+<meta name="description" content="Forward propagation as real TensorFlow code, plus how NumPy matrices, row and column vectors, and TensorFlow tensors represent the same data differently.">
+
+<title>TensorFlow Implementation – Hossein’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../machine-learning/advanced-learning-algorithms/neural-networks-in-numpy.html" rel="next">
+<link href="../../machine-learning/advanced-learning-algorithms/forward-propagation.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-285f71f7c7ab2eebc0170294332e2983.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="https://cdn.jsdelivr.net/npm/requirejs@2.3.6/require.min.js" integrity="sha384-c9c+LnTbwQ3aujuU7ULEPVvgLs+Fn6fJUvIGTsuu1ZcCf11fiEubah0ttpca4ntM sha384-6V1/AdqZRWk1KAlWbKBlGhN7VG4iE/yAZcO6NZPMF8od0vukrvr0tg4qY6NSrItx" crossorigin="anonymous"></script>
+
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="TensorFlow Implementation – Hossein’s Notes">
+<meta property="og:description" content="Forward propagation as real TensorFlow code, plus how NumPy matrices, row and column vectors, and TensorFlow tensors represent the same data differently.">
+<meta property="og:image" content="https://h.oliabak.com/machine-learning/advanced-learning-algorithms/tensorflow-implementation_files/figure-html/cell-2-output-1.png">
+<meta property="og:site_name" content="Hossein’s Notes">
+<meta property="og:image:height" content="431">
+<meta property="og:image:width" content="566">
+<meta name="twitter:title" content="TensorFlow Implementation – Hossein’s Notes">
+<meta name="twitter:description" content="Forward propagation as real TensorFlow code, plus how NumPy matrices, row and column vectors, and TensorFlow tensors represent the same data differently.">
+<meta name="twitter:image" content="https://h.oliabak.com/machine-learning/advanced-learning-algorithms/tensorflow-implementation_files/figure-html/cell-2-output-1.png">
+<meta name="twitter:image-height" content="431">
+<meta name="twitter:image-width" content="566">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Hossein’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-agentic-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Agentic AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-agentic-ai">    
+        <li>
+    <a class="dropdown-item" href="../../agentic/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../agentic/frameworks.html">
+ <span class="dropdown-text">Frameworks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../agentic/agent-architecture.html">
+ <span class="dropdown-text">Agent Architecture</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../agentic/async-io.html">
+ <span class="dropdown-text">Async I/O</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-viewer.html">
+ <span class="dropdown-text">SVG Viewer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/graph.html">
+ <span class="dropdown-text">Function Grapher</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Trainer</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../machine-learning/advanced-learning-algorithms/tensorflow-implementation.html">TensorFlow Implementation</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Advanced Learning Algorithms</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/neural-networks-intuition.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Neural Networks Intuition</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/neural-network-model.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Neural Network Model</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/forward-propagation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Forward Propagation</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/tensorflow-implementation.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">TensorFlow Implementation</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/neural-networks-in-numpy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Neural Networks in NumPy</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/lab-digit-recognition.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Handwritten Digit Recognition</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/training-neural-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Training Neural Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/activation-functions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Functions</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/multiclass-classification.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multiclass Classification</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/advanced-optimization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Additional Neural Network Concepts</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/lab-digit-recognition-multiclass.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Handwritten Digit Recognition (Multiclass)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/model-evaluation-and-selection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Model Evaluation and Selection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/bias-and-variance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bias and Variance</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/machine-learning-development-process.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Machine Learning Development Process</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/skewed-datasets.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Skewed Datasets: Precision, Recall, and the F1 Score</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/lab-advice-for-applying-ml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Advice for Applying Machine Learning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/decision-trees.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Decision Trees</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/decision-tree-learning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Decision Tree Learning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/tree-ensembles.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Tree Ensembles</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../machine-learning/advanced-learning-algorithms/lab-decision-trees.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Decision Trees</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#tensorflow-and-pytorch" id="toc-tensorflow-and-pytorch" class="nav-link active" data-scroll-target="#tensorflow-and-pytorch">TensorFlow and PyTorch</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#coffee-roasting-example" id="toc-coffee-roasting-example" class="nav-link" data-scroll-target="#coffee-roasting-example">Coffee Roasting Example</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#writing-the-coffee-roasting-network-in-code" id="toc-writing-the-coffee-roasting-network-in-code" class="nav-link" data-scroll-target="#writing-the-coffee-roasting-network-in-code">Writing the Coffee Roasting Network in Code</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#matrices-and-vectors-in-numpy" id="toc-matrices-and-vectors-in-numpy" class="nav-link" data-scroll-target="#matrices-and-vectors-in-numpy">Matrices and Vectors in NumPy</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#tensors-tensorflows-data-type" id="toc-tensors-tensorflows-data-type" class="nav-link" data-scroll-target="#tensors-tensorflows-data-type">Tensors: TensorFlow’s Data Type</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-4" id="toc-review-questions-4" class="nav-link" data-scroll-target="#review-questions-4">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#revisiting-the-handwritten-digit-example" id="toc-revisiting-the-handwritten-digit-example" class="nav-link" data-scroll-target="#revisiting-the-handwritten-digit-example">Revisiting the Handwritten Digit Example</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-5" id="toc-review-questions-5" class="nav-link" data-scroll-target="#review-questions-5">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#building-a-neural-network" id="toc-building-a-neural-network" class="nav-link" data-scroll-target="#building-a-neural-network">Building a Neural Network</a>
+  <ul class="collapse">
+  <li><a href="#sequential-in-action" id="toc-sequential-in-action" class="nav-link" data-scroll-target="#sequential-in-action">Sequential in Action</a></li>
+  <li><a href="#small-training-set" id="toc-small-training-set" class="nav-link" data-scroll-target="#small-training-set">Small Training Set</a></li>
+  <li><a href="#training-and-predicting" id="toc-training-and-predicting" class="nav-link" data-scroll-target="#training-and-predicting">Training and Predicting</a></li>
+  <li><a href="#compact-convention" id="toc-compact-convention" class="nav-link" data-scroll-target="#compact-convention">Compact Convention</a></li>
+  <li><a href="#review-questions-6" id="toc-review-questions-6" class="nav-link" data-scroll-target="#review-questions-6">Review Questions</a></li>
+  <li><a href="#same-pattern-for-the-digit-network" id="toc-same-pattern-for-the-digit-network" class="nav-link" data-scroll-target="#same-pattern-for-the-digit-network">Same Pattern for the Digit Network</a></li>
+  <li><a href="#review-questions-7" id="toc-review-questions-7" class="nav-link" data-scroll-target="#review-questions-7">Review Questions</a></li>
+  <li><a href="#why-the-underlying-steps-still-matter" id="toc-why-the-underlying-steps-still-matter" class="nav-link" data-scroll-target="#why-the-underlying-steps-still-matter">Why the Underlying Steps Still Matter</a></li>
+  <li><a href="#review-questions-8" id="toc-review-questions-8" class="nav-link" data-scroll-target="#review-questions-8">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#lab-coffee-roasting" id="toc-lab-coffee-roasting" class="nav-link" data-scroll-target="#lab-coffee-roasting">Lab: Coffee Roasting</a>
+  <ul class="collapse">
+  <li><a href="#dataset" id="toc-dataset" class="nav-link" data-scroll-target="#dataset">Dataset</a></li>
+  <li><a href="#normalize-the-data" id="toc-normalize-the-data" class="nav-link" data-scroll-target="#normalize-the-data">Normalize the Data</a></li>
+  <li><a href="#increase-the-training-set-size" id="toc-increase-the-training-set-size" class="nav-link" data-scroll-target="#increase-the-training-set-size">Increase the Training Set Size</a></li>
+  <li><a href="#build-the-model" id="toc-build-the-model" class="nav-link" data-scroll-target="#build-the-model">Build the Model</a></li>
+  <li><a href="#examine-the-initial-weights" id="toc-examine-the-initial-weights" class="nav-link" data-scroll-target="#examine-the-initial-weights">Examine the Initial Weights</a></li>
+  <li><a href="#train-the-model" id="toc-train-the-model" class="nav-link" data-scroll-target="#train-the-model">Train the Model</a></li>
+  <li><a href="#updated-weights" id="toc-updated-weights" class="nav-link" data-scroll-target="#updated-weights">Updated Weights</a></li>
+  <li><a href="#make-predictions" id="toc-make-predictions" class="nav-link" data-scroll-target="#make-predictions">Make Predictions</a></li>
+  <li><a href="#what-did-each-unit-learn" id="toc-what-did-each-unit-learn" class="nav-link" data-scroll-target="#what-did-each-unit-learn">What Did Each Unit Learn?</a></li>
+  <li><a href="#whole-network-together" id="toc-whole-network-together" class="nav-link" data-scroll-target="#whole-network-together">Whole Network Together</a></li>
+  <li><a href="#summary" id="toc-summary" class="nav-link" data-scroll-target="#summary">Summary</a></li>
+  <li><a href="#review-questions-9" id="toc-review-questions-9" class="nav-link" data-scroll-target="#review-questions-9">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">TensorFlow Implementation</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">machine-learning</div>
+    <div class="quarto-category">neural-networks</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Forward propagation as real TensorFlow code, plus how NumPy matrices, row and column vectors, and TensorFlow tensors represent the same data differently.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">July 10, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~157 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level and capped at 3 hours.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~5,300 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p>You have seen the math of <a href="../../machine-learning/advanced-learning-algorithms/forward-propagation.html">forward propagation</a> and tried it yourself in the <a href="../../machine-learning/advanced-learning-algorithms/forward-propagation.html#lab-neurons-and-layers">Neurons and Layers lab</a> for a single neuron. This page shows how to write the same forward propagation steps as real code for a full multi-layer network, using <strong>TensorFlow</strong>.</p>
+<section id="tensorflow-and-pytorch" class="level2">
+<h2 class="anchored" data-anchor-id="tensorflow-and-pytorch">TensorFlow and PyTorch</h2>
+<p><strong>TensorFlow</strong> is one of the leading frameworks for implementing deep learning algorithms. The other popular framework is <strong>PyTorch</strong>. Both are widely used in industry and research. This specialization focuses on TensorFlow.</p>
+<p>One of the remarkable things about neural networks is that the same algorithm, forward propagation, can be applied to many different applications. The rest of this page walks through two examples: a small <strong>coffee roasting</strong> example with two features, and a revisit of the <strong>handwritten digit</strong> example from the previous page.</p>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. Besides TensorFlow, what is the other popular deep learning framework mentioned?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>PyTorch</strong>.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="coffee-roasting-example" class="level2">
+<h2 class="anchored" data-anchor-id="coffee-roasting-example">Coffee Roasting Example</h2>
+<p>Suppose you roast coffee beans at home. Two parameters you control during roasting are the <strong>temperature</strong> at which you heat the beans and the <strong>duration</strong>, how long you roast them for. A training set can be built from many roasting attempts, each labeled by whether the resulting coffee tasted good (<span class="math inline">\(y = 1\)</span>) or not (<span class="math inline">\(y = 0\)</span>).</p>
+<p>A reasonable way to think about this dataset is that roasting at too <strong>low a temperature</strong>, or for too <strong>short a duration</strong>, leaves the beans undercooked. Roasting for too <strong>long</strong>, or at too <strong>high a temperature</strong>, burns the beans and leaves them overcooked. Only a small region of temperature-duration combinations produces good coffee. <a href="https://www.merchantsofgreencoffee.com/how-to-roast-green-coffee-in-your-oven/">Coffee Roasting at Home</a> suggests keeping the duration between 12 and 15 minutes, with temperature between 175 and 260 degrees Celsius, and as temperature rises, duration should shrink.</p>
+<div id="b8adb3eb" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tensorflow-implementation_files/figure-html/cell-2-output-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>This example is simplified from real coffee roasting, but simplified or not, real machine learning projects have used similar ideas to optimize coffee roasting. There are 200 examples, each with 2 features (temperature, duration) and 1 label. You can <a href="../../media/coffee-roasting.txt">download the dataset here</a>, a plain text file with one example per line, comma-separated as temperature, duration, label. This is the same dataset used in the <a href="#lab-coffee-roasting">Coffee Roasting lab</a> later on this page.</p>
+<p>The task is: given a feature vector <span class="math inline">\(\vec{x}\)</span> with temperature and duration, say 200 degrees Celsius for 17 minutes, use forward propagation in a neural network to predict whether that setting produces good coffee.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. What are the two input features in the coffee roasting example?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>Temperature</strong> and <strong>duration</strong> (how long the beans are roasted).</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does roasting for too long or at too high a temperature produce bad coffee?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The beans become <strong>overcooked</strong>, or burnt.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="writing-the-coffee-roasting-network-in-code" class="level2">
+<h2 class="anchored" data-anchor-id="writing-the-coffee-roasting-network-in-code">Writing the Coffee Roasting Network in Code</h2>
+<p>The diagram below is the network built step by step over the rest of this section, labeled with the same variable names the code uses.</p>
+<div id="56fae0a0" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tensorflow-implementation_files/figure-html/cell-3-output-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p><span class="math inline">\(\vec{x}\)</span> enters on the left with 2 entries, temperature and duration. <code>layer_1</code> turns that into <span class="math inline">\(\vec{a}^{[1]}\)</span>, three activations, one per unit, each arrow showing the value flowing <strong>out</strong> of its neuron. <code>layer_2</code> reads all three of those numbers and produces the single output <span class="math inline">\(a^{[2]}\)</span>. Thresholding <span class="math inline">\(a^{[2]}\)</span> at 0.5 gives the final prediction <span class="math inline">\(\hat{y}\)</span>. The rest of this section builds exactly this, one line of code at a time.</p>
+<p>To write this network in TensorFlow, first import the libraries the code needs. <code>numpy</code> stores the input numbers in arrays and does the underlying math. <code>tensorflow</code> is the deep learning library itself. <code>Dense</code> is the specific piece of TensorFlow that builds the layer type you have already learned about, where every unit reads the entire input and runs the sigmoid formula.</p>
+<div id="9b1217de" class="cell" data-execution_count="3">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tensorflow <span class="im">as</span> tf</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tensorflow.keras.layers <span class="im">import</span> Dense</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> logging</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>logging.getLogger(<span class="st">"tensorflow"</span>).setLevel(logging.ERROR)</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>tf.autograph.set_verbosity(<span class="dv">0</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The last two lines just quiet down some informational messages that TensorFlow prints by default, so the output in this lesson stays easy to read. They do not affect the network itself.</p>
+<p>As you learn more about neural networks, you will meet other layer types besides <code>Dense</code>, but every example on this page uses <code>Dense</code> layers.</p>
+<p>Next, build the input <span class="math inline">\(\vec{x}\)</span>. It holds the two feature values for one roasting attempt, 200 degrees Celsius for 17 minutes.</p>
+<div id="eebf6ad6" class="cell" data-execution_count="4">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> np.array([[<span class="fl">200.0</span>, <span class="fl">17.0</span>]])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Notice the <strong>double square brackets</strong>. Just like in the <a href="../../machine-learning/advanced-learning-algorithms/forward-propagation.html#lab-neurons-and-layers">Neurons and Layers lab</a>, TensorFlow layers expect <strong>2D input</strong>: one row per training example, one column per feature. Writing <code>x = np.array([200.0, 17.0])</code> with single brackets would give a flat list of two numbers, which is the wrong shape. The double brackets <code>[[200.0, 17.0]]</code> make <code>x</code> a table with <strong>one row</strong> (one example) and <strong>two columns</strong> (temperature, then duration).</p>
+<p>The first hidden layer has 3 units, using the sigmoid activation function.</p>
+<div id="4e6e7351" class="cell" data-execution_count="5">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>tf.random.set_seed(<span class="dv">3</span>)</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>layer_1 <span class="op">=</span> Dense(units<span class="op">=</span><span class="dv">3</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>a1 <span class="op">=</span> layer_1(x)</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(a1)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>tf.Tensor([[1. 1. 0.]], shape=(1, 3), dtype=float32)</code></pre>
+</div>
+</div>
+<p><code>layer_1</code> is itself a function. Calling it on <code>x</code> computes <span class="math inline">\(\vec{a}^{[1]}\)</span>, a list of three numbers, since layer 1 has three units. In the lecture, this was illustrated with example numbers like 0.2, 0.7, 0.3, just to show the shape of the computation. Here the printed values land very close to exactly 0 or 1, not smoothly in between. That happens because <code>x = [200, 17]</code> has large, unscaled values, and a fresh, untrained layer starts with small random weights, so <span class="math inline">\(\vec{w} \cdot \vec{x} + b\)</span> can already be a large positive or negative number, which pushes the sigmoid to saturate near its extremes. The layer has not been trained yet, so none of these numbers mean anything about good or bad coffee. They only show the shape of the computation, one output per unit.</p>
+<p>The second hidden layer has 1 unit, also with a sigmoid activation, and it reads <span class="math inline">\(\vec{a}^{[1]}\)</span> as its input.</p>
+<div id="69ebf85f" class="cell" data-execution_count="6">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>layer_2 <span class="op">=</span> Dense(units<span class="op">=</span><span class="dv">1</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>a2 <span class="op">=</span> layer_2(a1)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(a2)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>tf.Tensor([[0.6911123]], shape=(1, 1), dtype=float32)</code></pre>
+</div>
+</div>
+<p><code>a2</code> is the network’s output. If you want a binary prediction rather than a probability, threshold it at 0.5.</p>
+<div id="8bf79708" class="cell" data-execution_count="7">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>y_hat <span class="op">=</span> <span class="dv">1</span> <span class="cf">if</span> a2 <span class="op">&gt;=</span> <span class="fl">0.5</span> <span class="cf">else</span> <span class="dv">0</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(y_hat)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>1</code></pre>
+</div>
+</div>
+<p>That is the key structure of forward propagation in TensorFlow: build each <code>Dense</code> layer, then call it on the previous layer’s output to get the next activation, and optionally threshold the final activation. Some details are left out here, such as how to load trained weights into a layer. Those details are covered in the coffee roasting lab.</p>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. What does calling <code>layer_1(x)</code> compute?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(\vec{a}^{[1]}\)</span>, the activation vector output by layer 1, one number per unit in that layer.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why do the printed values of <code>a1</code> land close to exactly 0 or 1 instead of meaningful predictions?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The layer’s weights were just <strong>randomly initialized</strong> and have not been trained yet, and the raw inputs (200 and 17) are large enough to push <span class="math inline">\(\vec{w} \cdot \vec{x} + b\)</span> far from zero, saturating the sigmoid. Meaningful predictions require trained parameters.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. If the input features are temperature (in Celsius) and duration (in minutes), how do you write the code for the first feature vector <span class="math inline">\(\vec{x}\)</span>, 200 degrees for 17 minutes?</strong></p>
+<p><strong>(A)</strong> <code>x = np.array([[200.0 + 17.0]])</code></p>
+<p><strong>(B)</strong> <code>x = np.array([[200.0, 17.0]])</code></p>
+<p><strong>(C)</strong> <code>x = np.array([[200.0], [17.0]])</code></p>
+<p><strong>(D)</strong> <code>x = np.array([['200.0', '17.0']])</code></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>(B)</strong> is correct. It is a 1 by 2 matrix, one row (one example) and two columns (temperature, then duration).</p>
+<p>Option (A) adds the two numbers together instead of listing them, giving a single value, not two features.</p>
+<p>Option (C) is a 2 by 1 column vector, two rows and one column. That would mean 2 separate training examples with 1 feature each, not 1 example with 2 features.</p>
+<p>Option (D) wraps the numbers in quotes, making them text strings instead of numbers.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="matrices-and-vectors-in-numpy" class="level2">
+<h2 class="anchored" data-anchor-id="matrices-and-vectors-in-numpy">Matrices and Vectors in NumPy</h2>
+<p>Earlier, <code>x</code> was written as <code>np.array([[200.0, 17.0]])</code>, with <strong>double square brackets</strong>. Why double brackets, and not just <code>np.array([200.0, 17.0])</code>? Answering that means taking a short detour into how NumPy stores matrices and vectors.</p>
+<p>Part of the reason for this detour is historical. NumPy is a much older library, first built as a standard tool for linear algebra in Python. TensorFlow came much later, built by the Google Brain team. The two libraries grew up separately, so they ended up with slightly different conventions for representing data. Knowing both conventions helps you write correct code and avoid confusing shape errors.</p>
+<p>A <strong>matrix</strong> is just a 2D array of numbers, a grid with rows and columns. By convention, a matrix’s dimensions are always written as rows by columns. Here is a matrix with 2 rows and 3 columns, so it is called a <strong>2 by 3 matrix</strong>.</p>
+<p><span class="math display">\[
+M = \begin{bmatrix} 1 &amp; 2 &amp; 3 \\ 4 &amp; 5 &amp; 6 \end{bmatrix}
+\]</span></p>
+<p>In NumPy, the exact same matrix is written like this.</p>
+<div id="c3efabb4" class="cell" data-execution_count="8">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>m_2x3 <span class="op">=</span> np.array([[<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>],</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>                   [<span class="dv">4</span>, <span class="dv">5</span>, <span class="dv">6</span>]])</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(m_2x3)</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(m_2x3.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[[1 2 3]
+ [4 5 6]]
+(2, 3)</code></pre>
+</div>
+</div>
+<p>The outer square brackets group the rows together, and each inner pair of brackets is one row. <code>[1, 2, 3]</code> is the first row, <code>[4, 5, 6]</code> is the second row, exactly matching <span class="math inline">\(M\)</span> above, 2 rows tall and 3 columns wide, the shape reported by <code>m_2x3.shape</code>.</p>
+<p>Here is a different matrix, with 4 rows and 2 columns, so it is a <strong>4 by 2 matrix</strong>.</p>
+<p><span class="math display">\[
+M = \begin{bmatrix} 1 &amp; 2 \\ 3 &amp; 4 \\ 5 &amp; 6 \\ 7 &amp; 8 \end{bmatrix}
+\]</span></p>
+<div id="baebd8ec" class="cell" data-execution_count="9">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>m_4x2 <span class="op">=</span> np.array([[<span class="dv">1</span>, <span class="dv">2</span>],</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>                   [<span class="dv">3</span>, <span class="dv">4</span>],</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>                   [<span class="dv">5</span>, <span class="dv">6</span>],</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>                   [<span class="dv">7</span>, <span class="dv">8</span>]])</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(m_4x2)</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(m_4x2.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[[1 2]
+ [3 4]
+ [5 6]
+ [7 8]]
+(4, 2)</code></pre>
+</div>
+</div>
+<p>4 rows tall, 2 columns wide, the same shape reported by <code>m_4x2.shape</code>.</p>
+<p>Matrices can have all kinds of dimensions, including ones where a row or column count is just 1. The coffee roasting <code>x</code> is one such case.</p>
+<p><span class="math display">\[
+\text{row vector} = \begin{bmatrix} 200 &amp; 17 \end{bmatrix}, \qquad
+\text{column vector} = \begin{bmatrix} 200 \\ 17 \end{bmatrix}
+\]</span></p>
+<p>Same two numbers, same rule (rows by columns), just arranged two different ways.</p>
+<div id="d33c1e94" class="cell" data-execution_count="10">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>row_vector <span class="op">=</span> np.array([[<span class="fl">200.0</span>, <span class="fl">17.0</span>]])</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(row_vector.shape)</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>column_vector <span class="op">=</span> np.array([[<span class="fl">200.0</span>], [<span class="fl">17.0</span>]])</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(column_vector.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>(1, 2)
+(2, 1)</code></pre>
+</div>
+</div>
+<p><code>row_vector</code> is a <strong>1 by 2</strong> matrix, one row and two columns. It has the same two numbers as <code>x</code> from the coffee example, arranged the same way. A matrix with just one row is also called a <strong>row vector</strong>. <code>column_vector</code> is a <strong>2 by 1</strong> matrix, the same two numbers, but arranged as two rows and one column. A matrix with just one column is called a <strong>column vector</strong>.</p>
+<p>Now contrast both of those with a plain <strong>1D array</strong>. Mathematically, this is simply <span class="math inline">\(\vec{x} = (200, 17)\)</span>, with no rows-by-columns grid at all, unlike the two matrices above. This is exactly the convention used for <span class="math inline">\(\vec{x}\)</span> in <a href="../../machine-learning/supervised-machine-learning/linear-regression-model.html">linear regression</a> and <a href="../../machine-learning/supervised-machine-learning/logistic-regression.html">logistic regression</a> back in Course 1.</p>
+<div id="e232eaca" class="cell" data-execution_count="11">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>one_d <span class="op">=</span> np.array([<span class="fl">200.0</span>, <span class="fl">17.0</span>])</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(one_d.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>(2,)</code></pre>
+</div>
+</div>
+<p>Built with only a single pair of square brackets, a 1D array has no rows or columns. It is just a flat list of numbers.</p>
+<p>So there are two different conventions for the same two numbers, 200 and 17: a flat 1D array with one pair of brackets, or a 2D matrix (a row vector) with two pairs of brackets. <strong>TensorFlow’s convention is to represent data as 2D matrices, not 1D arrays.</strong> TensorFlow was built to handle very large datasets, and representing data as matrices lets it run its computations more efficiently internally. That is why <code>x</code> for a TensorFlow layer is written <code>np.array([[200.0, 17.0]])</code>, a 1 by 2 matrix, rather than the 1D array style from Course 1.</p>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. What are the dimensions of a matrix with 3 rows and 5 columns, and how is that written?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>A <strong>3 by 5</strong> matrix, written rows by columns.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What is the difference between a row vector and a column vector?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>A <strong>row vector</strong> is a matrix with just one row (shape like <span class="math inline">\(1 \times n\)</span>). A <strong>column vector</strong> is a matrix with just one column (shape like <span class="math inline">\(n \times 1\)</span>). Both are 2D matrices, just arranged differently.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does TensorFlow use 2D matrices to represent data instead of the 1D arrays used in Course 1?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>TensorFlow was designed to handle <strong>very large datasets</strong>, and representing data as matrices lets it run its internal computations more <strong>efficiently</strong>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Write <span class="math inline">\(\begin{bmatrix} 9 &amp; 10 \end{bmatrix}\)</span> and <span class="math inline">\(\begin{bmatrix} 9 \\ 10 \end{bmatrix}\)</span> in NumPy, and give the shape of each.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(\begin{bmatrix} 9 &amp; 10 \end{bmatrix}\)</span> is <code>np.array([[9, 10]])</code>, shape <code>(1, 2)</code>, a row vector. <span class="math inline">\(\begin{bmatrix} 9 \\ 10 \end{bmatrix}\)</span> is <code>np.array([[9], [10]])</code>, shape <code>(2, 1)</code>, a column vector.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="tensors-tensorflows-data-type" class="level2">
+<h2 class="anchored" data-anchor-id="tensors-tensorflows-data-type">Tensors: TensorFlow’s Data Type</h2>
+<p>Everything in the previous section, <code>m_2x3</code>, <code>row_vector</code>, <code>one_d</code>, was a plain NumPy array. But <code>a1</code> and <code>a2</code> from the coffee roasting example were not built with <code>np.array(...)</code>. They came out of calling <code>layer_1(x)</code> and <code>layer_2(a1)</code>, a TensorFlow layer. Does TensorFlow hand back a NumPy array too, or something else?</p>
+<p>To see the difference clearly, compare a NumPy array of similar numbers side by side with <code>a1</code>.</p>
+<div id="c6dd80bd" class="cell" data-execution_count="12">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>example_np <span class="op">=</span> np.array([[<span class="fl">0.2</span>, <span class="fl">0.7</span>, <span class="fl">0.3</span>]])</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(example_np)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[[0.2 0.7 0.3]]</code></pre>
+</div>
+</div>
+<div id="37cb984b" class="cell" data-execution_count="13">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(a1)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>tf.Tensor([[1. 1. 0.]], shape=(1, 3), dtype=float32)</code></pre>
+</div>
+</div>
+<p>Those two <code>print</code> statements look quite different. <code>example_np</code> prints as a plain list of numbers, <code>array([[0.2, 0.7, 0.3]])</code>. But <code>a1</code> prints as <code>tf.Tensor([[...]], shape=(1, 3), dtype=float32)</code>, with extra labels attached. That is because <code>a1</code> is not a NumPy array. It is a <code>tf.Tensor</code>, TensorFlow’s own data type.</p>
+<p>Break down what those extra labels mean, one at a time.</p>
+<div id="d4636ce2" class="cell" data-execution_count="14">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(a1.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>(1, 3)</code></pre>
+</div>
+</div>
+<p><code>shape=(1, 3)</code> means the same thing it meant for NumPy arrays in the previous section, a 1 by 3 matrix, one row and three columns, matching the 3 units in layer 1.</p>
+<p><code>dtype=float32</code> describes the kind of number stored, not the shape. <code>float32</code> means each number is a decimal (a <strong>floating-point</strong> number) stored using 32 bits of computer memory. NumPy arrays carry a <code>dtype</code> too, TensorFlow just always prints it alongside the values.</p>
+<p>So a <strong>tensor</strong> is a data type that the TensorFlow team created to store and compute on matrices efficiently. For the purposes of this course, you can just think of a tensor as TensorFlow’s own way of representing a matrix, dressed up with a couple of extra printed labels. Whenever you see the word “tensor,” think “matrix.”</p>
+<p>Since <code>a1</code> is a tensor and not a NumPy array, code written for NumPy might not accept it directly. Convert a tensor back into an ordinary NumPy array with <code>.numpy()</code>.</p>
+<div id="34baa65c" class="cell" data-execution_count="15">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(a1.numpy())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[[1. 1. 0.]]</code></pre>
+</div>
+</div>
+<p>That output matches <code>example_np</code> from the very first cell in this section, a plain NumPy array again, no <code>tf.Tensor</code> wrapper, no <code>shape=</code> or <code>dtype=</code> labels printed alongside it.</p>
+<p>The same pattern holds for <code>a2</code>, the output of the second layer. It has just one unit, so it comes out as a <strong>1 by 1 matrix</strong>, technically still 2D, just with a single row and a single column.</p>
+<div id="159f2dd9" class="cell" data-execution_count="16">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(a2)</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(a2.shape)</span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(a2.numpy())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>tf.Tensor([[0.6911123]], shape=(1, 1), dtype=float32)
+(1, 1)
+[[0.6911123]]</code></pre>
+</div>
+</div>
+<p>So when a NumPy array is passed into a TensorFlow layer, TensorFlow converts it into its own internal tensor format to compute with. When you read a result back out, you can keep it as a tensor, or convert it back into a NumPy array with <code>.numpy()</code>. Needing this conversion is a bit of an unfortunate side effect of NumPy and TensorFlow having been built years apart by different teams, but it is just something to be aware of as you write neural network code.</p>
+<section id="review-questions-4" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-4">Review Questions</h3>
+<p><strong>1. When you <code>print()</code> a plain NumPy array versus a TensorFlow tensor holding the same numbers, what is different about the output?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>A NumPy array prints as a plain <code>array([[...]])</code>. A tensor prints as <code>tf.Tensor([[...]], shape=..., dtype=...)</code>, with the shape and data type labels attached.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What does <code>a1.shape</code> return, and what does it mean?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><code>(1, 3)</code>, meaning <code>a1</code> is a 1 by 3 matrix, one row and three columns, one number per unit in layer 1.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What is a tensor?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>TensorFlow’s own <strong>data type</strong> for storing and computing on matrices efficiently. For this course, you can think of a tensor as just TensorFlow’s way of representing a matrix.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. How do you convert a TensorFlow tensor back into a NumPy array?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-14" class="callout-14-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Call <strong><code>.numpy()</code></strong> on the tensor, for example <code>a1.numpy()</code>.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="revisiting-the-handwritten-digit-example" class="level2">
+<h2 class="anchored" data-anchor-id="revisiting-the-handwritten-digit-example">Revisiting the Handwritten Digit Example</h2>
+<p>The same pattern applies to the <a href="../../machine-learning/advanced-learning-algorithms/forward-propagation.html#eight-by-eight-pixel-image">handwritten digit network</a> from the previous page. Here <span class="math inline">\(\vec{x}\)</span> is the list of 64 pixel intensity values.</p>
+<div id="64a9ed84" class="cell" data-execution_count="17">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>x_digit <span class="op">=</span> np.random.default_rng(<span class="dv">0</span>).integers(<span class="dv">0</span>, <span class="dv">256</span>, size<span class="op">=</span>(<span class="dv">1</span>, <span class="dv">64</span>)).astype(<span class="st">"float32"</span>)</span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>tf.random.set_seed(<span class="dv">3</span>)</span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>layer_1 <span class="op">=</span> Dense(units<span class="op">=</span><span class="dv">25</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>)</span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a>a1 <span class="op">=</span> layer_1(x_digit)</span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a>layer_2 <span class="op">=</span> Dense(units<span class="op">=</span><span class="dv">15</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>)</span>
+<span id="cb27-8"><a href="#cb27-8" aria-hidden="true" tabindex="-1"></a>a2 <span class="op">=</span> layer_2(a1)</span>
+<span id="cb27-9"><a href="#cb27-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-10"><a href="#cb27-10" aria-hidden="true" tabindex="-1"></a>layer_3 <span class="op">=</span> Dense(units<span class="op">=</span><span class="dv">1</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>)</span>
+<span id="cb27-11"><a href="#cb27-11" aria-hidden="true" tabindex="-1"></a>a3 <span class="op">=</span> layer_3(a2)</span>
+<span id="cb27-12"><a href="#cb27-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-13"><a href="#cb27-13" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(a3)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>tf.Tensor([[0.5862697]], shape=(1, 1), dtype=float32)</code></pre>
+</div>
+</div>
+<p>Layer 1 is a dense layer with 25 units, matching the first hidden layer size from the previous page. Layer 2 has 15 units, matching the second hidden layer. Layer 3 is the third and final dense layer, the single output unit. Calling each layer on the previous layer’s output carries out one step of forward propagation, from <span class="math inline">\(\vec{x}\)</span> to <span class="math inline">\(\vec{a}^{[1]}\)</span>, to <span class="math inline">\(\vec{a}^{[2]}\)</span>, to <span class="math inline">\(a^{[3]}\)</span>. As before, you can optionally threshold <span class="math inline">\(a^{[3]}\)</span> to get a binary prediction <span class="math inline">\(\hat{y}\)</span>.</p>
+<section id="review-questions-5" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-5">Review Questions</h3>
+<p><strong>1. In the digit example, how many units does <code>layer_3</code> have, and why?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>1 unit.</strong> It is the output layer, which reports a single probability, the chance the digit is a 1.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What input does <code>layer_2</code> take, and what does it output?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-16-contents" aria-controls="callout-16" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-16" class="callout-16-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>It takes <span class="math inline">\(\vec{a}^{[1]}\)</span> (the 25 numbers from layer 1) as input and outputs <span class="math inline">\(\vec{a}^{[2]}\)</span>, a list of 15 numbers.</p>
+</div>
+</div>
+</div>
+<p>You now know how to build individual <code>Dense</code> layers, call them in sequence to carry out forward propagation, and read the resulting tensors back out as NumPy arrays. The layers built so far were freshly created and untrained, so their predictions did not mean anything. Next, these pieces come together to build, train, and use a complete neural network for real.</p>
+</section>
+</section>
+<section id="building-a-neural-network" class="level2">
+<h2 class="anchored" data-anchor-id="building-a-neural-network">Building a Neural Network</h2>
+<p>Every example so far on this page did forward propagation <strong>explicitly</strong>: create <code>layer_1</code>, call it on <code>x</code> to get <code>a1</code>, create <code>layer_2</code>, call it on <code>a1</code> to get <code>a2</code>. That is one perfectly valid way to run a network, one layer at a time, by hand. TensorFlow also offers a second, simpler way to build a whole network at once, called <code>Sequential</code>.</p>
+<section id="sequential-in-action" class="level3">
+<h3 class="anchored" data-anchor-id="sequential-in-action">Sequential in Action</h3>
+<p><code>Sequential</code> takes a list of layers and strings them together into a single network for you. Instead of you manually feeding one layer’s output into the next layer’s input, you just say “TensorFlow, please create a network by stringing these layers together in order,” and TensorFlow handles the wiring.</p>
+<div id="6b716e29" class="cell" data-execution_count="18">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tensorflow.keras.models <span class="im">import</span> Sequential</span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>layer_1 <span class="op">=</span> Dense(units<span class="op">=</span><span class="dv">3</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>)</span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>layer_2 <span class="op">=</span> Dense(units<span class="op">=</span><span class="dv">1</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>)</span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> Sequential([layer_1, layer_2])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>That single <code>model</code> object now represents the same two-layer coffee roasting network built earlier on this page, layer by layer, but TensorFlow keeps track of the connections between layers for you.</p>
+</section>
+<section id="small-training-set" class="level3">
+<h3 class="anchored" data-anchor-id="small-training-set">Small Training Set</h3>
+<p>To see <code>Sequential</code> in action, use a small, illustrative training set, 4 roasting attempts, each with 2 features (temperature and duration). These particular numbers are just for showing the code pattern, not the full real dataset used in the lab below.</p>
+<div id="1c1612e2" class="cell" data-execution_count="19">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>X_train <span class="op">=</span> np.array([</span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>    [<span class="fl">200.0</span>, <span class="fl">13.9</span>],</span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>    [<span class="fl">220.0</span>, <span class="fl">17.0</span>],</span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>    [<span class="fl">190.0</span>, <span class="fl">11.0</span>],</span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>    [<span class="fl">230.0</span>, <span class="fl">13.0</span>],</span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a>])</span>
+<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a>Y_train <span class="op">=</span> np.array([<span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">1</span>])</span>
+<span id="cb30-8"><a href="#cb30-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(X_train.shape, Y_train.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>(4, 2) (4,)</code></pre>
+</div>
+</div>
+<p><code>X_train</code> is a 4 by 2 matrix, one row per training example, matching the <span class="math inline">\((m, n)\)</span> shape convention from earlier on this page. <code>Y_train</code> is a plain 1D array of length 4, one label per example, good roast (1) or bad roast (0).</p>
+</section>
+<section id="training-and-predicting" class="level3">
+<h3 class="anchored" data-anchor-id="training-and-predicting">Training and Predicting</h3>
+<p>With <code>X_train</code> and <code>Y_train</code> ready, training the whole network takes two function calls, <code>model.compile(...)</code> and <code>model.fit(...)</code>. What exactly these two calls do, loss functions, optimizers, gradient descent, is covered in full on a later page. For now, just see them in action.</p>
+<div id="267c5412" class="cell" data-execution_count="20">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>model.<span class="bu">compile</span>(</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>    loss<span class="op">=</span>tf.keras.losses.BinaryCrossentropy(),</span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>    optimizer<span class="op">=</span>tf.keras.optimizers.Adam(learning_rate<span class="op">=</span><span class="fl">0.01</span>),</span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>model.fit(X_train, Y_train, epochs<span class="op">=</span><span class="dv">5</span>, verbose<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"trained"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>trained</code></pre>
+</div>
+</div>
+<p>To run inference on a brand new example, you no longer call each layer by hand either. <code>model.predict(...)</code> runs forward propagation through every layer automatically and returns the final activation.</p>
+<div id="23660bfe" class="cell" data-execution_count="21">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>X_new <span class="op">=</span> np.array([[<span class="fl">200.0</span>, <span class="fl">13.9</span>]])</span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a>predictions <span class="op">=</span> model.predict(X_new, verbose<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(predictions)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[[0.54017055]]</code></pre>
+</div>
+</div>
+<p>Compare that to the explicit version earlier on this page: there, you wrote <code>a1 = layer_1(x)</code> and then <code>a2 = layer_2(a1)</code> yourself. Here, <code>model.predict(X_new)</code> does both of those steps internally, in one call.</p>
+</section>
+<section id="compact-convention" class="level3">
+<h3 class="anchored" data-anchor-id="compact-convention">Compact Convention</h3>
+<p>Real TensorFlow code rarely assigns each layer to its own <code>layer_1</code>, <code>layer_2</code> variable first. By convention, the <code>Dense(...)</code> calls are usually written directly inside the <code>Sequential([...])</code> list.</p>
+<div id="1001b8bb" class="cell" data-execution_count="22">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> Sequential([</span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>    Dense(units<span class="op">=</span><span class="dv">3</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>),</span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a>    Dense(units<span class="op">=</span><span class="dv">1</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>),</span>
+<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>This builds exactly the same network as the version above with separate <code>layer_1</code> and <code>layer_2</code> variables. It is just a shorter way to write it, and the style you will see most often in other people’s TensorFlow code.</p>
+</section>
+<section id="review-questions-6" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-6">Review Questions</h3>
+<p><strong>1. What does <code>Sequential</code> do?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-17-contents" aria-controls="callout-17" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-17" class="callout-17-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>It strings a list of layers together into one network, so you do not have to manually pass each layer’s output as the next layer’s input yourself.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. After building a <code>Sequential</code> model, what single function call runs forward propagation on a new example?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-18-contents" aria-controls="callout-18" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-18" class="callout-18-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><code>model.predict(X_new)</code>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In the compact convention, where are the <code>Dense(...)</code> layers written?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-19-contents" aria-controls="callout-19" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-19" class="callout-19-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Directly inside the <code>Sequential([...])</code> list, rather than being assigned to separate variables first.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. How do you define the second layer of a neural network that has 4 neurons and a sigmoid activation?</strong></p>
+<p><strong>(A)</strong> <code>Dense(units=4, activation='sigmoid')</code></p>
+<p><strong>(B)</strong> <code>Dense(layer=2, units=4, activation='sigmoid')</code></p>
+<p><strong>(C)</strong> <code>Dense(units=4)</code></p>
+<p><strong>(D)</strong> <code>Dense(units=[4], activation=['sigmoid'])</code></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-20-contents" aria-controls="callout-20" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-20" class="callout-20-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>(A)</strong> is correct. <code>Dense</code> takes <code>units</code> (a number) and <code>activation</code> (a string), nothing more.</p>
+<p>Option (B) is wrong because <code>Dense</code> has no <code>layer</code> argument. A layer’s position comes from <strong>where it sits in the <code>Sequential([...])</code> list</strong>, not from a parameter you set.</p>
+<p>Option (C) is missing the activation function entirely.</p>
+<p>Option (D) wraps <code>units</code> and <code>activation</code> in square brackets, as if they were lists. Both should be a plain number and a plain string.</p>
+</div>
+</div>
+</div>
+</section>
+<section id="same-pattern-for-the-digit-network" class="level3">
+<h3 class="anchored" data-anchor-id="same-pattern-for-the-digit-network">Same Pattern for the Digit Network</h3>
+<p>The same <code>Sequential</code> pattern applies to the <a href="#revisiting-the-handwritten-digit-example">handwritten digit network</a> from earlier on this page, just with three layers instead of two. Build the three named layers first, exactly as before, then string them together.</p>
+<div id="60826b8e" class="cell" data-execution_count="23">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a>layer_1 <span class="op">=</span> Dense(units<span class="op">=</span><span class="dv">25</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>)</span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a>layer_2 <span class="op">=</span> Dense(units<span class="op">=</span><span class="dv">15</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>)</span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a>layer_3 <span class="op">=</span> Dense(units<span class="op">=</span><span class="dv">1</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>)</span>
+<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a>digit_model <span class="op">=</span> Sequential([layer_1, layer_2, layer_3])</span>
+<span id="cb37-5"><a href="#cb37-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-6"><a href="#cb37-6" aria-hidden="true" tabindex="-1"></a>digit_model.<span class="bu">compile</span>(</span>
+<span id="cb37-7"><a href="#cb37-7" aria-hidden="true" tabindex="-1"></a>    loss<span class="op">=</span>tf.keras.losses.BinaryCrossentropy(),</span>
+<span id="cb37-8"><a href="#cb37-8" aria-hidden="true" tabindex="-1"></a>    optimizer<span class="op">=</span>tf.keras.optimizers.Adam(learning_rate<span class="op">=</span><span class="fl">0.01</span>),</span>
+<span id="cb37-9"><a href="#cb37-9" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Next, build a small training set the same shape as before, this time each row is 64 pixel intensity values instead of temperature and duration. Two illustrative examples are enough to see the pattern, one labeled digit 1, one labeled digit 0.</p>
+<div id="6073dab4" class="cell" data-execution_count="24">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>x_train_digits <span class="op">=</span> np.random.default_rng(<span class="dv">1</span>).integers(<span class="dv">0</span>, <span class="dv">256</span>, size<span class="op">=</span>(<span class="dv">2</span>, <span class="dv">64</span>)).astype(<span class="st">"float32"</span>)</span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>y_train_digits <span class="op">=</span> np.array([<span class="dv">1</span>, <span class="dv">0</span>])</span>
+<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(x_train_digits.shape, y_train_digits.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>(2, 64) (2,)</code></pre>
+</div>
+</div>
+<p>Training is the same single call as the coffee example, more on what it actually does on the <a href="../../machine-learning/advanced-learning-algorithms/training-neural-networks.html">training neural networks</a> page.</p>
+<div id="2bf2c6eb" class="cell" data-execution_count="25">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>digit_model.fit(x_train_digits, y_train_digits, epochs<span class="op">=</span><span class="dv">5</span>, verbose<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"trained"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>trained</code></pre>
+</div>
+</div>
+<p>Inference is also the same single call, <code>model.predict(...)</code>, no matter how many layers the network has.</p>
+<div id="b12fc4b2" class="cell" data-execution_count="26">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>x_new_digit <span class="op">=</span> np.random.default_rng(<span class="dv">2</span>).integers(<span class="dv">0</span>, <span class="dv">256</span>, size<span class="op">=</span>(<span class="dv">1</span>, <span class="dv">64</span>)).astype(<span class="st">"float32"</span>)</span>
+<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a>digit_predictions <span class="op">=</span> digit_model.predict(x_new_digit, verbose<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb42-3"><a href="#cb42-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(digit_predictions)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[[0.5187625]]</code></pre>
+</div>
+</div>
+<p>Building a bigger network with <code>Sequential</code> does not require any new ideas, just a longer list of layers. Every step, <code>compile</code>, <code>fit</code>, <code>predict</code>, works exactly the same whether the network has 2 layers or 3.</p>
+</section>
+<section id="review-questions-7" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-7">Review Questions</h3>
+<p><strong>1. In <code>x_train_digits</code>, what does each row represent, and why are there 64 columns?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-21-contents" aria-controls="callout-21" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-21" class="callout-21-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Each row is <strong>one training image</strong>. There are 64 columns because each 8-by-8 digit image unrolls into 64 pixel intensity values.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Does <code>model.predict(...)</code> change depending on whether the network has 2 layers or 3?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-22-contents" aria-controls="callout-22" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-22" class="callout-22-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>No.</strong> The same single call runs forward propagation through however many layers the <code>Sequential</code> model contains.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. For the code below, how many layers does this neural network have?</strong></p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb44"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> Sequential([</span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a>    Dense(units<span class="op">=</span><span class="dv">25</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>),</span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a>    Dense(units<span class="op">=</span><span class="dv">15</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>),</span>
+<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a>    Dense(units<span class="op">=</span><span class="dv">10</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>),</span>
+<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a>    Dense(units<span class="op">=</span><span class="dv">1</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>)])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>(A)</strong> 5</p>
+<p><strong>(B)</strong> 4</p>
+<p><strong>(C)</strong> 25</p>
+<p><strong>(D)</strong> 3</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-23-contents" aria-controls="callout-23" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-23" class="callout-23-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>(B)</strong> is correct. The network has <strong>4 layers</strong>, one for each <code>Dense(...)</code> call in the <code>Sequential([...])</code> list. The input is not counted as a layer.</p>
+<p>Option (A) overcounts by treating the input as a layer.</p>
+<p>Option (C) confuses the <strong>number of units</strong> in the first layer with the number of layers.</p>
+<p>Option (D) undercounts, missing one of the four <code>Dense</code> calls.</p>
+</div>
+</div>
+</div>
+</section>
+<section id="why-the-underlying-steps-still-matter" class="level3">
+<h3 class="anchored" data-anchor-id="why-the-underlying-steps-still-matter">Why the Underlying Steps Still Matter</h3>
+<p>It can feel a little strange to write only a handful of lines of code and be told you just built a working neural network. Being able to use a library like TensorFlow to do this efficiently is genuinely valuable. But it is worth understanding what those few lines are actually doing underneath, so that when something goes wrong, you have a real sense of what to check and what to change. Most machine learning engineers rarely implement forward propagation by hand day to day, they use libraries like TensorFlow and PyTorch, but understanding how it works underneath makes you much better at using those libraries well.</p>
+</section>
+<section id="review-questions-8" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-8">Review Questions</h3>
+<p><strong>1. Why bother learning to implement forward propagation by hand if libraries like TensorFlow already do it for you?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-24-contents" aria-controls="callout-24" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-24" class="callout-24-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Understanding what the library is doing underneath helps you <strong>reason about problems</strong> when something goes wrong, rather than treating the network as an unexplainable black box.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="lab-coffee-roasting" class="level2">
+<h2 class="anchored" data-anchor-id="lab-coffee-roasting">Lab: Coffee Roasting</h2>
+<p>In this lab, you will build the small “Coffee Roasting Network” described earlier on this page, train it on the coffee roasting dataset, and look inside the trained network to see what each unit learned.</p>
+<section id="dataset" class="level3">
+<h3 class="anchored" data-anchor-id="dataset">Dataset</h3>
+<p>Recall the <a href="../../media/coffee-roasting.txt">coffee roasting dataset</a> from earlier on this page. <code>X</code> holds two features per example, temperature and duration, and <code>Y</code> holds the good roast (1) or bad roast (0) label.</p>
+<div id="1b86cf80" class="cell" data-execution_count="27">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(X.shape, Y.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>(200, 2) (200, 1)</code></pre>
+</div>
+</div>
+<p>There are 200 training examples, each with 2 features, matching the <span class="math inline">\((m, n)\)</span> shape convention from earlier on this page.</p>
+</section>
+<section id="normalize-the-data" class="level3">
+<h3 class="anchored" data-anchor-id="normalize-the-data">Normalize the Data</h3>
+<p><a href="../../machine-learning/supervised-machine-learning/gradient-descent.html">Gradient descent</a> fits the weights to the data more quickly when the features are normalized, the same idea as <a href="../../machine-learning/supervised-machine-learning/feature-scaling.html">feature scaling</a> from Course 1. Temperature ranges up to the hundreds while duration ranges only from about 11 to 16, very different scales.</p>
+<div id="83601936" class="cell" data-execution_count="28">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb47"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Temperature Max, Min pre normalization: </span><span class="sc">{</span>np<span class="sc">.</span><span class="bu">max</span>(X[:,<span class="dv">0</span>])<span class="sc">:0.2f}</span><span class="ss">, </span><span class="sc">{</span>np<span class="sc">.</span><span class="bu">min</span>(X[:,<span class="dv">0</span>])<span class="sc">:0.2f}</span><span class="ss">"</span>)</span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Duration    Max, Min pre normalization: </span><span class="sc">{</span>np<span class="sc">.</span><span class="bu">max</span>(X[:,<span class="dv">1</span>])<span class="sc">:0.2f}</span><span class="ss">, </span><span class="sc">{</span>np<span class="sc">.</span><span class="bu">min</span>(X[:,<span class="dv">1</span>])<span class="sc">:0.2f}</span><span class="ss">"</span>)</span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-4"><a href="#cb47-4" aria-hidden="true" tabindex="-1"></a>norm_l <span class="op">=</span> tf.keras.layers.Normalization(axis<span class="op">=-</span><span class="dv">1</span>)</span>
+<span id="cb47-5"><a href="#cb47-5" aria-hidden="true" tabindex="-1"></a>norm_l.adapt(X)</span>
+<span id="cb47-6"><a href="#cb47-6" aria-hidden="true" tabindex="-1"></a>Xn <span class="op">=</span> norm_l(X)</span>
+<span id="cb47-7"><a href="#cb47-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-8"><a href="#cb47-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Temperature Max, Min post normalization: </span><span class="sc">{</span>np<span class="sc">.</span><span class="bu">max</span>(Xn[:,<span class="dv">0</span>])<span class="sc">:0.2f}</span><span class="ss">, </span><span class="sc">{</span>np<span class="sc">.</span><span class="bu">min</span>(Xn[:,<span class="dv">0</span>])<span class="sc">:0.2f}</span><span class="ss">"</span>)</span>
+<span id="cb47-9"><a href="#cb47-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Duration    Max, Min post normalization: </span><span class="sc">{</span>np<span class="sc">.</span><span class="bu">max</span>(Xn[:,<span class="dv">1</span>])<span class="sc">:0.2f}</span><span class="ss">, </span><span class="sc">{</span>np<span class="sc">.</span><span class="bu">min</span>(Xn[:,<span class="dv">1</span>])<span class="sc">:0.2f}</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Temperature Max, Min pre normalization: 284.99, 151.32
+Duration    Max, Min pre normalization: 15.45, 11.51
+Temperature Max, Min post normalization: 1.66, -1.69
+Duration    Max, Min post normalization: 1.79, -1.70</code></pre>
+</div>
+</div>
+<p><code>tf.keras.layers.Normalization</code> is a small helper layer, not one of the network’s hidden layers. Calling <code>.adapt(X)</code> makes it learn the mean and standard deviation of each column in <code>X</code>. Calling it on <code>X</code> then rescales every feature to a similar range. Any new data you feed the trained network later must be normalized the same way.</p>
+</section>
+<section id="increase-the-training-set-size" class="level3">
+<h3 class="anchored" data-anchor-id="increase-the-training-set-size">Increase the Training Set Size</h3>
+<p>Training runs faster with more examples per update, so the 200 examples are copied (tiled) many times to make a larger dataset. This does not add new information, it just reduces how many passes over the data (<strong>epochs</strong>) are needed for the numbers to settle.</p>
+<div id="cbf789f9" class="cell" data-execution_count="29">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb49"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>Xt <span class="op">=</span> np.tile(Xn, (<span class="dv">1000</span>, <span class="dv">1</span>))</span>
+<span id="cb49-2"><a href="#cb49-2" aria-hidden="true" tabindex="-1"></a>Yt <span class="op">=</span> np.tile(Y, (<span class="dv">1000</span>, <span class="dv">1</span>))</span>
+<span id="cb49-3"><a href="#cb49-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(Xt.shape, Yt.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>(200000, 2) (200000, 1)</code></pre>
+</div>
+</div>
+</section>
+<section id="build-the-model" class="level3">
+<h3 class="anchored" data-anchor-id="build-the-model">Build the Model</h3>
+<p>Now build the actual “Coffee Roasting Network” as a <code>Sequential</code> model, two <code>Dense</code> layers with sigmoid activations, matching the architecture described earlier on this page.</p>
+<div id="f23e6458" class="cell" data-execution_count="30">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb51"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tensorflow.keras.models <span class="im">import</span> Sequential</span>
+<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a>tf.random.set_seed(<span class="dv">1234</span>)</span>
+<span id="cb51-4"><a href="#cb51-4" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> Sequential([</span>
+<span id="cb51-5"><a href="#cb51-5" aria-hidden="true" tabindex="-1"></a>    tf.keras.Input(shape<span class="op">=</span>(<span class="dv">2</span>,)),</span>
+<span id="cb51-6"><a href="#cb51-6" aria-hidden="true" tabindex="-1"></a>    Dense(<span class="dv">3</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>, name<span class="op">=</span><span class="st">"layer1"</span>),</span>
+<span id="cb51-7"><a href="#cb51-7" aria-hidden="true" tabindex="-1"></a>    Dense(<span class="dv">1</span>, activation<span class="op">=</span><span class="st">"sigmoid"</span>, name<span class="op">=</span><span class="st">"layer2"</span>),</span>
+<span id="cb51-8"><a href="#cb51-8" aria-hidden="true" tabindex="-1"></a>])</span>
+<span id="cb51-9"><a href="#cb51-9" aria-hidden="true" tabindex="-1"></a>model.summary()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold">Model: "sequential_3"</span>
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃<span style="font-weight: bold"> Layer (type)                    </span>┃<span style="font-weight: bold"> Output Shape           </span>┃<span style="font-weight: bold">       Param # </span>┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ layer1 (<span style="color: #0087ff; text-decoration-color: #0087ff">Dense</span>)                  │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">3</span>)              │             <span style="color: #00af00; text-decoration-color: #00af00">9</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ layer2 (<span style="color: #0087ff; text-decoration-color: #0087ff">Dense</span>)                  │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">1</span>)              │             <span style="color: #00af00; text-decoration-color: #00af00">4</span> │
+└─────────────────────────────────┴────────────────────────┴───────────────┘
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold"> Total params: </span><span style="color: #00af00; text-decoration-color: #00af00">13</span> (52.00 B)
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold"> Trainable params: </span><span style="color: #00af00; text-decoration-color: #00af00">13</span> (52.00 B)
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold"> Non-trainable params: </span><span style="color: #00af00; text-decoration-color: #00af00">0</span> (0.00 B)
+</pre>
+</div>
+</div>
+<p><code>tf.keras.Input(shape=(2,))</code> tells TensorFlow up front that every example has 2 features, so it can size the weight and bias arrays immediately, rather than waiting to see the first batch of data as in the earlier examples on this page.</p>
+<p>The parameter counts in the summary match the number of entries in each layer’s weights and bias.</p>
+<div id="8cdfc83b" class="cell" data-execution_count="31">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb52"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a>L1_num_params <span class="op">=</span> <span class="dv">2</span> <span class="op">*</span> <span class="dv">3</span> <span class="op">+</span> <span class="dv">3</span>  <span class="co"># W1 has 2 inputs x 3 units, plus 3 biases</span></span>
+<span id="cb52-2"><a href="#cb52-2" aria-hidden="true" tabindex="-1"></a>L2_num_params <span class="op">=</span> <span class="dv">3</span> <span class="op">*</span> <span class="dv">1</span> <span class="op">+</span> <span class="dv">1</span>  <span class="co"># W2 has 3 inputs x 1 unit, plus 1 bias</span></span>
+<span id="cb52-3"><a href="#cb52-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"L1 params ="</span>, L1_num_params, <span class="st">", L2 params ="</span>, L2_num_params)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>L1 params = 9 , L2 params = 4</code></pre>
+</div>
+</div>
+</section>
+<section id="examine-the-initial-weights" class="level3">
+<h3 class="anchored" data-anchor-id="examine-the-initial-weights">Examine the Initial Weights</h3>
+<p>Before training, look at the weights TensorFlow has already created. The weight matrix <span class="math inline">\(W\)</span> for a layer is shaped (number of input features, number of units), and the bias <span class="math inline">\(b\)</span> has one entry per unit.</p>
+<div id="6efe1e1f" class="cell" data-execution_count="32">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb54"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a>W1, b1 <span class="op">=</span> model.get_layer(<span class="st">"layer1"</span>).get_weights()</span>
+<span id="cb54-2"><a href="#cb54-2" aria-hidden="true" tabindex="-1"></a>W2, b2 <span class="op">=</span> model.get_layer(<span class="st">"layer2"</span>).get_weights()</span>
+<span id="cb54-3"><a href="#cb54-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"W1</span><span class="sc">{</span>W1<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">:</span><span class="ch">\n</span><span class="ss">"</span>, W1, <span class="ss">f"</span><span class="ch">\n</span><span class="ss">b1</span><span class="sc">{</span>b1<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">:"</span>, b1)</span>
+<span id="cb54-4"><a href="#cb54-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"W2</span><span class="sc">{</span>W2<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">:</span><span class="ch">\n</span><span class="ss">"</span>, W2, <span class="ss">f"</span><span class="ch">\n</span><span class="ss">b2</span><span class="sc">{</span>b2<span class="sc">.</span>shape<span class="sc">}</span><span class="ss">:"</span>, b2)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>W1(2, 3):
+ [[ 0.13009262 -0.9318452   0.85053563]
+ [-1.0851275   0.97560334  0.81984603]] 
+b1(3,): [0. 0. 0.]
+W2(3, 1):
+ [[-1.1524855 ]
+ [ 0.84642375]
+ [-0.5354384 ]] 
+b2(1,): [0.]</code></pre>
+</div>
+</div>
+<p>Layer 1 has 2 input features and 3 units, so <span class="math inline">\(W_1\)</span> is a <span class="math inline">\(2 \times 3\)</span> matrix. Layer 2 has 3 inputs (the 3 activations from layer 1) and 1 unit, so <span class="math inline">\(W_2\)</span> is a <span class="math inline">\(3 \times 1\)</span> matrix. These starting values are small and random, exactly what you would expect from a freshly built, untrained layer.</p>
+</section>
+<section id="train-the-model" class="level3">
+<h3 class="anchored" data-anchor-id="train-the-model">Train the Model</h3>
+<p>Two new steps appear here, <code>compile</code> and <code>fit</code>. Training itself, what these two steps actually do internally, is covered in detail on a later page. For now, <code>model.compile</code> sets up a loss function and an optimizer, and <code>model.fit</code> runs gradient descent to fit the weights to the data.</p>
+<div id="fb10f7e2" class="cell" data-execution_count="33">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb56"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a>model.<span class="bu">compile</span>(</span>
+<span id="cb56-2"><a href="#cb56-2" aria-hidden="true" tabindex="-1"></a>    loss<span class="op">=</span>tf.keras.losses.BinaryCrossentropy(),</span>
+<span id="cb56-3"><a href="#cb56-3" aria-hidden="true" tabindex="-1"></a>    optimizer<span class="op">=</span>tf.keras.optimizers.Adam(learning_rate<span class="op">=</span><span class="fl">0.01</span>),</span>
+<span id="cb56-4"><a href="#cb56-4" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb56-5"><a href="#cb56-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb56-6"><a href="#cb56-6" aria-hidden="true" tabindex="-1"></a>history <span class="op">=</span> model.fit(Xt, Yt, epochs<span class="op">=</span><span class="dv">10</span>, verbose<span class="op">=</span><span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Epoch 1/10
+6250/6250 - 2s - 308us/step - loss: 0.1642
+Epoch 2/10
+6250/6250 - 2s - 284us/step - loss: 0.0342
+Epoch 3/10
+6250/6250 - 2s - 283us/step - loss: 0.0162
+Epoch 4/10
+6250/6250 - 2s - 282us/step - loss: 0.0103
+Epoch 5/10
+6250/6250 - 2s - 281us/step - loss: 0.0070
+Epoch 6/10
+6250/6250 - 2s - 281us/step - loss: 0.0048
+Epoch 7/10
+6250/6250 - 2s - 280us/step - loss: 0.0034
+Epoch 8/10
+6250/6250 - 2s - 280us/step - loss: 0.0023
+Epoch 9/10
+6250/6250 - 2s - 281us/step - loss: 0.0017
+Epoch 10/10
+6250/6250 - 2s - 279us/step - loss: 0.0012</code></pre>
+</div>
+</div>
+<p>Each line above is one <strong>epoch</strong>, one full pass through the tiled training set. The loss, a measure of how wrong the model’s predictions are, drops with every epoch as the weights improve.</p>
+</section>
+<section id="updated-weights" class="level3">
+<h3 class="anchored" data-anchor-id="updated-weights">Updated Weights</h3>
+<p>After training, the weights have changed from their random starting point.</p>
+<div id="b5533b97" class="cell" data-execution_count="34">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb58"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a>W1, b1 <span class="op">=</span> model.get_layer(<span class="st">"layer1"</span>).get_weights()</span>
+<span id="cb58-2"><a href="#cb58-2" aria-hidden="true" tabindex="-1"></a>W2, b2 <span class="op">=</span> model.get_layer(<span class="st">"layer2"</span>).get_weights()</span>
+<span id="cb58-3"><a href="#cb58-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"W1:</span><span class="ch">\n</span><span class="st">"</span>, W1, <span class="st">"</span><span class="ch">\n</span><span class="st">b1:"</span>, b1)</span>
+<span id="cb58-4"><a href="#cb58-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"W2:</span><span class="ch">\n</span><span class="st">"</span>, W2, <span class="st">"</span><span class="ch">\n</span><span class="st">b2:"</span>, b2)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>W1:
+ [[-11.165932     0.19426033  14.659648  ]
+ [ -0.26644287  10.6826935   12.227357  ]] 
+b1: [-12.024806   12.838415    2.0634902]
+W2:
+ [[-58.335876]
+ [ 48.124737]
+ [-49.845646]] 
+b2: [-14.88582]</code></pre>
+</div>
+</div>
+<p>Training runs like this involve randomness, so your exact numbers will differ from anyone else’s, and even from a second run on the same machine. To keep the rest of this lab consistent and reproducible, load a specific set of already-trained weights saved from one earlier run.</p>
+<div id="f1335381" class="cell" data-execution_count="35">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb60"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a>W1 <span class="op">=</span> np.array([</span>
+<span id="cb60-2"><a href="#cb60-2" aria-hidden="true" tabindex="-1"></a>    [<span class="op">-</span><span class="fl">8.94</span>,  <span class="fl">0.29</span>, <span class="fl">12.89</span>],</span>
+<span id="cb60-3"><a href="#cb60-3" aria-hidden="true" tabindex="-1"></a>    [<span class="op">-</span><span class="fl">0.17</span>, <span class="op">-</span><span class="fl">7.34</span>, <span class="fl">10.79</span>]])</span>
+<span id="cb60-4"><a href="#cb60-4" aria-hidden="true" tabindex="-1"></a>b1 <span class="op">=</span> np.array([<span class="op">-</span><span class="fl">9.87</span>, <span class="op">-</span><span class="fl">9.28</span>, <span class="fl">1.01</span>])</span>
+<span id="cb60-5"><a href="#cb60-5" aria-hidden="true" tabindex="-1"></a>W2 <span class="op">=</span> np.array([</span>
+<span id="cb60-6"><a href="#cb60-6" aria-hidden="true" tabindex="-1"></a>    [<span class="op">-</span><span class="fl">31.38</span>],</span>
+<span id="cb60-7"><a href="#cb60-7" aria-hidden="true" tabindex="-1"></a>    [<span class="op">-</span><span class="fl">27.86</span>],</span>
+<span id="cb60-8"><a href="#cb60-8" aria-hidden="true" tabindex="-1"></a>    [<span class="op">-</span><span class="fl">32.79</span>]])</span>
+<span id="cb60-9"><a href="#cb60-9" aria-hidden="true" tabindex="-1"></a>b2 <span class="op">=</span> np.array([<span class="fl">15.54</span>])</span>
+<span id="cb60-10"><a href="#cb60-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb60-11"><a href="#cb60-11" aria-hidden="true" tabindex="-1"></a>model.get_layer(<span class="st">"layer1"</span>).set_weights([W1, b1])</span>
+<span id="cb60-12"><a href="#cb60-12" aria-hidden="true" tabindex="-1"></a>model.get_layer(<span class="st">"layer2"</span>).set_weights([W2, b2])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="make-predictions" class="level3">
+<h3 class="anchored" data-anchor-id="make-predictions">Make Predictions</h3>
+<p>With trained weights loaded, the model can predict on new roasting settings. Recall the two settings from earlier on this page, 200 degrees Celsius for 13.9 minutes and for 17 minutes. Remember to normalize new inputs the same way the training data was normalized.</p>
+<div id="ab56936b" class="cell" data-execution_count="36">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb61"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb61-1"><a href="#cb61-1" aria-hidden="true" tabindex="-1"></a>X_test <span class="op">=</span> np.array([</span>
+<span id="cb61-2"><a href="#cb61-2" aria-hidden="true" tabindex="-1"></a>    [<span class="dv">200</span>, <span class="fl">13.9</span>],  <span class="co"># expected: good roast</span></span>
+<span id="cb61-3"><a href="#cb61-3" aria-hidden="true" tabindex="-1"></a>    [<span class="dv">200</span>, <span class="dv">17</span>]])   <span class="co"># expected: bad roast (too long)</span></span>
+<span id="cb61-4"><a href="#cb61-4" aria-hidden="true" tabindex="-1"></a>X_testn <span class="op">=</span> norm_l(X_test)</span>
+<span id="cb61-5"><a href="#cb61-5" aria-hidden="true" tabindex="-1"></a>predictions <span class="op">=</span> model.predict(X_testn, verbose<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb61-6"><a href="#cb61-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"predictions =</span><span class="ch">\n</span><span class="st">"</span>, predictions)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>predictions =
+ [[9.625127e-01]
+ [3.031606e-08]]</code></pre>
+</div>
+</div>
+<p>The first row is the estimated probability of a good roast at 200°C for 13.9 minutes, and the second row is the same for 200°C for 17 minutes. Thresholding at 0.5 turns these into decisions.</p>
+<div id="89424d38" class="cell" data-execution_count="37">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb63"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb63-1"><a href="#cb63-1" aria-hidden="true" tabindex="-1"></a>yhat <span class="op">=</span> (predictions <span class="op">&gt;=</span> <span class="fl">0.5</span>).astype(<span class="bu">int</span>)</span>
+<span id="cb63-2"><a href="#cb63-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"decisions =</span><span class="ch">\n</span><span class="st">"</span>, yhat)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>decisions =
+ [[1]
+ [0]]</code></pre>
+</div>
+</div>
+<p>The network predicts a <strong>good roast</strong> for the first setting and a <strong>bad roast</strong> for the second, matching the intuition that 17 minutes is too long a duration.</p>
+</section>
+<section id="what-did-each-unit-learn" class="level3">
+<h3 class="anchored" data-anchor-id="what-did-each-unit-learn">What Did Each Unit Learn?</h3>
+<p>Layer 1 has 3 units. Each one is a logistic function over temperature and duration, and each can be visualized as a probability shaded over the whole temperature-duration grid.</p>
+<div id="74dc32e2" class="cell" data-execution_count="38">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tensorflow-implementation_files/figure-html/cell-39-output-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Darker shading means that unit outputs a value closer to 1 in that region. Each of the 3 units specializes in flagging one particular way a roast can go bad, one reacting to temperature being too low, another to duration being outside the good range, another to a mix of temperature and duration together. Nobody told the network to divide the problem up this way. It discovered this division on its own while training.</p>
+</section>
+<section id="whole-network-together" class="level3">
+<h3 class="anchored" data-anchor-id="whole-network-together">Whole Network Together</h3>
+<p>Layer 2 takes the 3 outputs from layer 1 and combines them into one final probability. Because layer 1 always outputs sigmoid values between 0 and 1, layer 2’s behavior can be visualized in a 3D cube, one axis per unit.</p>
+<div id="ea60a1ce" class="cell" data-execution_count="39">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tensorflow-implementation_files/figure-html/cell-40-output-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The darkest points cluster where all three layer 1 outputs are small, close to the corner where none of the three “bad roast” units have fired. That is exactly the good roast condition. Finally, put both layers together and compare the network’s raw probability output to its thresholded decision across the whole temperature-duration grid.</p>
+<div id="6e927a20" class="cell" data-execution_count="40">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="tensorflow-implementation_files/figure-html/cell-41-output-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The left panel shades the network’s raw probability output across the grid, overlaid on the real training data. The right panel shows the same predictions after the 0.5 threshold, orange for predicted good roasts. The shaded region on the left matches the triangular good-roast region from the original dataset closely, which is exactly what a well-trained network should do.</p>
+</section>
+<section id="summary" class="level3">
+<h3 class="anchored" data-anchor-id="summary">Summary</h3>
+<p>In this lab you learned:</p>
+<ul>
+<li>Real feature values (temperature, duration) often need <strong>normalization</strong> before training, using <code>tf.keras.layers.Normalization</code>, adapted once on the training data.</li>
+<li><code>model.compile</code> and <code>model.fit</code> train a network’s weights on data, covered in full detail on a later page.</li>
+<li>Trained weights can be inspected directly with <code>get_layer(...).get_weights()</code>, and set directly with <code>set_weights(...)</code>.</li>
+<li>Visualizing each hidden unit’s output shows that the network divided the “bad roast” problem into pieces on its own, without being told how.</li>
+</ul>
+</section>
+<section id="review-questions-9" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-9">Review Questions</h3>
+<p><strong>1. Why does the coffee roasting data get normalized before training?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-25-contents" aria-controls="callout-25" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-25" class="callout-25-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Temperature and duration are on very different scales. Normalizing helps <strong>gradient descent</strong> fit the weights more quickly, the same idea as feature scaling in Course 1.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What does one epoch mean during <code>model.fit</code>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-26-contents" aria-controls="callout-26" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-26" class="callout-26-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>One full pass through the entire training set.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does this lab load a specific saved set of weights instead of just using the freshly trained ones?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-27-contents" aria-controls="callout-27" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-27" class="callout-27-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Training involves randomness, so results can vary slightly from run to run. Loading a fixed, known-good set of weights keeps the rest of the lab’s discussion and plots <strong>reproducible</strong>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What did visualizing layer 1’s three units show about how the network solved the problem?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-28-contents" aria-controls="callout-28" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-28" class="callout-28-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Each unit specialized in detecting a <strong>different way</strong> a roast could go bad (too cold, too short, or a bad temperature-duration combination), a division of labor the network discovered on its own during training.</p>
+</div>
+</div>
+</div>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 16%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">16% completed (363 of 2196 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../machine-learning/advanced-learning-algorithms/forward-propagation.html" class="pagination-link" aria-label="Forward Propagation">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Forward Propagation</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../machine-learning/advanced-learning-algorithms/neural-networks-in-numpy.html" class="pagination-link" aria-label="Neural Networks in NumPy">
+        <span class="nav-page-text">Neural Networks in NumPy</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
