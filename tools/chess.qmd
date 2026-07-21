@@ -1,0 +1,1493 @@
+---
+title: "Chess Trainer"
+description: "Play chess against twelve bots from absolute beginner (200) to full engine strength (2600+), with a built-in coach: timed hints, mistake and blunder warnings before you commit a move, and a post-game report. Runs entirely in your browser."
+toc: false
+show-reading-time: false
+page-layout: full
+margin-header: ../_templates/empty.html
+---
+
+```{=html}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
+body { font-family: 'PT Sans', sans-serif; }
+h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
+
+.chess-wrap { max-width: 1220px; margin: 0 auto; }
+.chess-wrap, .chess-wrap * { box-sizing: border-box; }
+/* reclaim the (empty) margin column so the board gets real estate */
+@media (min-width: 992px) {
+  #quarto-margin-sidebar { display: none; }
+  #quarto-content main.content { grid-column: page-start-inset / page-end-inset !important; }
+}
+
+/* ---------- setup screen ---------- */
+.cs-card {
+  border: 1.5px solid #e0e0e0; border-radius: 12px; padding: 20px; margin-top: 12px;
+  background: var(--bs-body-bg, #fff);
+}
+.cs-label {
+  display:block; font-weight:600; margin: 14px 0 8px; font-size: 13px;
+  text-transform: uppercase; letter-spacing: .5px; color: #777;
+}
+.bot-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap:10px; }
+.bot-tile {
+  display:flex; gap:10px; align-items:center; padding:10px 12px; border:1.5px solid #e0e0e0;
+  border-radius:10px; cursor:pointer; transition: border-color .15s, box-shadow .15s; background:transparent;
+  text-align:left; font: inherit; color: inherit;
+}
+.bot-tile:hover { border-color:#b9cdf3; }
+.bot-tile.sel { border-color:#2c7be5; box-shadow:0 0 0 2px rgba(44,123,229,.18); }
+.bot-ava {
+  width:42px; height:42px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  color:#fff; font-weight:700; font-family:'Nunito',sans-serif; font-size:17px; overflow:hidden;
+}
+.bot-ava svg { width:100%; height:100%; display:block; }
+.bot-tile .bt-name { font-weight:700; font-family:'Nunito',sans-serif; font-size:15px; }
+.bot-tile .bt-elo { font-size:12.5px; color:#888; }
+.bot-blurb { font-size:13.5px; color:#666; margin-top:10px; min-height:20px; }
+.cs-row { display:flex; gap:18px; flex-wrap:wrap; align-items:center; }
+.seg { display:inline-flex; border:1.5px solid #e0e0e0; border-radius:9px; overflow:hidden; }
+.seg button {
+  border:none; background:transparent; padding:8px 14px; cursor:pointer; font:inherit; font-size:14px; color:inherit;
+}
+.seg button + button { border-left:1.5px solid #e0e0e0; }
+.seg button.sel { background:#2c7be5; color:#fff; }
+.theme-sel {
+  padding:8px 10px; border:1.5px solid #e0e0e0; border-radius:9px; font:inherit; font-size:14px;
+  background:transparent; color:inherit; cursor:pointer;
+}
+.cs-start {
+  margin-top:18px; padding:11px 26px; font-size:16px; font-weight:700; font-family:'Nunito',sans-serif;
+  background:#2c7be5; color:#fff; border:none; border-radius:9px; cursor:pointer;
+}
+.cs-start:disabled { background:#a8c4ec; cursor:wait; }
+.engine-note { font-size:12.5px; color:#999; margin-top:8px; }
+
+/* ---------- game layout ---------- */
+.game-area { display:none; margin-top:12px; }
+.game-cols { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+/* board grows with the screen: capped by width AND viewport height so it stays fully visible */
+.board-col { display:flex; gap:8px; flex: 99 1 440px; min-width: 280px; max-width: min(820px, calc(100vh - 200px)); }
+.side-col { flex: 1 1 250px; min-width: 235px; max-width: 360px; display:flex; flex-direction:column; gap:10px; }
+
+/* eval bar */
+.evalbar { width:13px; border-radius:6px; overflow:hidden; background:#3d3d3d; position:relative; align-self:flex-start; }
+.evalbar .white-fill { position:absolute; bottom:0; left:0; right:0; background:#f5f2ec; transition: height .6s ease; }
+.evalbar .zero { position:absolute; top:50%; left:0; right:0; height:1px; background:rgba(128,128,128,.6); }
+
+/* board */
+.chess-wrap { --sq-light:#f0d9b5; --sq-dark:#b58863; }
+.board-outer { flex:1; position:relative; }
+.tilt-wrap { position:relative; }
+.board {
+  width:100%; aspect-ratio:1; display:grid; grid-template-columns:repeat(8,1fr); grid-template-rows:repeat(8,1fr);
+  border-radius:6px; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none;
+  box-shadow: 0 1px 6px rgba(0,0,0,.18); position:relative;
+}
+.sq { position:relative; }
+.sq.light { background:var(--sq-light); }
+.sq.dark  { background:var(--sq-dark); }
+.sq .coord { position:absolute; font-size:min(1.7vw,11px); font-weight:700; opacity:.75; pointer-events:none; font-family:'Nunito',sans-serif; }
+.sq .coord.file { right:3px; bottom:1px; }
+.sq .coord.rank { left:3px; top:2px; }
+.sq.light .coord { color:var(--sq-dark); }
+.sq.dark  .coord { color:var(--sq-light); }
+.sq img.pc { position:absolute; inset:2.5%; width:95%; height:95%; pointer-events:none; }
+.sq.lastmove::before, .sq.selsq::before, .sq.hint-from::before, .sq.hint-to::before,
+.sq.tint-mist::before, .sq.tint-blun::before, .sq.checksq::before {
+  content:''; position:absolute; inset:0; pointer-events:none;
+}
+.sq.lastmove::before { background:rgba(155,199,0,.41); }
+.sq.selsq::before    { background:rgba(20,85,30,.45); }
+.sq.hint-from::before, .sq.hint-to::before { background:rgba(44,123,229,.42); animation: hintpulse 1.4s ease-in-out infinite; }
+@keyframes hintpulse { 0%,100% { opacity:.45; } 50% { opacity:.95; } }
+.sq.tint-mist::before { background:rgba(230,126,34,.55); }
+.sq.tint-blun::before { background:rgba(231,76,60,.55); }
+.sq.checksq::before { background:radial-gradient(circle at center, rgba(231,76,60,.75) 15%, rgba(231,76,60,.25) 55%, transparent 70%); }
+.sq .dot { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+.sq .dot::after { content:''; width:26%; height:26%; border-radius:50%; background:rgba(20,60,20,.25); }
+.sq .dot.cap::after { width:88%; height:88%; background:transparent; border:4px solid rgba(20,60,20,.25); }
+img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; }
+.arrow-layer { position:absolute; inset:0; pointer-events:none; z-index:5; }
+
+/* confirm bar */
+.confirm-bar {
+  display:none; margin-top:8px; padding:10px 12px; border-radius:9px; font-size:14.5px;
+  border:2px solid; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.confirm-bar.mist { display:flex; border-color:#e67e22; background:rgba(230,126,34,.09); }
+.confirm-bar.blun { display:flex; border-color:#e74c3c; background:rgba(231,76,60,.09); }
+.confirm-bar .cb-text { flex:1; min-width:140px; }
+.confirm-bar button {
+  border:none; border-radius:7px; padding:7px 13px; cursor:pointer; font:inherit; font-size:13.5px; font-weight:700;
+}
+.cb-back { background:#2c7be5; color:#fff; }
+.cb-play { background:#e0e0e0; color:#333; }
+.grading-note { display:none; margin-top:8px; font-size:13px; color:#888; }
+
+/* side panel */
+.panel-box { border:1.5px solid #e0e0e0; border-radius:10px; padding:11px 13px; background:var(--bs-body-bg,#fff); }
+.opp-row { display:flex; align-items:center; gap:10px; }
+.opp-row .o-name { font-weight:700; font-family:'Nunito',sans-serif; }
+.opp-row .o-elo { font-size:12.5px; color:#888; }
+.think-dots { margin-left:auto; display:none; gap:3px; align-items:flex-end; padding-right:2px; }
+.think-dots.on { display:inline-flex; }
+.think-dots i { width:6px; height:6px; border-radius:50%; background:#2c7be5; animation:tdots 1.2s ease-in-out infinite; }
+.think-dots i:nth-child(2) { animation-delay:.18s; }
+.think-dots i:nth-child(3) { animation-delay:.36s; }
+@keyframes tdots { 0%,60%,100% { transform:translateY(0); opacity:.35; } 30% { transform:translateY(-4px); opacity:1; } }
+.clock {
+  font-family:'Nunito',sans-serif; font-weight:700; font-size:24px; text-align:center; border-radius:8px;
+  padding:5px 0; background:#f1f3f5; color:#333; letter-spacing:1px;
+}
+.clock.active { background:#2c7be5; color:#fff; }
+.clock.low { background:#e74c3c; color:#fff; }
+.clock-row { display:flex; align-items:center; gap:10px; }
+.clock-row .who { flex:1; font-size:13.5px; color:#777; }
+.clock-row .clock { width:112px; }
+.coach-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.switch { position:relative; width:38px; height:22px; flex-shrink:0; }
+.switch input { opacity:0; width:0; height:0; }
+.switch .sl { position:absolute; inset:0; background:#ccc; border-radius:22px; transition:.2s; cursor:pointer; }
+.switch .sl::before { content:''; position:absolute; width:16px; height:16px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; }
+.switch input:checked + .sl { background:#2c7be5; }
+.switch input:checked + .sl::before { transform:translateX(16px); }
+.hint-btn {
+  border:1.5px solid #2c7be5; color:#2c7be5; background:transparent; border-radius:7px;
+  padding:5px 11px; cursor:pointer; font:inherit; font-size:13px; font-weight:700;
+}
+.hint-btn:disabled { opacity:.4; cursor:default; }
+.evaltxt { margin-left:auto; font-family:'Nunito',sans-serif; font-weight:700; font-size:14px; color:#555; }
+.coach-msg { font-size:13.5px; min-height:38px; color:#555; line-height:1.45; }
+.coach-msg b.mv { font-family:'Nunito',sans-serif; }
+.perf-line { font-size:12.5px; color:#888; margin-top:7px; border-top:1px dashed #e0e0e0; padding-top:7px; }
+.late-row { display:flex; align-items:center; gap:6px; font-size:12.5px; color:#777; margin-top:7px; cursor:pointer; }
+.late-row input { accent-color:#2c7be5; margin:0; }
+.moves-box { max-height:190px; overflow-y:auto; font-size:13.5px; }
+.moves-box table { width:100%; border-collapse:collapse; }
+.moves-box td { padding:2.5px 4px; }
+.moves-box td.num { color:#999; width:30px; }
+.moves-box td.mv { width:38%; font-family:'Nunito',sans-serif; font-weight:600; }
+.badge-c { display:inline-block; font-size:11px; font-weight:700; border-radius:5px; padding:0 5px; margin-left:5px; color:#fff; vertical-align:1px; }
+.badge-c.best { background:#27ae60; } .badge-c.excellent { background:#27ae60; }
+.badge-c.good { background:#95a5a6; }
+.badge-c.inaccuracy { background:#f1c40f; color:#5c4d00; }
+.badge-c.mistake { background:#e67e22; }
+.badge-c.blunder { background:#e74c3c; }
+.act-row { display:flex; gap:8px; flex-wrap:wrap; }
+.act-row button {
+  flex:1; border:1.5px solid #e0e0e0; background:transparent; border-radius:8px; padding:8px 6px;
+  cursor:pointer; font:inherit; font-size:13.5px; color:inherit;
+}
+.act-row button:hover { border-color:#b9cdf3; }
+.act-row button.danger:hover { border-color:#e74c3c; color:#e74c3c; }
+
+/* promotion picker + end modal */
+.overlay {
+  display:none; position:absolute; inset:0; background:rgba(0,0,0,.45); z-index:20;
+  align-items:center; justify-content:center; border-radius:6px;
+}
+.overlay.show { display:flex; }
+.promo-box { background:#fff; border-radius:12px; padding:12px; display:flex; gap:8px; }
+.promo-box img { width:56px; height:56px; cursor:pointer; border-radius:9px; padding:4px; }
+.promo-box img:hover { background:#e8f0fd; }
+.end-box { background:var(--bs-body-bg,#fff); border-radius:14px; padding:22px 26px; max-width:88%; width:400px; max-height:88%; overflow-y:auto; box-shadow:0 8px 30px rgba(0,0,0,.25); }
+.end-box h3 { margin:0 0 4px; font-size:20px; }
+.end-box .sub { color:#888; font-size:14px; margin-bottom:12px; }
+.rep-counts { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+.rep-counts span { font-size:12.5px; border-radius:6px; padding:3px 8px; background:#f1f3f5; color:#444; }
+.rep-mist { font-size:13.5px; margin:4px 0; color:#555; }
+.gm-box { border-top:1.5px solid #e0e0e0; margin-top:14px; padding-top:10px; }
+.gm-box p { font-size:13px; color:#555; margin:6px 0; line-height:1.55; }
+.gm-head { display:flex; gap:9px; align-items:center; margin-bottom:4px; }
+.gm-head .bot-ava { width:34px; height:34px; }
+.gm-sub { font-size:12px; color:#999; }
+.end-box .act-row { margin-top:14px; }
+.credits { font-size:12px; color:#aaa; margin-top:22px; }
+.credits a { color:#aaa; }
+
+@media (max-width: 560px) {
+  .clock { font-size:20px; }
+  .moves-box { max-height:140px; }
+}
+</style>
+
+<div class="chess-wrap">
+
+  <!-- ============ SETUP ============ -->
+  <div class="cs-card" id="setupCard">
+    <span class="cs-label">Choose your opponent</span>
+    <div class="bot-grid" id="botGrid"></div>
+    <div class="bot-blurb" id="botBlurb"></div>
+
+    <div class="cs-row" style="margin-top:6px;">
+      <div>
+        <span class="cs-label">Your color</span>
+        <div class="seg" id="colorSeg">
+          <button data-v="w" class="sel">White</button><button data-v="random">Random</button><button data-v="b">Black</button>
+        </div>
+      </div>
+      <div>
+        <span class="cs-label">Time control</span>
+        <div class="seg" id="tcSeg">
+          <button data-v="5+3">5+3</button><button data-v="10+5">10+5</button><button data-v="15+10" class="sel">15+10</button><button data-v="30+0">30+0</button>
+        </div>
+      </div>
+      <div>
+        <span class="cs-label">Coach</span>
+        <div class="seg" id="coachSeg">
+          <button data-v="on" class="sel">On</button><button data-v="off">Off</button>
+        </div>
+      </div>
+      <div>
+        <span class="cs-label">Bot pace</span>
+        <div class="seg" id="paceSeg">
+          <button data-v="real" class="sel">Realistic</button><button data-v="quick">Quick</button>
+        </div>
+      </div>
+      <div>
+        <span class="cs-label">Board</span>
+        <select id="themeSel" class="theme-sel"></select>
+      </div>
+    </div>
+
+    <button class="cs-start" id="startBtn" disabled>Loading engine…</button>
+    <div class="engine-note" id="engineNote">Downloading Stockfish (~7&nbsp;MB) — runs entirely in your browser, nothing is sent to a server.</div>
+  </div>
+
+  <!-- ============ GAME ============ -->
+  <div class="game-area" id="gameArea">
+    <div class="game-cols">
+
+      <div class="board-col">
+        <div class="evalbar" id="evalbar" title="Engine evaluation"><div class="white-fill" id="evalFill" style="height:50%"></div><div class="zero"></div></div>
+        <div class="board-outer" id="boardOuter">
+          <div class="tilt-wrap">
+            <div class="board" id="board"></div>
+            <svg class="arrow-layer" id="arrowLayer" viewBox="0 0 8 8"></svg>
+          </div>
+          <div class="overlay" id="promoOverlay"><div class="promo-box" id="promoBox"></div></div>
+          <div class="overlay" id="endOverlay"><div class="end-box" id="endBox"></div></div>
+          <div class="confirm-bar" id="confirmBar">
+            <span class="cb-text" id="confirmText"></span>
+            <button class="cb-back" id="cbBack">Take back</button>
+            <button class="cb-play" id="cbPlay">Play it anyway</button>
+          </div>
+          <div class="grading-note" id="gradingNote">Coach is checking your move…</div>
+        </div>
+      </div>
+
+      <div class="side-col">
+        <div class="panel-box">
+          <div class="opp-row">
+            <div class="bot-ava" id="gAva">A</div>
+            <div><div class="o-name" id="gBotName"></div><div class="o-elo" id="gBotElo"></div></div>
+            <span class="think-dots" id="thinkDots" title="thinking…"><i></i><i></i><i></i></span>
+          </div>
+        </div>
+        <div class="panel-box">
+          <div class="clock-row"><span class="who" id="topWho"></span><div class="clock" id="topClock">15:00</div></div>
+          <div class="clock-row" style="margin-top:8px;"><span class="who" id="botWho"></span><div class="clock" id="bottomClock">15:00</div></div>
+        </div>
+        <div class="panel-box">
+          <div class="coach-row">
+            <label class="switch" title="Coach on/off"><input type="checkbox" id="coachToggle" checked><span class="sl"></span></label>
+            <span style="font-size:13.5px;">Coach</span>
+            <button class="hint-btn" id="hintBtn">Hint</button>
+            <span class="evaltxt" id="evalTxt">0.0</span>
+          </div>
+          <label class="late-row"><input type="checkbox" id="lateHint"> Late hints — wait 20&nbsp;s / 40&nbsp;s before helping</label>
+          <div class="coach-msg" id="coachMsg" style="margin-top:8px;">Make your move. If you think for a while, I'll point you in the right direction.</div>
+          <div class="perf-line" id="perfLine" style="display:none;"></div>
+        </div>
+        <div class="panel-box moves-box" id="movesBox"><table><tbody id="movesBody"></tbody></table></div>
+        <div class="act-row">
+          <button id="resignBtn" class="danger">Resign</button>
+          <button id="pgnBtn">Copy PGN</button>
+          <button id="newBtn">New game</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="credits">
+    Powered by <a href="https://github.com/official-stockfish/Stockfish" target="_blank" rel="noopener">Stockfish</a> (GPLv3, via
+    <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">stockfish.js</a>) and
+    <a href="https://github.com/jhlywa/chess.js" target="_blank" rel="noopener">chess.js</a>.
+    Piece images by Colin M.L. Burnett (CC&nbsp;BY-SA&nbsp;3.0). Everything runs locally in your browser.
+  </div>
+</div>
+
+<script type="module">
+import { Chess } from './chess-assets/chess.js';
+
+/* ============================== config ============================== */
+/* think: human-like time profile (seconds) — normal range, chance of a long tank, tank cap.
+   randomP: fraction of moves replaced by a random legal move (below Stockfish's floor). */
+const BOTS = [
+  { id:'zack',    name:'Zack',    elo:200,  mode:'skill', skill:0,  depth:1, randomP:.5,  color:'#a3b18a', blurb:'Learned the rules yesterday. Moves pieces to see what happens.',        think:{ min:1.5, max:5,  pLong:.05, longMax:10 } },
+  { id:'alice',   name:'Alice',   elo:500,  mode:'skill', skill:0,  depth:1, randomP:.2,  color:'#e8927c', blurb:'Beginner. Hangs pieces every few moves, loves random pawn pushes.',     think:{ min:2,   max:6,  pLong:.06, longMax:12 } },
+  { id:'bob',     name:'Bob',     elo:750,  mode:'skill', skill:1,  depth:2, randomP:.08, color:'#e2b04a', blurb:'Improving beginner. Guards his pieces, walks into simple forks.',       think:{ min:2,   max:7,  pLong:.08, longMax:15 } },
+  { id:'charlie', name:'Charlie', elo:1000, mode:'skill', skill:2,  depth:3,              color:'#9ac356', blurb:'Casual player. Grabs material, forgets to guard his own.',              think:{ min:2.5, max:8,  pLong:.10, longMax:18 } },
+  { id:'daisy',   name:'Daisy',   elo:1200, mode:'skill', skill:4,  depth:4,              color:'#56b8a2', blurb:'Coffeehouse player. Spots one-move threats, misses combinations.',      think:{ min:3,   max:10, pLong:.12, longMax:25 } },
+  { id:'ethan',   name:'Ethan',   elo:1400, mode:'elo',   uciElo:1400,                    color:'#5aa7d6', blurb:'Club regular. Decent tactics, shaky endgames.',                         think:{ min:3.5, max:11, pLong:.12, longMax:30 } },
+  { id:'fiona',   name:'Fiona',   elo:1600, mode:'elo',   uciElo:1600,                    color:'#7b86dd', blurb:'Tournament player. Punishes loose moves quickly.',                      think:{ min:3.5, max:12, pLong:.12, longMax:35 } },
+  { id:'grace',   name:'Grace',   elo:1800, mode:'elo',   uciElo:1800,                    color:'#b06fd0', blurb:'Strong club player. Grinds out small advantages.',                      think:{ min:4,   max:13, pLong:.13, longMax:40 } },
+  { id:'henry',   name:'Henry',   elo:2000, mode:'elo',   uciElo:2000,                    color:'#c78a53', blurb:'Expert. Rarely blunders, and happy to sacrifice for an attack.',        think:{ min:4,   max:14, pLong:.14, longMax:45 } },
+  { id:'iris',    name:'Iris',    elo:2200, mode:'elo',   uciElo:2200,  title:'CM',       color:'#d67ab1', blurb:'Candidate Master. Converts winning positions with machine patience.',   think:{ min:5,   max:16, pLong:.15, longMax:50 } },
+  { id:'jack',    name:'Jack',    elo:2400, mode:'elo',   uciElo:2400,  title:'IM',       color:'#647acb', blurb:'International Master. Sees your plan before you do.',                   think:{ min:5,   max:17, pLong:.15, longMax:55 } },
+  { id:'ryan',    name:'Ryan',    elo:2600, mode:'full',  movetime:1200, title:'GM',      color:'#d0556e', blurb:'Grandmaster and final boss. Full engine strength — good luck.', eloLabel:'2600+', think:{ min:5, max:18, pLong:.15, longMax:60 } },
+];
+/* FIDE-style display name: only titled players get a prefix (CM 2200+, IM 2400+, GM 2500+) */
+const bName = b => (b.title ? b.title + ' ' : '') + b.name;
+const HINT1_MS = 10000, HINT2_MS = 20000;   // 10 s → piece, 20 s → destination
+const MATE = 100000;
+const THEMES = {
+  classic: { light:'#f0d9b5', dark:'#b58863', label:'Classic' },
+  green:   { light:'#ffffdd', dark:'#86a666', label:'Tournament Green' },
+  blue:    { light:'#dee3e6', dark:'#8ca2ad', label:'Ice Blue' },
+  walnut:  { light:'#e3c193', dark:'#a1683f', label:'Walnut' },
+  slate:   { light:'#d1d5d9', dark:'#7a8290', label:'Slate' },
+};
+const FILES = 'abcdefgh';
+const PIECE_SRC = p => `chess-assets/pieces/${p.color}${p.type.toUpperCase()}.svg`;
+
+/* ============================== avatars ============================== */
+/* code-drawn cartoon faces; each bot gets skin, hair style/color and accessories */
+const AVATARS = {
+  zack:    { skin:'#f6d0b1', hair:'#6b4226', style:'cap',   cap:'#e74c3c', freckles:true },
+  alice:   { skin:'#f6d0b1', hair:'#e8c25a', style:'pigtails', freckles:true },
+  bob:     { skin:'#eab68f', hair:'#7b5233', style:'short' },
+  charlie: { skin:'#8d5a3b', hair:'#241d18', style:'curly' },
+  daisy:   { skin:'#f6d0b1', hair:'#8a5a2b', style:'bun',   flower:true },
+  ethan:   { skin:'#d29b6e', hair:'#2c2c2c', style:'side',  glasses:true },
+  fiona:   { skin:'#f7d3b3', hair:'#b3502d', style:'long' },
+  grace:   { skin:'#eab68f', hair:'#4a4a4a', style:'bob',   glasses:true },
+  henry:   { skin:'#a9714b', hair:'#3d2f23', style:'beard' },
+  iris:    { skin:'#d29b6e', hair:'#1e1e24', style:'bob',   earrings:true },
+  jack:    { skin:'#f6d0b1', hair:'#241d18', style:'slick', collar:true },
+  ryan:    { skin:'#eab68f', hair:'#2c2118', style:'crown', shades:true, smirk:true },
+};
+function avatarSVG(b) {
+  const a = AVATARS[b.id];
+  if (!a) return `<svg viewBox="0 0 64 64"><text x="32" y="42" text-anchor="middle" font-size="26" fill="#fff">${b.name[0]}</text></svg>`;
+  const H = a.hair, p = [];
+  p.push(`<circle cx="32" cy="36" r="17" fill="${a.skin}"/>`);
+  const band = `<path d="M15 36 A17 17 0 0 1 49 36 L49 29 Q32 24 15 29 Z" fill="${H}"/>`;
+  switch (a.style) {
+    case 'short': p.push(band); break;
+    case 'curly':
+      p.push(band);
+      for (const [cx, cy] of [[17,26],[23,20],[32,17.5],[41,20],[47,26]]) p.push(`<circle cx="${cx}" cy="${cy}" r="4.6" fill="${H}"/>`);
+      break;
+    case 'pigtails':
+      p.push(`<circle cx="12.5" cy="33" r="6.5" fill="${H}"/>`, `<circle cx="51.5" cy="33" r="6.5" fill="${H}"/>`, band);
+      break;
+    case 'bun':
+      p.push(band, `<circle cx="32" cy="13.5" r="6" fill="${H}"/>`);
+      if (a.flower) {
+        for (const [dx, dy] of [[-2.7,0],[2.7,0],[0,-2.7],[0,2.7]]) p.push(`<circle cx="${41+dx}" cy="${15+dy}" r="1.9" fill="#e8608a"/>`);
+        p.push(`<circle cx="41" cy="15" r="1.7" fill="#f5d547"/>`);
+      }
+      break;
+    case 'side':
+      p.push(`<path d="M15 36 A17 17 0 0 1 49 36 L49 28 Q44 20.5 33 22.5 Q20 25 15 31 Z" fill="${H}"/>`);
+      break;
+    case 'long':
+      p.push(band,
+        `<path d="M13.5 32 Q13 52 17 56 L22 54 Q19.5 45 20.5 33 Z" fill="${H}"/>`,
+        `<path d="M50.5 32 Q51 52 47 56 L42 54 Q44.5 45 43.5 33 Z" fill="${H}"/>`);
+      break;
+    case 'bob':
+      p.push(band,
+        `<path d="M14 32 Q13.5 46 17.5 49 L22.5 47 Q20 40 20.5 32 Z" fill="${H}"/>`,
+        `<path d="M50 32 Q50.5 46 46.5 49 L41.5 47 Q44 40 43.5 32 Z" fill="${H}"/>`);
+      break;
+    case 'beard':
+      p.push(band, `<path d="M16 38 Q16 57 32 57 Q48 57 48 38 L48 34 Q42 44 32 44 Q22 44 16 34 Z" fill="${H}"/>`);
+      break;
+    case 'slick':
+      p.push(`<path d="M15 36 A17 17 0 0 1 49 36 L49 27 Q45 19 34 20 Q21 21.5 15 29 Z" fill="${H}"/>`);
+      break;
+    case 'cap':
+      p.push(`<path d="M14.5 29 A17.5 13.5 0 0 1 49.5 29 L49.5 31.5 L14.5 31.5 Z" fill="${a.cap}"/>`,
+             `<rect x="45" y="25" width="13" height="4.6" rx="2.3" fill="${a.cap}"/>`,
+             `<circle cx="32" cy="20" r="1.6" fill="rgba(0,0,0,.25)"/>`);
+      break;
+    case 'crown':
+      p.push(band,
+        `<path d="M19 15.5 L24 21 L28.5 13.5 L32 21 L35.5 13.5 L40 21 L45 15.5 L45 23.5 L19 23.5 Z" fill="#e9b949" stroke="#c99a2e" stroke-width="1"/>`,
+        `<circle cx="24" cy="21" r="1" fill="#d0556e"/>`, `<circle cx="40" cy="21" r="1" fill="#2c7be5"/>`);
+      break;
+  }
+  if (a.shades) {
+    p.push(`<rect x="19" y="31.5" width="11.5" height="7.5" rx="2.4" fill="#26262b"/>`,
+           `<rect x="33.5" y="31.5" width="11.5" height="7.5" rx="2.4" fill="#26262b"/>`,
+           `<line x1="30" y1="34" x2="34" y2="34" stroke="#26262b" stroke-width="2"/>`);
+  } else {
+    p.push(`<circle cx="25.5" cy="35" r="2.1" fill="#33322e"/>`, `<circle cx="38.5" cy="35" r="2.1" fill="#33322e"/>`);
+    if (a.glasses) {
+      p.push(`<circle cx="25.5" cy="35.5" r="5.4" fill="none" stroke="#3b3b3b" stroke-width="1.6"/>`,
+             `<circle cx="38.5" cy="35.5" r="5.4" fill="none" stroke="#3b3b3b" stroke-width="1.6"/>`,
+             `<line x1="30.9" y1="35.5" x2="33.1" y2="35.5" stroke="#3b3b3b" stroke-width="1.6"/>`);
+    }
+  }
+  if (a.style === 'beard') p.push(`<path d="M27 48.5 Q32 51.5 37 48.5" stroke="${a.skin}" stroke-width="2.2" fill="none" stroke-linecap="round"/>`);
+  else if (a.smirk) p.push(`<path d="M27.5 45.5 Q33.5 48.5 38 43.5" stroke="#7c4f35" stroke-width="1.9" fill="none" stroke-linecap="round"/>`);
+  else p.push(`<path d="M26 44.5 Q32 49.5 38 44.5" stroke="#7c4f35" stroke-width="1.9" fill="none" stroke-linecap="round"/>`);
+  if (a.freckles) for (const [cx, cy] of [[23,40.5],[26.5,42],[37.5,42],[41,40.5]]) p.push(`<circle cx="${cx}" cy="${cy}" r="1" fill="rgba(150,90,50,.5)"/>`);
+  if (a.earrings) p.push(`<circle cx="15.5" cy="45" r="2" fill="#e9b949"/>`, `<circle cx="48.5" cy="45" r="2" fill="#e9b949"/>`);
+  if (a.collar) p.push(`<path d="M22 56 L32 50 L42 56 L42 64 L22 64 Z" fill="#fff"/>`,
+                       `<path d="M30 54 L32 51.5 L34 54 L32 59.5 Z" fill="#8c2f39"/>`);
+  return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label="${b.name}">${p.join('')}</svg>`;
+}
+
+/* ============================== engine ============================== */
+class Engine {
+  constructor(url) {
+    this.worker = new Worker(url);
+    this.worker.onmessage = e => this._line(String(e.data));
+    this.queue = []; this.current = null;
+    this.ready = new Promise(res => { this._readyRes = res; });
+    this.run({ cmds:['uci'], done:l => l === 'uciok' })
+      .then(() => this.run({ cmds:['setoption name Hash value 32','isready'], done:l => l === 'readyok' }))
+      .then(() => this._readyRes());
+  }
+  _line(line) {
+    const job = this.current;
+    if (!job) return;
+    if (job.onLine) job.onLine(line);
+    if (job.done(line)) { this.current = null; job.resolve(line); this._pump(); }
+  }
+  run(job) {
+    return new Promise(resolve => {
+      this.queue.push({ ...job, resolve });
+      this._pump();
+    });
+  }
+  _pump() {
+    if (this.current || !this.queue.length) return;
+    this.current = this.queue.shift();
+    for (const c of this.current.cmds) this.worker.postMessage(c);
+  }
+  stopIf(kind) {
+    if (this.current && this.current.kind === kind) this.worker.postMessage('stop');
+  }
+  newGame() { return this.run({ cmds:['ucinewgame','isready'], done:l => l === 'readyok' }); }
+
+  static parseInfo(line) {
+    if (!line.startsWith('info ') || !line.includes(' pv ')) return null;
+    const depth = /\bdepth (\d+)/.exec(line);
+    const cp    = /\bscore cp (-?\d+)/.exec(line);
+    const mate  = /\bscore mate (-?\d+)/.exec(line);
+    const pv    = /\bpv (.+)$/.exec(line);
+    if (!depth || !pv || (!cp && !mate)) return null;
+    const m = mate ? parseInt(mate[1]) : null;
+    const score = m !== null ? (m > 0 ? MATE - m : -MATE - m) : parseInt(cp[1]);
+    return { depth:+depth[1], score, mate:m, pv:pv[1].trim().split(/\s+/) };
+  }
+  fullStrengthCmds() {
+    return ['setoption name UCI_LimitStrength value false','setoption name Skill Level value 20'];
+  }
+  /* One-shot evaluation of a position (side to move perspective). */
+  evalPosition(fen, movesUci, movetime) {
+    let last = null;
+    return this.run({
+      kind:'eval',
+      cmds:[...this.fullStrengthCmds(),
+            `position fen ${fen}${movesUci ? ' moves ' + movesUci : ''}`,
+            `go movetime ${movetime}`],
+      onLine:l => { const i = Engine.parseInfo(l); if (i) last = i; },
+      done:l => l.startsWith('bestmove'),
+    }).then(l => {
+      const best = l.split(/\s+/)[1];
+      return { ...(last || { score:0, mate:null, depth:0, pv:[] }), bestUci:best };
+    });
+  }
+  /* Streaming full-strength analysis; onInfo fires as depth grows. */
+  analyse(fen, onInfo) {
+    return this.run({
+      kind:'analysis',
+      cmds:[...this.fullStrengthCmds(), `position fen ${fen}`, 'go depth 22'],
+      onLine:l => { const i = Engine.parseInfo(l); if (i) onInfo(i); },
+      done:l => l.startsWith('bestmove'),
+    });
+  }
+  botMove(bot, fen) {
+    const cmds = [];
+    if (bot.mode === 'elo') {
+      cmds.push('setoption name Skill Level value 20',
+                'setoption name UCI_LimitStrength value true',
+                `setoption name UCI_Elo value ${bot.uciElo}`,
+                `position fen ${fen}`, 'go movetime 900');
+    } else if (bot.mode === 'skill') {
+      cmds.push('setoption name UCI_LimitStrength value false',
+                `setoption name Skill Level value ${bot.skill}`,
+                `position fen ${fen}`, `go depth ${bot.depth}`);
+    } else {
+      cmds.push(...this.fullStrengthCmds(), `position fen ${fen}`, `go movetime ${bot.movetime}`);
+    }
+    return this.run({ kind:'bot', cmds, done:l => l.startsWith('bestmove') })
+      .then(l => l.split(/\s+/)[1]);
+  }
+}
+
+/* ============================== dom refs ============================== */
+const $ = id => document.getElementById(id);
+const boardEl = $('board'), arrowLayer = $('arrowLayer');
+const setupCard = $('setupCard'), gameArea = $('gameArea');
+const confirmBar = $('confirmBar'), confirmText = $('confirmText'), gradingNote = $('gradingNote');
+const coachMsg = $('coachMsg'), movesBody = $('movesBody'), movesBox = $('movesBox');
+const evalFill = $('evalFill'), evalTxt = $('evalTxt');
+const topClockEl = $('topClock'), bottomClockEl = $('bottomClock');
+
+/* ============================== state ============================== */
+const engine = new Engine('chess-assets/stockfish-18-lite-single.js');
+let game = new Chess();
+let bot = BOTS.find(b => b.id === 'ethan');
+let playerColor = 'w';
+let baseMs = 15*60000, incMs = 10000;
+let clocks = { w:0, b:0 };
+let clockTimer = null, lastTick = 0, activeClock = null;
+let phase = 'setup';            // setup | player | grading | confirm | bot | over
+let coachOn = true;
+let selected = null;            // selected square
+let lastMove = null;            // {from,to}
+let ghost = null;               // pending unconfirmed move (verbose chess.js move object)
+let pendingClass = null;        // classification awaiting confirm
+let analysis = null;            // { fen, best (info), bestUci }
+let hintLevel = 0, hintTimer = null, turnStartedAt = 0;
+let moveLog = [];               // entries: { num, side, san, info, cell }
+let gameSeq = 0;                // guards stale async callbacks across games
+let lastCaptureSquare = null;   // square of the player's latest capture (for instant recaptures)
+let botBaseline = null;         // eval (bot's perspective) of the position the bot faces
+let pendingBotGrade = null;     // bot move awaiting an "after" eval from the next analysis
+/* telemetry for the grandmaster review */
+let turnElapsedBase = 0;        // think time carried across take-backs within one turn
+let hintsShown = 0, hintFull = 0, warnPlayed = 0, warnBack = 0;
+let minClockMs = Infinity;      // lowest the player's clock got
+let punishOps = [], punishPending = null;   // bot gifts and whether they were cashed
+
+/* ============================== setup screen ============================== */
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+let chosen = { color:'w', tc:'15+10', coach:'on', pace:'real',
+               theme: lsGet('chess-trainer-theme') || 'classic' };
+if (!THEMES[chosen.theme]) chosen.theme = 'classic';
+
+const themeSel = $('themeSel');
+for (const [key, t] of Object.entries(THEMES)) {
+  const o = document.createElement('option');
+  o.value = key; o.textContent = t.label;
+  themeSel.appendChild(o);
+}
+themeSel.value = chosen.theme;
+themeSel.onchange = () => { chosen.theme = themeSel.value; applyBoardLook(); };
+function applyBoardLook() {
+  const t = THEMES[chosen.theme];
+  const wrap = document.querySelector('.chess-wrap');
+  wrap.style.setProperty('--sq-light', t.light);
+  wrap.style.setProperty('--sq-dark', t.dark);
+  lsSet('chess-trainer-theme', chosen.theme);
+}
+const botGrid = $('botGrid');
+BOTS.forEach(b => {
+  const t = document.createElement('button');
+  t.className = 'bot-tile' + (b.id === 'ethan' ? ' sel' : '');
+  t.dataset.bot = b.id;
+  t.innerHTML = `<span class="bot-ava" style="background:${b.color}">${avatarSVG(b)}</span>
+                 <span><span class="bt-name">${bName(b)}</span><br><span class="bt-elo">${b.eloLabel || b.elo} Elo</span></span>`;
+  t.onclick = () => selectBot(b);
+  botGrid.appendChild(t);
+});
+function selectBot(b) {
+  bot = b;
+  botGrid.querySelectorAll('.bot-tile').forEach(x => x.classList.toggle('sel', x.dataset.bot === b.id));
+  $('botBlurb').textContent = b.blurb;
+}
+$('botBlurb').textContent = BOTS.find(b => b.id === 'ethan').blurb;
+
+for (const segId of ['colorSeg','tcSeg','coachSeg','paceSeg']) {
+  $(segId).querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => {
+      $(segId).querySelectorAll('button').forEach(x => x.classList.remove('sel'));
+      btn.classList.add('sel');
+      if (segId === 'colorSeg') chosen.color = btn.dataset.v;
+      if (segId === 'tcSeg')    chosen.tc = btn.dataset.v;
+      if (segId === 'coachSeg') chosen.coach = btn.dataset.v;
+      if (segId === 'paceSeg')  chosen.pace = btn.dataset.v;
+    };
+  });
+}
+applyBoardLook();
+
+engine.ready.then(() => {
+  $('startBtn').disabled = false;
+  $('startBtn').textContent = 'Start game';
+  $('engineNote').textContent = 'Engine ready. Everything runs locally in your browser.';
+});
+$('startBtn').onclick = startGame;
+$('newBtn').onclick = () => { endToSetup(); };
+let lateHints = lsGet('chess-trainer-latehint') === '1';
+$('lateHint').checked = lateHints;
+$('lateHint').onchange = e => { lateHints = e.target.checked; lsSet('chess-trainer-latehint', lateHints ? '1' : '0'); };
+$('coachToggle').onchange = e => {
+  coachOn = e.target.checked;
+  if (!coachOn) { clearHints(); }
+  $('hintBtn').disabled = !coachOn;
+  $('lateHint').disabled = !coachOn;
+};
+$('hintBtn').onclick = () => { if (coachOn && phase === 'player') setHintLevel(Math.min(2, hintLevel + 1)); };
+
+let resignArmed = false;
+$('resignBtn').onclick = () => {
+  if (phase === 'over' || phase === 'setup') return;
+  if (!resignArmed) { resignArmed = true; $('resignBtn').textContent = 'Sure?'; setTimeout(() => { resignArmed = false; $('resignBtn').textContent = 'Resign'; }, 2500); return; }
+  resignArmed = false; $('resignBtn').textContent = 'Resign';
+  gameOver(playerColor === 'w' ? '0-1' : '1-0', 'You resigned.');
+};
+$('pgnBtn').onclick = () => {
+  try {
+    game.header('Event', `Training game vs ${bName(bot)}`, 'Site', 'h.oliabak.com',
+                'Date', new Date().toISOString().slice(0,10).replace(/-/g,'.'),
+                'White', playerColor === 'w' ? 'You' : `${bName(bot)} (bot)`,
+                'Black', playerColor === 'b' ? 'You' : `${bName(bot)} (bot)`);
+  } catch (e) {}
+  navigator.clipboard.writeText(game.pgn()).then(() => {
+    $('pgnBtn').textContent = 'Copied!';
+    setTimeout(() => { $('pgnBtn').textContent = 'Copy PGN'; }, 1500);
+  });
+};
+$('cbBack').onclick = () => resolveConfirm(false);
+$('cbPlay').onclick = () => resolveConfirm(true);
+
+/* ============================== game flow ============================== */
+function startGame() {
+  gameSeq++;
+  game = new Chess();
+  playerColor = chosen.color === 'random' ? (Math.random() < .5 ? 'w' : 'b') : chosen.color;
+  const [mins, inc] = chosen.tc.split('+').map(Number);
+  baseMs = mins*60000; incMs = inc*1000;
+  clocks = { w: baseMs, b: baseMs };
+  coachOn = chosen.coach === 'on';
+  $('coachToggle').checked = coachOn;
+  $('hintBtn').disabled = !coachOn;
+  $('lateHint').disabled = !coachOn;
+  moveLog = []; movesBody.innerHTML = '';
+  lastMove = null; ghost = null; selected = null; analysis = null; lastCaptureSquare = null;
+  botBaseline = null; pendingBotGrade = null;
+  turnElapsedBase = 0; hintsShown = 0; hintFull = 0; warnPlayed = 0; warnBack = 0;
+  minClockMs = Infinity; punishOps = []; punishPending = null;
+  $('perfLine').style.display = 'none';
+  setEvalDisplay(0, null);
+  coachMsg.textContent = coachOn
+    ? 'Make your move. If you think for a while, I’ll point you in the right direction.'
+    : 'Coach is off — plain game.';
+  $('gAva').style.background = bot.color; $('gAva').innerHTML = avatarSVG(bot);
+  $('gBotName').textContent = bot.name; $('gBotElo').textContent = `${bot.eloLabel || bot.elo} Elo · ${chosen.tc}`;
+  $('topWho').textContent = bot.name; $('botWho').textContent = 'You';
+  $('endOverlay').classList.remove('show');
+  setupCard.style.display = 'none'; gameArea.style.display = 'block';
+  renderBoard(); renderClocks();
+  engine.newGame().then(() => {
+    startClock();
+    if (playerColor === 'w') enterPlayerTurn(); else enterBotTurn();
+  });
+}
+
+function endToSetup() {
+  gameSeq++;
+  stopClock(); clearHints(); hideConfirm();
+  $('thinkDots').classList.remove('on');
+  phase = 'setup';
+  engine.stopIf('analysis');
+  $('endOverlay').classList.remove('show');
+  gameArea.style.display = 'none'; setupCard.style.display = 'block';
+}
+
+function enterPlayerTurn(retry) {
+  const seq = gameSeq;
+  phase = 'player';
+  selected = null; ghost = null;
+  renderBoard();
+  activeClock = playerColor;
+  if (!retry) turnElapsedBase = 0;
+  turnStartedAt = performance.now();
+  hintLevel = 0;
+  clearHints();
+  scheduleHints();
+  const fen = game.fen();
+  analysis = { fen, best: null, bestUci: null };
+  engine.analyse(fen, info => {
+    if (seq !== gameSeq || !analysis || analysis.fen !== fen) return;
+    analysis.best = info;
+    analysis.bestUci = info.pv[0];
+    if (pendingBotGrade && pendingBotGrade.fen === fen && info.depth >= 11) finalizeBotGrade(info.score);
+    if ((phase === 'player' || phase === 'grading') && game.turn() === playerColor) {
+      setEvalDisplay(scoreToWhite(info.score, playerColor), info.mate);
+      if (hintLevel > 0) renderHints();
+    }
+  });
+}
+
+/* Human-like thinking time for the bot's chosen move (in ms).
+   Quick on openings, recaptures and forced moves; rating-scaled thinks with
+   occasional long tanks otherwise; hurries when its own clock runs low. */
+function botThinkMs(uci) {
+  if (chosen.pace === 'quick') return 500 + Math.random() * 700;
+  const p = bot.think;
+  const remaining = clocks[other(playerColor)];
+  const legalCount = game.moves().length;
+  const moveNo = Math.ceil((game.history().length + 1) / 2);
+  let t;
+  if (legalCount <= 2) t = 0.6 + Math.random() * 1.4;                                   // forced / near-forced
+  else if (lastCaptureSquare && uci.slice(2, 4) === lastCaptureSquare) t = 0.8 + Math.random() * 1.7;  // recapture
+  else {
+    const r = Math.pow(Math.random(), 1.7);                                             // skew toward quick moves
+    t = p.min + (p.max - p.min) * r;
+    if (Math.random() < p.pLong) t = Math.min(p.longMax, t * (2.5 + Math.random() * 1.5));  // the long tank
+    if (moveNo <= 5) t *= 0.35;                                                         // opening theory
+  }
+  t *= 0.85 + Math.random() * 0.3;
+  let ms = t * 1000;
+  ms = Math.min(ms, remaining * 0.12);          // never budget more than 12% of the clock
+  if (remaining < 45000) ms = Math.min(ms, 1500);
+  if (remaining < 15000) ms = Math.min(ms, 600);
+  return Math.max(250, ms);
+}
+
+function enterBotTurn() {
+  const seq = gameSeq;
+  phase = 'bot';
+  punishPending = null;           // unconsumed gift (coach-off or ungraded move) — drop it
+  activeClock = other(playerColor);
+  renderBoard();
+  $('thinkDots').classList.add('on');
+  const started = performance.now();
+  /* make sure we know how good the bot's position is before it moves (for grading it) */
+  if (botBaseline === null) {
+    engine.evalPosition(game.fen(), null, 500)
+      .then(r => { if (seq === gameSeq && phase === 'bot') botBaseline = r.score; })
+      .catch(() => {});
+  }
+  engine.botMove(bot, game.fen()).then(uci => {
+    if (seq !== gameSeq) return;
+    /* absolute beginners: sometimes ignore the engine and play a random legal move */
+    if (uci && uci !== '(none)' && bot.randomP && Math.random() < bot.randomP) {
+      const legal = game.moves({ verbose: true });
+      if (legal.length) {
+        const rm = legal[Math.floor(Math.random() * legal.length)];
+        uci = rm.from + rm.to + (rm.promotion || '');
+      }
+    }
+    const think = (!uci || uci === '(none)') ? 0 : botThinkMs(uci);
+    const wait = Math.max(0, think - (performance.now() - started));
+    setTimeout(() => {
+      if (seq !== gameSeq) return;
+      $('thinkDots').classList.remove('on');
+      if (!uci || uci === '(none)') { checkGameEnd(); return; }
+      const mv = applyUci(uci);
+      if (!mv) { checkGameEnd(); return; }
+      clocks[other(playerColor)] += incMs;
+      lastMove = { from: mv.from, to: mv.to };
+      const entry = pushLog(mv, other(playerColor), null);
+      pendingBotGrade = { fen: game.fen(), entry, san: mv.san };
+      renderBoard(); renderClocks();
+      if (!checkGameEnd()) enterPlayerTurn();
+    }, wait);
+  });
+}
+
+/* Grade the bot's last move once we have an eval of the resulting position
+   (playerPerspScore comes from the player's analysis / grading of that position). */
+function finalizeBotGrade(playerPerspScore) {
+  const pg = pendingBotGrade;
+  pendingBotGrade = null;
+  if (!pg || botBaseline === null) { botBaseline = null; return; }
+  const graded = classifyLoss(botBaseline, -playerPerspScore, false);
+  botBaseline = null;
+  pg.entry.info = graded;
+  if (['mistake', 'blunder'].includes(graded.cls)) punishPending = { num: pg.entry.num };
+  renderBadge(pg.entry, coachOn);
+  if (coachOn && (graded.cls === 'mistake' || graded.cls === 'blunder') && phase === 'player') {
+    coachMsg.innerHTML = `${bName(bot)} played <b class="mv">${pg.san}</b> — ` +
+      (graded.cls === 'blunder' ? 'a blunder <b>??</b>' : 'a mistake <b>?</b>') + ` Find the punishment!`;
+  }
+}
+
+function applyUci(uci) {
+  try {
+    return game.move({ from: uci.slice(0,2), to: uci.slice(2,4), promotion: uci[4] || undefined });
+  } catch (e) { return null; }
+}
+
+function commitPlayerMove(moveObj, cls) {
+  const fenBefore = game.fen();
+  const uci = moveObj.from + moveObj.to + (moveObj.promotion || '');
+  const quietSnap = (!coachOn && analysis && analysis.fen === fenBefore && analysis.best && analysis.best.depth >= 8)
+    ? { best: analysis.best, bestUci: analysis.bestUci } : null;
+  const mv = game.move({ from: moveObj.from, to: moveObj.to, promotion: moveObj.promotion });
+  clocks[playerColor] += incMs;
+  lastMove = { from: mv.from, to: mv.to };
+  lastCaptureSquare = mv.captured ? mv.to : null;
+  ghost = null; pendingClass = null;
+  hideConfirm(); clearHints();
+  botBaseline = (cls && typeof cls.evalAfter === 'number') ? -cls.evalAfter : null;
+  const entry = pushLog(mv, playerColor, cls);
+  entry.thinkMs = turnElapsedBase + (performance.now() - turnStartedAt);
+  if (punishPending) {
+    punishOps.push({ cashed: !!(cls && ['best', 'excellent'].includes(cls.cls)) });
+    punishPending = null;
+  }
+  showCoachNote(cls, mv);
+  updatePerf();
+  if (!coachOn && !game.isGameOver()) {
+    engine.stopIf('analysis');
+    gradeQuietly(fenBefore, uci, entry, quietSnap);
+  }
+  renderBoard(); renderClocks();
+  if (!checkGameEnd()) enterBotTurn();
+}
+
+/* Coach off: grade in the background — nothing shown until the final report. */
+function gradeQuietly(fenBefore, uci, entry, snap) {
+  const seq = gameSeq;
+  if (pendingBotGrade) pendingBotGrade = null;   // too late to settle the bot's previous move cleanly
+  const afterP = engine.evalPosition(fenBefore, uci, 700);
+  const baseP = snap ? Promise.resolve(snap.best) : engine.evalPosition(fenBefore, null, 500);
+  Promise.all([baseP, afterP]).then(([base, after]) => {
+    if (seq !== gameSeq) return;
+    entry.info = classifyLoss(base.score, -after.score, snap && snap.bestUci === uci);
+  }).catch(() => {});
+}
+
+function checkGameEnd() {
+  if (game.isCheckmate()) {
+    const winnerIsPlayer = game.turn() !== playerColor;
+    gameOver(game.turn() === 'w' ? '0-1' : '1-0',
+             winnerIsPlayer ? `Checkmate — you beat ${bName(bot)}!` : `Checkmate — ${bName(bot)} wins.`);
+    return true;
+  }
+  if (game.isStalemate())            { gameOver('1/2-1/2', 'Draw by stalemate.'); return true; }
+  if (game.isThreefoldRepetition())  { gameOver('1/2-1/2', 'Draw by threefold repetition.'); return true; }
+  if (game.isDraw())                 { gameOver('1/2-1/2', 'Draw.'); return true; }
+  return false;
+}
+
+/* ============================== clocks ============================== */
+function startClock() {
+  stopClock();
+  lastTick = performance.now();
+  clockTimer = setInterval(() => {
+    const now = performance.now();
+    const dt = now - lastTick; lastTick = now;
+    if (phase === 'over' || phase === 'setup' || !activeClock) return;
+    clocks[activeClock] -= dt;
+    if (activeClock === playerColor) minClockMs = Math.min(minClockMs, clocks[playerColor]);
+    if (clocks[activeClock] <= 0) {
+      clocks[activeClock] = 0; renderClocks();
+      const loserIsPlayer = activeClock === playerColor;
+      gameOver(activeClock === 'w' ? '0-1' : '1-0',
+               loserIsPlayer ? 'You ran out of time.' : `${bName(bot)} ran out of time — you win!`);
+      return;
+    }
+    renderClocks();
+  }, 200);
+}
+function stopClock() { if (clockTimer) { clearInterval(clockTimer); clockTimer = null; } }
+function fmtClock(ms) {
+  ms = Math.max(0, ms);
+  const t = Math.ceil(ms / 1000), m = Math.floor(t / 60), s = t % 60;
+  if (ms < 20000) return `${m}:${String(s).padStart(2,'0')}.${Math.floor((ms % 1000) / 100)}`;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+function renderClocks() {
+  const botC = clocks[other(playerColor)], meC = clocks[playerColor];
+  topClockEl.textContent = fmtClock(botC);
+  bottomClockEl.textContent = fmtClock(meC);
+  topClockEl.className    = 'clock' + (activeClock === other(playerColor) && phase !== 'over' ? (botC < 60000 ? ' low' : ' active') : '');
+  bottomClockEl.className = 'clock' + (activeClock === playerColor && phase !== 'over' ? (meC < 60000 ? ' low' : ' active') : '');
+}
+
+/* ============================== board render ============================== */
+function other(c) { return c === 'w' ? 'b' : 'w'; }
+function sqColor(f, r) { return (f + r) % 2 === 0 ? 'dark' : 'light'; }  // f,r 0-indexed from a1
+function orient(sq) {
+  const f = FILES.indexOf(sq[0]), r = +sq[1] - 1;
+  return playerColor === 'w' ? { x: f, y: 7 - r } : { x: 7 - f, y: r };
+}
+function squareAt(x, y) {  // grid coords → square name
+  const f = playerColor === 'w' ? x : 7 - x;
+  const r = playerColor === 'w' ? 7 - y : y;
+  return FILES[f] + (r + 1);
+}
+
+function renderBoard() {
+  const frag = document.createDocumentFragment();
+  const inCheck = game.inCheck() ? findKing(game.turn()) : null;
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    const sq = squareAt(x, y);
+    const f = FILES.indexOf(sq[0]), r = +sq[1] - 1;
+    const d = document.createElement('div');
+    d.className = `sq ${sqColor(f, r)}`;
+    d.dataset.sq = sq;
+    let piece = game.get(sq) || null;
+    /* ghost rendering: show the tentative move before it is committed */
+    if (ghost) {
+      if (sq === ghost.from) piece = null;
+      if (sq === ghost.to) piece = { color: playerColor, type: ghost.promotion || ghost.piece };
+      if (ghost.flags && ghost.flags.includes('e') && sq === ghost.to[0] + ghost.from[1]) piece = null;   // en-passant victim
+      if (ghost.flags && ghost.flags.includes('k')) {  // O-O rook
+        const rk = ghost.from[1];
+        if (sq === 'h' + rk) piece = null;
+        if (sq === 'f' + rk) piece = { color: playerColor, type: 'r' };
+      }
+      if (ghost.flags && ghost.flags.includes('q')) {  // O-O-O rook
+        const rk = ghost.from[1];
+        if (sq === 'a' + rk) piece = null;
+        if (sq === 'd' + rk) piece = { color: playerColor, type: 'r' };
+      }
+    }
+    if (piece) {
+      const img = document.createElement('img');
+      img.className = 'pc'; img.src = PIECE_SRC(piece); img.draggable = false;
+      img.alt = (piece.color === 'w' ? 'white ' : 'black ') + piece.type;
+      d.appendChild(img);
+    }
+    if (lastMove && !ghost && (sq === lastMove.from || sq === lastMove.to)) d.classList.add('lastmove');
+    if (selected === sq) d.classList.add('selsq');
+    if (inCheck === sq && !ghost) d.classList.add('checksq');
+    if (ghost && (sq === ghost.from || sq === ghost.to) && pendingClass)
+      d.classList.add(pendingClass.cls === 'blunder' ? 'tint-blun' : 'tint-mist');
+    if (x === 0) { const c = document.createElement('span'); c.className = 'coord rank'; c.textContent = sq[1]; d.appendChild(c); }
+    if (y === 7) { const c = document.createElement('span'); c.className = 'coord file'; c.textContent = sq[0]; d.appendChild(c); }
+    frag.appendChild(d);
+  }
+  boardEl.innerHTML = '';
+  boardEl.appendChild(frag);
+  $('evalbar').style.height = boardEl.clientWidth + 'px';
+  if (selected) {
+    for (const m of game.moves({ square: selected, verbose: true })) {
+      const cell = boardEl.querySelector(`[data-sq="${m.to}"]`);
+      if (!cell) continue;
+      const dot = document.createElement('div');
+      dot.className = 'dot' + (game.get(m.to) ? ' cap' : '');
+      cell.appendChild(dot);
+    }
+  }
+  renderHints();
+}
+function findKing(color) {
+  for (const f of FILES) for (let r = 1; r <= 8; r++) {
+    const p = game.get(f + r);
+    if (p && p.type === 'k' && p.color === color) return f + r;
+  }
+  return null;
+}
+
+/* ============================== interaction ============================== */
+let dragState = null;
+boardEl.addEventListener('pointerdown', e => {
+  if (phase !== 'player') return;
+  const cell = e.target.closest('.sq'); if (!cell) return;
+  const sq = cell.dataset.sq;
+  const piece = game.get(sq);
+  e.preventDefault();
+  if (piece && piece.color === playerColor) {
+    selected = sq;
+    renderBoard();
+    const img = boardEl.querySelector(`[data-sq="${sq}"] img.pc`);
+    dragState = { from: sq, startX: e.clientX, startY: e.clientY, moved: false, img, ghostImg: null };
+    boardEl.setPointerCapture(e.pointerId);
+  } else if (selected) {
+    tryPropose(selected, sq);
+  }
+});
+boardEl.addEventListener('pointermove', e => {
+  if (!dragState) return;
+  const dx = e.clientX - dragState.startX, dy = e.clientY - dragState.startY;
+  if (!dragState.moved && Math.hypot(dx, dy) > 6) {
+    dragState.moved = true;
+    if (dragState.img) {
+      const g = dragState.img.cloneNode();
+      g.className = 'drag-ghost';
+      const s = boardEl.getBoundingClientRect().width / 8;
+      g.style.width = g.style.height = s + 'px';
+      document.body.appendChild(g);
+      dragState.ghostImg = g;
+      dragState.img.style.opacity = '.35';
+    }
+  }
+  if (dragState.moved && dragState.ghostImg) {
+    const s = parseFloat(dragState.ghostImg.style.width);
+    dragState.ghostImg.style.left = (e.clientX - s / 2) + 'px';
+    dragState.ghostImg.style.top = (e.clientY - s / 2) + 'px';
+  }
+});
+function endDrag() {
+  if (dragState && dragState.ghostImg) dragState.ghostImg.remove();
+  if (dragState && dragState.img) dragState.img.style.opacity = '';
+  dragState = null;
+}
+boardEl.addEventListener('pointerup', e => {
+  if (!dragState) return;
+  const wasDrag = dragState.moved, from = dragState.from;
+  endDrag();
+  if (!wasDrag) return;   // plain click: keep selection, wait for destination click
+  /* browser hit-testing (works in both 2D and tilted 3D view; drag ghost is pointer-events:none) */
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const cell = el && el.closest ? el.closest('#board .sq') : null;
+  if (!cell) { selected = null; renderBoard(); return; }
+  const to = cell.dataset.sq;
+  if (to !== from) tryPropose(from, to);
+});
+boardEl.addEventListener('pointercancel', endDrag);
+
+function tryPropose(from, to) {
+  const legal = game.moves({ square: from, verbose: true }).filter(m => m.to === to);
+  if (!legal.length) {
+    const p = game.get(to);
+    selected = (p && p.color === playerColor) ? to : null;
+    renderBoard();
+    return;
+  }
+  if (legal[0].promotion || legal.some(m => m.promotion)) {
+    openPromoPicker(ch => proposeMove({ ...legal.find(m => (m.promotion || 'q') === ch) || legal[0], promotion: ch }));
+    return;
+  }
+  proposeMove(legal[0]);
+}
+
+function openPromoPicker(cb) {
+  const box = $('promoBox'); box.innerHTML = '';
+  for (const t of ['q','r','b','n']) {
+    const img = document.createElement('img');
+    img.src = PIECE_SRC({ color: playerColor, type: t });
+    img.onclick = () => { $('promoOverlay').classList.remove('show'); cb(t); };
+    box.appendChild(img);
+  }
+  $('promoOverlay').classList.add('show');
+}
+
+/* ============================== grading ============================== */
+/* meBefore/meAfter are evals from the mover's perspective (mate-mapped cp). */
+function classifyLoss(meBefore, meAfter, isEngineBest) {
+  const loss = Math.max(0, meBefore - meAfter);
+  let cls;
+  if (loss < 45) cls = isEngineBest ? 'best' : 'excellent';
+  else if (loss < 100) cls = 'good';
+  else if (loss < 200) cls = 'inaccuracy';
+  else if (loss < 400) cls = 'mistake';
+  else cls = 'blunder';
+  /* still completely winning → don't cry wolf */
+  if (meAfter >= 600 && (cls === 'mistake' || cls === 'blunder')) cls = 'inaccuracy';
+  else if (meAfter >= 250 && cls === 'blunder') cls = 'mistake';
+  /* threw away a forced mate but still winning → at least flag it */
+  if (meBefore > MATE - 2000 && meAfter < MATE - 2000 && cls === 'inaccuracy') cls = 'mistake';
+  return { cls, loss, evalBefore: meBefore, evalAfter: meAfter };
+}
+
+async function proposeMove(moveObj) {
+  selected = null;
+  clearHints();
+  /* game-ending moves commit instantly */
+  const probe = new Chess(game.fen());
+  probe.move({ from: moveObj.from, to: moveObj.to, promotion: moveObj.promotion });
+  if (!coachOn || probe.isGameOver()) {
+    ghost = null;
+    commitPlayerMove(moveObj, coachOn && probe.isCheckmate() ? { cls: 'best', loss: 0 } : null);
+    return;
+  }
+  const seq = gameSeq;
+  phase = 'grading';
+  ghost = moveObj; pendingClass = null;
+  renderBoard();
+  gradingNote.style.display = 'block';
+  const fenBefore = game.fen();
+  const uci = moveObj.from + moveObj.to + (moveObj.promotion || '');
+  const snap = (analysis && analysis.fen === fenBefore && analysis.best && analysis.best.depth >= 8) ? analysis : null;
+  engine.stopIf('analysis');
+
+  try {
+    /* played the engine's own move → instant Best, no extra search */
+    if (snap && snap.bestUci === uci) {
+      gradingNote.style.display = 'none';
+      if (seq !== gameSeq) return;
+      const replySan = snap.best.pv && snap.best.pv.length > 1 ? uciToSan(probe.fen(), snap.best.pv[1]) : null;
+      commitPlayerMove(moveObj, { cls: 'best', loss: 0, evalBefore: snap.best.score, evalAfter: snap.best.score, replySan });
+      return;
+    }
+    const base = snap ? snap.best
+      : await engine.evalPosition(fenBefore, null, 600);
+    if (seq !== gameSeq || phase !== 'grading') { gradingNote.style.display = 'none'; return; }
+    /* a pending bot-move grade can settle now: base is a fresh eval of the same position */
+    if (pendingBotGrade && pendingBotGrade.fen === fenBefore) finalizeBotGrade(base.score);
+    const after = await engine.evalPosition(fenBefore, uci, 900);
+    gradingNote.style.display = 'none';
+    if (seq !== gameSeq || phase !== 'grading') return;
+
+    const betterSan = snap ? uciToSan(fenBefore, snap.bestUci) : uciToSan(fenBefore, base.bestUci);
+    const replySan = after.pv && after.pv.length ? uciToSan(probe.fen(), after.pv[0]) : null;
+    const info = { ...classifyLoss(base.score, -after.score, false), betterSan, replySan };
+    const cls = info.cls;
+
+    if (cls === 'mistake' || cls === 'blunder') {
+      pendingClass = info;
+      phase = 'confirm';
+      renderBoard();
+      showConfirm(info, moveObj);
+    } else {
+      commitPlayerMove(moveObj, info);
+    }
+  } catch (err) {
+    gradingNote.style.display = 'none';
+    if (seq === gameSeq && (phase === 'grading' || phase === 'confirm')) commitPlayerMove(moveObj, null);
+  }
+}
+
+function showConfirm(info, moveObj) {
+  confirmBar.className = 'confirm-bar ' + (info.cls === 'blunder' ? 'blun' : 'mist');
+  const word = info.cls === 'blunder' ? 'Blunder' : 'Mistake';
+  const mark = info.cls === 'blunder' ? '??' : '?';
+  const threat = info.replySan ? ` <b>${info.replySan}</b> is the punishment.` : '';
+  confirmText.innerHTML = `<b>${moveObj.san} ${mark} — ${word}.</b> Eval ${fmtEval(info.evalBefore)} → ${fmtEval(info.evalAfter)}.${threat} Take a closer look.`;
+}
+function hideConfirm() { confirmBar.className = 'confirm-bar'; gradingNote.style.display = 'none'; }
+function resolveConfirm(playIt) {
+  if (phase !== 'confirm' || !ghost) return;
+  const moveObj = ghost, info = pendingClass;
+  if (playIt) {
+    warnPlayed++;
+    commitPlayerMove(moveObj, info);
+  } else {
+    warnBack++;
+    turnElapsedBase += performance.now() - turnStartedAt;   // the think continues, keep counting
+    ghost = null; pendingClass = null;
+    hideConfirm();
+    coachMsg.innerHTML = 'Good decision. Take your time and find something better.';
+    enterPlayerTurn(true);  // restarts analysis of the same position; clock keeps running
+  }
+}
+
+/* ============================== hints ============================== */
+function scheduleHints() {
+  if (hintTimer) clearInterval(hintTimer);
+  hintTimer = setInterval(() => {
+    if (phase !== 'player' || !coachOn) return;
+    const mult = lateHints ? 2 : 1;    // late hints: 20 s / 40 s instead of 10 s / 20 s
+    const elapsed = performance.now() - turnStartedAt;
+    if (elapsed >= HINT2_MS * mult && hintLevel < 2) setHintLevel(2);
+    else if (elapsed >= HINT1_MS * mult && hintLevel < 1) setHintLevel(1);
+  }, 400);
+}
+function setHintLevel(lv) {
+  if (lv >= 1 && hintLevel === 0) hintsShown++;
+  if (lv === 2 && hintLevel < 2) hintFull++;
+  hintLevel = lv;
+  renderHints();
+}
+function renderHints() {
+  boardEl.querySelectorAll('.hint-from,.hint-to').forEach(x => x.classList.remove('hint-from','hint-to'));
+  arrowLayer.innerHTML = '';
+  if (!coachOn || hintLevel === 0 || phase !== 'player' || !analysis || !analysis.bestUci) return;
+  const from = analysis.bestUci.slice(0,2), to = analysis.bestUci.slice(2,4);
+  const fc = boardEl.querySelector(`[data-sq="${from}"]`);
+  if (fc) fc.classList.add('hint-from');
+  if (hintLevel >= 2) {
+    const tc = boardEl.querySelector(`[data-sq="${to}"]`);
+    if (tc) tc.classList.add('hint-to');
+    drawArrow(from, to);
+    coachMsg.innerHTML = `Look at <b class="mv">${uciToSan(game.fen(), analysis.bestUci) || from + '–' + to}</b>.`;
+  } else {
+    coachMsg.innerHTML = `Consider your piece on <b class="mv">${from}</b> — it has something to say.`;
+  }
+}
+function clearHints() {
+  if (hintTimer) { clearInterval(hintTimer); hintTimer = null; }
+  boardEl.querySelectorAll('.hint-from,.hint-to').forEach(x => x.classList.remove('hint-from','hint-to'));
+  arrowLayer.innerHTML = '';
+}
+function drawArrow(from, to) {
+  const a = orient(from), b = orient(to);
+  const x1 = a.x + .5, y1 = a.y + .5, x2 = b.x + .5, y2 = b.y + .5;
+  const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy);
+  if (!len) return;
+  const ux = dx / len, uy = dy / len;
+  const sx = x1 + ux * .35, sy = y1 + uy * .35;
+  const ex = x2 - ux * .32, ey = y2 - uy * .32;
+  const hw = .17, hl = .3;
+  const bx = ex - ux * hl, by = ey - uy * hl;
+  const svg = `
+    <line x1="${sx}" y1="${sy}" x2="${bx}" y2="${by}" stroke="rgba(44,123,229,.85)" stroke-width="0.16" stroke-linecap="round"/>
+    <polygon points="${ex},${ey} ${bx - uy * hw},${by + ux * hw} ${bx + uy * hw},${by - ux * hw}" fill="rgba(44,123,229,.85)"/>`;
+  arrowLayer.innerHTML = svg;
+}
+
+/* ============================== eval display ============================== */
+function scoreToWhite(score, sideToMove) { return sideToMove === 'w' ? score : -score; }
+function fmtEval(cpFromPlayer) {
+  if (cpFromPlayer > MATE - 2000) return `M${Math.max(1, MATE - cpFromPlayer)}`;
+  if (cpFromPlayer < -MATE + 2000) return `−M${Math.max(1, MATE + cpFromPlayer)}`;
+  const v = cpFromPlayer / 100;
+  return (v > 0 ? '+' : '') + v.toFixed(1);
+}
+function setEvalDisplay(whiteCp, mate) {
+  const capped = Math.max(-1200, Math.min(1200, whiteCp));
+  let share = 1 / (1 + Math.exp(-capped / 320));
+  if (whiteCp > MATE - 2000) share = 1;
+  if (whiteCp < -MATE + 2000) share = 0;
+  evalFill.style.height = (share * 100).toFixed(1) + '%';
+  const fromPlayer = playerColor === 'w' ? whiteCp : -whiteCp;
+  evalTxt.textContent = fmtEval(fromPlayer);
+  evalTxt.style.color = fromPlayer >= 0 ? '#27ae60' : '#e74c3c';
+}
+
+/* ============================== move log & coach notes ============================== */
+const CLS_LABEL = { best:'Best', excellent:'Excellent', good:'Good', inaccuracy:'Inaccuracy', mistake:'Mistake', blunder:'Blunder' };
+const CLS_MARK  = { best:'✓', excellent:'!', good:'', inaccuracy:'?!', mistake:'?', blunder:'??' };
+function pushLog(mv, side, cls) {
+  const num = Math.ceil(game.history().length / 2);
+  const isWhiteMove = mv.color === 'w';
+  let row = movesBody.lastElementChild;
+  if (isWhiteMove || !row) {
+    row = document.createElement('tr');
+    row.innerHTML = `<td class="num">${num}.</td><td class="mv"></td><td class="mv"></td>`;
+    movesBody.appendChild(row);
+  }
+  const cell = row.children[isWhiteMove ? 1 : 2];
+  const entry = { num, side, san: mv.san, info: cls, cell };
+  moveLog.push(entry);
+  renderBadge(entry, coachOn);
+  movesBox.scrollTop = movesBox.scrollHeight;
+  return entry;
+}
+function renderBadge(entry, show) {
+  if (!entry.cell) return;
+  const i = entry.info;
+  /* the player gets full feedback; the opponent is only called out for bad moves */
+  const visible = i && i.cls && (entry.side === playerColor
+    ? i.cls !== 'good'
+    : ['inaccuracy','mistake','blunder'].includes(i.cls));
+  entry.cell.innerHTML = entry.san + (show && visible
+    ? ` <span class="badge-c ${i.cls}" title="${CLS_LABEL[i.cls]}">${CLS_MARK[i.cls] || CLS_LABEL[i.cls]}</span>` : '');
+}
+function showCoachNote(cls, mv) {
+  if (!coachOn || !cls) return;
+  const c = cls.cls;
+  const reply = cls.replySan ? ` I expect <b class="mv">${cls.replySan}</b> in reply.` : '';
+  const swing = (typeof cls.evalBefore === 'number' && typeof cls.evalAfter === 'number')
+    ? ` (${fmtEval(cls.evalBefore)} → ${fmtEval(cls.evalAfter)})` : '';
+  if (c === 'best')
+    coachMsg.innerHTML = `<b class="mv">${mv.san}</b> ✓ — best move, exactly what I would play.${reply}`;
+  else if (c === 'excellent')
+    coachMsg.innerHTML = `<b class="mv">${mv.san}</b> — excellent, practically as strong as the best move.${reply}`;
+  else if (c === 'good')
+    coachMsg.innerHTML = `<b class="mv">${mv.san}</b> — solid move${swing}.${reply}`;
+  else {
+    const better = cls.betterSan ? ` <b class="mv">${cls.betterSan}</b> was stronger.` : '';
+    const cost = cls.loss >= 100 && cls.loss < MATE / 2
+      ? ` It gives up about ${(cls.loss / 100).toFixed(1)} pawns of advantage${swing}.` : `${swing}.`;
+    coachMsg.innerHTML = `<b class="mv">${mv.san}</b> — ${CLS_LABEL[c].toLowerCase()}.${cost}${better}${reply}`;
+  }
+}
+/* ============================== rating estimate ============================== */
+/* rough avg-centipawn-loss → Elo mapping (piecewise linear, lichess-data flavored) */
+const ACPL_ELO = [[8,2700],[15,2500],[25,2200],[35,2000],[50,1800],[70,1550],[90,1350],[120,1100],[160,850],[220,600],[300,350],[500,150]];
+function estimateElo() {
+  const losses = moveLog.filter(e => e.side === playerColor && e.info).map(e => Math.min(500, e.info.loss));
+  if (losses.length < 3) return null;
+  const acpl = losses.reduce((s, x) => s + x, 0) / losses.length;
+  let elo = ACPL_ELO[ACPL_ELO.length - 1][1];
+  for (let i = 0; i < ACPL_ELO.length; i++) {
+    const [a, e] = ACPL_ELO[i];
+    if (acpl <= a) {
+      if (i === 0) { elo = e; break; }
+      const [pa, pe] = ACPL_ELO[i - 1];
+      elo = pe + (e - pe) * (acpl - pa) / (a - pa);
+      break;
+    }
+  }
+  return { elo: Math.round(elo / 50) * 50, acpl: Math.round(acpl), n: losses.length };
+}
+/* the bot whose rating is closest to the average of the player's estimated level
+   and the current opponent — ties round up toward the bigger challenge */
+function suggestBot(estElo) {
+  const target = (estElo + bot.elo) / 2;
+  let best = null;
+  for (const b of BOTS) {
+    if (!best) { best = b; continue; }
+    const d = Math.abs(b.elo - target), bd = Math.abs(best.elo - target);
+    if (d < bd || (d === bd && b.elo > best.elo)) best = b;
+  }
+  return best;
+}
+function updatePerf() {
+  const est = estimateElo();
+  const el = $('perfLine');
+  if (!coachOn || !est || est.n < 6) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const sug = suggestBot(est.elo);
+  const sugTxt = sug && sug.id !== bot.id ? ` Try a game with ${bName(sug)} (${sug.eloLabel || sug.elo}).` : '';
+  el.textContent = `You're playing like ~${est.elo} so far (rough estimate, ${est.n} moves).${sugTxt}`;
+}
+
+function uciToSan(fen, uci) {
+  if (!uci) return null;
+  try {
+    const c = new Chess(fen);
+    const m = c.move({ from: uci.slice(0,2), to: uci.slice(2,4), promotion: uci[4] || undefined });
+    return m.san;
+  } catch (e) { return null; }
+}
+
+window.addEventListener('resize', () => {
+  if (phase !== 'setup') $('evalbar').style.height = boardEl.clientWidth + 'px';
+});
+
+/* ============================== grandmaster review ============================== */
+/* Ryan (2600+) reviews the player's game from collected telemetry:
+   accuracy, phase quality, think times, clock handling, hints, warnings, punished gifts. */
+function gmReviewHTML(playerWon, isDraw, est) {
+  const g = moveLog.filter(m => m.side === playerColor && m.info);
+  if (g.length < 3 || !est) return '';
+  const S = [];   // sentences grouped later
+
+  /* result + level */
+  const diff = est.elo - bot.elo;
+  let p1;
+  if (bot.id === 'ryan') p1 = `You came straight for me — bold.`;
+  else if (isDraw) p1 = `A draw with ${bName(bot)}. Half points teach half lessons.`;
+  else if (playerWon && diff >= 300) p1 = `You beat ${bName(bot)} — expected at your strength. The interesting part is how.`;
+  else if (playerWon && diff <= -200) p1 = `You took down ${bName(bot)} playing above your level. I notice these things.`;
+  else if (playerWon) p1 = `A fair fight against ${bName(bot)}, and you took it. Earned.`;
+  else if (diff <= -300) p1 = `You lost to a stronger opponent. No shame in that — but no excuses either.`;
+  else if (diff >= 300) p1 = `Losing to ${bName(bot)} while playing ${est.elo}-level moves? The scoresheet does not care how pretty your moves were.`;
+  else p1 = `Losing to ${bName(bot)} at your level should sting a little. Good — let it.`;
+  S.push([p1 + ` Your moves averaged ${est.acpl} centipawns of loss — that is ~${est.elo} territory.`]);
+
+  /* moves */
+  const m2 = [];
+  const open = g.filter(m => m.num <= 8);
+  if (open.length >= 3) {
+    const oa = Math.round(open.reduce((s, m) => s + Math.min(500, m.info.loss), 0) / open.length);
+    m2.push(oa <= 35 ? `The opening was tidy (${oa} cp average loss).`
+                     : `You were already bleeding in the opening (${oa} cp average) — opening study is free rating.`);
+  }
+  const errs = g.filter(m => ['mistake', 'blunder'].includes(m.info.cls));
+  if (errs.length) {
+    const worst = errs.slice().sort((a, b) => b.info.loss - a.info.loss)[0];
+    m2.push(`Worst moment: move ${worst.num}, ${worst.san}${worst.info.betterSan ? ` — ${worst.info.betterSan} was right there` : ''}.`);
+  } else {
+    m2.push(`No mistakes, no blunders. I have very little to criticize — which is rare.`);
+  }
+  if (punishOps.length) {
+    const cashed = punishOps.filter(p => p.cashed).length;
+    m2.push(cashed === punishOps.length
+      ? `${bName(bot)} handed you ${punishOps.length} gift${punishOps.length === 1 ? '' : 's'} and you punished every one. Ruthless — good.`
+      : `I counted ${punishOps.length} gift${punishOps.length === 1 ? '' : 's'} from ${bName(bot)}; you converted ${cashed}. A gift declined is a gift returned.`);
+  }
+  S.push(m2);
+
+  /* timing */
+  const t3 = [];
+  const thinks = g.map(m => m.thinkMs || 0);
+  const avgT = thinks.reduce((a, b) => a + b, 0) / thinks.length / 1000;
+  t3.push(`You averaged ${avgT < 10 ? avgT.toFixed(1) : Math.round(avgT)} seconds a move.`);
+  const rushed = errs.filter(m => (m.thinkMs || 0) < 5000).length;
+  if (rushed) t3.push(`${rushed} of your ${errs.length} serious error${errs.length === 1 ? '' : 's'} came after less than five seconds of thought — sit on your hands.`);
+  const maxT = Math.max(...thinks);
+  if (maxT >= 20000) {
+    const long = g[thinks.indexOf(maxT)];
+    t3.push(['best', 'excellent', 'good'].includes(long.info.cls)
+      ? `The ${Math.round(maxT / 1000)}-second think on move ${long.num} paid off.`
+      : `You spent ${Math.round(maxT / 1000)} seconds on move ${long.num} and still went wrong — long thought needs direction, not just duration.`);
+  }
+  if (minClockMs < 60000) t3.push(`You dipped under a minute on the clock — that is where games go to die.`);
+  else if (!playerWon && !isDraw && clocks[playerColor] > baseMs * 0.4)
+    t3.push(`And you lost with ${Math.round(clocks[playerColor] / 60000)} minutes unspent. Time is material — spend it.`);
+  S.push(t3);
+
+  /* behavior */
+  const b4 = [];
+  if (!coachOn) b4.push(`No hints, no warnings, no safety net — proper tournament conditions. Respect.`);
+  else {
+    b4.push(hintsShown === 0 ? `You never needed a hint.`
+      : `You leaned on ${hintsShown} hint${hintsShown === 1 ? '' : 's'}${hintFull ? ` (${hintFull} full reveal${hintFull === 1 ? '' : 's'})` : ''} — fine for training; at the board there are none.`);
+    const warns = warnPlayed + warnBack;
+    if (warns) {
+      if (warnPlayed === 0) b4.push(`Warned ${warns} time${warns === 1 ? '' : 's'}, you stepped back each time. Discipline.`);
+      else b4.push(`You pushed through ${warnPlayed} of ${warns} warning${warns === 1 ? '' : 's'}. Stubbornness is not a strategy.`);
+    }
+  }
+  S.push(b4);
+
+  const ryan = BOTS.find(b => b.id === 'ryan');
+  return `<div class="gm-box">
+    <div class="gm-head">
+      <span class="bot-ava" style="background:${ryan.color};width:34px;height:34px;">${avatarSVG(ryan)}</span>
+      <div><b>Grandmaster review</b><br><span class="gm-sub">GM Ryan · 2600+</span></div>
+    </div>
+    ${S.filter(x => x.length).map(x => `<p>${x.join(' ')}</p>`).join('')}
+  </div>`;
+}
+
+/* ============================== game over & report ============================== */
+function gameOver(result, reason) {
+  if (phase === 'over') return;
+  phase = 'over';
+  gameSeq++;                     // cancel any in-flight bot think / analysis callbacks
+  activeClock = null;
+  stopClock(); clearHints(); hideConfirm();
+  $('thinkDots').classList.remove('on');
+  engine.stopIf('analysis');
+  ghost = null; renderBoard(); renderClocks();
+  for (const e of moveLog) renderBadge(e, true);   // reveal all badges (incl. coach-off games)
+  const counts = { best:0, excellent:0, good:0, inaccuracy:0, mistake:0, blunder:0 };
+  const graded = moveLog.filter(m => m.side === playerColor && m.info && m.info.cls);
+  graded.forEach(m => counts[m.info.cls]++);
+  const worst = graded.filter(m => ['mistake','blunder','inaccuracy'].includes(m.info.cls))
+                      .sort((a, b) => (b.info.loss || 0) - (a.info.loss || 0)).slice(0, 3);
+  const playerWon = (result === '1-0' && playerColor === 'w') || (result === '0-1' && playerColor === 'b');
+  const title = result === '1/2-1/2' ? 'Draw' : playerWon ? 'You win! 🎉' : `${bName(bot)} wins`;
+  let html = `<h3>${title}</h3><div class="sub">${reason} (${result})</div>`;
+  if (graded.length) {
+    html += `<div class="rep-counts">
+      <span>✓ Best: ${counts.best}</span><span>! Excellent: ${counts.excellent}</span><span>Good: ${counts.good}</span>
+      <span>?! Inaccuracies: ${counts.inaccuracy}</span><span>? Mistakes: ${counts.mistake}</span><span>?? Blunders: ${counts.blunder}</span>
+    </div>`;
+    if (worst.length) {
+      html += `<div style="font-weight:700;font-size:13.5px;margin-bottom:2px;">Review these:</div>`;
+      for (const m of worst)
+        html += `<div class="rep-mist">${m.num}. ${m.san} ${CLS_MARK[m.info.cls]} — better was <b>${m.info.betterSan || '…'}</b> (${fmtEval(m.info.evalBefore)} → ${fmtEval(m.info.evalAfter)})</div>`;
+    } else {
+      html += `<div class="rep-mist">Clean game — nothing to scold you for. 👏</div>`;
+    }
+    const est = estimateElo();
+    var repSug = null;
+    if (est) {
+      html += `<div class="rep-mist" style="margin-top:8px;"><b>Estimated performance: ~${est.elo}</b> — avg loss ${est.acpl} cp over ${est.n} graded moves. One game is a very rough sample.</div>`;
+      const sug = suggestBot(est.elo);
+      if (sug && sug.id !== bot.id) repSug = sug;
+      else html += `<div class="rep-mist">You and ${bName(bot)} look well matched — run it back!</div>`;
+    }
+    const botGraded = moveLog.filter(m => m.side !== playerColor && m.info && m.info.cls);
+    const bMist = botGraded.filter(m => m.info.cls === 'mistake').length;
+    const bBlun = botGraded.filter(m => m.info.cls === 'blunder').length;
+    if (bMist + bBlun > 0)
+      html += `<div class="rep-mist">${bName(bot)} made ${bMist} mistake${bMist === 1 ? '' : 's'} and ${bBlun} blunder${bBlun === 1 ? '' : 's'}.</div>`;
+    html += gmReviewHTML(playerWon, result === '1/2-1/2', est);
+  }
+  html += `<div class="act-row">`
+        + (repSug ? `<button id="repSuggest" style="border-color:#2c7be5;color:#2c7be5;">Play ${bName(repSug)} (${repSug.eloLabel || repSug.elo}) next</button>` : '')
+        + `<button id="repNew">New game</button><button id="repClose">View board</button></div>`;
+  $('endBox').innerHTML = html;
+  $('endOverlay').classList.add('show');
+  if (repSug) $('repSuggest').onclick = () => { selectBot(repSug); endToSetup(); };
+  $('repNew').onclick = () => endToSetup();
+  $('repClose').onclick = () => $('endOverlay').classList.remove('show');
+  coachMsg.textContent = reason + ' Start a new game whenever you’re ready.';
+}
+</script>
+```
