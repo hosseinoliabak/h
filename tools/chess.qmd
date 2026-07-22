@@ -156,11 +156,6 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 .sq.selsq::before    { background:rgba(20,85,30,.45); }
 .sq.hint-from::before, .sq.hint-to::before { background:rgba(44,123,229,.42); animation: hintpulse 1.4s ease-in-out infinite; }
 @keyframes hintpulse { 0%,100% { opacity:.45; } 50% { opacity:.95; } }
-.sq.worst-from::before {
-  content:''; position:absolute; inset:0; pointer-events:none;
-  box-shadow: inset 0 0 0 3.5px rgba(231,76,60,.9); background:rgba(231,76,60,.12);
-  animation: hintpulse 1.2s ease-in-out infinite;
-}
 .sq.tint-mist::before { background:rgba(230,126,34,.55); }
 .sq.tint-blun::before { background:rgba(231,76,60,.55); }
 .sq.checksq::before { background:radial-gradient(circle at center, rgba(231,76,60,.75) 15%, rgba(231,76,60,.25) 55%, transparent 70%); }
@@ -505,7 +500,6 @@ const BOTS = [
 ];
 /* FIDE-style display name: only titled players get a prefix (CM 2200+, IM 2400+, GM 2500+) */
 const bName = b => (b.title ? b.title + ' ' : '') + b.name;
-const WORST_MS = 10000;                     // 10 s → red ring on the piece with the worst move
 const HINT1_MS = 20000, HINT2_MS = 40000;   // 20 s → piece, 40 s → destination (3x with late hints)
 const MATE = 100000;
 const THEMES = {
@@ -663,33 +657,6 @@ class Engine {
   stopIf(kind) {
     if (this.current && this.current.kind === kind) this.worker.postMessage('stop');
   }
-  /* stop the current job of this kind AND drop queued ones (they resolve null) */
-  cancelKind(kind) {
-    const drop = this.queue.filter(j => j.kind === kind);
-    this.queue = this.queue.filter(j => j.kind !== kind);
-    drop.forEach(j => j.resolve(null));
-    this.stopIf(kind);
-  }
-  /* quick full-width scan: score every legal move shallowly to find the worst one */
-  scanWorst(fen) {
-    const byMp = {};
-    return this.run({
-      kind:'scan',
-      cmds:[...this.fullStrengthCmds(), 'setoption name MultiPV value 250',
-            `position fen ${fen}`, 'go depth 8'],
-      onLine:l => { const i = Engine.parseInfo(l); if (i) byMp[i.multipv] = i; },
-      done:l => l.startsWith('bestmove'),
-    }).then(() => {
-      const infos = Object.values(byMp);
-      if (infos.length < 2) return null;
-      let best = null, worst = null;
-      for (const i of infos) {
-        if (!best || i.score > best.score) best = i;
-        if (!worst || i.score < worst.score) worst = i;
-      }
-      return { uci: worst.pv[0], score: worst.score, drop: best.score - worst.score };
-    });
-  }
   newGame() { return this.run({ cmds:['ucinewgame','isready'], done:l => l === 'readyok' }); }
 
   static parseInfo(line) {
@@ -775,7 +742,7 @@ let lastMove = null;            // {from,to}
 let ghost = null;               // pending unconfirmed move (verbose chess.js move object)
 let pendingClass = null;        // classification awaiting confirm
 let analysis = null;            // { fen, best (info), bestUci }
-let hintLevel = 0, hintTimer = null, turnStartedAt = 0, worstShown = false;
+let hintLevel = 0, hintTimer = null, turnStartedAt = 0;
 let moveLog = [];               // entries: { num, side, san, info, cell }
 let gameSeq = 0;                // guards stale async callbacks across games
 let lastCaptureSquare = null;   // square of the player's latest capture (for instant recaptures)
@@ -1151,7 +1118,7 @@ function endToSetup() {
   stopClock(); clearHints(); hideConfirm(); hideDrawOffer(false);
   $('thinkDots').classList.remove('on');
   phase = 'setup';
-  stopThinkJobs();
+  engine.stopIf('analysis');
   $('endOverlay').classList.remove('show');
   gameArea.style.display = 'none'; setupCard.style.display = 'block';
   renderProgress(); buildBotGrid();
@@ -1165,17 +1132,11 @@ function enterPlayerTurn(retry) {
   activeClock = playerColor;
   if (!retry) turnElapsedBase = 0;
   turnStartedAt = performance.now();
-  hintLevel = 0; worstShown = false;
+  hintLevel = 0;
   clearHints();
   scheduleHints();
   const fen = game.fen();
-  analysis = { fen, best: null, bestUci: null, second: null, worst: null };
-  engine.scanWorst(fen).then(w => {
-    if (seq === gameSeq && analysis && analysis.fen === fen && w) {
-      analysis.worst = w;
-      if (worstShown) renderHints();
-    }
-  }).catch(() => {});
+  analysis = { fen, best: null, bestUci: null, second: null };
   engine.analyse(fen, info => {
     if (seq !== gameSeq || !analysis || analysis.fen !== fen) return;
     if (info.multipv === 2) { analysis.second = info; return; }
@@ -1303,7 +1264,7 @@ function commitPlayerMove(moveObj, cls) {
   showCoachNote(cls, mv);
   updatePerf();
   if (!coachOn && !game.isGameOver()) {
-    stopThinkJobs();
+    engine.stopIf('analysis');
     gradeQuietly(fenBefore, uci, entry, quietSnap);
   }
   renderBoard(); renderClocks();
@@ -1588,7 +1549,7 @@ async function proposeMove(moveObj) {
   /* only legal move: forced, no grading and no accuracy impact */
   if (game.moves().length === 1) {
     ghost = null;
-    stopThinkJobs();
+    engine.stopIf('analysis');
     commitPlayerMove(moveObj, { cls: 'forced', loss: 0 });
     return;
   }
@@ -1608,7 +1569,7 @@ async function proposeMove(moveObj) {
   const fenBefore = game.fen();
   const uci = moveObj.from + moveObj.to + (moveObj.promotion || '');
   const snap = (analysis && analysis.fen === fenBefore && analysis.best && analysis.best.depth >= 8) ? analysis : null;
-  stopThinkJobs();
+  engine.stopIf('analysis');
 
   try {
     /* played the engine's own move → instant Best (or Great / Brilliant), no extra search */
@@ -1715,11 +1676,6 @@ function scheduleHints() {
     const elapsed = performance.now() - turnStartedAt;
     if (elapsed >= HINT2_MS * mult && hintLevel < 2) setHintLevel(2);
     else if (elapsed >= HINT1_MS * mult && hintLevel < 1) setHintLevel(1);
-    if (elapsed >= WORST_MS * mult && !worstShown && analysis && analysis.worst && analysis.worst.drop >= 150) {
-      worstShown = true;
-      renderHints();
-      if (hintLevel === 0) coachMsg.innerHTML = `The red square marks danger: the worst move here starts from <b class="mv">${analysis.worst.uci.slice(0, 2)}</b>.`;
-    }
   }, 400);
 }
 function setHintLevel(lv) {
@@ -1729,12 +1685,8 @@ function setHintLevel(lv) {
   renderHints();
 }
 function renderHints() {
-  boardEl.querySelectorAll('.hint-from,.hint-to,.worst-from').forEach(x => x.classList.remove('hint-from','hint-to','worst-from'));
+  boardEl.querySelectorAll('.hint-from,.hint-to').forEach(x => x.classList.remove('hint-from','hint-to'));
   arrowLayer.innerHTML = '';
-  if (coachOn && worstShown && phase === 'player' && analysis && analysis.worst) {
-    const wc = boardEl.querySelector(`[data-sq="${analysis.worst.uci.slice(0, 2)}"]`);
-    if (wc) wc.classList.add('worst-from');
-  }
   if (!coachOn || hintLevel === 0 || phase !== 'player' || !analysis || !analysis.bestUci) return;
   const from = analysis.bestUci.slice(0,2), to = analysis.bestUci.slice(2,4);
   const fc = boardEl.querySelector(`[data-sq="${from}"]`);
@@ -1750,14 +1702,8 @@ function renderHints() {
 }
 function clearHints() {
   if (hintTimer) { clearInterval(hintTimer); hintTimer = null; }
-  boardEl.querySelectorAll('.hint-from,.hint-to,.worst-from').forEach(x => x.classList.remove('hint-from','hint-to','worst-from'));
+  boardEl.querySelectorAll('.hint-from,.hint-to').forEach(x => x.classList.remove('hint-from','hint-to'));
   arrowLayer.innerHTML = '';
-}
-
-/* stop the background thinking jobs (worst-scan + deep analysis), queued or running */
-function stopThinkJobs() {
-  engine.cancelKind('scan');
-  engine.cancelKind('analysis');
 }
 function drawArrow(from, to) {
   const a = orient(from), b = orient(to);
@@ -2001,7 +1947,7 @@ function gameOver(result, reason) {
   activeClock = null;
   stopClock(); clearHints(); hideConfirm(); hideDrawOffer(false);
   $('thinkDots').classList.remove('on');
-  stopThinkJobs();
+  engine.stopIf('analysis');
   ghost = null; renderBoard(); renderClocks();
   for (const e of moveLog) renderBadge(e, true);   // reveal all badges (incl. coach-off games)
   const counts = { brilliant:0, great:0, best:0, excellent:0, good:0, forced:0, inaccuracy:0, mistake:0, blunder:0 };
