@@ -869,6 +869,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
         <div class="panel-box" id="trainBox" style="display:none;">
           <div id="trainTitle" style="font-weight:700;font-family:'Nunito',sans-serif;"></div>
           <div id="trainProg" style="font-size:12.5px;color:#888;margin-top:4px;"></div>
+          <div id="drillPlan" style="display:none;font-size:12.5px;color:#555;margin-top:8px;line-height:1.55;border-top:1px dashed #e0e0e0;padding-top:7px;"></div>
           <div class="act-row" style="margin-top:10px;">
             <button id="trainShow">Show answer</button>
             <button id="trainNext" style="display:none;">Next</button>
@@ -2868,7 +2869,7 @@ function gameOver(result, reason) {
       <div class="sub">${reason} (${result})</div>
       <div class="rep-mist">${pass
         ? (d.goal === 'win' ? 'Converted against perfect defense. That is the real thing.' : 'Held against full-strength Stockfish. Textbook.')
-        : 'Technique reminder: ' + d.hint}</div>
+        : `📋 <b>The plan.</b> ${d.plan}<br><br>⚠️ <b>Avoid.</b> ${d.avoid}`}</div>
       <div class="act-row"><button id="drillRetry">Try again</button><button id="drillBack">Back to the gym</button></div>`;
     $('endOverlay').classList.add('show');
     $('drillRetry').onclick = () => startDrill(d);
@@ -2997,7 +2998,7 @@ function enterTrainUI(title, icon) {
   analysis = null; ghost = null; selected = null; lastMove = null; pendingClass = null;
   assistTints = null; assistFen = null;
   drillActive = null; customStart = false; anaSetup = false;
-  $('anaBox').style.display = 'none';
+  $('anaBox').style.display = 'none'; $('drillPlan').style.display = 'none';
   moveLog = []; movesBody.innerHTML = '';
   $('endOverlay').classList.remove('show');
   setupCard.style.display = 'none'; gameArea.style.display = 'block';
@@ -3409,41 +3410,77 @@ const DRILL_BOT = { ...BOTS.find(b => b.id === 'stockfish'), name: 'Stockfish', 
                     think: { min: .4, max: 1.2, pLong: 0, longMax: 2 } };
 const DRILLS = [
   { id: 'kq',  title: 'Queen mate',              goal: 'win',  fen: '8/8/8/4k3/8/8/8/3QK3 w - - 0 1',
-    hint: 'Box the king in with the queen a knight-move away, bring your king, never stalemate.' },
+    hint: 'Box the king in with the queen a knight-move away, bring your king, never stalemate.',
+    plan: 'Place the queen a knight-move away from the enemy king and copy its moves; the box shrinks on its own, no checks needed. Once the king is trapped on the edge, stop, walk your own king up, and only then deliver mate.',
+    avoid: 'Stalemate is the classic accident. When the king reaches the edge, make sure it always has one square to shuffle on until your king arrives. Random checks achieve nothing and waste the 50-move budget.' },
   { id: 'kr',  title: 'Rook mate',               goal: 'win',  fen: '8/8/8/4k3/8/8/8/R3K3 w - - 0 1',
-    hint: 'Cut the king off with the rook, shrink the box, use your king to force it to the edge.' },
+    hint: 'Cut the king off with the rook, shrink the box, use your king to force it to the edge.',
+    plan: 'Use the rook as a fence, cutting the king off along one rank. Bring your king to face theirs; when the kings stand in opposition, check with the rook to push it back one rank. Repeat until the back rank, where the same push is mate.',
+    avoid: 'Keep the rook far away on its fence line so the king can never attack it. If the king chases the rook, just slide it to the other side of the board; the fence still holds. Watch for stalemate in the corner.' },
   { id: 'kp1', title: 'King ahead of its pawn',  goal: 'win',  fen: '8/8/4k3/8/4K3/8/4P3/8 w - - 0 1',
-    hint: 'King two squares in front of the pawn always wins. Take the opposition, only then push.' },
+    hint: 'King two squares in front of the pawn always wins. Take the opposition, only then push.',
+    plan: 'March the king forward and fight for the opposition (kings facing with one square between, opponent to move). When you have it, advance the king diagonally past theirs. The pawn only moves to burn a tempo or when the path to promotion is clear.',
+    avoid: 'Do not push the pawn ahead of your king; a pawn that outruns its escort is a draw. Near the end, beware the stalemate where the defender is buried in front of your pawn with no moves.' },
   { id: 'kp2', title: 'Hold the lone pawn',      goal: 'draw', fen: '8/8/8/4p3/4k3/8/8/4K3 w - - 0 1',
-    hint: 'Stay in front of the pawn and grab the opposition every time it advances.' },
+    hint: 'Stay in front of the pawn and grab the opposition every time it advances.',
+    plan: 'Keep your king planted on the pawn’s path and retreat straight backward, never diagonally. Every time the pawn or king steps forward, take the opposition so their king cannot come around the side.',
+    avoid: 'Never get pushed off the file sideways, and never give up the opposition with a careless retreat. If their king gets in front of its own pawn with the opposition, the draw is gone.' },
   { id: 'kp3', title: 'Outside passed pawn',     goal: 'win',  fen: '8/8/3k4/7p/P2K3P/8/8/8 w - - 0 1',
-    hint: 'The a-pawn is a decoy. Sell it for the black king, then raid the kingside.' },
+    hint: 'The a-pawn is a decoy. Sell it for the black king, then raid the kingside.',
+    plan: 'Push the a-pawn just far enough that the black king must run over and deal with it. The moment it commits, forget the pawn: sprint your king to the other wing, win the h-pawn, and escort your own home.',
+    avoid: 'Do not defend the a-pawn to the death; its whole job is to die far away from the real action. And do not push it so fast that you lose it for nothing before the black king has been dragged out of position.' },
   { id: 'luc', title: 'Lucena position',         goal: 'win',  fen: '1K6/1P2k3/8/8/8/8/r7/2R5 w - - 0 1',
-    hint: 'Build the bridge: rook to the fourth rank, king out, block the checks with the rook.' },
+    hint: 'Build the bridge: rook to the fourth rank, king out, block the checks with the rook.',
+    plan: 'The bridge: first play the rook to the fourth rank. Then bring the king out from in front of the pawn. When the checks from behind start, walk the king toward the rook and finally block the last check with it, and the pawn promotes.',
+    avoid: 'Do not bring the king out before the rook stands on the fourth rank; the checks then never end. And keep the defending king cut off; if it reaches the pawn, the win is gone.' },
   { id: 'phi', title: 'Philidor position',       goal: 'draw', fen: '7r/8/8/4k3/4p3/R7/8/4K3 w - - 0 1',
-    hint: 'Keep the rook on your third rank. The moment the pawn steps on it, check from behind forever.' },
+    hint: 'Keep the rook on your third rank. The moment the pawn steps on it, check from behind forever.',
+    plan: 'Park the rook on your third rank and leave it there; their king can never step forward. The instant the pawn advances onto that rank, swing the rook to the eighth and check from behind forever; with the pawn advanced, the king has no shelter.',
+    avoid: 'Passivity is the losing mistake: do not let your rook get chained to the back rank defending mate threats. Keep the king in front of the pawn, and do not delay the rook swing once the pawn steps forward.' },
   { id: 'rvp', title: 'Rook vs pawn',            goal: 'win',  fen: 'R7/8/8/8/1p6/1k6/5K2/8 w - - 0 1',
-    hint: 'Rook behind the pawn, then walk your king over before it costs the rook.' },
+    hint: 'Rook behind the pawn, then walk your king over before it costs the rook.',
+    plan: 'Put the rook behind the pawn; now their king is a full-time babysitter and the pawn is frozen. Then simply walk your king over and collect it.',
+    avoid: 'Do not check endlessly from the side, and do not let king and pawn advance together while your king spectates. Only sacrifice the rook for the pawn if your king still stops the promotion afterward, which here it does not need to.' },
   { id: 'wb',  title: 'Wrong-colored bishop',    goal: 'draw', fen: '8/8/3b4/8/4k2p/8/6K1/8 w - - 0 1',
-    hint: 'The bishop never controls h1, so the corner is a fortress. Get your king there and shuffle forever.' },
+    hint: 'The bishop never controls h1, so the corner is a fortress. Get your king there and shuffle forever.',
+    plan: 'Head straight for h1. The dark-squared bishop can never cover that light corner, so once your king is in, no eviction exists. Shuffle between h1, h2, and g1 as allowed and let the 50-move rule do the paperwork.',
+    avoid: 'Never leave the corner zone to hunt the pawn, and never let your king get cut off from h1; that is the only way to lose this. If capturing the pawn costs you the corner, decline.' },
   { id: 'qvp', title: 'Queen vs 7th-rank pawn',  goal: 'win',  fen: '8/8/6K1/8/8/8/1Q2p3/3k4 w - - 0 1',
-    hint: 'Check until the king must block its own pawn, gain a king step each cycle, repeat.' },
+    hint: 'Check until the king must block its own pawn, gain a king step each cycle, repeat.',
+    plan: 'Checks and pins force the king onto e1, in front of its own pawn. Each time it stands there it cannot promote, and that tempo is yours: step your king one square closer. Repeat the cycle until your king arrives and wins the pawn or mates.',
+    avoid: 'Aimless checks that let the king step aside cost the whole cycle. Every sequence must end with the king boxed on the promotion square and your own king one step nearer. This works against a central pawn; remember rook and bishop pawns would draw.' },
   { id: 'bb',  title: 'Two bishops mate',        goal: 'win',  fen: '8/8/8/3k4/8/8/8/1BB1K3 w - - 0 1',
-    hint: 'The bishops form a moving diagonal wall. Herd the king to any corner. This one is genuinely hard.' },
+    hint: 'The bishops form a moving diagonal wall. Herd the king to any corner. This one is genuinely hard.',
+    plan: 'Line the bishops up on adjacent diagonals to build a wall the king cannot cross, and roll the wall forward one diagonal at a time. Your king walks alongside to take away escape squares, first to the edge, then into any corner.',
+    avoid: 'Gaps between the bishops let the king slip through the middle, and a hasty king approach gives stalemate near the corner. Keep the wall intact and always leave a legal move until mate is actually there.' },
   { id: 'qvr', title: 'Queen vs rook',           goal: 'win',  fen: '8/8/8/3k1r2/8/8/8/Q3K3 w - - 0 1',
-    hint: 'One of the hardest drills here. Force the rook away from its king with checks, then fork.' },
+    hint: 'One of the hardest drills here. Force the rook away from its king with checks, then fork.',
+    plan: 'Drive king and rook toward the edge with checks and centralization. The rook must eventually leave the king’s side (zugzwang) or park beside it; then a check that also attacks the rook, a fork, wins it. Queen against king is routine afterward.',
+    avoid: 'Two traps: repetition (three-fold is a draw, so vary the checks) and the rook sacrifice for stalemate; before capturing the rook, confirm the king still has a move. Mind the 50-move clock.' },
   { id: 'lad', title: 'Two-rook ladder mate',    goal: 'win',  fen: '8/8/8/4k3/8/8/8/RR2K3 w - - 0 1',
-    hint: 'The rooks take turns cutting off ranks, walking the king to the edge like a ladder.' },
+    hint: 'The rooks take turns cutting off ranks, walking the king to the edge like a ladder.',
+    plan: 'One rook checks, the other holds the next rank behind, and they alternate like rungs of a ladder. Your king is not needed; the rooks walk the king to the last rank and mate it there.',
+    avoid: 'If the king approaches a rook, do not panic and do not give it up; slide that rook all the way to the far side of the same rank and continue the ladder from there.' },
   { id: 'ret', title: 'Réti study',              goal: 'draw', fen: '7K/8/k1P5/7p/8/8/8/8 w - - 0 1',
-    hint: 'The famous 1921 study. Your king chases two goals at once along the diagonal, and somehow catches one.' },
+    hint: 'The famous 1921 study. Your king chases two goals at once along the diagonal, and somehow catches one.',
+    plan: 'Kg7 first. Walk the diagonal g7, f6, e5: every step both chases the h-pawn and steps toward supporting c7. The defender can stop one threat, never both, so either you catch the pawn or your own pawn promotes.',
+    avoid: 'Chasing the h-pawn straight down the h-file loses the race immediately. Any king move that serves only one of the two goals throws away the miracle.' },
   { id: 'rpm', title: 'Rook-pawn miracle',       goal: 'draw', fen: 'K7/P7/8/8/4k3/8/8/7q w - - 0 1',
-    hint: 'Queen against your rook pawn on the seventh. Shuffle beside the pawn; if the queen ever pens you in, it is stalemate.' },
+    hint: 'Queen against your rook pawn on the seventh. Shuffle beside the pawn; if the queen ever pens you in, it is stalemate.',
+    plan: 'Shuffle between a8 and b7, never further. The queen alone cannot make progress: whenever she seals your king on a8, you have no legal move at all, and that is stalemate. Her king is too far away to help in time.',
+    avoid: 'Stepping beyond b7 loses the pawn and the game. Just stay glued to the corner and let the queen discover there is nothing to be done.' },
   { id: 'kbn', title: 'Bishop and knight mate',  goal: 'win',  fen: '8/8/8/3k4/8/8/8/1NB1K3 w - - 0 1',
-    hint: 'The boss drill. Drive the king to a corner the bishop controls, using the W-shaped knight path. You have 50 moves.' },
+    hint: 'The boss drill. Drive the king to a corner the bishop controls, using the W-shaped knight path. You have 50 moves.',
+    plan: 'Three stages: push the king to the edge with all three pieces, let it run to the safe corner, then evict it along the edge toward the corner of your bishop’s color using the knight’s W-shaped path while your king shadows it the whole way.',
+    avoid: 'The two disasters are letting the king escape through the center, which restarts everything, and drifting: with the 50-move rule live, every aimless move matters. Know which corner is yours before you start herding.' },
   { id: 'cpp', title: 'Two connected passers',   goal: 'win',  fen: '8/8/8/4k3/8/8/3PP3/3K4 w - - 0 1',
-    hint: 'Advance the pawns abreast with your king behind them. Never let either one fall for free.' },
+    hint: 'Advance the pawns abreast with your king behind them. Never let either one fall for free.',
+    plan: 'Advance the pawns side by side; standing abreast they defend each other’s stepping squares. When the enemy king blockades one, walk your own king up to break the blockade, then roll forward again.',
+    avoid: 'Do not race one pawn far ahead; a lone runner gets eaten and the win can vanish with it. No rush exists here, so let your king do its escort work.' },
   { id: 'bpd', title: 'Bishop-pawn stalemate trick', goal: 'draw', fen: '8/6k1/8/8/4q3/8/1KP5/8 w - - 0 1',
-    hint: 'Queen against your c-pawn on the second rank. Head for the corner: if the queen ever takes the pawn while your king sits on a1, it is stalemate.' },
+    hint: 'Queen against your c-pawn on the second rank. Head for the corner: if the queen ever takes the pawn while your king sits on a1, it is stalemate.',
+    plan: 'Stay beside the pawn and drift toward a1. The point: with your king on a1, Qxc2 is stalemate, so the queen can never actually take the pawn. Her king is too far to arrive before the 50-move rule saves you.',
+    avoid: 'Do not push the pawn and do not wander toward the queen. Wandering away from the a1 corner is the only way this draw gets lost. This trick works for bishop and rook pawns only, so enjoy it while the pawn is on c2.' },
 ];
 function loadDrills() { try { return JSON.parse(lsGet(DRILL_KEY)) || {}; } catch (e) { return {}; } }
 function renderDrillBox() {
@@ -3491,6 +3528,8 @@ function startDrill(d) {
   $('trainProg').textContent = d.goal === 'win'
     ? 'Goal: win this position. A draw or loss fails the drill.'
     : 'Goal: hold the draw. Repetition and the 50-move rule are your friends.';
+  $('drillPlan').style.display = 'block';
+  $('drillPlan').innerHTML = `📋 <b>The plan.</b> ${d.plan}<br><br>⚠️ <b>Avoid.</b> ${d.avoid}`;
   $('trainShow').style.display = 'none'; $('trainNext').style.display = 'none';
   $('endOverlay').classList.remove('show');
   setupCard.style.display = 'none'; gameArea.style.display = 'block';
@@ -3859,12 +3898,32 @@ $('anaCancelBtn').onclick = () => {
 $('anaDoneBtn').onclick = () => {
   if (!anaSetup) return;
   if (!findKing('w') || !findKing('b')) { $('anaSetupNote').textContent = 'Both kings must be on the board.'; return; }
-  const turn = $('anaTurnSeg').querySelector('.sel').dataset.v;
-  const fen = `${game.fen().split(' ')[0]} ${turn} - - 0 1`;
+  const board = game.fen().split(' ')[0];
+  const want = $('anaTurnSeg').querySelector('.sel').dataset.v;
+  const opp = want === 'w' ? 'b' : 'w';
+  /* a position is legal for side t only if the OTHER side is not standing in check */
+  const legalFor = t => {
+    try {
+      new Chess(`${board} ${t} - - 0 1`);
+      return !new Chess(`${board} ${t === 'w' ? 'b' : 'w'} - - 0 1`).inCheck();
+    } catch (e) { return false; }
+  };
+  const turn = legalFor(want) ? want : legalFor(opp) ? opp : null;
+  if (!turn) {
+    $('anaSetupNote').textContent = 'This position is impossible: whichever side moves, the other king could be captured. Adjust the pieces.';
+    return;
+  }
   anaSetup = false;
-  if (!anaLoadFen(fen)) { anaSetup = true; return; }
+  if (!anaLoadFen(`${board} ${turn} - - 0 1`)) {
+    anaSetup = true;
+    $('anaSetupNote').textContent = 'That position could not be loaded. Adjust the pieces and try again.';
+    return;
+  }
+  $('anaTurnSeg').querySelectorAll('button').forEach(x => x.classList.toggle('sel', x.dataset.v === turn));
   $('anaSetupUI').style.display = 'none'; $('anaCtrls').style.display = '';
-  coachMsg.textContent = 'Position loaded. Analyze it, or play it out against the bot.';
+  coachMsg.textContent = turn === want
+    ? 'Position loaded. Analyze it, or play it out against the bot.'
+    : `With ${want === 'w' ? 'White' : 'Black'} to move the ${want === 'w' ? 'Black' : 'White'} king could be captured right away, so it is ${turn === 'w' ? 'White' : 'Black'} to move instead. Analyze away, or play it out against the bot.`;
 };
 $('anaTurnSeg').querySelectorAll('button').forEach(btn => {
   btn.onclick = () => {
