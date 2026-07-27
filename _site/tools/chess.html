@@ -1033,6 +1033,88 @@ const BOTS = [
 ];
 /* FIDE-style display name: only titled players get a prefix (CM 2200+, IM 2400+, GM 2500+) */
 const bName = b => (b.title ? b.title + ' ' : '') + b.name;
+
+/* ---------- day jobs and hobbies, matched to each character's psychology ---------- */
+const BOT_JOBS = {
+  zack:    'Puppy trainer at the animal shelter. Hobby: trampoline. Fear is simply not in his vocabulary, and neither is "blunder" yet.',
+  alice:   'Second grader. Collects stickers, frogs, and now your pieces.',
+  bob:     'Civil engineering student. Builds fortresses in Minecraft, then recreates them with pawns.',
+  charlie: 'High schooler and amateur street magician. Every trick needs a victim.',
+  daisy:   'Barista at the café where she plays. Hobby: salsa dancing. Pours espresso and gambits with the same generous hand.',
+  ethan:   'Librarian. Catalogues everything, including openings he then forgets to play on time.',
+  fiona:   'Seventh grader. Speedcubes, math-olympiad puzzles, and knight forks, in that order each day.',
+  grace:   'Insurance actuary. Knits while evaluating risk, and evaluates risk while knitting.',
+  henry:   'Watchmaker. Distrusts anything with a battery, including online chess.',
+  iris:    'Chemistry PhD student. Her lab notebooks look exactly like her opening files: dense, indexed, explosive.',
+  jack:    'Retired firefighter. Fifty years of running toward the fire, and his chess never learned to run away either.',
+  kira:    'Retired math teacher turned streamer. Grades your blunders in red pen, then offers you a cookie.',
+  liam:    'Economics student. Tracks every expense to the cent, and every advantage to the centipawn.',
+  maya:    'Architect. Sees the finished building before the first brick, and the endgame before move ten.',
+  noah:    'Doctoral candidate in mathematics. Owns more chess books than furniture, and sleeps on some of them.',
+  olivia:  'Circus aerialist. Risk assessment is for people with nets.',
+  pablo:   'Master luthier. Restores violins one patient shaving at a time, which is also how he wins rook endings.',
+  quinn:   'Finishing high school between tournaments. Weekend session guitarist: arpeggios and combinations, same thing.',
+  ryan:    'Eternal student, currently enrolled in his ninth degree. Swims laps at dawn because even a mathemagician needs to cool the machine.',
+  stockfish: 'Occupation: chess engine. Hobby: chess. Aspiration: chess.',
+};
+
+/* ---------- humanized playing styles (Komodo-personality flavored) ----------
+   The engine searches 4 lines at the bot's normal strength; the bot then picks
+   among lines within its style window using chess-flavored bonuses. Forced mates
+   are always played. Ethan and Quinn stay balanced; Ryan and Stockfish stay pure. */
+const BOT_STYLES = {
+  zack: 'aggressive', alice: 'aggressive', charlie: 'aggressive', fiona: 'aggressive',
+  jack: 'aggressive', kira: 'aggressive',
+  bob: 'defensive', grace: 'defensive', henry: 'defensive', pablo: 'defensive',
+  iris: 'positional', liam: 'positional', maya: 'positional', noah: 'positional',
+  daisy: 'gambiteer', olivia: 'gambiteer',
+};
+const STYLES = {
+  aggressive: { window: 60, label: 'Aggressive: given a close choice, expect captures, checks, and forward motion.',
+    bias: f => (f.capture ? 22 : 0) + (f.check ? 28 : 0) + (f.forward > 0 ? 10 : 0) + (f.promo ? 20 : 0) },
+  defensive:  { window: 40, label: 'Solid: prefers trades, castling, and tidy positions over adventure.',
+    bias: f => (f.equalTrade ? 24 : 0) + (f.castle ? 25 : 0) + (f.forward < 0 ? 8 : 0) + (f.quiet ? 8 : 0) - (f.sac ? 40 : 0) },
+  positional: { window: 40, label: 'Positional: quiet improving moves over forcing ones, squeezing not smashing.',
+    bias: f => (f.quiet ? 18 : 0) + (f.castle ? 15 : 0) + (f.equalTrade ? 8 : 0) - (f.sac ? 30 : 0) },
+  gambiteer:  { window: 90, label: 'Gambiteer: will spend material for initiative and attack, even when the engine frowns.',
+    bias: f => (f.sac ? 35 : 0) + (f.check ? 25 : 0) + (f.capture ? 10 : 0) + (f.forward > 0 ? 12 : 0) },
+};
+function moveFeatures(fen, uci) {
+  try {
+    const c = new Chess(fen);
+    const mv = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || undefined });
+    if (!mv) return {};
+    const capture = !!mv.captured;
+    const check = c.inCheck();
+    const recapturable = c.moves({ verbose: true }).some(m => m.to === mv.to && m.captured);
+    const dir = mv.color === 'w' ? 1 : -1;
+    return {
+      capture, check,
+      equalTrade: capture && PIECE_VAL[mv.captured] === PIECE_VAL[mv.piece],
+      sac: recapturable && (!capture || PIECE_VAL[mv.captured] < PIECE_VAL[mv.piece]),
+      castle: mv.san === 'O-O' || mv.san === 'O-O-O',
+      forward: (Number(mv.to[1]) - Number(mv.from[1])) * dir,
+      quiet: !capture && !check,
+      promo: !!mv.promotion,
+    };
+  } catch (e) { return {}; }
+}
+function pickStyledMove(bot, fen, res) {
+  if (!res || !res.best || res.best === '(none)') return res && res.best;
+  const S = STYLES[BOT_STYLES[bot.id]];
+  if (!S || !res.cands || res.cands.length < 2) return res.best;
+  const cands = res.cands.filter(c => c.pv && c.pv[0]);
+  if (cands.length < 2) return res.best;
+  const bestScore = Math.max(...cands.map(c => c.score));
+  if (bestScore > MATE - 2000) return res.best;         // never style away a forced mate
+  let pick = null, pickVal = -Infinity;
+  for (const c of cands) {
+    if (bestScore - c.score > S.window) continue;
+    const v = c.score + S.bias(moveFeatures(fen, c.pv[0])) + Math.random() * 10;
+    if (v > pickVal) { pickVal = v; pick = c.pv[0]; }
+  }
+  return pick || res.best;
+}
 const HINT1_MS = 20000, HINT2_MS = 40000;   // 20 s → piece, 40 s → destination (3x with late hints)
 const MATE = 100000;
 const THEMES = {
@@ -1241,8 +1323,10 @@ class Engine {
       done:l => l.startsWith('bestmove'),
     });
   }
-  botMove(bot, fen) {
-    const cmds = ['setoption name MultiPV value 1'];
+  /* Multi-line search at the bot's strength so a style layer can humanize the
+     choice among near-equal moves. Unstyled bots keep a single line. */
+  botMove(bot, fen, multi) {
+    const cmds = [`setoption name MultiPV value ${multi ? 4 : 1}`];
     if (bot.mode === 'elo') {
       cmds.push('setoption name Skill Level value 20',
                 'setoption name UCI_LimitStrength value true',
@@ -1255,8 +1339,12 @@ class Engine {
     } else {
       cmds.push(...this.fullStrengthCmds(), `position fen ${fen}`, `go movetime ${bot.movetime}`);
     }
-    return this.run({ kind:'bot', cmds, done:l => l.startsWith('bestmove') })
-      .then(l => l.split(/\s+/)[1]);
+    const infos = {};
+    return this.run({
+      kind:'bot', cmds,
+      onLine:l => { const i = Engine.parseInfo(l); if (i) infos[i.multipv] = i; },
+      done:l => l.startsWith('bestmove'),
+    }).then(l => ({ best: l.split(/\s+/)[1], cands: Object.values(infos) }));
   }
 }
 
@@ -1674,7 +1762,9 @@ function selectBot(b) {
       <div><b>💪 Strengths:</b> ${p.strengths}</div>
       <div><b>⚠️ Weaknesses:</b> ${p.weaknesses}</div>
       <div><b>♟️ Playing since:</b> ${p.years}</div>
+      ${BOT_JOBS[b.id] ? `<div><b>💼 Off the board:</b> ${BOT_JOBS[b.id]}</div>` : ''}
       <div><b>🎲 Fun fact:</b> ${p.fun}</div>
+      ${BOT_STYLES[b.id] ? `<div><b>🎭 Style:</b> ${STYLES[BOT_STYLES[b.id]].label}</div>` : ''}
     </div>`;
 }
 selectBot(BOTS.find(b => b.id === 'henry'));
@@ -2039,8 +2129,10 @@ function enterBotTurn() {
       .then(r => { if (seq === gameSeq && phase === 'bot') botBaseline = r.score; })
       .catch(() => {});
   }
-  engine.botMove(bot, game.fen()).then(uci => {
+  const botFen = game.fen();
+  engine.botMove(bot, botFen, !!BOT_STYLES[bot.id]).then(res => {
     if (seq !== gameSeq) return;
+    let uci = pickStyledMove(bot, botFen, res);
     /* absolute beginners: sometimes ignore the engine and play a random legal move */
     if (uci && uci !== '(none)' && bot.randomP && Math.random() < bot.randomP) {
       const legal = game.moves({ verbose: true });
