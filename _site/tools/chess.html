@@ -418,7 +418,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   padding:7px 11px; border:1.5px solid #e0e0e0; border-radius:8px; font:inherit; font-size:13.5px; width:170px;
 }
 .cloud-box input:focus { outline:none; border-color:#2c7be5; }
-#joinBtn, #restoreBtn {
+#joinBtn, #restoreBtn, #editNameSave {
   border:none; background:#2c7be5; color:#fff; border-radius:7px; padding:7px 14px; cursor:pointer; font:inherit; font-size:13px; font-weight:700;
 }
 .cloud-link { border:none; background:transparent; color:#2c7be5; cursor:pointer; font:inherit; font-size:12.5px; text-decoration:underline; padding:0; }
@@ -691,8 +691,16 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
         <span class="cloud-lead">Playing online as <b id="cloudName"></b></span>
         <span class="cloud-code">code <b id="cloudCode"></b></span>
         <button class="cloud-link" id="copyCode">copy code</button>
+        <button class="cloud-link" id="editName">change name</button>
         <button class="cloud-link" id="signOut">sign out</button>
         <span class="cloud-note">Keep the code somewhere safe. Enter it on another device to bring your record with you.</span>
+      </div>
+      <div id="cloudEdit" style="display:none;">
+        <span class="cloud-lead">New display name:</span>
+        <input type="text" id="editNameInput" maxlength="20" autocomplete="off">
+        <button id="editNameSave">Save</button>
+        <button class="cloud-link" id="editNameCancel">back</button>
+        <span class="cloud-note" id="editNameNote">Name changes are limited to one every 7 days.</span>
       </div>
     </div>
 
@@ -762,6 +770,13 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
       <div class="prog-head"><span class="cs-label" style="margin:0;">Endgame gym</span></div>
       <div class="drill-grid" id="drillGrid"></div>
       <div class="engine-note">Classic endgames against full-strength Stockfish. It defends and punishes perfectly, so a pass here means you really own the technique.</div>
+    </div>
+
+    <div class="prog-box" id="memBox">
+      <div class="prog-head"><span class="cs-label" style="margin:0;">Memory gym</span></div>
+      <div class="prog-stats" id="memStats"></div>
+      <button class="hint-btn" id="memStartBtn">Train</button>
+      <div class="engine-note">Look at a position for a few seconds, then rebuild it from memory, spot what changed, or answer questions about it. Positions come from your own games and the classics, never random scatter, so you train yourself to see chess patterns instead of dots. 100 stages, from 4 pieces at 20 seconds to a full board at 8.</div>
     </div>
 
     <div class="prog-box" id="sparBox">
@@ -870,6 +885,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
           <div id="trainTitle" style="font-weight:700;font-family:'Nunito',sans-serif;"></div>
           <div id="trainProg" style="font-size:12.5px;color:#888;margin-top:4px;"></div>
           <div id="drillPlan" style="display:none;font-size:12.5px;color:#555;margin-top:8px;line-height:1.55;border-top:1px dashed #e0e0e0;padding-top:7px;"></div>
+          <div id="memPalHolder" style="margin-top:8px;"></div>
           <div class="act-row" style="margin-top:10px;">
             <button id="trainShow">Show answer</button>
             <button id="trainNext" style="display:none;">Next</button>
@@ -1423,6 +1439,7 @@ function renderCloudBox() {
   const on = !!(cloudProfile && fdb);
   $('cloudJoin').style.display = on ? 'none' : 'flex';
   $('cloudRestore').style.display = 'none';
+  $('cloudEdit').style.display = 'none';
   $('cloudOn').style.display = on ? 'flex' : 'none';
   if (on) {
     $('cloudName').textContent = cloudProfile.name;   // textContent only: never HTML
@@ -1430,6 +1447,41 @@ function renderCloudBox() {
   }
   if (!fdb) $('cloudBox').style.display = 'none';
 }
+
+/* ---------- display-name change, rate-limited to one per 7 days ---------- */
+$('editName').onclick = () => {
+  if (!cloudProfile) return;
+  $('cloudOn').style.display = 'none';
+  $('cloudEdit').style.display = 'flex';
+  $('editNameInput').value = cloudProfile.name;
+  $('editNameInput').style.borderColor = '';
+  $('editNameNote').textContent = 'Name changes are limited to one every 7 days.';
+};
+$('editNameCancel').onclick = renderCloudBox;
+const fbTimeout = (p, ms) => Promise.race([p, new Promise((res, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+$('editNameSave').onclick = async () => {
+  const nm = sanitizeName($('editNameInput').value);
+  if (nm.length < 2) { $('editNameInput').style.borderColor = '#e74c3c'; return; }
+  if (!cloudProfile || !fdb) return;
+  if (nm === cloudProfile.name) { renderCloudBox(); return; }
+  $('editNameNote').textContent = 'Saving…';
+  try {
+    const snap = await fbTimeout(fdb.ref('chess/players/' + cloudProfile.key + '/nameChangedAt').once('value'), 8000);
+    const last = snap.val();
+    if (typeof last === 'number' && Date.now() - last < 7 * 86400000) {
+      const days = Math.max(1, Math.ceil((last + 7 * 86400000 - Date.now()) / 86400000));
+      $('editNameNote').textContent = `You changed your name recently. The next change unlocks in ${days} day${days === 1 ? '' : 's'}.`;
+      return;
+    }
+    await fbTimeout(fdb.ref('chess/players/' + cloudProfile.key).update({ name: nm, nameChangedAt: Date.now(), updatedAt: Date.now() }), 8000);
+    cloudProfile.name = nm;
+    lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
+    renderCloudBox();
+    loadLeaderboard();
+  } catch (e) {
+    $('editNameNote').textContent = 'The server declined the change (7-day limit or connection trouble). Try again later.';
+  }
+};
 $('showRestore').onclick = () => { $('cloudJoin').style.display = 'none'; $('cloudRestore').style.display = 'flex'; };
 $('hideRestore').onclick = () => { $('cloudJoin').style.display = 'flex'; $('cloudRestore').style.display = 'none'; };
 /* pull a cloud player record's games and blunder deck into this browser */
@@ -1468,6 +1520,10 @@ function mergeCloudData(v) {
     lsSet(REP_KEY, JSON.stringify(rep));
     renderRepBox();
   }
+  if (typeof v.memStage === 'number' && v.memStage > loadMem()) {
+    lsSet(MEM_KEY, JSON.stringify({ stage: Math.min(100, Math.round(v.memStage)) }));
+    renderMemBox();
+  }
 }
 
 /* One leaderboard registration per browser: each browser signs in anonymously and
@@ -1498,11 +1554,19 @@ $('joinBtn').onclick = async () => {
       return;
     }
   }
-  cloudProfile = { key, name: nm };
-  lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
-  fdb.ref('chess/players/' + key).update({ name: nm, updatedAt: Date.now() }).catch(() => {});
-  if (reused) fdb.ref('chess/players/' + key).once('value')
-    .then(s => { const v = s.val(); if (v) mergeCloudData(v); }).catch(() => {});
+  if (reused) {
+    /* this browser already has a player: sign back into it under its existing name
+       (renames go through "change name", which enforces the 7-day limit) */
+    let v = null;
+    try { v = (await fdb.ref('chess/players/' + key).once('value')).val(); } catch (e) {}
+    cloudProfile = { key, name: (v && sanitizeName(v.name)) || nm };
+    lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
+    if (v) mergeCloudData(v);
+  } else {
+    cloudProfile = { key, name: nm };
+    lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
+    fdb.ref('chess/players/' + key).update({ name: nm, updatedAt: Date.now() }).catch(() => {});
+  }
   renderCloudBox();
   loadLeaderboard();
 };
@@ -1551,8 +1615,10 @@ function cloudSync(rec) {
       losses: (cur.losses || 0) + (!won && !draw ? 1 : 0),
       level: perfs.length ? Math.round(perfs.slice(0, 5).reduce((a, b) => a + b, 0) / Math.min(perfs.length, 5) / 50) * 50 : null,
       bestWin, updatedAt: Date.now(), recent,
-      deck: cur.deck || null,      // the blunder deck and repertoire live beside the games; keep them
+      deck: cur.deck || null,      // the blunder deck, repertoire, and memory progress live beside the games; keep them
       rep: cur.rep || null,
+      memStage: cur.memStage || null,
+      nameChangedAt: cur.nameChangedAt || null,   // keeps the 7-day rename limit honest
     };
   }).then(() => loadLeaderboard()).catch(() => {});
 }
@@ -1792,8 +1858,9 @@ function endToSetup() {
   $('clockPanel').style.display = ''; $('actRow').style.display = '';
   $('trainBox').style.display = 'none'; $('anaBox').style.display = 'none';
   gameArea.style.display = 'none'; setupCard.style.display = 'block';
+  memSession = null; clearMemTimer(); restoreMemPal();
   renderProgress(); buildBotGrid(); renderDeckBox(); renderDrillBox(); renderGuessBox();
-  renderRepBox(); renderTreeBox(); renderCareerBox();
+  renderRepBox(); renderTreeBox(); renderCareerBox(); renderMemBox();
 }
 
 function enterPlayerTurn(retry) {
@@ -2239,6 +2306,12 @@ boardEl.addEventListener('pointerdown', e => {
     } else {
       anaSetupClick(sq);
     }
+    return;
+  }
+  if (mode === 'memory' && memSession && memSession.await === 'click' && phase === 'player') {
+    const cell = e.target.closest('.sq'); if (!cell) return;
+    e.preventDefault();
+    memBoardClick(cell.dataset.sq);
     return;
   }
   if (phase !== 'player') return;
@@ -2998,6 +3071,7 @@ function enterTrainUI(title, icon) {
   analysis = null; ghost = null; selected = null; lastMove = null; pendingClass = null;
   assistTints = null; assistFen = null;
   drillActive = null; customStart = false; anaSetup = false;
+  memSession = null; clearMemTimer(); restoreMemPal();
   $('anaBox').style.display = 'none'; $('drillPlan').style.display = 'none';
   moveLog = []; movesBody.innerHTML = '';
   $('endOverlay').classList.remove('show');
@@ -3014,6 +3088,7 @@ function exitTraining() {
   gameSeq++; trainSeq++;
   mode = 'game'; drillActive = null; deckSession = null; guessSession = null; repSession = null;
   customStart = false; anaSetup = false;
+  memSession = null; clearMemTimer(); restoreMemPal();
   phase = 'setup';
   stopClock();
   engine.stopIf('analysis');
@@ -3022,12 +3097,13 @@ function exitTraining() {
   $('clockPanel').style.display = ''; $('actRow').style.display = '';
   gameArea.style.display = 'none'; setupCard.style.display = 'block';
   renderDeckBox(); renderDrillBox(); renderGuessBox(); renderProgress(); buildBotGrid();
-  renderRepBox(); renderTreeBox(); renderCareerBox();
+  renderRepBox(); renderTreeBox(); renderCareerBox(); renderMemBox();
 }
 $('trainExit').onclick = exitTraining;
 $('trainNext').onclick = () => {
   if (mode === 'deck') deckNextPosition();
   else if (mode === 'guess') guessContinue();
+  else if (mode === 'memory') memNewRound();
   else if (mode === 'rep' && repSession) {
     if (repSession.lineFinished) { repSession.lineFinished = false; repNextLine(); }
     else repAdvance();
@@ -3036,6 +3112,7 @@ $('trainNext').onclick = () => {
 $('trainShow').onclick = () => {
   if (mode === 'rep' && repSession && repSession.recording) { saveRecordedLine(); return; }
   if (phase !== 'player') return;
+  if (mode === 'memory') { memCheck(); return; }
   if (mode === 'rep' && repSession) { repReveal(); return; }
   if (mode === 'deck' && deckSession) {
     const it = deckSession.queue[deckSession.idx];
@@ -4284,9 +4361,282 @@ function renderCareerBox() {
     : `All ${BOTS.length} opponents beaten. There is nothing left to teach you here.`;
 }
 
+/* ============================== memory gym ============================== */
+/* Position-memory training in the de Groot tradition: every position is sampled
+   from a real game (your own saved games first, the classics as fallback) and
+   thinned to the stage's piece count, so it keeps real pawn structures and piece
+   placements. 100 stages ramp pieces up and viewing time down; higher stages mix
+   in spot-the-change and question rounds. */
+const MEM_KEY = 'chess-coach-memory-v1';
+let memSession = null, memTimer = null;
+function loadMem() {
+  try { const v = JSON.parse(lsGet(MEM_KEY)); return Math.min(100, Math.max(1, (v && v.stage) || 1)); }
+  catch (e) { return 1; }
+}
+function saveMem(stage) {
+  lsSet(MEM_KEY, JSON.stringify({ stage }));
+  if (cloudProfile && fdb) fdb.ref('chess/players/' + cloudProfile.key + '/memStage').set(stage).catch(() => {});
+  renderMemBox();
+}
+function memParams(s) {
+  const pieces = 4 + Math.round(28 * (s - 1) / 99);          // 4 … 32
+  const seconds = Math.round(20 - 12 * (s - 1) / 99);        // 20 … 8
+  let task = 'build';
+  if (s >= 61) task = ['build', 'change', 'quiz'][s % 3];
+  else if (s >= 41 && s % 2 === 0) task = 'change';
+  return { pieces, seconds, task };
+}
+function renderMemBox() {
+  const s = loadMem(), p = memParams(s);
+  const taskName = { build: 'rebuild it', change: 'spot the change', quiz: 'answer questions' }[p.task];
+  $('memStats').innerHTML =
+    `<span>Stage: <b>${s} / 100</b></span><span>Pieces: <b>${p.pieces}</b></span>` +
+    `<span>Look time: <b>${p.seconds}s</b></span><span>Task: <b>${taskName}</b></span>`;
+  $('memStartBtn').textContent = `Train stage ${s}`;
+}
+function shuffleArr(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+/* sample a real-game position and thin it to exactly `target` pieces */
+function memPosition(target) {
+  const sources = [];
+  for (const g of loadHist()) if (g.pgn) sources.push(g.pgn);
+  for (const f of FAMOUS) if (f._ok !== false) sources.push(f.pgn);
+  for (let tries = 0; tries < 14; tries++) {
+    const hist = parsePgnMoves(sources[Math.floor(Math.random() * sources.length)]);
+    if (!hist) continue;
+    /* big targets want early-game plies, small targets late-game plies */
+    const t = (32 - target) / 28;
+    let ply = Math.round(8 + t * (hist.length - 8)) + Math.floor(Math.random() * 13) - 6;
+    ply = Math.max(6, Math.min(hist.length, ply));
+    const c = new Chess();
+    for (let i = 0; i < ply; i++) if (!c.move(hist[i].san)) break;
+    let squares = [];
+    for (const f of FILES) for (let r = 1; r <= 8; r++) {
+      const p = c.get(f + r);
+      if (p) squares.push({ sq: f + r, type: p.type, color: p.color });
+    }
+    if (squares.length < target) continue;
+    const nonKings = shuffleArr(squares.filter(p => p.type !== 'k'));
+    while (squares.length > target && nonKings.length) {
+      const rem = nonKings.pop();
+      squares = squares.filter(p => p !== rem);
+    }
+    if (squares.length === target) return squares;
+  }
+  return null;
+}
+function memSetBoard(squares) {
+  game = new Chess();
+  game.clear();
+  for (const p of squares) game.put({ type: p.type, color: p.color }, p.sq);
+}
+function clearMemTimer() { if (memTimer) { clearInterval(memTimer); memTimer = null; } }
+function moveMemPal() { $('memPalHolder').appendChild($('anaPal')); }
+function restoreMemPal() {
+  if ($('anaPal').parentElement !== $('anaSetupUI')) $('anaSetupUI').prepend($('anaPal'));
+}
+function startMemory() {
+  mode = 'memory'; trainSeq++;
+  memSession = null;
+  enterTrainUI('Memory gym', '🧠');
+  playerColor = 'w';
+  memNewRound();
+}
+function memNewRound() {
+  clearMemTimer();
+  restoreMemPal();
+  const stage = loadMem();
+  const p = memParams(stage);
+  const target = memPosition(p.pieces);
+  if (!target) { coachMsg.textContent = 'Could not build a position. Play a game or two first.'; return; }
+  memSession = { stage, params: p, target, phase: 'view', await: null, found: 0, wrong: 0 };
+  anaSetup = false;
+  phase = 'trainwait';
+  memSetBoard(target);
+  lastMove = null; selected = null;
+  renderBoard();
+  const taskTxt = { build: 'rebuild it from memory', change: 'spot what changed', quiz: 'answer questions about it' }[p.task];
+  $('trainTitle').textContent = `🧠 Stage ${stage} of 100`;
+  $('trainShow').style.display = 'none'; $('trainNext').style.display = 'none';
+  coachMsg.innerHTML = `Memorize this position (<b>${p.pieces}</b> pieces). When time is up you will <b>${taskTxt}</b>.`;
+  const t0 = performance.now(), seq = trainSeq;
+  memTimer = setInterval(() => {
+    if (seq !== trainSeq || mode !== 'memory' || !memSession) { clearMemTimer(); return; }
+    const left = p.seconds * 1000 - (performance.now() - t0);
+    if (left > 0) { $('trainProg').textContent = `Look carefully… ${Math.ceil(left / 1000)}s`; return; }
+    clearMemTimer();
+    if (p.task === 'build') memStartBuild();
+    else if (p.task === 'change') memStartChange();
+    else memStartQuiz();
+  }, 200);
+}
+function memStartBuild() {
+  const s = memSession;
+  s.phase = 'build';
+  game = new Chess();
+  game.clear();
+  renderBoard();
+  anaSetup = true;               // reuse the full setup drag-and-drop machinery
+  moveMemPal();
+  phase = 'player';
+  $('trainProg').textContent = `Rebuild all ${s.params.pieces} pieces, then press Check.`;
+  $('trainShow').textContent = 'Check my board';
+  $('trainShow').style.display = '';
+  coachMsg.textContent = 'From memory: place every piece back where it stood. Drag from the palette or click to place.';
+}
+function memCheck() {
+  const s = memSession;
+  if (!s || s.phase !== 'build') return;
+  anaSetup = false;
+  restoreMemPal();
+  const want = new Map(s.target.map(p => [p.sq, p.color + p.type]));
+  const wrongSqs = [], rightSqs = [];
+  for (const f of FILES) for (let r = 1; r <= 8; r++) {
+    const sq = f + r;
+    const cur = game.get(sq);
+    const curKey = cur ? cur.color + cur.type : null;
+    const wantKey = want.get(sq) || null;
+    if (curKey !== wantKey) wrongSqs.push(sq);
+    else if (wantKey) rightSqs.push(sq);
+  }
+  memSetBoard(s.target);          // reveal the truth
+  renderBoard();
+  for (const sq of rightSqs) { const c = boardEl.querySelector(`[data-sq="${sq}"]`); if (c) c.classList.add('aa-g'); }
+  for (const sq of wrongSqs) { const c = boardEl.querySelector(`[data-sq="${sq}"]`); if (c) c.classList.add('aa-r'); }
+  memResult(wrongSqs.length === 0,
+    wrongSqs.length === 0 ? 'Every piece in its place.' :
+    `${wrongSqs.length} square${wrongSqs.length === 1 ? ' is' : 's are'} marked red: wrong, missing, or extra. Green ones you nailed.`);
+}
+function memStartChange() {
+  const s = memSession;
+  s.phase = 'change';
+  const k = s.stage >= 70 ? 2 : 1;
+  s.muts = [];
+  for (let i = 0; i < k; i++) {
+    const movable = [];
+    for (const f of FILES) for (let r = 1; r <= 8; r++) {
+      const p = game.get(f + r);
+      if (p && p.type !== 'k' && !s.muts.some(m => m.sqs.includes(f + r))) movable.push({ sq: f + r, ...p });
+    }
+    if (!movable.length) break;
+    const pick = movable[Math.floor(Math.random() * movable.length)];
+    const empties = [];
+    for (const f of FILES) for (let r = 1; r <= 8; r++) if (!game.get(f + r)) empties.push(f + r);
+    const targets = empties.filter(sq => !(pick.type === 'p' && (sq[1] === '1' || sq[1] === '8')));
+    if (Math.random() < 0.45 || !targets.length) {
+      game.remove(pick.sq);
+      s.muts.push({ sqs: [pick.sq], found: false });
+    } else {
+      const to = targets[Math.floor(Math.random() * targets.length)];
+      game.remove(pick.sq);
+      game.put({ type: pick.type, color: pick.color }, to);
+      s.muts.push({ sqs: [pick.sq, to], found: false });
+    }
+  }
+  renderBoard();
+  phase = 'player';
+  s.await = 'click';
+  $('trainProg').textContent = `${s.muts.length} change${s.muts.length === 1 ? '' : 's'} to find · 3 wrong clicks allowed`;
+  coachMsg.innerHTML = `The position is back, but <b>${s.muts.length} thing${s.muts.length === 1 ? '' : 's'}</b> changed. Click the squares that are different.`;
+}
+function memStartQuiz() {
+  const s = memSession;
+  s.phase = 'quiz';
+  const names = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
+  const byKey = {};
+  for (const p of s.target) (byKey[p.color + p.type] = byKey[p.color + p.type] || []).push(p);
+  const uniques = shuffleArr(Object.values(byKey).filter(a => a.length === 1).map(a => a[0]));
+  const qs = uniques.slice(0, 2).map(u =>
+    ({ text: `Click the square where the <b>${u.color === 'w' ? 'white' : 'black'} ${names[u.type]}</b> stood.`, answer: [u.sq] }));
+  const occ = new Set(s.target.map(p => p.sq));
+  const blocks = [];
+  for (let fi = 0; fi < 7; fi++) for (let r = 1; r < 8; r++) {
+    const sqs = [FILES[fi] + r, FILES[fi + 1] + r, FILES[fi] + (r + 1), FILES[fi + 1] + (r + 1)];
+    const empty = sqs.filter(x => !occ.has(x));
+    if (empty.length === 1) blocks.push({ sqs, empty: empty[0] });
+  }
+  if (blocks.length) {
+    const b = blocks[Math.floor(Math.random() * blocks.length)];
+    qs.push({ text: `Exactly one of <b>${b.sqs.join(', ')}</b> was empty. Click it.`, answer: [b.empty] });
+  }
+  shuffleArr(qs);
+  s.qs = qs.slice(0, 3);
+  s.qi = 0; s.correct = 0;
+  game = new Chess();
+  game.clear();               // questions are answered on the empty board, from memory
+  renderBoard();
+  phase = 'player';
+  s.await = 'click';
+  memShowQuestion();
+}
+function memShowQuestion() {
+  const s = memSession;
+  $('trainProg').textContent = `Question ${s.qi + 1} of ${s.qs.length}`;
+  coachMsg.innerHTML = s.qs[s.qi].text;
+}
+function memFlash(sq, cls) {
+  const c = boardEl.querySelector(`[data-sq="${sq}"]`);
+  if (!c) return;
+  c.classList.add(cls);
+  setTimeout(() => c.classList.remove(cls), 900);
+}
+function memBoardClick(sq) {
+  const s = memSession;
+  if (!s || s.await !== 'click') return;
+  if (s.phase === 'change') {
+    const hit = s.muts.find(m => !m.found && m.sqs.includes(sq));
+    if (hit) {
+      hit.found = true;
+      for (const x of hit.sqs) { const c = boardEl.querySelector(`[data-sq="${x}"]`); if (c) c.classList.add('aa-g'); }
+      if (s.muts.every(m => m.found)) return memResult(true, 'Sharp eyes: every change found.');
+      coachMsg.textContent = 'Found one. Keep looking.';
+    } else {
+      s.wrong++;
+      memFlash(sq, 'aa-r');
+      if (s.wrong >= 3) {
+        for (const m of s.muts) if (!m.found) for (const x of m.sqs) { const c = boardEl.querySelector(`[data-sq="${x}"]`); if (c) c.classList.add('aa-y'); }
+        return memResult(false, 'Three misses. The remaining changes are marked yellow.');
+      }
+      coachMsg.textContent = `Not that square. ${3 - s.wrong} miss${3 - s.wrong === 1 ? '' : 'es'} left.`;
+    }
+    return;
+  }
+  if (s.phase === 'quiz') {
+    const q = s.qs[s.qi];
+    if (q.answer.includes(sq)) { s.correct++; memFlash(sq, 'aa-g'); }
+    else { memFlash(sq, 'aa-r'); memFlash(q.answer[0], 'aa-y'); }
+    s.qi++;
+    if (s.qi < s.qs.length) { memShowQuestion(); return; }
+    const need = Math.max(1, s.qs.length - 1);
+    memResult(s.correct >= need, `You answered ${s.correct} of ${s.qs.length} correctly (${need} needed).`);
+  }
+}
+function memResult(pass, detail) {
+  const s = memSession;
+  s.phase = 'done'; s.await = null;
+  phase = 'trainwait';
+  anaSetup = false;
+  restoreMemPal();
+  clearMemTimer();
+  if (pass) saveMem(Math.min(100, s.stage + 1));
+  const next = Math.min(100, s.stage + 1);
+  coachMsg.innerHTML = (pass
+    ? (s.stage >= 100 ? `🏆 Stage 100 cleared. ${detail} There is nothing above this.` : `✅ Stage ${s.stage} cleared! ${detail}`)
+    : `❌ Not this time. ${detail}`);
+  $('trainProg').textContent = pass && s.stage < 100 ? `Stage ${next} unlocked` : pass ? 'Maximum stage' : `Stage ${s.stage}: try again`;
+  $('trainShow').style.display = 'none';
+  $('trainNext').style.display = '';
+}
+$('memStartBtn').onclick = startMemory;
+
 /* training-section boot */
 renderDeckBox(); renderDrillBox(); renderGuessBox();
-renderRepBox(); renderTreeBox(); renderCareerBox(); renderThemeSel();
+renderRepBox(); renderTreeBox(); renderCareerBox(); renderThemeSel(); renderMemBox();
 
 /* ---------- resume an unfinished game after a reload ---------- */
 function tryOfferResume() {
