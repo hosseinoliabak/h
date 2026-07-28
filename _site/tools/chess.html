@@ -166,29 +166,6 @@ ul.task-list li input[type="checkbox"] {
     </ul>
   </li>
   <li class="nav-item dropdown ">
-    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-agentic-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
- <span class="menu-text">Agentic AI</span>
-    </a>
-    <ul class="dropdown-menu" aria-labelledby="nav-menu-agentic-ai">    
-        <li>
-    <a class="dropdown-item" href="../agentic/index.html">
- <span class="dropdown-text">Overview</span></a>
-  </li>  
-        <li>
-    <a class="dropdown-item" href="../agentic/frameworks.html">
- <span class="dropdown-text">Frameworks</span></a>
-  </li>  
-        <li>
-    <a class="dropdown-item" href="../agentic/agent-architecture.html">
- <span class="dropdown-text">Agent Architecture</span></a>
-  </li>  
-        <li>
-    <a class="dropdown-item" href="../agentic/async-io.html">
- <span class="dropdown-text">Async I/O</span></a>
-  </li>  
-    </ul>
-  </li>
-  <li class="nav-item dropdown ">
     <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
  <span class="menu-text">Networking</span>
     </a>
@@ -593,6 +570,12 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 .drill-tile.done { border-color:#27ae60; }
 .drill-tile .dt-name { font-weight:700; font-family:'Nunito',sans-serif; font-size:13.5px; }
 .drill-tile .dt-goal { font-size:11.5px; color:#888; }
+.drill-tile.gsc-g { border-color:#27ae60; }
+.drill-tile.gsc-y { border-color:#f1c40f; }
+.drill-tile.gsc-r { border-color:#e74c3c; }
+.dt-goal.gsc-t-g { color:#27ae60; font-weight:700; }
+.dt-goal.gsc-t-y { color:#c9990a; font-weight:700; }
+.dt-goal.gsc-t-r { color:#e74c3c; font-weight:700; }
 
 /* analysis board */
 .ana-lines { font-size:12.5px; color:#555; }
@@ -775,8 +758,15 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
     <div class="prog-box" id="memBox">
       <div class="prog-head"><span class="cs-label" style="margin:0;">Memory gym</span></div>
       <div class="prog-stats" id="memStats"></div>
-      <button class="hint-btn" id="memStartBtn">Train</button>
-      <div class="engine-note">Look at a position for a few seconds, then rebuild it from memory, spot what changed, or answer questions about it. Positions come from your own games and the classics, never random scatter, so you train yourself to see chess patterns instead of dots. 100 stages, from 4 pieces at 20 seconds to a full board at 8.</div>
+      <div class="cs-row">
+        <button class="hint-btn" id="memStartBtn">Train</button>
+        <select id="memPaceSel" class="theme-sel">
+          <option value="1.5">Relaxed pace</option>
+          <option value="1">Standard pace</option>
+          <option value="0.7">Quick pace</option>
+        </select>
+      </div>
+      <div class="engine-note">Look at a position, then rebuild it from memory, spot what changed, or answer questions about it. Positions come from your own games and the classics, never random scatter, so you train yourself to see chess patterns instead of dots. 100 stages from 4 pieces to a full board; look time scales with the piece count and shrinks as you climb, and you can always hide the pieces early when you are ready.</div>
     </div>
 
     <div class="prog-box" id="sparBox">
@@ -802,11 +792,8 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 
     <div class="prog-box" id="guessBox">
       <div class="prog-head"><span class="cs-label" style="margin:0;">Guess the move</span></div>
-      <div class="cs-row">
-        <select id="guessSel" class="theme-sel" style="max-width:360px;"></select>
-        <button class="hint-btn" id="guessBtn">Start</button>
-      </div>
-      <div class="engine-note">Replay a classic game, or one of your own, and predict every move for one side. 3 points for the game move; Stockfish scores your alternatives.</div>
+      <div class="drill-grid" id="guessGrid"></div>
+      <div class="engine-note">Replay a classic game, or one of your own, and predict every move for one side. 3 points for the game move; Stockfish scores your alternatives. Each tile keeps your best finished score: green from 75%, red below 33%, yellow in between.</div>
     </div>
 
     <div class="prog-box" id="repBox">
@@ -977,8 +964,9 @@ try {
      can allow only one leaderboard registration per browser */
   try {
     window.__chessAuthP = firebase.auth().signInAnonymously()
-      .then(c => (c && c.user && c.user.uid) || null).catch(() => null);
-  } catch (e) { window.__chessAuthP = null; }
+      .then(c => (c && c.user && c.user.uid) || null)
+      .catch(e => { window.__chessAuthErr = (e && e.code) || 'unknown'; return null; });
+  } catch (e) { window.__chessAuthP = null; window.__chessAuthErr = 'script-blocked'; }
 } catch (e) { window.__chessFdb = null; }
 </script>
 
@@ -1623,7 +1611,15 @@ $('joinBtn').onclick = async () => {
   if (!fdb) return;
   const uid = await authP;
   if (!uid) {
-    $('joinNote').textContent = 'Could not sign this browser in (an ad or privacy blocker may be the cause). The leaderboard needs that sign-in.';
+    const ec = window.__chessAuthErr || '';
+    $('joinNote').textContent =
+      ec === 'auth/operation-not-allowed' || ec === 'auth/configuration-not-found'
+        ? 'Sign-in is switched off on the server (Firebase: Authentication is not set up or the Anonymous provider is not enabled). Nobody can join until it is.'
+        : ec === 'auth/unauthorized-domain'
+          ? 'This site address is not on the sign-in allow list (Firebase Authentication, Authorized domains).'
+          : ec === 'auth/network-request-failed'
+            ? 'Could not reach the sign-in service. A content blocker, private-browsing restriction, or connection issue is the likely cause.'
+            : `Could not sign this browser in${ec ? ' (' + ec + ')' : ''}. An ad or privacy blocker may be the cause.`;
     return;
   }
   const devRef = fdb.ref('chess/devices/' + uid);
@@ -1992,6 +1988,21 @@ function startTurnAnalysis() {
 /* ChessBase-style: pick up a piece and every destination square is tinted by how
    good the move is (green / yellow / red), from quick shallow probes. */
 let assistOn = lsGet('chess-trainer-assist') !== '0';
+/* Mover-perspective eval of a move. Terminal positions are settled with chess.js
+   first, because a mated position returns no analysis line from the engine and
+   would otherwise read as 0.0 (the "mate square shown as red" bug). */
+async function evalAfterMove(fen, uci, ms) {
+  try {
+    const c = new Chess(fen);
+    const mv = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || undefined });
+    if (mv) {
+      if (c.isCheckmate()) return MATE;
+      if (c.isStalemate() || c.isDraw()) return 0;
+    }
+  } catch (e) {}
+  const r = await engine.evalPosition(fen, uci, ms);
+  return -r.score;
+}
 async function runAssist(sq) {
   if (!assistOn || !coachOn || mode !== 'game' || phase !== 'player') return;
   const fen = game.fen();
@@ -2011,8 +2022,7 @@ async function runAssist(sq) {
   for (const uci of probes) {
     if (mySeq !== assistSeq || phase !== 'player' || game.fen() !== fen) break;
     try {
-      const r = await engine.evalPosition(fen, uci, 55);
-      scores[uci.slice(2, 4)] = -r.score;               // back to the mover's perspective
+      scores[uci.slice(2, 4)] = await evalAfterMove(fen, uci, 55);   // mover's perspective, mate-safe
     } catch (e) {}
   }
   assistRunning--;
@@ -3203,6 +3213,7 @@ $('trainNext').onclick = () => {
 };
 $('trainShow').onclick = () => {
   if (mode === 'rep' && repSession && repSession.recording) { saveRecordedLine(); return; }
+  if (mode === 'memory' && memSession && memSession.phase === 'view') { memAfterView(); return; }
   if (phase !== 'player') return;
   if (mode === 'memory') { memCheck(); return; }
   if (mode === 'rep' && repSession) { repReveal(); return; }
@@ -3399,9 +3410,9 @@ async function deckAnswer(moveObj) {
     coachMsg.textContent = 'Checking your move with Stockfish…';
     try {
       const base = await engine.evalPosition(it.fen, null, 500);
-      const after = await engine.evalPosition(it.fen, uci, 600);
+      const after = await evalAfterMove(it.fen, uci, 600);
       if (seq !== trainSeq) return;
-      if (uci === base.bestUci || base.score - (-after.score) < 60) { ok = true; note = ' (a different move, but just as strong)'; }
+      if (uci === base.bestUci || base.score - after < 60) { ok = true; note = ' (a different move, but just as strong)'; }
     } catch (e) { if (seq !== trainSeq) return; }
   }
   if (seq !== trainSeq || mode !== 'deck') return;
@@ -3424,21 +3435,41 @@ $('deckTrainBtn').onclick = startDeckTraining;
 /* Move-by-move replay training: hide one side's moves and predict them.
    Famous games are validated with chess.js at load; broken ones are dropped. */
 const FAMOUS = [
-  { title: 'Morphy vs the Duke and Count, Paris Opera 1858', side: 'w', hero: 'Paul Morphy',
+  { title: 'Morphy vs the Duke and Count, Paris Opera 1858 (the Opera Game)', side: 'w', hero: 'Paul Morphy',
     pgn: '1.e4 e5 2.Nf3 d6 3.d4 Bg4 4.dxe5 Bxf3 5.Qxf3 dxe5 6.Bc4 Nf6 7.Qb3 Qe7 8.Nc3 c6 9.Bg5 b5 10.Nxb5 cxb5 11.Bxb5+ Nbd7 12.O-O-O Rd8 13.Rxd7 Rxd7 14.Rd1 Qe6 15.Bxd7+ Nxd7 16.Qb8+ Nxb8 17.Rd8#' },
-  { title: 'Anderssen vs Kieseritzky, the Immortal Game 1851', side: 'w', hero: 'Adolf Anderssen',
+  { title: 'Anderssen vs Kieseritzky, London 1851 (the Immortal Game)', side: 'w', hero: 'Adolf Anderssen',
     pgn: '1.e4 e5 2.f4 exf4 3.Bc4 Qh4+ 4.Kf1 b5 5.Bxb5 Nf6 6.Nf3 Qh6 7.d3 Nh5 8.Nh4 Qg5 9.Nf5 c6 10.g4 Nf6 11.Rg1 cxb5 12.h4 Qg6 13.h5 Qg5 14.Qf3 Ng8 15.Bxf4 Qf6 16.Nc3 Bc5 17.Nd5 Qxb2 18.Bd6 Bxg1 19.e5 Qxa1+ 20.Ke2 Na6 21.Nxg7+ Kd8 22.Qf6+ Nxf6 23.Be7#' },
-  { title: 'Anderssen vs Dufresne, the Evergreen Game 1852', side: 'w', hero: 'Adolf Anderssen',
+  { title: 'Anderssen vs Dufresne, Berlin 1852 (the Evergreen Game)', side: 'w', hero: 'Adolf Anderssen',
     pgn: '1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.b4 Bxb4 5.c3 Ba5 6.d4 exd4 7.O-O d3 8.Qb3 Qf6 9.e5 Qg6 10.Re1 Nge7 11.Ba3 b5 12.Qxb5 Rb8 13.Qa4 Bb6 14.Nbd2 Bb7 15.Ne4 Qf5 16.Bxd3 Qh5 17.Nf6+ gxf6 18.exf6 Rg8 19.Rad1 Qxf3 20.Rxe7+ Nxe7 21.Qxd7+ Kxd7 22.Bf5+ Ke8 23.Bd7+ Kf8 24.Bxe7#' },
-  { title: 'Byrne vs Fischer, the Game of the Century 1956', side: 'b', hero: 'Bobby Fischer, age 13',
+  { title: 'Byrne vs Fischer, New York 1956 (the Game of the Century)', side: 'b', hero: 'Bobby Fischer, age 13',
     pgn: '1.Nf3 Nf6 2.c4 g6 3.Nc3 Bg7 4.d4 O-O 5.Bf4 d5 6.Qb3 dxc4 7.Qxc4 c6 8.e4 Nbd7 9.Rd1 Nb6 10.Qc5 Bg4 11.Bg5 Na4 12.Qa3 Nxc3 13.bxc3 Nxe4 14.Bxe7 Qb6 15.Bc4 Nxc3 16.Bc5 Rfe8+ 17.Kf1 Be6 18.Bxb6 Bxc4+ 19.Kg1 Ne2+ 20.Kf1 Nxd4+ 21.Kg1 Ne2+ 22.Kf1 Nc3+ 23.Kg1 axb6 24.Qb4 Ra4 25.Qxb6 Nxd1 26.h3 Rxa2 27.Kh2 Nxf2 28.Re1 Rxe1 29.Qd8+ Bf8 30.Nxe1 Bd5 31.Nf3 Ne4 32.Qb8 b5 33.h4 h5 34.Ne5 Kg7 35.Kg1 Bc5+ 36.Kf1 Ng3+ 37.Ke1 Bb4+ 38.Kd1 Bb3+ 39.Kc1 Ne2+ 40.Kb1 Nc3+ 41.Kc1 Rc2#' },
   { title: 'Réti vs Tartakower, Vienna 1910 (the queen sacrifice miniature)', side: 'w', hero: 'Richard Réti',
     pgn: '1.e4 c6 2.d4 d5 3.Nc3 dxe4 4.Nxe4 Nf6 5.Qd3 e5 6.dxe5 Qa5+ 7.Bd2 Qxe5 8.O-O-O Nxe4 9.Qd8+ Kxd8 10.Bg5+ Kc7 11.Bd8#' },
   { title: 'Legall vs Saint Brie, Paris 1750 (Legall’s mate)', side: 'w', hero: 'Legall de Kermeur',
     pgn: '1.e4 e5 2.Nf3 d6 3.Bc4 Bg4 4.Nc3 g6 5.Nxe5 Bxd1 6.Bxf7+ Ke7 7.Nd5#' },
-  { title: 'Byrne vs Fischer, US Championship 1963', side: 'b', hero: 'Bobby Fischer',
+  { title: 'Byrne vs Fischer, US Championship 1963 (a masterpiece in 21 moves)', side: 'b', hero: 'Bobby Fischer',
     pgn: '1.d4 Nf6 2.c4 g6 3.g3 c6 4.Bg2 d5 5.cxd5 cxd5 6.Nc3 Bg7 7.e3 O-O 8.Nge2 Nc6 9.O-O b6 10.b3 Ba6 11.Ba3 Re8 12.Qd2 e5 13.dxe5 Nxe5 14.Rfd1 Nd3 15.Qc2 Nxf2 16.Kxf2 Ng4+ 17.Kg1 Nxe3 18.Qd2 Nxg2 19.Kxg2 d4 20.Nxd4 Bb7+ 21.Kf1 Qd7' },
-  { title: 'Kasparov vs Topalov, Wijk aan Zee 1999', side: 'w', hero: 'Garry Kasparov',
+  { title: 'Bobotsov vs Tal, Varna 1958 (Tal’s immortal queen sacrifice)', side: 'b', hero: 'Mikhail Tal',
+    pgn: '1.d4 Nf6 2.c4 g6 3.Nc3 Bg7 4.e4 d6 5.f3 O-O 6.Nge2 c5 7.Be3 Nbd7 8.Qd2 a6 9.O-O-O Qa5 10.Kb1 b5 11.Nd5 Nxd5 12.Qxa5 Nxe3 13.Rc1 Nxc4 14.Rxc4 bxc4 15.Nc1 Rb8 16.Bxc4 Nb6 17.Bb3 Bxd4 18.Qd2 Bg7 19.Ne2 c4 20.Bc2 c3 21.Qd3 cxb2 22.Nd4 Bd7 23.Rd1 Rfc8 24.Bb3 Na4 25.Bxa4 Bxa4 26.Nb3 Rc3 27.Qxa6 Bxb3 28.axb3 Rbc8 29.Qa3 Rc1+ 30.Rxc1 Rxc1+' },
+  { title: 'Tal vs Smyslov, Candidates 1959 (brilliancy prize)', side: 'w', hero: 'Mikhail Tal',
+    pgn: '1.e4 c6 2.d3 d5 3.Nd2 e5 4.Ngf3 Nd7 5.d4 dxe4 6.Nxe4 exd4 7.Qxd4 Ngf6 8.Bg5 Be7 9.O-O-O O-O 10.Nd6 Qa5 11.Bc4 b5 12.Bd2 Qa6 13.Nf5 Bd8 14.Qh4 bxc4 15.Qg5 Nh5 16.Nh6+ Kh8 17.Qxh5 Qxa2 18.Bc3 Nf6 19.Qxf7 Qa1+ 20.Kd2 Rxf7 21.Nxf7+ Kg8 22.Rxa1 Kxf7 23.Ne5+ Ke6 24.Nxc6 Ne4+ 25.Ke3 Bb6+ 26.Bd4' },
+  { title: 'Tal vs Hecht, Varna Olympiad 1962 (Misha Impossible)', side: 'w', hero: 'Mikhail Tal',
+    pgn: '1.d4 Nf6 2.c4 e6 3.Nf3 b6 4.Nc3 Bb4 5.Bg5 Bb7 6.e3 h6 7.Bh4 Bxc3+ 8.bxc3 d6 9.Nd2 e5 10.f3 Qe7 11.e4 Nbd7 12.Bd3 Nf8 13.c5 dxc5 14.dxe5 Qxe5 15.Qa4+ c6 16.O-O Ng6 17.Nc4 Qe6 18.e5 b5 19.exf6 bxa4 20.fxg7 Rg8 21.Bf5 Nxh4 22.Bxe6 Ba6 23.Nd6+ Ke7 24.Bc4 Rxg7 25.g3 Kxd6 26.Bxa6 Nf5 27.Rab1 f6 28.Rfd1+ Ke7 29.Re1+ Kd6 30.Kf2 c4 31.g4 Ne7 32.Rb7 Rag8 33.Bxc4 Nd5 34.Bxd5 cxd5 35.Rb4 Rc8 36.Rxa4 Rxc3 37.Ra6+ Kc5 38.Rxf6 h5 39.h3 hxg4 40.hxg4 Rh7 41.g5 Rh5 42.Rf5 Rc2+ 43.Kg3 Kc4 44.Ree5 d4 45.g6 Rh1 46.Rc5+ Kd3 47.Rxc2 Kxc2 48.Kf4 Rg1 49.Rg5' },
+  { title: 'Rotlewi vs Rubinstein, Lodz 1907 (Rubinstein’s Immortal)', side: 'b', hero: 'Akiba Rubinstein',
+    pgn: '1.d4 d5 2.Nf3 e6 3.e3 c5 4.c4 Nc6 5.Nc3 Nf6 6.dxc5 Bxc5 7.a3 a6 8.b4 Bd6 9.Bb2 O-O 10.Qd2 Qe7 11.Bd3 dxc4 12.Bxc4 b5 13.Bd3 Rd8 14.Qe2 Bb7 15.O-O Ne5 16.Nxe5 Bxe5 17.f4 Bc7 18.e4 Rac8 19.e5 Bb6+ 20.Kh1 Ng4 21.Be4 Qh4 22.g3 Rxc3 23.gxh4 Rd2 24.Qxd2 Bxe4+ 25.Qg2 Rh3' },
+  { title: 'Steinitz vs von Bardeleben, Hastings 1895 (the untouchable rook)', side: 'w', hero: 'Wilhelm Steinitz',
+    pgn: '1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.c3 Nf6 5.d4 exd4 6.cxd4 Bb4+ 7.Nc3 d5 8.exd5 Nxd5 9.O-O Be6 10.Bg5 Be7 11.Bxd5 Bxd5 12.Nxd5 Qxd5 13.Bxe7 Nxe7 14.Re1 f6 15.Qe2 Qd7 16.Rac1 c6 17.d5 cxd5 18.Nd4 Kf7 19.Ne6 Rhc8 20.Qg4 g6 21.Ng5+ Ke8 22.Rxe7+ Kf8 23.Rf7+ Kg8 24.Rg7+ Kh8 25.Rxh7+' },
+  { title: 'Botvinnik vs Capablanca, AVRO 1938 (the Ba3 deflection)', side: 'w', hero: 'Mikhail Botvinnik',
+    pgn: '1.d4 Nf6 2.c4 e6 3.Nc3 Bb4 4.e3 d5 5.a3 Bxc3+ 6.bxc3 c5 7.cxd5 exd5 8.Bd3 O-O 9.Ne2 b6 10.O-O Ba6 11.Bxa6 Nxa6 12.Bb2 Qd7 13.a4 Rfe8 14.Qd3 c4 15.Qc2 Nb8 16.Rae1 Nc6 17.Ng3 Na5 18.f3 Nb3 19.e4 Qxa4 20.e5 Nd7 21.Qf2 g6 22.f4 f5 23.exf6 Nxf6 24.f5 Rxe1 25.Rxe1 Re8 26.Re6 Rxe6 27.fxe6 Kg7 28.Qf4 Qe8 29.Qe5 Qe7 30.Ba3 Qxa3 31.Nh5+ gxh5 32.Qg5+ Kf8 33.Qxf6+ Kg8 34.e7 Qc1+ 35.Kf2 Qc2+ 36.Kg3 Qd3+ 37.Kh4 Qe4+ 38.Kxh5 Qe2+ 39.Kh4 Qe4+ 40.g4 Qe1+ 41.Kh5' },
+  { title: 'Lasker vs Bauer, Amsterdam 1889 (the double bishop sacrifice)', side: 'w', hero: 'Emanuel Lasker',
+    pgn: '1.f4 d5 2.e3 Nf6 3.b3 e6 4.Bb2 Be7 5.Bd3 b6 6.Nf3 Bb7 7.Nc3 Nbd7 8.O-O O-O 9.Ne2 c5 10.Ng3 Qc7 11.Ne5 Nxe5 12.Bxe5 Qc6 13.Qe2 a6 14.Nh5 Nxh5 15.Bxh7+ Kxh7 16.Qxh5+ Kg8 17.Bxg7 Kxg7 18.Qg4+ Kh7 19.Rf3 e5 20.Rh3+ Qh6 21.Rxh6+ Kxh6 22.Qd7 Bf6 23.Qxb7 Kg7 24.Rf1 Rab8 25.Qd7 Rfd8 26.Qg4+ Kf8 27.fxe5 Bg7 28.e6 Rb7 29.Qg6 f6 30.Rxf6+ Bxf6 31.Qxf6+ Ke8 32.Qh8+ Ke7 33.Qg7+ Kxe6 34.Qxb7 Rd6 35.Qxa6 d4 36.exd4 cxd4 37.h4 d3 38.Qxd3' },
+  { title: 'Sämisch vs Nimzowitsch, Copenhagen 1923 (the Immortal Zugzwang)', side: 'b', hero: 'Aron Nimzowitsch',
+    pgn: '1.d4 Nf6 2.c4 e6 3.Nf3 b6 4.g3 Bb7 5.Bg2 Be7 6.Nc3 O-O 7.O-O d5 8.Ne5 c6 9.cxd5 cxd5 10.Bf4 a6 11.Rc1 b5 12.Qb3 Nc6 13.Nxc6 Bxc6 14.h3 Qd7 15.Kh2 Nh5 16.Bd2 f5 17.Qd1 b4 18.Nb1 Bb5 19.Rg1 Bd6 20.e4 fxe4 21.Qxh5 Rxf2 22.Qg5 Raf8 23.Kh1 R8f5 24.Qe3 Bd3 25.Rce1 h6' },
+  { title: 'Capablanca vs Tartakower, New York 1924 (the model rook endgame)', side: 'w', hero: 'José Raúl Capablanca',
+    pgn: '1.d4 e6 2.Nf3 f5 3.c4 Nf6 4.Bg5 Be7 5.Nc3 O-O 6.e3 b6 7.Bd3 Bb7 8.O-O Qe8 9.Qe2 Ne4 10.Bxe7 Nxc3 11.bxc3 Qxe7 12.a4 Bxf3 13.Qxf3 Nc6 14.Rfb1 Rae8 15.Qh3 Rf6 16.f4 Na5 17.Qf3 d6 18.Re1 Qd7 19.e4 fxe4 20.Qxe4 g6 21.g3 Kf8 22.Kg2 Rf7 23.h4 d5 24.cxd5 exd5 25.Qxe8+ Qxe8 26.Rxe8+ Kxe8 27.h5 Rf6 28.hxg6 hxg6 29.Rh1 Kf8 30.Rh7 Rc6 31.g4 Nc4 32.g5 Ne3+ 33.Kf3 Nf5 34.Bxf5 gxf5 35.Kg3 Rxc3+ 36.Kh4 Rf3 37.g6 Rxf4+ 38.Kg5 Re4 39.Kf6 Kg8 40.Rg7+ Kh8 41.Rxc7 Re8 42.Kxf5 Re4 43.Kf6 Rf4+ 44.Ke5 Rg4 45.g7+ Kg8 46.Rxa7 Rg1 47.Kxd5 Rc1 48.Kd6 Rc2 49.d5 Rc1 50.Rc7 Ra1 51.Kc6 Rxa4 52.d6' },
+  { title: 'Fischer vs Spassky, World Championship 1972, game 6 (the perfect game)', side: 'w', hero: 'Bobby Fischer',
+    pgn: '1.c4 e6 2.Nf3 d5 3.d4 Nf6 4.Nc3 Be7 5.Bg5 O-O 6.e3 h6 7.Bh4 b6 8.cxd5 Nxd5 9.Bxe7 Qxe7 10.Nxd5 exd5 11.Rc1 Be6 12.Qa4 c5 13.Qa3 Rc8 14.Bb5 a6 15.dxc5 bxc5 16.O-O Ra7 17.Be2 Nd7 18.Nd4 Qf8 19.Nxe6 fxe6 20.e4 d4 21.f4 Qe7 22.e5 Rb8 23.Bc4 Kh8 24.Qh3 Nf8 25.b3 a5 26.f5 exf5 27.Rxf5 Nh7 28.Rcf1 Qd8 29.Qg3 Re7 30.h4 Rbb7 31.e6 Rbc7 32.Qe5 Qe8 33.a4 Qd8 34.R1f2 Qe8 35.R2f3 Qd8 36.Bd3 Qe8 37.Qe4 Nf6 38.Rxf6 gxf6 39.Rxf6 Kg8 40.Bc4 Kh8 41.Qf4' },
+  { title: 'Kasparov vs Topalov, Wijk aan Zee 1999 (Kasparov’s Immortal)', side: 'w', hero: 'Garry Kasparov',
     pgn: '1.e4 d6 2.d4 Nf6 3.Nc3 g6 4.Be3 Bg7 5.Qd2 c6 6.f3 b5 7.Nge2 Nbd7 8.Bh6 Bxh6 9.Qxh6 Bb7 10.a3 e5 11.O-O-O Qe7 12.Kb1 a6 13.Nc1 O-O-O 14.Nb3 exd4 15.Rxd4 c5 16.Rd1 Nb6 17.g3 Kb8 18.Na5 Ba8 19.Bh3 d5 20.Qf4+ Ka7 21.Rhe1 d4 22.Nd5 Nbxd5 23.exd5 Qd6 24.Rxd4 cxd4 25.Re7+ Kb6 26.Qxd4+ Kxa5 27.b4+ Ka4 28.Qc3 Qxd5 29.Ra7 Bb7 30.Rxb7 Qc4 31.Qxf6 Kxa3 32.Qxa6+ Kxb4 33.c3+ Kxc3 34.Qa1+ Kd2 35.Qb2+ Kd1 36.Bf1 Rd2 37.Rd7 Rxd7 38.Bxc4 bxc4 39.Qxh8 Rd3 40.Qa8 c3 41.Qa4+ Ke1 42.f4 f5 43.Kc1 Rd2 44.Qa7' },
 ];
 function parsePgnMoves(pgnStr) {
@@ -3449,39 +3480,66 @@ function parsePgnMoves(pgnStr) {
     return h.length >= 10 ? h : null;
   } catch (e) { return null; }
 }
+/* best finished score per game, shown on the tiles */
+const GUESS_KEY = 'chess-coach-guess-v1';
+function loadGuessScores() { try { return JSON.parse(lsGet(GUESS_KEY)) || {}; } catch (e) { return {}; } }
+function saveGuessScore(key, score, max) {
+  if (!key || !max) return;
+  const s = loadGuessScores();
+  const prev = s[key];
+  if (!prev || !prev.max || score / max > prev.score / prev.max) {
+    s[key] = { score, max };
+    lsSet(GUESS_KEY, JSON.stringify(s));
+  }
+}
 function renderGuessBox() {
-  const sel = $('guessSel');
-  sel.innerHTML = '';
+  const grid = $('guessGrid');
+  grid.innerHTML = '';
+  const scores = loadGuessScores();
+  const addTile = (label, key, fn) => {
+    const rec = scores[key];
+    const b = document.createElement('button');
+    let cls = '', sub = '<span class="dt-goal">not tried yet</span>';
+    if (rec && rec.max) {
+      const pct = Math.round(100 * rec.score / rec.max);
+      const band = pct >= 75 ? 'g' : pct < 33 ? 'r' : 'y';
+      cls = ' gsc-' + band;
+      sub = `<span class="dt-goal gsc-t-${band}">best ${rec.score}/${rec.max} · ${pct}%</span>`;
+    }
+    b.className = 'drill-tile' + cls;
+    b.innerHTML = `<span class="dt-name"></span>${sub}`;
+    b.querySelector('.dt-name').textContent = label;
+    b.onclick = fn;
+    grid.appendChild(b);
+  };
   FAMOUS.forEach((g, i) => {
     if (g._ok === undefined) g._ok = !!parsePgnMoves(g.pgn);
     if (!g._ok) return;
-    const o = document.createElement('option');
-    o.value = 'f' + i; o.textContent = g.title;
-    sel.appendChild(o);
+    addTile(g.title, deckId(g.pgn), () => startGuessFamous(i));
   });
   for (const g of loadHist().slice(-10).reverse()) {
     if (!g.pgn) continue;
     const bo = BOTS.find(x => x.id === g.bot);
-    const o = document.createElement('option');
-    o.value = 't' + g.t;
-    o.textContent = `Your game vs ${bo ? bName(bo) : g.bot} (${new Date(g.t).toLocaleDateString()}, ${g.result})`;
-    sel.appendChild(o);
+    addTile(`Your game vs ${bo ? bName(bo) : g.bot} (${new Date(g.t).toLocaleDateString()}, ${g.result})`,
+            't' + g.t, () => startGuessOwn(g.t));
   }
-  $('guessBox').style.display = sel.options.length ? 'block' : 'none';
+  $('guessBox').style.display = grid.children.length ? 'block' : 'none';
 }
-function startGuess() {
-  const v = $('guessSel').value;
-  let moves = null, side = 'w', intro = '';
-  if (v && v[0] === 'f') {
-    const g = FAMOUS[+v.slice(1)];
-    if (g) { moves = parsePgnMoves(g.pgn); side = g.side; intro = `Play like ${g.hero}`; }
-  } else if (v) {
-    const g = loadHist().find(x => 't' + x.t === v);
-    if (g) { moves = parsePgnMoves(g.pgn); side = g.color === 'b' ? 'b' : 'w'; intro = 'Replay your own game'; }
-  }
-  if (!moves) return;
+function startGuessFamous(i) {
+  const g = FAMOUS[i];
+  if (!g) return;
+  const moves = parsePgnMoves(g.pgn);
+  if (moves) beginGuess(moves, g.side, `Play like ${g.hero}`, deckId(g.pgn));
+}
+function startGuessOwn(t) {
+  const g = loadHist().find(x => x.t === t);
+  if (!g || !g.pgn) return;
+  const moves = parsePgnMoves(g.pgn);
+  if (moves) beginGuess(moves, g.color === 'b' ? 'b' : 'w', 'Replay your own game', 't' + t);
+}
+function beginGuess(moves, side, intro, key) {
   mode = 'guess'; trainSeq++;
-  guessSession = { moves, idx: 0, side, score: 0, max: 0 };
+  guessSession = { moves, idx: 0, side, score: 0, max: 0, key };
   enterTrainUI('Guess the move', '🎯');
   $('trainShow').textContent = 'Show game move';
   playerColor = side;
@@ -3535,9 +3593,9 @@ async function guessAnswer(moveObj) {
     try {
       const fen = game.fen();
       const base = await engine.evalPosition(fen, null, 500);
-      const after = await engine.evalPosition(fen, guessUci, 600);
+      const after = await evalAfterMove(fen, guessUci, 600);
       if (seq !== trainSeq || mode !== 'guess') return;
-      const loss = base.score - (-after.score);
+      const loss = base.score - after;
       if (guessUci === base.bestUci || loss < 40) { pts = 2; msg = `<b class="mv">${moveObj.san}</b> is engine-strong, +2. The game went <b class="mv">${actual.san}</b>.`; }
       else if (loss < 150) { pts = 1; msg = `<b class="mv">${moveObj.san}</b> is playable, +1. The game move was <b class="mv">${actual.san}</b>.`; }
       else { msg = `<b class="mv">${moveObj.san}</b> loses ground. The game move was <b class="mv">${actual.san}</b>.`; }
@@ -3561,15 +3619,18 @@ function guessDone() {
   const s = guessSession;
   phase = 'trainwait';
   const pct = s.max ? Math.round(100 * s.score / s.max) : 0;
+  const prev = loadGuessScores()[s.key];
+  const isBest = s.max && (!prev || !prev.max || s.score / s.max > prev.score / prev.max);
+  saveGuessScore(s.key, s.score, s.max);
   const verdict = pct >= 85 ? 'You basically played the game yourself. Outstanding.'
     : pct >= 65 ? 'Strong. You saw most of the ideas.'
     : pct >= 40 ? 'A decent showing. Step through it again and watch what you missed.'
     : 'A hard game to guess, which is exactly why replaying it teaches so much.';
-  coachMsg.innerHTML = `Done. Final score <b>${s.score}/${s.max}</b> (${pct}%). ${verdict}`;
+  coachMsg.innerHTML = `Done. Final score <b>${s.score}/${s.max}</b> (${pct}%). ${verdict}` +
+    (isBest ? ' <b>New personal best for this game.</b>' : '');
   $('trainProg').textContent = `Final: ${s.score}/${s.max}`;
   $('trainShow').style.display = 'none'; $('trainNext').style.display = 'none';
 }
-$('guessBtn').onclick = startGuess;
 
 /* ============================== endgame gym ============================== */
 /* Theoretical endings against full-strength Stockfish: it defends (and punishes)
@@ -4472,7 +4533,13 @@ function saveMem(stage) {
 }
 function memParams(s) {
   const pieces = 4 + Math.round(28 * (s - 1) / 99);          // 4 … 32
-  const seconds = Math.round(20 - 12 * (s - 1) / 99);        // 20 … 8
+  /* look time is a per-piece budget decaying exponentially from 3.5 s per piece
+     to 0.625 s per piece, scaled by the chosen pace. Tuned for average people,
+     no rush: stage 1 is ~14 s for 4 pieces, the middle peaks near 27 s around
+     18 pieces, stage 100 is 20 s for the full board. */
+  const pace = parseFloat(lsGet('chess-trainer-mempace')) || 1;
+  const perPiece = 3.5 * Math.exp(-0.0174 * (s - 1));
+  const seconds = Math.max(8, Math.min(40, Math.round(pieces * perPiece * pace)));
   let task = 'build';
   if (s >= 61) task = ['build', 'change', 'quiz'][s % 3];
   else if (s >= 41 && s % 2 === 0) task = 'change';
@@ -4554,18 +4621,25 @@ function memNewRound() {
   renderBoard();
   const taskTxt = { build: 'rebuild it from memory', change: 'spot what changed', quiz: 'answer questions about it' }[p.task];
   $('trainTitle').textContent = `🧠 Stage ${stage} of 100`;
-  $('trainShow').style.display = 'none'; $('trainNext').style.display = 'none';
-  coachMsg.innerHTML = `Memorize this position (<b>${p.pieces}</b> pieces). When time is up you will <b>${taskTxt}</b>.`;
+  $('trainShow').textContent = 'I have it, hide the pieces';
+  $('trainShow').style.display = ''; $('trainNext').style.display = 'none';
+  coachMsg.innerHTML = `Memorize this position (<b>${p.pieces}</b> pieces). When time is up you will <b>${taskTxt}</b>. Ready early? Hide the pieces yourself.`;
   const t0 = performance.now(), seq = trainSeq;
   memTimer = setInterval(() => {
     if (seq !== trainSeq || mode !== 'memory' || !memSession) { clearMemTimer(); return; }
     const left = p.seconds * 1000 - (performance.now() - t0);
     if (left > 0) { $('trainProg').textContent = `Look carefully… ${Math.ceil(left / 1000)}s`; return; }
-    clearMemTimer();
-    if (p.task === 'build') memStartBuild();
-    else if (p.task === 'change') memStartChange();
-    else memStartQuiz();
+    memAfterView();
   }, 200);
+}
+function memAfterView() {
+  clearMemTimer();
+  const s = memSession;
+  if (!s || s.phase !== 'view') return;
+  $('trainShow').style.display = 'none';
+  if (s.params.task === 'build') memStartBuild();
+  else if (s.params.task === 'change') memStartChange();
+  else memStartQuiz();
 }
 function memStartBuild() {
   const s = memSession;
@@ -4725,6 +4799,8 @@ function memResult(pass, detail) {
   $('trainNext').style.display = '';
 }
 $('memStartBtn').onclick = startMemory;
+$('memPaceSel').value = lsGet('chess-trainer-mempace') || '1';
+$('memPaceSel').onchange = e => { lsSet('chess-trainer-mempace', e.target.value); renderMemBox(); };
 
 /* training-section boot */
 renderDeckBox(); renderDrillBox(); renderGuessBox();
