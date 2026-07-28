@@ -414,6 +414,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 /* eval bar */
 .evalbar { width:13px; border-radius:6px; overflow:hidden; background:#3d3d3d; position:relative; align-self:flex-start; }
 .evalbar .white-fill { position:absolute; bottom:0; left:0; right:0; background:#f5f2ec; transition: height .6s ease; }
+.evalbar.flip .white-fill { bottom:auto; top:0; }
 .evalbar .zero { position:absolute; top:50%; left:0; right:0; height:1px; background:rgba(128,128,128,.6); }
 
 /* board */
@@ -428,6 +429,13 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 .sq { position:relative; }
 .sq.light { background:var(--sq-light); }
 .sq.dark  { background:var(--sq-dark); }
+/* marble theme: a polished-stone sheen painted under the pieces */
+.chess-wrap.th-marble .sq.light {
+  background-image: linear-gradient(125deg, rgba(255,255,255,.55), rgba(255,255,255,0) 45%, rgba(110,125,150,.14));
+}
+.chess-wrap.th-marble .sq.dark {
+  background-image: linear-gradient(125deg, rgba(255,255,255,.13), rgba(255,255,255,0) 35%, rgba(255,255,255,.05) 60%, rgba(0,0,0,.22));
+}
 .sq .coord { position:absolute; font-size:min(1.7vw,11px); font-weight:700; opacity:.75; pointer-events:none; font-family:'Nunito',sans-serif; }
 .sq .coord.file { right:3px; bottom:1px; }
 .sq .coord.rank { left:3px; top:2px; }
@@ -870,6 +878,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
         </div>
         <div class="panel-box" id="trainBox" style="display:none;">
           <div id="trainTitle" style="font-weight:700;font-family:'Nunito',sans-serif;"></div>
+          <div id="guessAbout" style="display:none;font-size:13px;color:#555;line-height:1.55;margin-top:7px;"></div>
           <div id="trainProg" style="font-size:12.5px;color:#888;margin-top:4px;"></div>
           <div id="drillPlan" style="display:none;font-size:12.5px;color:#555;margin-top:8px;line-height:1.55;border-top:1px dashed #e0e0e0;padding-top:7px;"></div>
           <div id="memPalHolder" style="margin-top:8px;"></div>
@@ -878,6 +887,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
             <button id="trainNext" style="display:none;">Next</button>
             <button id="trainExit" class="danger">Exit</button>
           </div>
+          <select id="themeSelTrain" class="theme-sel" title="Board theme" style="margin-top:8px;width:100%;"></select>
         </div>
         <div class="panel-box" id="anaBox" style="display:none;">
           <div style="font-weight:700;font-family:'Nunito',sans-serif;">🔬 Analysis board</div>
@@ -890,6 +900,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
             <button id="anaPassBtn">Pass turn</button>
             <button id="anaPlayBtn">Play vs bot from here</button>
             <button id="anaExitBtn" style="color:#e74c3c;">Exit</button>
+            <select id="themeSelAna" class="theme-sel" title="Board theme" style="font-size:12.5px;"></select>
           </div>
           <div class="ana-fen"><input id="anaFenIn" placeholder="paste a FEN" spellcheck="false"><button class="hint-btn" id="anaFenBtn" style="padding:4px 9px;">Load</button></div>
           <div id="anaSetupUI" style="display:none;">
@@ -925,7 +936,9 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
           <button id="resignBtn" class="danger">Resign</button>
           <button id="offerDrawBtn">Offer draw</button>
           <button id="pgnBtn">Copy PGN</button>
+          <button id="flipBtn">Flip board</button>
           <button id="newBtn">New game</button>
+          <select id="themeSelGame" class="theme-sel" title="Board theme" style="flex:1;min-width:96px;"></select>
         </div>
       </div>
 
@@ -1110,6 +1123,7 @@ const THEMES = {
   green:   { light:'#ffffdd', dark:'#86a666', label:'Tournament Green' },
   blue:    { light:'#dee3e6', dark:'#8ca2ad', label:'Ice Blue' },
   walnut:  { light:'#e3c193', dark:'#a1683f', label:'Walnut' },
+  marble:  { light:'#dfe6ee', dark:'#42474f', label:'Marble' },
   slate:   { light:'#d1d5d9', dark:'#7a8290', label:'Slate' },
 };
 const FILES = 'abcdefgh';
@@ -1302,11 +1316,11 @@ class Engine {
       done:l => l.startsWith('bestmove'),
     });
   }
-  /* Analysis board: three principal variations, deeper search. */
+  /* Analysis board: three principal variations at full strength, deep search. */
   analyseMulti(fen, onInfo) {
     return this.run({
       kind:'analysis',
-      cmds:[...this.fullStrengthCmds(), 'setoption name MultiPV value 3', `position fen ${fen}`, 'go depth 24'],
+      cmds:[...this.fullStrengthCmds(), 'setoption name MultiPV value 3', `position fen ${fen}`, 'go depth 30'],
       onLine:l => { const i = Engine.parseInfo(l); if (i) onInfo(i); },
       done:l => l.startsWith('bestmove'),
     });
@@ -1393,24 +1407,42 @@ const CLASSICAL_HINT_MS = 60000;   // 90+30: piece-only nudge after a minute of 
 /* ============================== setup screen ============================== */
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+/* Marble is the default. The stored value is written only when the player picks a
+   theme deliberately; the old v1 key was auto-saved on every visit, so only a
+   non-classic value migrates from it. */
 let chosen = { color:'w', tc:'15+10', coach:'on', pace:'real',
-               theme: lsGet('chess-trainer-theme') || 'classic' };
-if (!THEMES[chosen.theme]) chosen.theme = 'classic';
+               theme: (() => {
+                 const v2 = lsGet('chess-trainer-theme2');
+                 if (v2) return v2 === 'mac' ? 'marble' : v2;
+                 const old = lsGet('chess-trainer-theme');
+                 return old && old !== 'classic' ? old : 'marble';
+               })() };
+if (!THEMES[chosen.theme]) chosen.theme = 'marble';
 
-const themeSel = $('themeSel');
-for (const [key, t] of Object.entries(THEMES)) {
-  const o = document.createElement('option');
-  o.value = key; o.textContent = t.label;
-  themeSel.appendChild(o);
+const themeSel = $('themeSel'), themeSelGame = $('themeSelGame');
+const themeSels = [themeSel, themeSelGame, $('themeSelTrain'), $('themeSelAna')];
+for (const sel of themeSels) {
+  for (const [key, t] of Object.entries(THEMES)) {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = t.label;
+    sel.appendChild(o);
+  }
+  sel.onchange = () => setTheme(sel.value);
 }
-themeSel.value = chosen.theme;
-themeSel.onchange = () => { chosen.theme = themeSel.value; applyBoardLook(); };
+function setTheme(v) {
+  if (!THEMES[v]) return;
+  chosen.theme = v;
+  for (const sel of themeSels) sel.value = v;
+  applyBoardLook();
+  lsSet('chess-trainer-theme2', v);   // saved only on a deliberate pick
+}
+for (const sel of themeSels) sel.value = chosen.theme;
 function applyBoardLook() {
   const t = THEMES[chosen.theme];
   const wrap = document.querySelector('.chess-wrap');
   wrap.style.setProperty('--sq-light', t.light);
   wrap.style.setProperty('--sq-dark', t.dark);
-  lsSet('chess-trainer-theme', chosen.theme);
+  wrap.classList.toggle('th-marble', chosen.theme === 'marble');
 }
 const botGrid = $('botGrid');
 /* ---------- local progress storage (this browser only) ---------- */
@@ -1816,6 +1848,7 @@ $('offerDrawBtn').onclick = () => {
     coachMsg.innerHTML = `${bName(bot)} declines the draw. Play on.`;
   }
 };
+$('flipBtn').onclick = () => { boardFlip = !boardFlip; renderBoard(); };
 $('pgnBtn').onclick = () => {
   try {
     game.header('Event', `Training game vs ${bName(bot)}`, 'Site', 'h.oliabak.com',
@@ -1835,7 +1868,7 @@ $('cbPlay').onclick = () => resolveConfirm(true);
 function startGame() {
   gameSeq++; trainSeq++;
   mode = 'game'; drillActive = null; deckSession = null; guessSession = null; repSession = null;
-  customStart = false; anaSetup = false;
+  customStart = false; anaSetup = false; boardFlip = false;
   lcCounted.clear(); lcDepth.clear();
   assistTints = null; assistFen = null;
   $('clockPanel').style.display = ''; $('actRow').style.display = '';
@@ -1890,7 +1923,7 @@ function startGame() {
 function startCustomGame(fen, forcedColor) {
   gameSeq++; trainSeq++;
   mode = 'game'; drillActive = null; deckSession = null; guessSession = null; repSession = null;
-  anaSetup = false;
+  anaSetup = false; boardFlip = false;
   try { game = new Chess(fen); } catch (e) { return; }
   customStart = true;
   lcCounted.clear(); lcDepth.clear();
@@ -1935,7 +1968,7 @@ function startCustomGame(fen, forcedColor) {
 function endToSetup() {
   gameSeq++; trainSeq++;
   mode = 'game'; drillActive = null; deckSession = null; guessSession = null; repSession = null;
-  customStart = false; anaSetup = false;
+  customStart = false; anaSetup = false; boardFlip = false;
   stopClock(); clearHints(); hideConfirm(); hideDrawOffer(false);
   $('thinkDots').classList.remove('on');
   phase = 'setup';
@@ -2300,13 +2333,15 @@ function renderClocks() {
 /* ============================== board render ============================== */
 function other(c) { return c === 'w' ? 'b' : 'w'; }
 function sqColor(f, r) { return (f + r) % 2 === 0 ? 'dark' : 'light'; }  // f,r 0-indexed from a1
+let boardFlip = false;   // "Flip board": view from the other side without changing sides
+function viewColor() { return boardFlip ? other(playerColor) : playerColor; }
 function orient(sq) {
   const f = FILES.indexOf(sq[0]), r = +sq[1] - 1;
-  return playerColor === 'w' ? { x: f, y: 7 - r } : { x: 7 - f, y: r };
+  return viewColor() === 'w' ? { x: f, y: 7 - r } : { x: 7 - f, y: r };
 }
 function squareAt(x, y) {  // grid coords → square name
-  const f = playerColor === 'w' ? x : 7 - x;
-  const r = playerColor === 'w' ? 7 - y : y;
+  const f = viewColor() === 'w' ? x : 7 - x;
+  const r = viewColor() === 'w' ? 7 - y : y;
   return FILES[f] + (r + 1);
 }
 
@@ -2354,6 +2389,7 @@ function renderBoard() {
   boardEl.innerHTML = '';
   boardEl.appendChild(frag);
   $('evalbar').style.height = boardEl.clientWidth + 'px';
+  $('evalbar').classList.toggle('flip', viewColor() === 'b');
   if (selected) {
     for (const m of game.moves({ square: selected, verbose: true })) {
       const cell = boardEl.querySelector(`[data-sq="${m.to}"]`);
@@ -2365,6 +2401,7 @@ function renderBoard() {
   }
   renderHints();
   paintAssist();
+  if (mode === 'analysis' && !anaSetup) anaDrawArrows();
 }
 function findKing(color) {
   for (const f of FILES) for (let r = 1; r <= 8; r++) {
@@ -2788,20 +2825,22 @@ function startThinkGateCountdown() {
   show();
   if (!thinkGateTimer) thinkGateTimer = setInterval(show, 400);
 }
-function drawArrow(from, to) {
+function arrowSVG(from, to, color) {
   const a = orient(from), b = orient(to);
   const x1 = a.x + .5, y1 = a.y + .5, x2 = b.x + .5, y2 = b.y + .5;
   const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy);
-  if (!len) return;
+  if (!len) return '';
   const ux = dx / len, uy = dy / len;
   const sx = x1 + ux * .35, sy = y1 + uy * .35;
   const ex = x2 - ux * .32, ey = y2 - uy * .32;
   const hw = .17, hl = .3;
   const bx = ex - ux * hl, by = ey - uy * hl;
-  const svg = `
-    <line x1="${sx}" y1="${sy}" x2="${bx}" y2="${by}" stroke="rgba(44,123,229,.85)" stroke-width="0.16" stroke-linecap="round"/>
-    <polygon points="${ex},${ey} ${bx - uy * hw},${by + ux * hw} ${bx + uy * hw},${by - ux * hw}" fill="rgba(44,123,229,.85)"/>`;
-  arrowLayer.innerHTML = svg;
+  return `
+    <line x1="${sx}" y1="${sy}" x2="${bx}" y2="${by}" stroke="${color}" stroke-width="0.16" stroke-linecap="round"/>
+    <polygon points="${ex},${ey} ${bx - uy * hw},${by + ux * hw} ${bx + uy * hw},${by - ux * hw}" fill="${color}"/>`;
+}
+function drawArrow(from, to) {
+  arrowLayer.innerHTML = arrowSVG(from, to, 'rgba(44,123,229,.85)');
 }
 
 /* ============================== eval display ============================== */
@@ -3172,9 +3211,10 @@ function enterTrainUI(title, icon) {
   engine.stopIf('analysis');
   analysis = null; ghost = null; selected = null; lastMove = null; pendingClass = null;
   assistTints = null; assistFen = null;
-  drillActive = null; customStart = false; anaSetup = false;
+  drillActive = null; customStart = false; anaSetup = false; boardFlip = false;
   memSession = null; clearMemTimer(); restoreMemPal();
   $('anaBox').style.display = 'none'; $('drillPlan').style.display = 'none';
+  $('guessAbout').style.display = 'none';
   moveLog = []; movesBody.innerHTML = '';
   $('endOverlay').classList.remove('show');
   setupCard.style.display = 'none'; gameArea.style.display = 'block';
@@ -3189,7 +3229,7 @@ function enterTrainUI(title, icon) {
 function exitTraining() {
   gameSeq++; trainSeq++;
   mode = 'game'; drillActive = null; deckSession = null; guessSession = null; repSession = null;
-  customStart = false; anaSetup = false;
+  customStart = false; anaSetup = false; boardFlip = false;
   memSession = null; clearMemTimer(); restoreMemPal();
   phase = 'setup';
   stopClock();
@@ -3393,6 +3433,7 @@ function deckNextPosition() {
   $('trainProg').textContent = `Position ${s.idx + 1} of ${s.queue.length}` + (s.idx ? ` · found ${s.correct}` : '');
   $('trainShow').style.display = ''; $('trainNext').style.display = 'none';
   const b = BOTS.find(x => x.id === it.bot);
+  $('trainTitle').textContent = `📚 ${it.motif || it.cls}${b ? ' · vs ' + bName(b) : ''}`;
   coachMsg.innerHTML = `From your game${b ? ' vs ' + bName(b) : ''}: you played <b class="mv">${it.played}</b>, a ${it.cls}. ` +
     `Find the stronger move for ${playerColor === 'w' ? 'White' : 'Black'}.`;
   renderBoard();
@@ -3436,41 +3477,86 @@ $('deckTrainBtn').onclick = startDeckTraining;
    Famous games are validated with chess.js at load; broken ones are dropped. */
 const FAMOUS = [
   { title: 'Morphy vs the Duke and Count, Paris Opera 1858 (the Opera Game)', side: 'w', hero: 'Paul Morphy',
+    about: 'Played in a box at the Paris opera while the performance ran below, this is the most instructive game in chess history. Morphy develops every piece with a threat while his two opponents grab pawns, then gives a knight, a rook, and finally the queen so that his last two pieces can deliver mate. It was chosen because it is the purest lesson ever recorded on development, tempo, and punishing an uncastled king.',
     pgn: '1.e4 e5 2.Nf3 d6 3.d4 Bg4 4.dxe5 Bxf3 5.Qxf3 dxe5 6.Bc4 Nf6 7.Qb3 Qe7 8.Nc3 c6 9.Bg5 b5 10.Nxb5 cxb5 11.Bxb5+ Nbd7 12.O-O-O Rd8 13.Rxd7 Rxd7 14.Rd1 Qe6 15.Bxd7+ Nxd7 16.Qb8+ Nxb8 17.Rd8#' },
   { title: 'Anderssen vs Kieseritzky, London 1851 (the Immortal Game)', side: 'w', hero: 'Adolf Anderssen',
+    about: 'The high point of romantic chess. Anderssen gives away a bishop, both rooks, and the queen, and mates the completely materialistic defender with the three minor pieces he has left. It earned the name Immortal Game within Anderssen’s own lifetime, and it is here as the definitive statement that initiative and mating attack outrank material.',
     pgn: '1.e4 e5 2.f4 exf4 3.Bc4 Qh4+ 4.Kf1 b5 5.Bxb5 Nf6 6.Nf3 Qh6 7.d3 Nh5 8.Nh4 Qg5 9.Nf5 c6 10.g4 Nf6 11.Rg1 cxb5 12.h4 Qg6 13.h5 Qg5 14.Qf3 Ng8 15.Bxf4 Qf6 16.Nc3 Bc5 17.Nd5 Qxb2 18.Bd6 Bxg1 19.e5 Qxa1+ 20.Ke2 Na6 21.Nxg7+ Kd8 22.Qf6+ Nxf6 23.Be7#' },
   { title: 'Anderssen vs Dufresne, Berlin 1852 (the Evergreen Game)', side: 'w', hero: 'Adolf Anderssen',
+    about: 'Anderssen’s second immortal. The quiet 19.Rad1 prepares a queen sacrifice and a double-check windmill that Steinitz called an evergreen in Anderssen’s laurel wreath, which named the game. It was chosen as the model of total piece coordination in an open position, where every white piece participates in the final combination.',
     pgn: '1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.b4 Bxb4 5.c3 Ba5 6.d4 exd4 7.O-O d3 8.Qb3 Qf6 9.e5 Qg6 10.Re1 Nge7 11.Ba3 b5 12.Qxb5 Rb8 13.Qa4 Bb6 14.Nbd2 Bb7 15.Ne4 Qf5 16.Bxd3 Qh5 17.Nf6+ gxf6 18.exf6 Rg8 19.Rad1 Qxf3 20.Rxe7+ Nxe7 21.Qxd7+ Kxd7 22.Bf5+ Ke8 23.Bd7+ Kf8 24.Bxe7#' },
   { title: 'Byrne vs Fischer, New York 1956 (the Game of the Century)', side: 'b', hero: 'Bobby Fischer, age 13',
+    about: 'Fischer was thirteen years old when he played 17...Be6, offering his queen to a strong master. The compensation was not a quick mate but a windmill harvest and then a whole army working together for the rest of the game. Chosen because no game shows better that long-term piece activity can be worth more than the strongest piece on the board.',
     pgn: '1.Nf3 Nf6 2.c4 g6 3.Nc3 Bg7 4.d4 O-O 5.Bf4 d5 6.Qb3 dxc4 7.Qxc4 c6 8.e4 Nbd7 9.Rd1 Nb6 10.Qc5 Bg4 11.Bg5 Na4 12.Qa3 Nxc3 13.bxc3 Nxe4 14.Bxe7 Qb6 15.Bc4 Nxc3 16.Bc5 Rfe8+ 17.Kf1 Be6 18.Bxb6 Bxc4+ 19.Kg1 Ne2+ 20.Kf1 Nxd4+ 21.Kg1 Ne2+ 22.Kf1 Nc3+ 23.Kg1 axb6 24.Qb4 Ra4 25.Qxb6 Nxd1 26.h3 Rxa2 27.Kh2 Nxf2 28.Re1 Rxe1 29.Qd8+ Bf8 30.Nxe1 Bd5 31.Nf3 Ne4 32.Qb8 b5 33.h4 h5 34.Ne5 Kg7 35.Kg1 Bc5+ 36.Kf1 Ng3+ 37.Ke1 Bb4+ 38.Kd1 Bb3+ 39.Kc1 Ne2+ 40.Kb1 Nc3+ 41.Kc1 Rc2#' },
   { title: 'Réti vs Tartakower, Vienna 1910 (the queen sacrifice miniature)', side: 'w', hero: 'Richard Réti',
+    about: 'Eleven moves, one queen sacrifice, and the cleanest demonstration of the double check ever played. After 9.Qd8+ Kxd8 the rook and bishop mate by force. It is the shortest game in the library and it is here because every player must learn exactly this: against a king in the center, the double check is chess at its most forcing.',
     pgn: '1.e4 c6 2.d4 d5 3.Nc3 dxe4 4.Nxe4 Nf6 5.Qd3 e5 6.dxe5 Qa5+ 7.Bd2 Qxe5 8.O-O-O Nxe4 9.Qd8+ Kxd8 10.Bg5+ Kc7 11.Bd8#' },
   { title: 'Legall vs Saint Brie, Paris 1750 (Legall’s mate)', side: 'w', hero: 'Legall de Kermeur',
+    about: 'The oldest game in the library, played around 1750 by the strongest French player before Philidor. Legall leaves his queen to be captured and mates with two knights and a bishop, a pattern every trap-setter has reused since. Chosen as a piece of living history: the first famous demonstration that a pinned piece is not really defending anything.',
     pgn: '1.e4 e5 2.Nf3 d6 3.Bc4 Bg4 4.Nc3 g6 5.Nxe5 Bxd1 6.Bxf7+ Ke7 7.Nd5#' },
   { title: 'Byrne vs Fischer, US Championship 1963 (a masterpiece in 21 moves)', side: 'b', hero: 'Bobby Fischer',
+    about: 'The other Byrne brother, and perhaps Fischer’s deepest brilliancy. After 15...Nxf2 the grandmasters commenting for the audience explained that Fischer was losing, right up until Byrne resigned in the face of mate. Chosen because its beauty is invisible on the surface, a masterpiece of calculation that runs twenty moves deeper than it looks.',
     pgn: '1.d4 Nf6 2.c4 g6 3.g3 c6 4.Bg2 d5 5.cxd5 cxd5 6.Nc3 Bg7 7.e3 O-O 8.Nge2 Nc6 9.O-O b6 10.b3 Ba6 11.Ba3 Re8 12.Qd2 e5 13.dxe5 Nxe5 14.Rfd1 Nd3 15.Qc2 Nxf2 16.Kxf2 Ng4+ 17.Kg1 Nxe3 18.Qd2 Nxg2 19.Kxg2 d4 20.Nxd4 Bb7+ 21.Kf1 Qd7' },
   { title: 'Bobotsov vs Tal, Varna 1958 (Tal’s immortal queen sacrifice)', side: 'b', hero: 'Mikhail Tal',
+    about: 'The night before, Tal amused himself in blitz by giving up his queen in this exact variation. When the position appeared on the board in the serious game he did it again: 11...Nxd5, queen for two minor pieces, played almost instantly. The pieces smothered the queen exactly as he had rehearsed. Chosen as the most famous of all the games called Tal’s immortal.',
     pgn: '1.d4 Nf6 2.c4 g6 3.Nc3 Bg7 4.e4 d6 5.f3 O-O 6.Nge2 c5 7.Be3 Nbd7 8.Qd2 a6 9.O-O-O Qa5 10.Kb1 b5 11.Nd5 Nxd5 12.Qxa5 Nxe3 13.Rc1 Nxc4 14.Rxc4 bxc4 15.Nc1 Rb8 16.Bxc4 Nb6 17.Bb3 Bxd4 18.Qd2 Bg7 19.Ne2 c4 20.Bc2 c3 21.Qd3 cxb2 22.Nd4 Bd7 23.Rd1 Rfc8 24.Bb3 Na4 25.Bxa4 Bxa4 26.Nb3 Rc3 27.Qxa6 Bxb3 28.axb3 Rbc8 29.Qa3 Rc1+ 30.Rxc1 Rxc1+' },
   { title: 'Tal vs Smyslov, Candidates 1959 (brilliancy prize)', side: 'w', hero: 'Mikhail Tal',
+    about: 'Tal, twenty-two years old, against a former world champion, in the tournament that carried him to the title. The pirate raid 19.Qxf7 wins by force against one of the most accurate defenders who ever lived, and it took the brilliancy prize. Chosen because it shows attacking chess succeeding at the very highest level, not only against club players.',
     pgn: '1.e4 c6 2.d3 d5 3.Nd2 e5 4.Ngf3 Nd7 5.d4 dxe4 6.Nxe4 exd4 7.Qxd4 Ngf6 8.Bg5 Be7 9.O-O-O O-O 10.Nd6 Qa5 11.Bc4 b5 12.Bd2 Qa6 13.Nf5 Bd8 14.Qh4 bxc4 15.Qg5 Nh5 16.Nh6+ Kh8 17.Qxh5 Qxa2 18.Bc3 Nf6 19.Qxf7 Qa1+ 20.Kd2 Rxf7 21.Nxf7+ Kg8 22.Rxa1 Kxf7 23.Ne5+ Ke6 24.Nxc6 Ne4+ 25.Ke3 Bb6+ 26.Bd4' },
   { title: 'Tal vs Hecht, Varna Olympiad 1962 (Misha Impossible)', side: 'w', hero: 'Mikhail Tal',
+    about: 'Tal offers his queen with 19.exf6 and for several moves nearly every white piece stands en prise at once. But the deeper lesson is what follows: a long endgame that Tal grinds out a pawn down through superior structure. Two lessons in one game, the sacrifice and the technique, which is exactly why it was chosen.',
     pgn: '1.d4 Nf6 2.c4 e6 3.Nf3 b6 4.Nc3 Bb4 5.Bg5 Bb7 6.e3 h6 7.Bh4 Bxc3+ 8.bxc3 d6 9.Nd2 e5 10.f3 Qe7 11.e4 Nbd7 12.Bd3 Nf8 13.c5 dxc5 14.dxe5 Qxe5 15.Qa4+ c6 16.O-O Ng6 17.Nc4 Qe6 18.e5 b5 19.exf6 bxa4 20.fxg7 Rg8 21.Bf5 Nxh4 22.Bxe6 Ba6 23.Nd6+ Ke7 24.Bc4 Rxg7 25.g3 Kxd6 26.Bxa6 Nf5 27.Rab1 f6 28.Rfd1+ Ke7 29.Re1+ Kd6 30.Kf2 c4 31.g4 Ne7 32.Rb7 Rag8 33.Bxc4 Nd5 34.Bxd5 cxd5 35.Rb4 Rc8 36.Rxa4 Rxc3 37.Ra6+ Kc5 38.Rxf6 h5 39.h3 hxg4 40.hxg4 Rh7 41.g5 Rh5 42.Rf5 Rc2+ 43.Kg3 Kc4 44.Ree5 d4 45.g6 Rh1 46.Rc5+ Kd3 47.Rxc2 Kxc2 48.Kf4 Rg1 49.Rg5' },
   { title: 'Rotlewi vs Rubinstein, Lodz 1907 (Rubinstein’s Immortal)', side: 'b', hero: 'Akiba Rubinstein',
+    about: 'Rubinstein’s Immortal, and the textbook model of an attacking combination. Rather than save his attacked queen, Rubinstein plays 22...Rxc3, and every black piece joins a geometric mating net along the two long diagonals. Chosen because generations of trainers have used it to teach how harmony among the pieces creates tactics, rather than the other way around.',
     pgn: '1.d4 d5 2.Nf3 e6 3.e3 c5 4.c4 Nc6 5.Nc3 Nf6 6.dxc5 Bxc5 7.a3 a6 8.b4 Bd6 9.Bb2 O-O 10.Qd2 Qe7 11.Bd3 dxc4 12.Bxc4 b5 13.Bd3 Rd8 14.Qe2 Bb7 15.O-O Ne5 16.Nxe5 Bxe5 17.f4 Bc7 18.e4 Rac8 19.e5 Bb6+ 20.Kh1 Ng4 21.Be4 Qh4 22.g3 Rxc3 23.gxh4 Rd2 24.Qxd2 Bxe4+ 25.Qg2 Rh3' },
   { title: 'Steinitz vs von Bardeleben, Hastings 1895 (the untouchable rook)', side: 'w', hero: 'Wilhelm Steinitz',
+    about: 'The first world champion produces the most famous untouchable piece in history: from move 22 the white rook stands where three different units could capture it, and every capture loses to a back-rank trick or mate. Von Bardeleben chose to walk out of the playing hall rather than resign. Chosen as the classic lesson on in-between moves and the power of an unbreakable initiative.',
     pgn: '1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.c3 Nf6 5.d4 exd4 6.cxd4 Bb4+ 7.Nc3 d5 8.exd5 Nxd5 9.O-O Be6 10.Bg5 Be7 11.Bxd5 Bxd5 12.Nxd5 Qxd5 13.Bxe7 Nxe7 14.Re1 f6 15.Qe2 Qd7 16.Rac1 c6 17.d5 cxd5 18.Nd4 Kf7 19.Ne6 Rhc8 20.Qg4 g6 21.Ng5+ Ke8 22.Rxe7+ Kf8 23.Rf7+ Kg8 24.Rg7+ Kh8 25.Rxh7+' },
   { title: 'Botvinnik vs Capablanca, AVRO 1938 (the Ba3 deflection)', side: 'w', hero: 'Mikhail Botvinnik',
+    about: 'A strategic plan carried across an entire game: Botvinnik accepts a weak queenside so that his central passed pawn and kingside chances grow, then converts everything with the deflection 30.Ba3 and the follow-up 31.Nh5+. Beating Capablanca, the cleanest positional player alive, with a combination built from positional means is why this game anchors the strategy section of the library.',
     pgn: '1.d4 Nf6 2.c4 e6 3.Nc3 Bb4 4.e3 d5 5.a3 Bxc3+ 6.bxc3 c5 7.cxd5 exd5 8.Bd3 O-O 9.Ne2 b6 10.O-O Ba6 11.Bxa6 Nxa6 12.Bb2 Qd7 13.a4 Rfe8 14.Qd3 c4 15.Qc2 Nb8 16.Rae1 Nc6 17.Ng3 Na5 18.f3 Nb3 19.e4 Qxa4 20.e5 Nd7 21.Qf2 g6 22.f4 f5 23.exf6 Nxf6 24.f5 Rxe1 25.Rxe1 Re8 26.Re6 Rxe6 27.fxe6 Kg7 28.Qf4 Qe8 29.Qe5 Qe7 30.Ba3 Qxa3 31.Nh5+ gxh5 32.Qg5+ Kf8 33.Qxf6+ Kg8 34.e7 Qc1+ 35.Kf2 Qc2+ 36.Kg3 Qd3+ 37.Kh4 Qe4+ 38.Kxh5 Qe2+ 39.Kh4 Qe4+ 40.g4 Qe1+ 41.Kh5' },
   { title: 'Lasker vs Bauer, Amsterdam 1889 (the double bishop sacrifice)', side: 'w', hero: 'Emanuel Lasker',
+    about: 'The original double bishop sacrifice, played in 1889. Both bishops give themselves up on h7 and g7 to strip the king bare, the queen and rook finish, and a mating pattern was born that masters have reused for more than a century. Chosen because this exact idea still wins games today, and every strong player traces it back to here.',
     pgn: '1.f4 d5 2.e3 Nf6 3.b3 e6 4.Bb2 Be7 5.Bd3 b6 6.Nf3 Bb7 7.Nc3 Nbd7 8.O-O O-O 9.Ne2 c5 10.Ng3 Qc7 11.Ne5 Nxe5 12.Bxe5 Qc6 13.Qe2 a6 14.Nh5 Nxh5 15.Bxh7+ Kxh7 16.Qxh5+ Kg8 17.Bxg7 Kxg7 18.Qg4+ Kh7 19.Rf3 e5 20.Rh3+ Qh6 21.Rxh6+ Kxh6 22.Qd7 Bf6 23.Qxb7 Kg7 24.Rf1 Rab8 25.Qd7 Rfd8 26.Qg4+ Kf8 27.fxe5 Bg7 28.e6 Rb7 29.Qg6 f6 30.Rxf6+ Bxf6 31.Qxf6+ Ke8 32.Qh8+ Ke7 33.Qg7+ Kxe6 34.Qxb7 Rd6 35.Qxa6 d4 36.exd4 cxd4 37.h4 d3 38.Qxd3' },
   { title: 'Sämisch vs Nimzowitsch, Copenhagen 1923 (the Immortal Zugzwang)', side: 'b', hero: 'Aron Nimzowitsch',
+    about: 'The Immortal Zugzwang Game. With material equal and the middlegame in full swing, White resigns after 25...h6 because literally every legal move loses something. Nimzowitsch, the author of My System, wins with blockade and prophylaxis rather than attack. Chosen as the strangest and most instructive resignation in chess history.',
     pgn: '1.d4 Nf6 2.c4 e6 3.Nf3 b6 4.g3 Bb7 5.Bg2 Be7 6.Nc3 O-O 7.O-O d5 8.Ne5 c6 9.cxd5 cxd5 10.Bf4 a6 11.Rc1 b5 12.Qb3 Nc6 13.Nxc6 Bxc6 14.h3 Qd7 15.Kh2 Nh5 16.Bd2 f5 17.Qd1 b4 18.Nb1 Bb5 19.Rg1 Bd6 20.e4 fxe4 21.Qxh5 Rxf2 22.Qg5 Raf8 23.Kh1 R8f5 24.Qe3 Bd3 25.Rce1 h6' },
   { title: 'Capablanca vs Tartakower, New York 1924 (the model rook endgame)', side: 'w', hero: 'José Raúl Capablanca',
+    about: 'Universally cited as the most instructive rook endgame ever played. Capablanca gives up three pawns because his rook reaches the seventh rank, his king marches to f6, and his passed pawn runs. Chosen because it compresses the three commandments of rook endgames, active rook, active king, passed pawn, into a dozen unforgettable moves.',
     pgn: '1.d4 e6 2.Nf3 f5 3.c4 Nf6 4.Bg5 Be7 5.Nc3 O-O 6.e3 b6 7.Bd3 Bb7 8.O-O Qe8 9.Qe2 Ne4 10.Bxe7 Nxc3 11.bxc3 Qxe7 12.a4 Bxf3 13.Qxf3 Nc6 14.Rfb1 Rae8 15.Qh3 Rf6 16.f4 Na5 17.Qf3 d6 18.Re1 Qd7 19.e4 fxe4 20.Qxe4 g6 21.g3 Kf8 22.Kg2 Rf7 23.h4 d5 24.cxd5 exd5 25.Qxe8+ Qxe8 26.Rxe8+ Kxe8 27.h5 Rf6 28.hxg6 hxg6 29.Rh1 Kf8 30.Rh7 Rc6 31.g4 Nc4 32.g5 Ne3+ 33.Kf3 Nf5 34.Bxf5 gxf5 35.Kg3 Rxc3+ 36.Kh4 Rf3 37.g6 Rxf4+ 38.Kg5 Re4 39.Kf6 Kg8 40.Rg7+ Kh8 41.Rxc7 Re8 42.Kxf5 Re4 43.Kf6 Rf4+ 44.Ke5 Rg4 45.g7+ Kg8 46.Rxa7 Rg1 47.Kxd5 Rc1 48.Kd6 Rc2 49.d5 Rc1 50.Rc7 Ra1 51.Kc6 Rxa4 52.d6' },
   { title: 'Fischer vs Spassky, World Championship 1972, game 6 (the perfect game)', side: 'w', hero: 'Bobby Fischer',
+    about: 'Game six of the century’s most famous match. Fischer opens 1.c4 for almost the first time in his life, steers into a quiet Queen’s Gambit, and produces a positional performance so complete that Spassky joined the audience in applauding him. Chosen as the model of the perfect game: no fireworks, simply every piece on its best square until resistance dissolves.',
     pgn: '1.c4 e6 2.Nf3 d5 3.d4 Nf6 4.Nc3 Be7 5.Bg5 O-O 6.e3 h6 7.Bh4 b6 8.cxd5 Nxd5 9.Bxe7 Qxe7 10.Nxd5 exd5 11.Rc1 Be6 12.Qa4 c5 13.Qa3 Rc8 14.Bb5 a6 15.dxc5 bxc5 16.O-O Ra7 17.Be2 Nd7 18.Nd4 Qf8 19.Nxe6 fxe6 20.e4 d4 21.f4 Qe7 22.e5 Rb8 23.Bc4 Kh8 24.Qh3 Nf8 25.b3 a5 26.f5 exf5 27.Rxf5 Nh7 28.Rcf1 Qd8 29.Qg3 Re7 30.h4 Rbb7 31.e6 Rbc7 32.Qe5 Qe8 33.a4 Qd8 34.R1f2 Qe8 35.R2f3 Qd8 36.Bd3 Qe8 37.Qe4 Nf6 38.Rxf6 gxf6 39.Rxf6 Kg8 40.Bc4 Kh8 41.Qf4' },
+  { title: 'Polugaevsky vs Nezhmetdinov, Sochi 1958 (Nezhmetdinov’s Immortal)', side: 'b', hero: 'Rashid Nezhmetdinov',
+    about: 'Frequently ranked among the greatest attacking games ever played. Nezhmetdinov, a five-time champion of Russia who never became a grandmaster, sacrifices his queen on move 24 and then walks the enemy king from e3 to a5, where it is mated on a full board. Chosen because no other game demonstrates a deeper or longer forced king hunt.',
+    pgn: '1.d4 Nf6 2.c4 d6 3.Nc3 e5 4.e4 exd4 5.Qxd4 Nc6 6.Qd2 g6 7.b3 Bg7 8.Bb2 O-O 9.Bd3 Ng4 10.Nge2 Qh4 11.Ng3 Nge5 12.O-O f5 13.f3 Bh6 14.Qd1 f4 15.Nge2 g5 16.Nd5 g4 17.g3 fxg3 18.hxg3 Qh3 19.f4 Be6 20.Bc2 Rf7 21.Kf2 Qh2+ 22.Ke3 Bxd5 23.cxd5 Nb4 24.Rh1 Rxf4 25.Rxh2 Rf3+ 26.Kd4 Bg7 27.a4 c5+ 28.dxc6 bxc6 29.Bd3 Nexd3+ 30.Kc4 d5+ 31.exd5 cxd5+ 32.Kb5 Rb8+ 33.Ka5 Nc6+' },
+  { title: 'Aronian vs Anand, Wijk aan Zee 2013 (the modern Evergreen)', side: 'b', hero: 'Viswanathan Anand',
+    about: 'The modern Evergreen. Anand uncorks preparation and intuition together: 15...Bc5, 16...Nde5, and 19...f5 give Black a winning attack against a top-three player in twenty-three moves. Chosen as proof that the romantic attacking tradition survived into the computer era, and as the finest attacking game of the twenty-first century so far.',
+    pgn: '1.d4 d5 2.c4 c6 3.Nf3 Nf6 4.Nc3 e6 5.e3 Nbd7 6.Bd3 dxc4 7.Bxc4 b5 8.Bd3 Bd6 9.O-O O-O 10.Qc2 Bb7 11.a3 Rc8 12.Ng5 c5 13.Nxh7 Ng4 14.f4 cxd4 15.exd4 Bc5 16.Be2 Nde5 17.Bxg4 Bxd4+ 18.Kh1 Nxg4 19.Nxf8 f5 20.Ng6 Qf6 21.h3 Qxg6 22.Qe2 Qh5 23.Qd3 Be3' },
+  { title: 'Rodrigue-Lemieux vs Sambuev, World Francophone Ch. 2023 (Canada’s title decider)', side: 'w', hero: 'Shawn Rodrigue-Lemieux',
+    about: 'The library’s Canadian flagship. Rodrigue-Lemieux, world youth champion and Canada’s top-rated grandmaster, faced Sambuev, many times national champion, with the Francophone title effectively on the board. The winner of this direct encounter took the crown, and it ends with a precise tactical sequence. Chosen to represent the best of Canadian chess.',
+    pgn: '1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 4.Ba4 Nf6 5.O-O Be7 6.Re1 b5 7.Bb3 O-O 8.d4 Nxd4 9.Nxd4 exd4 10.e5 Ne8 11.Qxd4 Bb7 12.c4 c5 13.Qg4 bxc4 14.Qxc4 d5 15.exd6 Nxd6 16.Qxc5 Rc8 17.Qh5 Ne4 18.Be3 Bf6 19.Qe2 Be5 20.Na3 Qd6 21.Qh5 g6 22.Qh3 Qb4 23.Nc2 Qa5 24.Nd4 Rcd8 25.Red1 Rd6 26.Nf3 Bxb2 27.Rxd6 Bxa1 28.Rd7 Qb4 29.Qh4 Bf6 30.Qf4 Bc6 31.Rc7 Bg5 32.Qe5 Bxe3 33.fxe3 Qb6 34.Nd4 Ba4 35.Bxf7+ Rxf7 36.Rc8+ Rf8 37.Qd5+ Kg7 38.Ne6+ Kh6 39.Qxe4' },
   { title: 'Kasparov vs Topalov, Wijk aan Zee 1999 (Kasparov’s Immortal)', side: 'w', hero: 'Garry Kasparov',
+    about: 'Often ranked the single greatest game ever played. The rook sacrifice 24.Rxd4 begins a combination Kasparov calculated some fifteen moves deep, dragging Topalov’s king across the entire board from g8 to a1 territory. Chosen as the summit of human calculation: every quiet move in the hunt had to be exact, and it was.',
     pgn: '1.e4 d6 2.d4 Nf6 3.Nc3 g6 4.Be3 Bg7 5.Qd2 c6 6.f3 b5 7.Nge2 Nbd7 8.Bh6 Bxh6 9.Qxh6 Bb7 10.a3 e5 11.O-O-O Qe7 12.Kb1 a6 13.Nc1 O-O-O 14.Nb3 exd4 15.Rxd4 c5 16.Rd1 Nb6 17.g3 Kb8 18.Na5 Ba8 19.Bh3 d5 20.Qf4+ Ka7 21.Rhe1 d4 22.Nd5 Nbxd5 23.exd5 Qd6 24.Rxd4 cxd4 25.Re7+ Kb6 26.Qxd4+ Kxa5 27.b4+ Ka4 28.Qc3 Qxd5 29.Ra7 Bb7 30.Rxb7 Qc4 31.Qxf6 Kxa3 32.Qxa6+ Kxb4 33.c3+ Kxc3 34.Qa1+ Kd2 35.Qb2+ Kd1 36.Bf1 Rd2 37.Rd7 Rxd7 38.Bxc4 bxc4 39.Qxh8 Rd3 40.Qa8 c3 41.Qa4+ Ke1 42.f4 f5 43.Kc1 Rd2 44.Qa7' },
+  { title: 'Tal vs Sviridov, Stuttgart 1969 (the Touchdown miniature)', side: 'w', hero: 'Mikhail Tal',
+    about: 'A simultaneous exhibition game with the most Tal ending imaginable: after 17...Qxd2 captures his queen, Tal does not recapture. He plays 18.fxg7, and the little pawn strolls toward promotion while the black queen watches helplessly. Chosen because it teaches, in eighteen moves, that material only matters if it can stop what is coming.',
+    pgn: '1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 g6 6.Be3 Bg7 7.f3 Nc6 8.Qd2 Bd7 9.O-O-O Qa5 10.Kb1 Rc8 11.g4 h6 12.h4 a6 13.Be2 Ne5 14.g5 hxg5 15.hxg5 Rxh1 16.gxf6 Rxd1+ 17.Nxd1 Qxd2 18.fxg7' },
+  { title: 'Tal vs Koblents, Riga 1957 (the deep dark forest training game)', side: 'w', hero: 'Mikhail Tal',
+    about: 'A training game against Alexander Koblents, Tal’s own coach, and the laboratory where his style was forged. It is the game behind his famous saying about dragging opponents into a deep dark forest where two plus two makes five. Pieces hang on both sides for a dozen moves and only Tal knows the path. Chosen as a window into how the magician actually practiced.',
+    pgn: '1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 Nc6 6.Bg5 e6 7.Qd2 Be7 8.O-O-O O-O 9.Nb3 Qb6 10.f3 a6 11.g4 Rd8 12.Be3 Qc7 13.h4 b5 14.g5 Nd7 15.g6 hxg6 16.h5 gxh5 17.Rxh5 Nf6 18.Rh1 d5 19.e5 Nxe5 20.Bf4 Bd6 21.Qh2 Kf8 22.Qh8+ Ng8 23.Rh7 f5 24.Bh6 Rd7 25.Bxb5 Rf7 26.Rg1 Ra7 27.Nd4 Ng4 28.fxg4 Be5 29.Nc6 Bxc3 30.Be3 d4 31.Rgh1 Rd7 32.Bg5 axb5 33.R1h6 d3 34.bxc3 d2+ 35.Kd1 Qxc6 36.Rf6+ Rf7 37.Qxg7+' },
+  { title: 'Capablanca vs Marshall, New York 1918 (defusing the Marshall Attack)', side: 'w', hero: 'José Raúl Capablanca',
+    about: 'Marshall kept this gambit secret for years, waiting for Capablanca. It exploded on the board as what we now call the Marshall Attack, and Capablanca calmly accepted everything, found the refutation over the board under fire, and won. Chosen as the great lesson in defense: precise calculation beats hostile preparation, and cool nerves beat surprise.',
+    pgn: '1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 4.Ba4 Nf6 5.O-O Be7 6.Re1 b5 7.Bb3 O-O 8.c3 d5 9.exd5 Nxd5 10.Nxe5 Nxe5 11.Rxe5 Nf6 12.Re1 Bd6 13.h3 Ng4 14.Qf3 Qh4 15.d4 Nxf2 16.Re2 Bg4 17.hxg4 Bh2+ 18.Kf1 Bg3 19.Rxf2 Qh1+ 20.Ke2 Bxf2 21.Bd2 Bh4 22.Qh3 Rae8+ 23.Kd3 Qf1+ 24.Kc2 Bf2 25.Qf3 Qg1 26.Bd5 c5 27.dxc5 Bxc5 28.b4 Bd6 29.a4 a5 30.axb5 axb4 31.Ra6 bxc3 32.Nxc3 Bb4 33.b6 Bxc3 34.Bxc3 h6 35.b7 Re3 36.Bxf7+' },
+  { title: 'Karpov vs Kasparov, World Championship 1985, game 16 (the octopus knight)', side: 'b', hero: 'Garry Kasparov',
+    about: 'Game sixteen of the 1985 world championship. Kasparov plants a knight on d3, inside Karpov’s position, and the octopus strangles every white piece from within while Black calmly builds the attack. Chosen as the definitive demonstration that a deep outpost can dominate a game, and as a milestone on Kasparov’s way to becoming the youngest world champion.',
+    pgn: '1.e4 c5 2.Nf3 e6 3.d4 cxd4 4.Nxd4 Nc6 5.Nb5 d6 6.c4 Nf6 7.N1c3 a6 8.Na3 d5 9.cxd5 exd5 10.exd5 Nb4 11.Be2 Bc5 12.O-O O-O 13.Bf3 Bf5 14.Bg5 Re8 15.Qd2 b5 16.Rad1 Nd3 17.Nab1 h6 18.Bh4 b4 19.Na4 Bd6 20.Bg3 Rc8 21.b3 g5 22.Bxd6 Qxd6 23.g3 Nd7 24.Bg2 Qf6 25.a3 a5 26.axb4 axb4 27.Qa2 Bg6 28.d6 g4 29.Qd2 Kg7 30.f3 Qxd6 31.fxg4 Qd4+ 32.Kh1 Nf6 33.Rf4 Ne4 34.Qxd3 Nf2+ 35.Rxf2 Bxd3 36.Rfd2 Qe3 37.Rxd3 Rc1 38.Nb2 Qf2 39.Nd2 Rxd1+ 40.Nxd1 Re1+' },
+  { title: 'Karpov vs Unzicker, Nice Olympiad 1974 (the python squeeze)', side: 'w', hero: 'Anatoly Karpov',
+    about: 'Karpov’s signature python method at its purest. The bishop retreat 24.Ba7 seals the a-file, every black piece slowly runs out of squares, and by the end Unzicker can barely move anything. There is no combination to memorize here, which is the point: it was chosen to show how restriction and gradual improvement win games without a single tactic.',
+    pgn: '1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 4.Ba4 Nf6 5.O-O Be7 6.Re1 b5 7.Bb3 d6 8.c3 O-O 9.h3 Na5 10.Bc2 c5 11.d4 Qc7 12.Nbd2 Nc6 13.d5 Nd8 14.a4 Rb8 15.axb5 axb5 16.b4 Nb7 17.Nf1 Bd7 18.Be3 Ra8 19.Qd2 Rfc8 20.Bd3 g6 21.Ng3 Bf8 22.Ra2 c4 23.Bb1 Qd8 24.Ba7 Ne8 25.Bc2 Nc7 26.Rea1 Qe7 27.Bb1 Be8 28.Ne2 Nd8 29.Nh2 Bg7 30.f4 f6 31.f5 g5 32.Bc2 Bf7 33.Ng3 Nb7 34.Bd1 h6 35.Bh5 Qe8 36.Qd1 Nd8 37.Ra3 Kf8 38.R1a2 Kg8 39.Ng4 Kf8 40.Ne3 Kg8 41.Bxf7+ Nxf7 42.Qh5 Nd8 43.Qg6 Kf8 44.Nh5' },
+  { title: 'Alekhine vs Nimzowitsch, San Remo 1930 (the great chain squeeze)', side: 'w', hero: 'Alexander Alekhine',
+    about: 'Alekhine takes on the great prophylaxis teacher and beats him at restriction itself. Everything piles up on the c-file against the French pawn chain until 30.h4 leaves Nimzowitsch, with a full army on the board, without a single move that does not lose material. Chosen as the middlegame zugzwang lesson: total domination with queens still on.',
+    pgn: '1.e4 e6 2.d4 d5 3.Nc3 Bb4 4.e5 c5 5.Bd2 Ne7 6.Nb5 Bxd2+ 7.Qxd2 O-O 8.c3 b6 9.f4 Ba6 10.Nf3 Qd7 11.a4 Nbc6 12.b4 cxb4 13.cxb4 Bb7 14.Nd6 f5 15.a5 Nc8 16.Nxb7 Qxb7 17.a6 Qf7 18.Bb5 N8e7 19.O-O h6 20.Rfc1 Rfc8 21.Rc2 Qe8 22.Rac1 Rab8 23.Qe3 Rc7 24.Rc3 Qd7 25.R1c2 Kf8 26.Qc1 Rbc8 27.Ba4 b5 28.Bxb5 Ke8 29.Ba4 Kd8 30.h4' },
 ];
 function parsePgnMoves(pgnStr) {
   try {
@@ -3512,15 +3598,27 @@ function renderGuessBox() {
     b.onclick = fn;
     grid.appendChild(b);
   };
-  FAMOUS.forEach((g, i) => {
-    if (g._ok === undefined) g._ok = !!parsePgnMoves(g.pgn);
-    if (!g._ok) return;
-    addTile(g.title, deckId(g.pgn), () => startGuessFamous(i));
-  });
-  for (const g of loadHist().slice(-10).reverse()) {
-    if (!g.pgn) continue;
+  /* classics sorted by the hero's surname, then by year */
+  const heroKey = hero => {
+    const base = hero.split(',')[0].trim();
+    if (/^Legall/.test(base)) return 'Legall';
+    const parts = base.split(' ');
+    return parts[parts.length - 1];
+  };
+  FAMOUS.map((g, i) => ({ g, i }))
+    .filter(x => {
+      if (x.g._ok === undefined) x.g._ok = !!parsePgnMoves(x.g.pgn);
+      return x.g._ok;
+    })
+    .map(x => ({ ...x, k: heroKey(x.g.hero), y: +((x.g.title.match(/\b(1[5-9]\d\d|20\d\d)\b/) || [0, 9999])[1]) }))
+    .sort((a, b) => a.k.localeCompare(b.k) || a.y - b.y)
+    .forEach(x => addTile(x.g.title, deckId(x.g.pgn), () => startGuessFamous(x.i)));
+  /* your three strongest games, ranked by the post-game performance estimate */
+  const own = loadHist().filter(g => g.pgn && g.perf && typeof g.perf.elo === 'number')
+    .sort((a, b) => b.perf.elo - a.perf.elo).slice(0, 3);
+  for (const g of own) {
     const bo = BOTS.find(x => x.id === g.bot);
-    addTile(`Your game vs ${bo ? bName(bo) : g.bot} (${new Date(g.t).toLocaleDateString()}, ${g.result})`,
+    addTile(`Your game vs ${bo ? bName(bo) : g.bot} (~${g.perf.elo}, ${g.result})`,
             't' + g.t, () => startGuessOwn(g.t));
   }
   $('guessBox').style.display = grid.children.length ? 'block' : 'none';
@@ -3529,18 +3627,27 @@ function startGuessFamous(i) {
   const g = FAMOUS[i];
   if (!g) return;
   const moves = parsePgnMoves(g.pgn);
-  if (moves) beginGuess(moves, g.side, `Play like ${g.hero}`, deckId(g.pgn));
+  if (moves) beginGuess(moves, g.side, `Play like ${g.hero}`, deckId(g.pgn), g.title, g.about);
 }
 function startGuessOwn(t) {
   const g = loadHist().find(x => x.t === t);
   if (!g || !g.pgn) return;
   const moves = parsePgnMoves(g.pgn);
-  if (moves) beginGuess(moves, g.color === 'b' ? 'b' : 'w', 'Replay your own game', 't' + t);
+  if (!moves) return;
+  const bo = BOTS.find(x => x.id === g.bot);
+  beginGuess(moves, g.color === 'b' ? 'b' : 'w', 'Replay your own game', 't' + t,
+             `Your game vs ${bo ? bName(bo) : g.bot}${g.perf ? ' (~' + g.perf.elo + ')' : ''}`,
+             'One of your three strongest games by the coach’s rating estimate. Replaying your own best chess and trying to reproduce it from the same positions shows which of your good decisions were understanding and which were luck.');
 }
-function beginGuess(moves, side, intro, key) {
+function beginGuess(moves, side, intro, key, title, about) {
   mode = 'guess'; trainSeq++;
   guessSession = { moves, idx: 0, side, score: 0, max: 0, key };
   enterTrainUI('Guess the move', '🎯');
+  $('trainTitle').textContent = '🎯 ' + (title || 'Guess the move');
+  if (about) {
+    $('guessAbout').textContent = about;
+    $('guessAbout').style.display = 'block';
+  }
   $('trainShow').textContent = 'Show game move';
   playerColor = side;
   game = new Chess();
@@ -3729,7 +3836,7 @@ function renderDrillBox() {
 function startDrill(d) {
   gameSeq++; trainSeq++;
   mode = 'game'; drillActive = d; deckSession = null; guessSession = null; repSession = null;
-  classicalMode = false; customStart = false; anaSetup = false;
+  classicalMode = false; customStart = false; anaSetup = false; boardFlip = false;
   $('anaBox').style.display = 'none';
   bot = DRILL_BOT;
   try { game = new Chess(d.fen); } catch (e) { drillActive = null; return; }
@@ -3758,6 +3865,7 @@ function startDrill(d) {
   $('trainProg').textContent = d.goal === 'win'
     ? 'Goal: win this position. A draw or loss fails the drill.'
     : 'Goal: hold the draw. Repetition and the 50-move rule are your friends.';
+  $('guessAbout').style.display = 'none';
   $('drillPlan').style.display = 'block';
   $('drillPlan').innerHTML = `📋 <b>The plan.</b> ${d.plan}<br><br>⚠️ <b>Avoid.</b> ${d.avoid}`;
   $('trainShow').style.display = 'none'; $('trainNext').style.display = 'none';
@@ -3917,7 +4025,7 @@ const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 function enterAnalysis() {
   gameSeq++; trainSeq++; anaSeq++;
   mode = 'analysis'; drillActive = null; deckSession = null; guessSession = null; repSession = null;
-  customStart = false; anaSetup = false;
+  customStart = false; anaSetup = false; boardFlip = false;
   stopClock(); clearHints(); hideConfirm(); hideDrawOffer(false);
   $('thinkDots').classList.remove('on');
   engine.stopIf('analysis');
@@ -3940,16 +4048,37 @@ function enterAnalysis() {
   renderBoard();
   anaAnalyse();
 }
+let anaThreat = null;   // best move for the side NOT on turn: the standing threat
 function anaAnalyse() {
   if (mode !== 'analysis' || anaSetup) return;
   const fen = game.fen();
   const seq = ++anaSeq;
   anaLines = [null, null, null];
+  anaThreat = null;
   anaLinesDraw();
   engine.stopIf('analysis');
   if (game.isGameOver()) {
     $('anaLines').innerHTML = `<div class="al-row">${game.isCheckmate() ? 'Checkmate.' : 'Drawn position.'} Undo or set up a new one.</div>`;
+    arrowLayer.innerHTML = '';
     return;
+  }
+  /* the other color's best move (what they threaten), from a quick flipped-turn search */
+  if (!game.inCheck()) {
+    const parts = fen.split(' ');
+    const flipped = [...parts]; flipped[1] = parts[1] === 'w' ? 'b' : 'w'; flipped[3] = '-';
+    const ffen = flipped.join(' ');
+    try {
+      const probe = new Chess(ffen);
+      if (!probe.isGameOver()) {
+        engine.evalPosition(ffen, null, 1200).then(r => {
+          if (seq !== anaSeq || mode !== 'analysis' || anaSetup || game.fen() !== fen) return;
+          if (r.bestUci && r.bestUci !== '(none)') {
+            anaThreat = { uci: r.bestUci, cpW: scoreToWhite(r.score, flipped[1]), san: uciToSan(ffen, r.bestUci) };
+            scheduleAnaDraw();
+          }
+        }).catch(() => {});
+      }
+    } catch (e) {}
   }
   engine.analyseMulti(fen, info => {
     if (seq !== anaSeq || mode !== 'analysis' || anaSetup || game.fen() !== fen) return;
@@ -3978,12 +4107,26 @@ function pvToSan(fen, pv, maxN) {
 }
 function anaLinesDraw() {
   const fen = game.fen(), stm = game.turn();
-  $('anaLines').innerHTML = anaLines.map((l, i) => {
+  let html = anaLines.map((l, i) => {
     if (!l) return `<div class="al-row" style="color:#bbb;">line ${i + 1}…</div>`;
     const cpW = scoreToWhite(l.score, stm);
     return `<div class="al-row"><span class="al-ev" style="color:${cpW >= 0 ? '#27ae60' : '#e74c3c'}">${fmtEval(cpW)}</span>` +
            ` <span style="color:#999;">d${l.depth}</span> ${pvToSan(fen, l.pv, 8)}</div>`;
   }).join('');
+  if (anaThreat)
+    html += `<div class="al-row" style="color:#b05555;">⚠ If it were ${stm === 'w' ? 'Black' : 'White'} to move: ` +
+            `<b>${anaThreat.san || anaThreat.uci}</b> (${fmtEval(anaThreat.cpW)})</div>`;
+  $('anaLines').innerHTML = html;
+  anaDrawArrows();
+}
+function anaDrawArrows() {
+  if (mode !== 'analysis' || anaSetup) return;
+  let svg = '';
+  const best = anaLines[0] && anaLines[0].pv && anaLines[0].pv[0];
+  if (best) svg += arrowSVG(best.slice(0, 2), best.slice(2, 4), 'rgba(44,123,229,.8)');
+  if (anaThreat && anaThreat.uci)
+    svg += arrowSVG(anaThreat.uci.slice(0, 2), anaThreat.uci.slice(2, 4), 'rgba(231,76,60,.5)');
+  arrowLayer.innerHTML = svg;
 }
 function anaMove(moveObj) {
   const mv = game.move({ from: moveObj.from, to: moveObj.to, promotion: moveObj.promotion });
@@ -4207,7 +4350,7 @@ function renderRepBox() {
 function startRepRecord(color) {
   mode = 'rep'; trainSeq++;
   repSession = { recording: true, color };
-  enterTrainUI('Record a line', '📖');
+  enterTrainUI(`Record a ${color === 'w' ? 'White' : 'Black'} line`, '📖');
   playerColor = color;
   game = new Chess();
   phase = 'player';
@@ -4263,6 +4406,7 @@ function repNextLine() {
   s.idx = 0; s.failed = false; s.lineFinished = false;
   lastMove = null; selected = null;
   moveLog = []; movesBody.innerHTML = '';
+  $('trainTitle').textContent = '📖 ' + line.name;
   $('trainProg').textContent = `Line ${s.qi + 1} of ${s.queue.length}`;
   coachMsg.textContent = `From memory: play your ${line.color === 'w' ? 'White' : 'Black'} moves of "${line.name}".`;
   renderBoard();
@@ -4820,7 +4964,7 @@ function tryOfferResume() {
 function resumeGame(live) {
   gameSeq++; trainSeq++;
   mode = 'game'; drillActive = null; deckSession = null; guessSession = null; repSession = null;
-  customStart = false; anaSetup = false;
+  customStart = false; anaSetup = false; boardFlip = false;
   lcCounted.clear(); lcDepth.clear();
   assistTints = null; assistFen = null;
   $('clockPanel').style.display = ''; $('actRow').style.display = '';
