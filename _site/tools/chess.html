@@ -641,6 +641,41 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 .career-strip .cl-tile.locked { filter:grayscale(1) opacity(.45); }
 .career-strip .cl-tile .cl-mark { position:absolute; right:-4px; bottom:-4px; font-size:13px; }
 
+/* pairs (concentration) */
+.pairs-grid { display:none; grid-template-columns:repeat(var(--pcols,6),1fr); gap:10px; width:100%; }
+.pcard { position:relative; perspective:700px; cursor:pointer; border:none; background:transparent; padding:0; }
+.pcard::before { content:''; display:block; padding-top:135%; }
+.pcard-inner {
+  position:absolute; inset:0; display:block; transition:transform .35s;
+  transform-style:preserve-3d; -webkit-transform-style:preserve-3d;
+}
+.pcard.up .pcard-inner, .pcard.matched .pcard-inner { transform:rotateY(180deg); }
+.pcard-back, .pcard-face {
+  position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+  border-radius:10px; border:1.5px solid #e0e0e0; display:flex; align-items:center; justify-content:center;
+}
+.pcard-back {
+  background-color:var(--sq-dark); color:rgba(255,255,255,.55);
+  background-image:repeating-conic-gradient(rgba(255,255,255,.08) 0% 25%, transparent 0% 50%);
+  background-size:50% 50%; font-size:clamp(18px,3.2vw,34px);
+}
+.pcard-face {
+  transform:rotateY(180deg); background:var(--bs-body-bg,#fff); flex-direction:column;
+  gap:4px; padding:5px; text-align:center; overflow:hidden;
+}
+.pcard.matched .pcard-face { border-color:#27ae60; box-shadow:0 0 0 2px rgba(39,174,96,.25); }
+.pcard.wrong .pcard-face { border-color:#e74c3c; }
+.pcard-face img.pp { width:62%; max-height:62%; }
+.pcard-face .pt { font-weight:700; font-family:'Nunito',sans-serif; font-size:clamp(11px,1.9vw,17px); line-height:1.2; }
+.pcard-face .ps { font-size:clamp(9px,1.3vw,11.5px); color:#888; line-height:1.15; }
+.pmini {
+  display:block; width:88%; aspect-ratio:1; position:relative; border-radius:4px; overflow:hidden;
+  background:repeating-conic-gradient(var(--sq-light) 0% 25%, var(--sq-dark) 0% 50%) 0 0/25% 25%;
+}
+.pmini img { position:absolute; width:12.5%; height:12.5%; }
+.pmini .hl { position:absolute; width:12.5%; height:12.5%; background:rgba(39,174,96,.65); }
+.pmini svg { position:absolute; inset:0; width:100%; height:100%; }
+
 /* dossier */
 .dossier { border:1.5px solid #e0e0e0; border-radius:10px; padding:12px 14px; margin-top:10px; font-size:13px; color:#555; }
 .dossier h4 { margin:10px 0 4px; font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:#999; }
@@ -777,6 +812,21 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
       <div class="engine-note">Look at a position, then rebuild it from memory, spot what changed, or answer questions about it. Positions come from your own games and the classics, never random scatter, so you train yourself to see chess patterns instead of dots. 100 stages from 4 pieces to a full board; look time scales with the piece count and shrinks as you climb, and you can always hide the pieces early when you are ready.</div>
     </div>
 
+    <div class="prog-box" id="pairsBox">
+      <div class="prog-head"><span class="cs-label" style="margin:0;">Pairs</span></div>
+      <div class="prog-stats" id="pairsStats"></div>
+      <div class="cs-row">
+        <select id="pairsFlavorSel" class="theme-sel"></select>
+        <select id="pairsSizeSel" class="theme-sel">
+          <option value="6">12 cards (easy)</option>
+          <option value="8">16 cards</option>
+          <option value="12" selected="">24 cards</option>
+        </select>
+        <button class="hint-btn" id="pairsStartBtn">Play</button>
+      </div>
+      <div class="engine-note">The classic memory game, chess flavored. Flip two cards; a match stays up, a miss turns back over. Fewer attempts earn more stars, and each flavor teaches something real: pieces, coordinates, moves, values, mating patterns, openings, and the great players.</div>
+    </div>
+
     <div class="prog-box" id="sparBox">
       <div class="prog-head"><span class="cs-label" style="margin:0;">Sparring</span></div>
       <div class="cs-row">
@@ -801,6 +851,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
     <div class="prog-box" id="guessBox">
       <div class="prog-head"><span class="cs-label" style="margin:0;">Guess the move</span></div>
       <div class="drill-grid" id="guessGrid"></div>
+      <label class="late-row"><input type="checkbox" id="guessBothChk"> Guess for both sides (harder): predict every single move of the game</label>
       <div class="engine-note">Replay a classic game, or one of your own, and predict every move for one side. 3 points for the game move; Stockfish scores your alternatives. Each tile keeps your best finished score: green from 75%, red below 33%, yellow in between.</div>
     </div>
 
@@ -848,6 +899,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
             <div class="board" id="board"></div>
             <svg class="arrow-layer" id="arrowLayer" viewbox="0 0 8 8"></svg>
           </div>
+          <div class="pairs-grid" id="pairsGrid"></div>
           <div class="overlay" id="promoOverlay"><div class="promo-box" id="promoBox"></div></div>
           <div class="overlay" id="endOverlay"><div class="end-box" id="endBox"></div></div>
           <div class="confirm-bar" id="confirmBar">
@@ -878,6 +930,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
         </div>
         <div class="panel-box" id="trainBox" style="display:none;">
           <div id="trainTitle" style="font-weight:700;font-family:'Nunito',sans-serif;"></div>
+          <div id="guessColors" style="display:none;font-size:12.5px;color:#444;margin-top:6px;"></div>
           <div id="guessAbout" style="display:none;font-size:13px;color:#555;line-height:1.55;margin-top:7px;"></div>
           <div id="trainProg" style="font-size:12.5px;color:#888;margin-top:4px;"></div>
           <div id="drillPlan" style="display:none;font-size:12.5px;color:#555;margin-top:8px;line-height:1.55;border-top:1px dashed #e0e0e0;padding-top:7px;"></div>
@@ -919,6 +972,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
           </div>
         </div>
         <div class="panel-box">
+          <div id="coachCtl">
           <div class="coach-row">
             <label class="switch" title="Coach on/off"><input type="checkbox" id="coachToggle" checked=""><span class="sl"></span></label>
             <span style="font-size:13.5px;">Coach</span>
@@ -927,6 +981,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
           </div>
           <label class="late-row"><input type="checkbox" id="lateHint"> Late hints: wait 60&nbsp;s / 2&nbsp;min before helping</label>
           <label class="late-row"><input type="checkbox" id="assistChk"> Assisted analysis: color the squares a picked-up piece can go to</label>
+          </div>
           <div class="coach-msg" id="coachMsg" style="margin-top:8px;">Make your move. If you think for a while, I'll point you in the right direction.</div>
           <div class="book-line" id="bookLine" style="display:none;"></div>
           <div class="perf-line" id="perfLine" style="display:none;"></div>
@@ -1873,7 +1928,7 @@ function startGame() {
   assistTints = null; assistFen = null;
   $('clockPanel').style.display = ''; $('actRow').style.display = '';
   $('trainBox').style.display = 'none'; $('anaBox').style.display = 'none';
-  $('bookLine').style.display = 'none';
+  $('bookLine').style.display = 'none'; $('coachCtl').style.display = '';
   game = new Chess();
   playerColor = chosen.color === 'random' ? (Math.random() < .5 ? 'w' : 'b') : chosen.color;
   const [mins, inc] = chosen.tc.split('+').map(Number);
@@ -1947,6 +2002,7 @@ function startCustomGame(fen, forcedColor) {
   $('clockPanel').style.display = ''; $('actRow').style.display = '';
   $('trainBox').style.display = 'none'; $('anaBox').style.display = 'none';
   $('bookLine').style.display = 'none'; $('perfLine').style.display = 'none';
+  $('coachCtl').style.display = '';
   setEvalDisplay(0, null);
   coachMsg.textContent = coachOn
     ? 'Casual game from a custom position. It will not be recorded. Good luck.'
@@ -1976,10 +2032,11 @@ function endToSetup() {
   $('endOverlay').classList.remove('show');
   $('clockPanel').style.display = ''; $('actRow').style.display = '';
   $('trainBox').style.display = 'none'; $('anaBox').style.display = 'none';
+  $('coachCtl').style.display = '';
   gameArea.style.display = 'none'; setupCard.style.display = 'block';
   memSession = null; clearMemTimer(); restoreMemPal();
   renderProgress(); buildBotGrid(); renderDeckBox(); renderDrillBox(); renderGuessBox();
-  renderRepBox(); renderTreeBox(); renderCareerBox(); renderMemBox();
+  renderRepBox(); renderTreeBox(); renderCareerBox(); renderMemBox(); renderPairsBox();
 }
 
 function enterPlayerTurn(retry) {
@@ -2415,7 +2472,9 @@ function findKing(color) {
 let dragState = null;
 /* in the analysis board and while recording a repertoire line, either side may move */
 function freeMoveMode() {
-  return mode === 'analysis' || (mode === 'rep' && repSession && repSession.recording);
+  return mode === 'analysis'
+    || (mode === 'rep' && repSession && repSession.recording)
+    || (mode === 'guess' && guessSession && guessSession.both);
 }
 /* setup-mode drag state: move pieces around the board or drag them off to remove */
 let setupDrag = null;
@@ -3213,8 +3272,10 @@ function enterTrainUI(title, icon) {
   assistTints = null; assistFen = null;
   drillActive = null; customStart = false; anaSetup = false; boardFlip = false;
   memSession = null; clearMemTimer(); restoreMemPal();
+  pairsSession = null; pairsSetBoardVisible(true);
+  $('coachCtl').style.display = 'none';
   $('anaBox').style.display = 'none'; $('drillPlan').style.display = 'none';
-  $('guessAbout').style.display = 'none';
+  $('guessAbout').style.display = 'none'; $('guessColors').style.display = 'none';
   moveLog = []; movesBody.innerHTML = '';
   $('endOverlay').classList.remove('show');
   setupCard.style.display = 'none'; gameArea.style.display = 'block';
@@ -3231,6 +3292,8 @@ function exitTraining() {
   mode = 'game'; drillActive = null; deckSession = null; guessSession = null; repSession = null;
   customStart = false; anaSetup = false; boardFlip = false;
   memSession = null; clearMemTimer(); restoreMemPal();
+  pairsSession = null; pairsSetBoardVisible(true);
+  $('coachCtl').style.display = '';
   phase = 'setup';
   stopClock();
   engine.stopIf('analysis');
@@ -3239,13 +3302,14 @@ function exitTraining() {
   $('clockPanel').style.display = ''; $('actRow').style.display = '';
   gameArea.style.display = 'none'; setupCard.style.display = 'block';
   renderDeckBox(); renderDrillBox(); renderGuessBox(); renderProgress(); buildBotGrid();
-  renderRepBox(); renderTreeBox(); renderCareerBox(); renderMemBox();
+  renderRepBox(); renderTreeBox(); renderCareerBox(); renderMemBox(); renderPairsBox();
 }
 $('trainExit').onclick = exitTraining;
 $('trainNext').onclick = () => {
   if (mode === 'deck') deckNextPosition();
   else if (mode === 'guess') guessContinue();
   else if (mode === 'memory') memNewRound();
+  else if (mode === 'pairs') startPairs();
   else if (mode === 'rep' && repSession) {
     if (repSession.lineFinished) { repSession.lineFinished = false; repNextLine(); }
     else repAdvance();
@@ -3277,7 +3341,7 @@ $('trainShow').onclick = () => {
     s.idx++;
     renderBoard();
     coachMsg.innerHTML = `The game move was <b class="mv">${actual.san}</b>.`;
-    $('trainProg').textContent = `Score ${s.score}/${s.max}`;
+    $('trainProg').textContent = `Move ${Math.min(Math.floor(s.idx / 2) + 1, Math.ceil(s.moves.length / 2))} of ${Math.ceil(s.moves.length / 2)} · score ${s.score}/${s.max}`;
     $('trainShow').style.display = 'none'; $('trainNext').style.display = '';
   }
 };
@@ -3564,7 +3628,7 @@ const FAMOUS = [
   { title: 'Réti vs Capablanca, New York 1924 (the hypermodern triumph)', side: 'w', hero: 'Richard Réti',
     about: 'Capablanca had not lost a serious game in eight years when Réti beat him with the flank-first system that now bears his name: knights and fianchettoed bishops pressing the center from a distance instead of occupying it. The win stunned the chess world and legitimized the whole hypermodern revolution in one afternoon. Chosen as the moment opening theory changed direction, and the real historical entry for Réti beside his little 1910 miniature.',
     pgn: '1.Nf3 Nf6 2.c4 g6 3.b4 Bg7 4.Bb2 O-O 5.g3 b6 6.Bg2 Bb7 7.O-O d6 8.d3 Nbd7 9.Nbd2 e5 10.Qc2 Re8 11.Rfd1 a5 12.a3 h6 13.Nf1 c5 14.b5 Nf8 15.e3 Qc7 16.d4 Be4 17.Qc3 exd4 18.exd4 N6d7 19.Qd2 cxd4 20.Bxd4 Qxc4 21.Bxg7 Kxg7 22.Qb2+ Kg8 23.Rxd6 Qc5 24.Rad1 Ra7 25.Ne3 Qh5 26.Nd4 Bxg2 27.Kxg2 Qe5 28.Nc4 Qc5 29.Nc6 Rc7 30.Ne3 Ne5 31.R1d5' },
-  { title: 'Reshevsky vs Petrosian, Zurich 1953 (the exchange sacrifice)', side: 'b', hero: 'Tigran Petrosian',
+  { title: 'Reshevsky vs Petrosian, Zurich 1953 (the exchange sacrifice)', side: 'b', hero: 'Tigran Petrosian', res: '1/2-1/2',
     about: 'The most famous and most taught positional exchange sacrifice in history. Under pressure, Petrosian calmly plays 25...Re6, giving a rook for a bishop not to attack but to blockade: the pawns stop, the knight gets d5 forever, and the danger simply evaporates into a draw. Mikhail Tal wrote that seeing this move bound the words Petrosian and exchange sacrifice together for life. Chosen as the defining lesson that material values are relative.',
     pgn: '1.d4 Nf6 2.c4 e6 3.Nc3 Bb4 4.e3 O-O 5.Bd3 d5 6.Nf3 c5 7.O-O Nc6 8.a3 Bxc3 9.bxc3 b6 10.cxd5 exd5 11.Bb2 c4 12.Bc2 Bg4 13.Qe1 Ne4 14.Nd2 Nxd2 15.Qxd2 Bh5 16.f3 Bg6 17.e4 Qd7 18.Rae1 dxe4 19.fxe4 Rfe8 20.Qf4 b5 21.Bd1 Re7 22.Bg4 Qe8 23.e5 a5 24.Re3 Rd8 25.Rfe1 Re6 26.a4 Ne7 27.Bxe6 fxe6 28.Qf1 Nd5 29.Rf3 Bd3 30.Rxd3 cxd3 31.Qxd3 b4 32.cxb4 axb4 33.a5 Ra8 34.Ra1 Qc6 35.Bc1 Qc7 36.a6 Qb6 37.Bd2 b3 38.Qc4 h6 39.h3 b2 40.Rb1 Kh8 41.Be1' },
   { title: 'Spassky vs Bronstein, Leningrad 1960 (the James Bond game)', side: 'w', hero: 'Boris Spassky',
@@ -3652,7 +3716,11 @@ function startGuessFamous(i) {
   const g = FAMOUS[i];
   if (!g) return;
   const moves = parsePgnMoves(g.pgn);
-  if (moves) beginGuess(moves, g.side, `Play like ${g.hero}`, deckId(g.pgn), g.title, g.about);
+  if (!moves) return;
+  const whiteName = g.title.split(' vs ')[0];
+  const blackName = (g.title.split(' vs ')[1] || '').split(',')[0].split(' (')[0];
+  beginGuess(moves, g.side, `Play like ${g.hero}`, deckId(g.pgn), g.title, g.about,
+             { w: whiteName, b: blackName }, g.res || (g.side === 'w' ? '1-0' : '0-1'));
 }
 function startGuessOwn(t) {
   const g = loadHist().find(x => x.t === t);
@@ -3660,15 +3728,30 @@ function startGuessOwn(t) {
   const moves = parsePgnMoves(g.pgn);
   if (!moves) return;
   const bo = BOTS.find(x => x.id === g.bot);
+  const oppName = bo ? bName(bo) : g.bot;
   beginGuess(moves, g.color === 'b' ? 'b' : 'w', 'Replay your own game', 't' + t,
-             `Your game vs ${bo ? bName(bo) : g.bot}${g.perf ? ' (~' + g.perf.elo + ')' : ''}`,
-             'Your strongest game so far by the coach’s rating estimate. Replaying your own best chess and trying to reproduce it from the same positions shows which of your good decisions were understanding and which were luck.');
+             `Your game vs ${oppName}${g.perf ? ' (~' + g.perf.elo + ')' : ''}`,
+             'Your strongest game so far by the coach’s rating estimate. Replaying your own best chess and trying to reproduce it from the same positions shows which of your good decisions were understanding and which were luck.',
+             g.color === 'b' ? { w: oppName, b: 'You' } : { w: 'You', b: oppName }, g.result);
 }
-function beginGuess(moves, side, intro, key, title, about) {
+function beginGuess(moves, side, intro, key, title, about, players, result) {
   mode = 'guess'; trainSeq++;
-  guessSession = { moves, idx: 0, side, score: 0, max: 0, key };
+  const both = $('guessBothChk').checked;
+  guessSession = { moves, idx: 0, side, score: 0, max: 0, key, both };
   enterTrainUI('Guess the move', '🎯');
   $('trainTitle').textContent = '🎯 ' + (title || 'Guess the move');
+  if (players) {
+    const both = guessSession.both;
+    const mark = c => (!both && side === c && players[c] !== 'You' ? ' (you)' : '');
+    $('guessColors').innerHTML = '';
+    const line = document.createElement('span');
+    const resTxt = result === '1/2-1/2' ? '½-½, a draw'
+      : result === '0-1' ? '0-1, Black wins' : result === '1-0' ? '1-0, White wins' : '';
+    line.textContent = `⚪ White: ${players.w}${mark('w')}  ·  ⚫ Black: ${players.b}${mark('b')}` +
+      (resTxt ? `  ·  ${resTxt}` : '') + (both ? '  ·  you guess both sides' : '');
+    $('guessColors').appendChild(line);
+    $('guessColors').style.display = 'block';
+  }
   if (about) {
     $('guessAbout').textContent = about;
     $('guessAbout').style.display = 'block';
@@ -3677,7 +3760,7 @@ function beginGuess(moves, side, intro, key, title, about) {
   playerColor = side;
   game = new Chess();
   renderBoard();
-  coachMsg.innerHTML = `${intro}: guess every move for ${side === 'w' ? 'White' : 'Black'}. ` +
+  coachMsg.innerHTML = `${intro}: guess every move ${both ? 'of both sides' : `for ${side === 'w' ? 'White' : 'Black'}`}. ` +
     `3 points for the move actually played, up to 2 for a strong alternative (Stockfish decides).`;
   guessContinue();
 }
@@ -3691,11 +3774,11 @@ function guessContinue() {
     if (seq !== trainSeq || mode !== 'guess') return;
     if (s.idx >= s.moves.length) return guessDone();
     const m = s.moves[s.idx];
-    if (m.color === s.side) {
+    if (s.both || m.color === s.side) {
       phase = 'player';
       $('trainShow').style.display = '';
-      $('trainProg').textContent = `Move ${Math.floor(s.idx / 2) + 1} · score ${s.score}/${s.max}`;
-      coachMsg.innerHTML = `${s.side === 'w' ? 'White' : 'Black'} to move. What was played?`;
+      $('trainProg').textContent = `Move ${Math.floor(s.idx / 2) + 1} of ${Math.ceil(s.moves.length / 2)} · score ${s.score}/${s.max}`;
+      coachMsg.innerHTML = `${m.color === 'w' ? 'White' : 'Black'} to move. What was played?`;
       renderBoard();
       return;
     }
@@ -3744,7 +3827,7 @@ async function guessAnswer(moveObj) {
   s.idx++;
   renderBoard();
   coachMsg.innerHTML = msg;
-  $('trainProg').textContent = `Score ${s.score}/${s.max}`;
+  $('trainProg').textContent = `Move ${Math.min(Math.floor(s.idx / 2) + 1, Math.ceil(s.moves.length / 2))} of ${Math.ceil(s.moves.length / 2)} · score ${s.score}/${s.max}`;
   $('trainNext').style.display = '';
 }
 function guessDone() {
@@ -3890,7 +3973,7 @@ function startDrill(d) {
   $('trainProg').textContent = d.goal === 'win'
     ? 'Goal: win this position. A draw or loss fails the drill.'
     : 'Goal: hold the draw. Repetition and the 50-move rule are your friends.';
-  $('guessAbout').style.display = 'none';
+  $('guessAbout').style.display = 'none'; $('guessColors').style.display = 'none';
   $('drillPlan').style.display = 'block';
   $('drillPlan').innerHTML = `📋 <b>The plan.</b> ${d.plan}<br><br>⚠️ <b>Avoid.</b> ${d.avoid}`;
   $('trainShow').style.display = 'none'; $('trainNext').style.display = 'none';
@@ -4065,6 +4148,7 @@ function enterAnalysis() {
   $('clockPanel').style.display = 'none'; $('actRow').style.display = 'none';
   $('trainBox').style.display = 'none'; $('anaBox').style.display = 'block';
   $('anaSetupUI').style.display = 'none'; $('anaCtrls').style.display = '';
+  $('coachCtl').style.display = 'none';
   $('perfLine').style.display = 'none'; $('bookLine').style.display = 'none';
   $('gAva').style.background = '#2c7be5'; $('gAva').textContent = '🔬';
   $('gBotName').textContent = 'Analysis board'; $('gBotElo').textContent = 'move pieces for either side';
@@ -4541,6 +4625,8 @@ function repMove(moveObj) {
     $('trainNext').style.display = '';
   }
 }
+$('guessBothChk').checked = lsGet('chess-trainer-guessboth') === '1';
+$('guessBothChk').onchange = e => lsSet('chess-trainer-guessboth', e.target.checked ? '1' : '0');
 $('repAddW').onclick = () => startRepRecord('w');
 $('repAddB').onclick = () => startRepRecord('b');
 $('repTrainBtn').onclick = startRepTraining;
@@ -4971,9 +5057,259 @@ $('memStartBtn').onclick = startMemory;
 $('memPaceSel').value = lsGet('chess-trainer-mempace') || '1';
 $('memPaceSel').onchange = e => { lsSet('chess-trainer-mempace', e.target.value); renderMemBox(); };
 
+/* ============================== pairs (concentration) ============================== */
+/* The classic memory game with chess-teaching flavors. Cards match when they carry
+   the same key from opposite roles (picture side and answer side). */
+const PAIRS_KEY = 'chess-coach-pairs-v1';
+let pairsSession = null;
+function pairsShuffle(a) { return shuffleArr(a.slice()); }
+function miniHTML(parts) {
+  return `<span class="pmini">${parts.join('')}</span>`;
+}
+function miniPiece(color, type, sq) {
+  const f = FILES.indexOf(sq[0]), r = +sq[1] - 1;
+  return `<img src="${PIECE_SRC({ color, type })}" style="left:${f * 12.5}%;top:${(7 - r) * 12.5}%;" alt="">`;
+}
+function miniHighlight(sq) {
+  const f = FILES.indexOf(sq[0]), r = +sq[1] - 1;
+  return `<span class="hl" style="left:${f * 12.5}%;top:${(7 - r) * 12.5}%;"></span>`;
+}
+function miniArrow(from, to) {
+  const c = sq => ({ x: FILES.indexOf(sq[0]) + .5, y: 7 - (+sq[1] - 1) + .5 });
+  const a = c(from), b = c(to);
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+  if (!len) return '';
+  const ux = dx / len, uy = dy / len;
+  const ex = b.x - ux * .35, ey = b.y - uy * .35;
+  const bx = ex - ux * .32, by = ey - uy * .32;
+  return `<svg viewBox="0 0 8 8"><line x1="${a.x + ux * .3}" y1="${a.y + uy * .3}" x2="${bx}" y2="${by}" stroke="rgba(44,123,229,.9)" stroke-width="0.18" stroke-linecap="round"/><polygon points="${ex},${ey} ${bx - uy * .18},${by + ux * .18} ${bx + uy * .18},${by - ux * .18}" fill="rgba(44,123,229,.9)"/></svg>`;
+}
+function miniFEN(fen) {
+  const parts = [];
+  fen.split(' ')[0].split('/').forEach((row, ri) => {
+    let f = 0;
+    for (const ch of row) {
+      if (/\d/.test(ch)) { f += +ch; continue; }
+      const color = ch === ch.toUpperCase() ? 'w' : 'b';
+      parts.push(miniPiece(color, ch.toLowerCase(), FILES[f] + (8 - ri)));
+      f++;
+    }
+  });
+  return miniHTML(parts);
+}
+const PIECE_NAME = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
+function randSq() { return FILES[Math.floor(Math.random() * 8)] + (1 + Math.floor(Math.random() * 8)); }
+const PAIR_MATES = [
+  ['Back-rank mate', '4R1k1/5ppp/8/8/8/8/8/6K1'],
+  ['Ladder mate', 'R6k/1R6/8/8/8/8/8/6K1'],
+  ['Smothered mate', '6rk/5Npp/8/8/8/8/8/6K1'],
+  ['Scholar’s mate', 'r1bqkbnr/pppp1Qpp/2n5/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR'],
+  ['Fool’s mate', 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR'],
+  ['Arabian mate', '7k/7R/5N2/8/8/8/8/6K1'],
+  ['Anastasia’s mate', '8/4N1pk/8/8/8/8/8/6KR'],
+  ['Epaulette mate', '3rkr2/8/4Q3/8/8/8/8/4K3'],
+];
+const PAIR_PLAYERS = [
+  ['Mikhail Tal', 'The Magician from Riga'],
+  ['José Raúl Capablanca', 'The Chess Machine'],
+  ['Tigran Petrosian', 'Iron Tigran'],
+  ['Magnus Carlsen', 'The Mozart of Chess'],
+  ['Garry Kasparov', 'The Beast of Baku'],
+  ['Anatoly Karpov', 'The Boa Constrictor'],
+  ['Paul Morphy', 'The Pride and Sorrow of Chess'],
+  ['Bobby Fischer', 'The Boy from Brooklyn'],
+];
+function cardPiece(color, type, sub) {
+  return `<img class="pp" src="${PIECE_SRC({ color, type })}" alt="">` +
+         (sub ? `<span class="ps">${sub}</span>` : '');
+}
+function cardText(main, sub) {
+  return `<span class="pt">${main}</span>` + (sub ? `<span class="ps">${sub}</span>` : '');
+}
+function genMoveCards(n) {
+  const out = [], used = new Set();
+  const jumps = [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]];
+  let guard = 0;
+  while (out.length < n && guard++ < 400) {
+    const kind = ['n', 'b', 'r', 'q', 'p'][Math.floor(Math.random() * 5)];
+    let from, to;
+    if (kind === 'p') {
+      const f = Math.floor(Math.random() * 8), r = 2 + Math.floor(Math.random() * 4);
+      from = FILES[f] + r; to = FILES[f] + (r + 1);
+    } else if (kind === 'n') {
+      const f = Math.floor(Math.random() * 8), r = Math.floor(Math.random() * 8);
+      const js = pairsShuffle(jumps).find(([df, dr]) => f + df >= 0 && f + df < 8 && r + dr >= 0 && r + dr < 8);
+      if (!js) continue;
+      from = FILES[f] + (r + 1); to = FILES[f + js[0]] + (r + js[1] + 1);
+    } else {
+      const dirs = kind === 'r' ? [[1, 0], [0, 1], [-1, 0], [0, -1]]
+        : kind === 'b' ? [[1, 1], [1, -1], [-1, 1], [-1, -1]]
+        : [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+      const f = Math.floor(Math.random() * 8), r = Math.floor(Math.random() * 8);
+      const [df, dr] = dirs[Math.floor(Math.random() * dirs.length)];
+      const dist = 2 + Math.floor(Math.random() * 3);
+      const tf = f + df * dist, tr = r + dr * dist;
+      if (tf < 0 || tf > 7 || tr < 0 || tr > 7) continue;
+      from = FILES[f] + (r + 1); to = FILES[tf] + (tr + 1);
+    }
+    const san = (kind === 'p' ? '' : kind.toUpperCase()) + to;
+    if (used.has(san)) continue;
+    used.add(san);
+    out.push({ key: 'mv' + san, a: miniHTML([miniPiece('w', kind, from), miniArrow(from, to)]), b: cardText(san, 'the move') });
+  }
+  return out;
+}
+const PAIR_FLAVORS = {
+  pieces: { label: 'Piece pairs (easiest)', gen(n) {
+    const combos = [];
+    for (const c of ['w', 'b']) for (const t of ['p', 'n', 'b', 'r', 'q', 'k'])
+      combos.push({ key: c + t, a: cardPiece(c, t), b: cardPiece(c, t) });
+    return pairsShuffle(combos).slice(0, n);
+  } },
+  coords: { label: 'Square names', gen(n) {
+    const sqs = new Set();
+    while (sqs.size < n) sqs.add(randSq());
+    return [...sqs].map(sq => ({ key: 'sq' + sq,
+      a: miniHTML([miniHighlight(sq), miniPiece(Math.random() < .5 ? 'w' : 'b', 'k', sq)]),
+      b: cardText(sq, 'the square') }));
+  } },
+  moves: { label: 'Moves and notation', gen: genMoveCards },
+  values: { label: 'Piece values', gen(n) {
+    const vals = [['p', '1'], ['n', '3'], ['b', '3'], ['r', '5'], ['q', '9']];
+    const out = [];
+    for (const c of ['w', 'b']) for (const [t, v] of vals)
+      out.push({ key: 'v' + v, a: cardPiece(c, t, PIECE_NAME[t]), b: cardText(v, v === '1' ? 'point' : 'points') });
+    return pairsShuffle(out).slice(0, Math.min(n, 10));
+  } },
+  mates: { label: 'Mating patterns', gen(n) {
+    return pairsShuffle(PAIR_MATES).slice(0, Math.min(n, PAIR_MATES.length))
+      .map(([name, fen]) => ({ key: 'mt' + name, a: miniFEN(fen), b: cardText(name, 'checkmate pattern') }));
+  } },
+  openings: { label: 'Openings', gen(n) {
+    const items = [];
+    for (const t of THEMED) {
+      try {
+        const c = new Chess();
+        for (const m of t.moves) c.move(m);
+        items.push({ key: 'op' + t.name, a: miniFEN(c.fen()), b: cardText(t.name, 'the opening') });
+      } catch (e) {}
+    }
+    return pairsShuffle(items).slice(0, Math.min(n, items.length));
+  } },
+  players: { label: 'Great players', gen(n) {
+    return pairsShuffle(PAIR_PLAYERS).slice(0, Math.min(n, PAIR_PLAYERS.length))
+      .map(([name, nick]) => ({ key: 'pl' + name, a: cardText(name, 'the player'), b: cardText(nick, 'the nickname') }));
+  } },
+  mix: { label: 'Mix of everything (hardest)', gen(n) {
+    const pool = [];
+    for (const k of ['pieces', 'coords', 'moves', 'values', 'mates', 'openings', 'players'])
+      pool.push(...PAIR_FLAVORS[k].gen(3).map(x => ({ ...x, key: k + '|' + x.key })));
+    return pairsShuffle(pool).slice(0, n);
+  } },
+};
+function loadPairsBest() { try { return JSON.parse(lsGet(PAIRS_KEY)) || {}; } catch (e) { return {}; } }
+function renderPairsBox() {
+  const sel = $('pairsFlavorSel');
+  if (!sel.options.length)
+    for (const k of ['pieces', 'values', 'coords', 'players', 'moves', 'openings', 'mates', 'mix']) {
+      const o = document.createElement('option');
+      o.value = k; o.textContent = PAIR_FLAVORS[k].label;
+      sel.appendChild(o);
+    }
+  const best = loadPairsBest()[sel.value + ':' + $('pairsSizeSel').value];
+  $('pairsStats').innerHTML = best
+    ? `<span>Best: <b>${'⭐'.repeat(best.stars)}</b> (${best.attempts} attempts)</span>`
+    : `<span>Not played yet at this flavor and size</span>`;
+}
+function pairsSetBoardVisible(showBoard) {
+  document.querySelector('.tilt-wrap').style.display = showBoard ? '' : 'none';
+  $('evalbar').style.display = showBoard ? '' : 'none';
+  $('pairsGrid').style.display = showBoard ? 'none' : 'grid';
+}
+function startPairs() {
+  const flavor = $('pairsFlavorSel').value;
+  const wantPairs = +$('pairsSizeSel').value;
+  const items = PAIR_FLAVORS[flavor].gen(wantPairs);
+  if (items.length < 3) return;
+  mode = 'pairs'; trainSeq++;
+  enterTrainUI('Pairs', '🃏');
+  pairsSetBoardVisible(false);
+  const cards = [];
+  items.forEach((it, i) => {
+    cards.push({ id: i * 2, key: it.key, html: it.a, role: 'a' });
+    cards.push({ id: i * 2 + 1, key: it.key, html: it.b, role: 'b' });
+  });
+  pairsSession = { flavor, pairs: items.length, cards: pairsShuffle(cards),
+                   found: 0, attempts: 0, open: null, lock: false, sizeKey: flavor + ':' + wantPairs };
+  const grid = $('pairsGrid');
+  grid.style.setProperty('--pcols', pairsSession.cards.length >= 24 ? 6 : pairsSession.cards.length >= 20 ? 5 : 4);
+  grid.innerHTML = '';
+  pairsSession.cards.forEach((c, idx) => {
+    const b = document.createElement('button');
+    b.className = 'pcard';
+    b.dataset.i = idx;
+    b.innerHTML = `<span class="pcard-inner"><span class="pcard-back">♞</span><span class="pcard-face">${c.html}</span></span>`;
+    b.onclick = () => pairsFlip(idx);
+    grid.appendChild(b);
+  });
+  $('trainTitle').textContent = `🃏 Pairs · ${PAIR_FLAVORS[flavor].label}`;
+  $('trainProg').textContent = `Found 0 of ${pairsSession.pairs} · attempts 0`;
+  $('trainShow').style.display = 'none'; $('trainNext').style.display = 'none';
+  coachMsg.textContent = 'Flip two cards. A matching pair stays up; a miss turns back over. Remember what you saw.';
+  phase = 'trainwait';
+}
+function pairsFlip(idx) {
+  const s = pairsSession;
+  if (!s || s.lock) return;
+  const card = s.cards[idx];
+  const el = $('pairsGrid').children[idx];
+  if (card.matched || s.open === idx) return;
+  el.classList.add('up');
+  if (s.open === null) { s.open = idx; return; }
+  const firstIdx = s.open, first = s.cards[firstIdx];
+  const firstEl = $('pairsGrid').children[firstIdx];
+  s.open = null;
+  s.attempts++;
+  if (first.key === card.key && first.role !== card.role) {
+    first.matched = card.matched = true;
+    el.classList.add('matched'); firstEl.classList.add('matched');
+    s.found++;
+    $('trainProg').textContent = `Found ${s.found} of ${s.pairs} · attempts ${s.attempts}`;
+    if (s.found === s.pairs) pairsDone();
+  } else {
+    s.lock = true;
+    el.classList.add('wrong'); firstEl.classList.add('wrong');
+    $('trainProg').textContent = `Found ${s.found} of ${s.pairs} · attempts ${s.attempts}`;
+    setTimeout(() => {
+      el.classList.remove('up', 'wrong');
+      firstEl.classList.remove('up', 'wrong');
+      s.lock = false;
+    }, 850);
+  }
+}
+function pairsDone() {
+  const s = pairsSession;
+  const ratio = s.attempts / s.pairs;
+  const stars = ratio <= 1.5 ? 3 : ratio <= 2.5 ? 2 : 1;
+  const best = loadPairsBest();
+  const prev = best[s.sizeKey];
+  if (!prev || stars > prev.stars || (stars === prev.stars && s.attempts < prev.attempts)) {
+    best[s.sizeKey] = { stars, attempts: s.attempts };
+    lsSet(PAIRS_KEY, JSON.stringify(best));
+  }
+  const need3 = Math.floor(s.pairs * 1.5), need2 = Math.floor(s.pairs * 2.5);
+  coachMsg.innerHTML = `🎉 All ${s.pairs} pairs found in <b>${s.attempts}</b> attempts. ${'⭐'.repeat(stars)}` +
+    (stars === 3 ? ' Superb memory.' : stars === 2 ? ` Solid. Three stars needs ${need3} attempts or fewer.` : ` Keep training. Two stars at ${need2} attempts, three at ${need3}.`);
+  $('trainProg').textContent = `Done · ${'⭐'.repeat(stars)}`;
+  $('trainNext').style.display = '';
+}
+$('pairsStartBtn').onclick = startPairs;
+$('pairsFlavorSel').onchange = renderPairsBox;
+$('pairsSizeSel').onchange = renderPairsBox;
+
 /* training-section boot */
 renderDeckBox(); renderDrillBox(); renderGuessBox();
-renderRepBox(); renderTreeBox(); renderCareerBox(); renderThemeSel(); renderMemBox();
+renderRepBox(); renderTreeBox(); renderCareerBox(); renderThemeSel(); renderMemBox(); renderPairsBox();
 
 /* ---------- resume an unfinished game after a reload ---------- */
 function tryOfferResume() {
