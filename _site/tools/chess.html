@@ -4414,9 +4414,9 @@ function explainMove(fen, uci, ctx = {}) {
   const me = mv.color, foe = other(me), moved = nameOf(mv.piece), R = [];
   const replies = after.moves({ verbose: true });
 
-  if (after.isCheckmate()) R.push('It is checkmate. Nothing else needs justifying.');
-  else if (after.isStalemate()) R.push(`It stalemates ${sideName(foe)}: the game ends drawn on the spot.`);
-  else if (after.inCheck())
+  if (after.isCheckmate()) return { san: mv.san, reasons: ['It is checkmate. Nothing else needs justifying.'] };
+  if (after.isStalemate()) R.push(`It stalemates ${sideName(foe)}: the game ends drawn on the spot, whatever the material says.`);
+  if (after.inCheck())
     R.push(`It checks the king, so ${sideName(foe)} has to answer it and gets no time for a plan of their own` +
            (replies.length === 1 ? `; there is exactly one legal reply, ${replies[0].san}.` : `; only ${replies.length} legal replies exist.`));
 
@@ -4464,7 +4464,10 @@ function explainMove(fen, uci, ctx = {}) {
 
   if (ctx.threatUci) {
     const gone = !replies.some(m => m.from === ctx.threatUci.slice(0, 2) && m.to === ctx.threatUci.slice(2, 4));
-    if (gone) R.push(`It takes ${ctx.threatSan || 'the threat'} off the table: ${sideName(foe)} can no longer play it.`);
+    /* if the threat was aimed at the square this piece just left, "it rescues the
+       piece" already said it; do not print the same fact twice */
+    if (gone && ctx.threatUci.slice(2, 4) !== mv.from)
+      R.push(`It takes ${ctx.threatSan || 'the threat'} off the table: ${sideName(foe)} can no longer play it.`);
   }
 
   if (mv.flags.includes('k') || mv.flags.includes('q'))
@@ -4500,22 +4503,50 @@ function explainMove(fen, uci, ctx = {}) {
   }
   if (mv.piece === 'p' && !mv.promotion && isPassedPawn(after, mv.to, me) && !isPassedPawn(before, mv.from, me))
     R.push(`The pawn on ${mv.to} is now passed, with no enemy pawn left to stop it; that is a permanent asset going into an endgame.`);
-  if (mv.piece === 'k' && !mv.flags.includes('k') && !mv.flags.includes('q') && allPieces(after).length <= 12)
-    R.push('With so little left on the board the king is a fighting piece, and walking it toward the action is ordinary endgame technique.');
+  if (mv.piece === 'k' && !mv.flags.includes('k') && !mv.flags.includes('q') && allPieces(after).length <= 12) {
+    const foeKing = allPieces(after, foe).find(p => p.type === 'k');
+    const df = foeKing ? Math.abs(fileIdx(mv.to) - fileIdx(foeKing.square)) : -1;
+    const dr = foeKing ? Math.abs(rankIdx(mv.to) - rankIdx(foeKing.square)) : -1;
+    const opposition = (df === 0 && dr === 2) || (dr === 0 && df === 2) || (df === 2 && dr === 2);
+    R.push(opposition
+      ? `It takes the opposition: the kings face each other with one square between them and ${sideName(foe)} to move, so ${sideName(foe)} is the one who has to give ground.`
+      : 'With so little left on the board the king is a fighting piece, and walking it toward the action is ordinary endgame technique.');
+  }
 
   if (!R.length)
     R.push(`A quiet move: nothing is taken and nothing is forced. It improves the ${moved} and hands the problem back to ${sideName(foe)}.`);
   return { san: mv.san, reasons: R };
 }
-function evalWords(cp, mate, mover) {
-  if (mate !== null && mate !== undefined)
-    return mate > 0 ? `mate in ${mate} for ${sideName(mover)}` : `mate in ${Math.abs(mate)} for ${sideName(other(mover))}`;
-  const a = Math.abs(cp), who = sideName(cp >= 0 ? mover : other(mover));
-  if (a < 30) return 'dead level';
-  if (a < 80) return `a shade more comfortable for ${who}`;
-  if (a < 200) return `clearly better for ${who}`;
-  if (a < 500) return `close to winning for ${who}`;
+const hasMate = l => l && l.mate !== null && l.mate !== undefined;
+function evalWords(cp, mover) {
+  /* read off the rounded number the panel prints, so word and figure agree */
+  const v = Math.abs(Math.round(cp / 10) / 10), who = sideName(cp >= 0 ? mover : other(mover));
+  if (v <= 0.3) return 'level';
+  if (v < 0.8) return `a shade more comfortable for ${who}`;
+  if (v < 2) return `clearly better for ${who}`;
+  if (v < 5) return `close to winning for ${who}`;
   return `winning for ${who}`;
+}
+/* one sentence on where the move leaves the game; mate scores are not pawns,
+   so they never go through the centipawn arithmetic */
+function evalSentence(l, stm, cpW) {
+  if (hasMate(l))
+    return l.mate > 0
+      ? `It forces mate in ${l.mate} for ${sideName(stm)} (depth ${l.depth}).`
+      : `It runs into a forced mate in ${Math.abs(l.mate)} for ${sideName(other(stm))} (depth ${l.depth}).`;
+  return `It leaves the position ${evalWords(l.score, stm)}: ${fmtEval(cpW)} from White's side, searched to depth ${l.depth}.`;
+}
+/* how far an alternative falls short of the best move */
+function lossSentence(best, l) {
+  if (hasMate(best) && best.mate > 0)
+    return hasMate(l) && l.mate > 0
+      ? `It mates as well, in ${l.mate} instead of ${best.mate}.`
+      : 'It throws away a forced mate, which is the most expensive mistake there is.';
+  if (hasMate(l)) return l.mate > 0 ? `It mates in ${l.mate}, so it is at least as good.` : 'It walks into a forced mate.';
+  const d = (best.score - l.score) / 100;
+  return d <= 0.25
+    ? `As good as the main move for practical purposes, ${d.toFixed(2)} of a pawn behind.`
+    : `${d.toFixed(1)} pawns behind the main move: playable, not the best.`;
 }
 let whySig = '';
 function whyShow(on) {
@@ -4556,17 +4587,17 @@ function whyRender() {
     const ex = explainMove(fen, l.pv[0], { threatUci: anaThreat && anaThreat.uci, threatSan: anaThreat && anaThreat.san });
     if (!ex) return;
     const cpW = scoreToWhite(l.score, stm);
-    const extra = [`It leaves the position ${evalWords(l.score, l.mate, stm)}: ${fmtEval(cpW)} from White's side, searched to depth ${l.depth}.`];
+    const extra = [evalSentence(l, stm, cpW)];
     if (i === 0 && lines[1]) {
-      const d = best.score - lines[1].score;
-      const alt = uciToSan(fen, lines[1].pv[0]) || lines[1].pv[0];
-      if (d >= 150) extra.push(`This is close to the only move: the next best, ${alt}, is ${(d / 100).toFixed(1)} pawns worse.`);
-      else if (d <= 25) extra.push(`It is not forced. ${alt} is worth just as much, so pick whichever position you would rather play.`);
-    } else if (i > 0) {
-      const d = best.score - l.score;
-      extra.push(d <= 25 ? `As good as the main move for practical purposes, ${(d / 100).toFixed(2)} of a pawn behind.`
-                         : `${(d / 100).toFixed(1)} pawns behind the main move; playable, not the best.`);
-    }
+      const second = lines[1], alt = uciToSan(fen, second.pv[0]) || second.pv[0];
+      const d = best.score - second.score;
+      if (hasMate(best) && best.mate > 0 && !(hasMate(second) && second.mate > 0))
+        extra.push(`It is the only move that finishes the game: ${alt}, the next best, lets it go on.`);
+      else if (!hasMate(best) && !hasMate(second) && d >= 150)
+        extra.push(`This is close to the only move: the next best, ${alt}, is ${(d / 100).toFixed(1)} pawns worse.`);
+      else if (!hasMate(best) && !hasMate(second) && d <= 25)
+        extra.push(`It is not forced. ${alt} is worth just as much, so pick whichever position you would rather play.`);
+    } else if (i > 0) extra.push(lossSentence(best, l));
     html += `<div class="why-move${i ? '' : ' first'}">` +
             `<div><span class="why-san">${ex.san}</span>` +
             `<span class="why-ev" style="color:${cpW >= 0 ? '#27ae60' : '#e74c3c'}">${fmtEval(cpW)}</span>` +
