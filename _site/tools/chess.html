@@ -610,6 +610,14 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 .why-line { font-size:12.5px; color:#888; }
 .why-threat { border-top:1px solid #eee; margin-top:4px; padding-top:10px; font-size:13.5px; line-height:1.6; }
 .why-threat b { color:#b05555; }
+.wh-sum { font-size:13px; color:#666; padding:4px 0 8px; border-bottom:1px solid #eee; margin-bottom:6px; }
+.wh-sum b { color:#333; }
+.wh-row { display:flex; flex-wrap:wrap; gap:6px; align-items:baseline; padding:3px 0; border-bottom:1px dashed #f0f0f0; font-size:13.5px; }
+.wh-row .wh-num { color:#999; min-width:34px; text-align:right; font-size:12.5px; }
+.wh-row .wh-san { font-weight:700; min-width:52px; }
+.wh-row .wh-ev { font-family:'Nunito',sans-serif; font-weight:700; font-size:12.5px; min-width:44px; }
+.wh-row .wh-note { color:#777; font-size:12.5px; }
+.wh-foot { margin:8px 0 12px; }
 .ana-row { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
 .ana-row button {
   border:1.5px solid #e0e0e0; background:transparent; border-radius:7px; padding:6px 9px;
@@ -991,6 +999,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
             <button id="anaStartBtn">Start position</button>
             <button id="anaFlipBtn">Flip</button>
             <button id="anaUndoBtn">Undo</button>
+            <button id="anaReviewBtn">Review game</button>
             <button id="anaPassBtn">Pass turn</button>
             <button id="anaPlayBtn">Play vs bot from here</button>
             <button id="anaExitBtn" style="color:#e74c3c;">Exit</button>
@@ -1051,6 +1060,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
   </div>
 
   <div class="why-box" id="whyBox" style="display:none;">
+    <div id="whyHist" style="display:none;"></div>
     <div class="why-head">Why these moves<span class="why-sub">every engine suggestion, justified in words</span></div>
     <div id="whyBody"></div>
   </div>
@@ -2717,22 +2727,22 @@ function classifyLoss(meBefore, meAfter, isEngineBest) {
 
 /* net material change (player perspective, pawn units) after our move and the given reply */
 const PIECE_VAL = { p:1, n:3, b:3, r:5, q:9, k:0 };
-function materialDiff(chess) {
+function materialDiff(chess, pov = playerColor) {
   let d = 0;
   for (const f of FILES) for (let r = 1; r <= 8; r++) {
     const pc = chess.get(f + r);
-    if (pc) d += (pc.color === playerColor ? 1 : -1) * PIECE_VAL[pc.type];
+    if (pc) d += (pc.color === pov ? 1 : -1) * PIECE_VAL[pc.type];
   }
   return d;
 }
-function isSacrifice(fenBefore, ourUci, replyUci) {
+function isSacrifice(fenBefore, ourUci, replyUci, pov = playerColor) {
   if (!replyUci) return false;
   try {
     const c = new Chess(fenBefore);
-    const m0 = materialDiff(c);
+    const m0 = materialDiff(c, pov);
     c.move({ from: ourUci.slice(0,2), to: ourUci.slice(2,4), promotion: ourUci[4] || undefined });
     c.move({ from: replyUci.slice(0,2), to: replyUci.slice(2,4), promotion: replyUci[4] || undefined });
-    return materialDiff(c) - m0 <= -2;
+    return materialDiff(c, pov) - m0 <= -2;
   } catch (e) { return false; }
 }
 
@@ -2992,15 +3002,16 @@ function pushLog(mv, side, cls, numOverride) {
   const cell = row.children[isWhiteMove ? 1 : 2];
   const entry = { num, side, san: mv.san, info: cls, cell };
   moveLog.push(entry);
-  renderBadge(entry, coachOn);
+  renderBadge(entry, mode === 'analysis' ? true : coachOn);
   movesBox.scrollTop = movesBox.scrollHeight;
   return entry;
 }
 function renderBadge(entry, show) {
   if (!entry.cell) return;
   const i = entry.info;
-  /* the player gets full feedback; the opponent is only called out for bad moves */
-  const visible = i && i.cls && (entry.side === playerColor
+  /* the player gets full feedback; the opponent is only called out for bad moves.
+     On the analysis board there is no player: both sides get everything. */
+  const visible = i && i.cls && (mode === 'analysis' || entry.side === playerColor
     ? i.cls !== 'good'
     : ['inaccuracy','mistake','blunder'].includes(i.cls));
   entry.cell.innerHTML = entry.san + (show && visible
@@ -4203,6 +4214,7 @@ function enterAnalysis() {
   analysis = null; ghost = null; selected = null; lastMove = null; pendingClass = null;
   assistTints = null; assistFen = null;
   moveLog = []; movesBody.innerHTML = '';
+  anaGrades = []; anaPendingGrade = null; anaRevProgress = null;
   game = new Chess();
   playerColor = 'w';
   phase = 'player';
@@ -4221,11 +4233,17 @@ function enterAnalysis() {
   anaAnalyse();
 }
 let anaThreat = null;   // best move for the side NOT on turn: the standing threat
+let anaGrades = [];          // per-ply grade of the current move list (game review)
+let anaPendingGrade = null;  // hand-played move waiting for the live analysis to grade it
+let anaRevSeq = 0;           // bumps to abandon a running review
 /* One engine, three searches per position, in this order: a shallow pass so the
    arrow and the three lines are up in a fraction of a second, the flipped-turn
    threat probe, then the full-depth pass that keeps climbing in the background.
    Every one of them is dropped the moment the position changes. */
-function anaStopSearches() { engine.stopIf('analysis'); engine.stopIf('ana-threat'); }
+function anaStopSearches() {
+  anaRevSeq++;   // any position change abandons a game review in progress
+  engine.stopIf('analysis'); engine.stopIf('ana-threat'); engine.stopIf('ana-review');
+}
 function anaThreatSearch(fen, seq, live) {
   const parts = fen.split(' ');
   if (parts[1] === undefined) return;
@@ -4260,7 +4278,12 @@ function anaAnalyse() {
     const prev = anaLines[slot];
     if (prev && prev.depth > info.depth) return;   // the deep pass restarts shallow: keep the better line
     anaLines[slot] = info;
-    if (info.multipv === 1) setEvalDisplay(scoreToWhite(info.score, game.turn()), info.mate);
+    if (info.multipv === 1) {
+      setEvalDisplay(scoreToWhite(info.score, game.turn()), info.mate);
+      /* this same search grades the move that led here, once it is deep enough */
+      if (anaPendingGrade && anaPendingGrade.fen === fen && info.depth >= 12)
+        anaSettleGrade(-info.score);
+    }
     scheduleAnaDraw();
   };
   const inCheck = game.inCheck();
@@ -4310,6 +4333,128 @@ function anaDrawArrows() {
   if (anaThreat && anaThreat.uci)
     svg += arrowSVG(anaThreat.uci.slice(0, 2), anaThreat.uci.slice(2, 4), 'rgba(231,76,60,.5)');
   arrowLayer.innerHTML = svg;
+}
+
+/* ===================== game review on the analysis board =====================
+   Every move in the log gets the same grading the coach applies in games:
+   eval before vs eval after from the mover's side, classified with
+   classifyLoss, engine-best detection, sacrifice-aware Brilliant. Loaded
+   games are reviewed front to back; hand-played moves are graded for free
+   from the live analysis of the positions on either side of them. */
+function anaGradePly(mv, preScore, preBestUci, meAfter) {
+  const uci = mv.from + mv.to + (mv.promotion || '');
+  try { if (new Chess(mv.before).moves().length === 1)
+    return { cls: 'forced', loss: 0, evalBefore: preScore, evalAfter: meAfter }; } catch (e) {}
+  const info = classifyLoss(preScore, meAfter, !!preBestUci && preBestUci === uci);
+  if (['best', 'excellent'].includes(info.cls) && preScore < 600 && meAfter > -100) {
+    /* the sacrifice test needs the opponent's best reply; a plain recapture will do */
+    try {
+      const c = new Chess(mv.after);
+      const recap = !c.isGameOver() && c.moves({ verbose: true }).find(m => m.to === mv.to && m.captured);
+      if (recap && isSacrifice(mv.before, uci, recap.from + recap.to + (recap.promotion || ''), mv.color))
+        info.cls = 'brilliant';
+    } catch (e) {}
+  }
+  if (['inaccuracy', 'mistake', 'blunder'].includes(info.cls) && preBestUci && preBestUci !== uci)
+    info.betterSan = uciToSan(mv.before, preBestUci) || preBestUci;
+  return info;
+}
+function anaApplyGrade(ply, san, info) {
+  anaGrades[ply] = { ...info, san };
+  const entry = moveLog[ply];
+  if (entry && entry.san === san) { entry.info = info; renderBadge(entry, true); }
+  whyHistRender();
+}
+function anaSettleGrade(meAfter) {
+  const g = anaPendingGrade;
+  anaPendingGrade = null;
+  if (!g) return;
+  anaApplyGrade(g.ply, g.mv.san, anaGradePly(g.mv, g.pre.score, g.pre.bestUci, meAfter));
+}
+async function anaReviewRun() {
+  if (mode !== 'analysis' || anaSetup) return;
+  const h = game.history({ verbose: true });
+  if (!h.length) { coachMsg.textContent = 'No moves to review yet. Load a game or play some moves first.'; return; }
+  anaSeq++;                        // kill the live analyse chain: the review owns the engine now
+  anaStopSearches();               // bumps anaRevSeq, so claim ours after
+  const seq = ++anaRevSeq;
+  const startFen = game.fen();
+  anaPendingGrade = null;
+  const alive = () => seq === anaRevSeq && mode === 'analysis' && !anaSetup && game.fen() === startFen;
+  const evals = [];                // one eval per position, mover's perspective
+  const fens = [h[0].before, ...h.map(m => m.after)];
+  for (let i = 0; i < fens.length; i++) {
+    whyHistProgress(Math.min(i + 1, h.length), h.length);
+    let ev = null;
+    try {
+      const c = new Chess(fens[i]);
+      if (c.isCheckmate()) ev = { score: -MATE, bestUci: null };
+      else if (c.isGameOver()) ev = { score: 0, bestUci: null };
+    } catch (e) {}
+    if (!ev) {
+      try { ev = await engine.evalPosition(fens[i], null, 420, 'ana-review'); }
+      catch (e) { break; }
+    }
+    if (!alive()) { anaRevProgress = null; whyHistRender(); return; }   // position moved on; keep what got graded
+    evals[i] = ev;
+    if (i > 0) anaApplyGrade(i - 1, h[i - 1].san,
+      anaGradePly(h[i - 1], evals[i - 1].score, evals[i - 1].bestUci, -ev.score));
+  }
+  anaRevProgress = null;
+  whyHistRender();
+  coachMsg.textContent = 'Review done. Every move in the list now carries its verdict; the details are under the board.';
+  anaAnalyse();                    // hand the engine back to the live position
+}
+let anaRevProgress = null;
+function whyHistProgress(done, total) {
+  anaRevProgress = { done, total };
+  whyHistRender();
+}
+function whyHistRender() {
+  const el = $('whyHist');
+  if (!el) return;
+  if (mode !== 'analysis' || !moveLog.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const graded = moveLog.map((e, i) => ({ e, g: anaGrades[i], i })).filter(x => x.g && x.g.san === x.e.san);
+  if (!graded.length && !anaRevProgress) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  const progress = anaRevProgress
+    ? `<div class="wh-sum">Reviewing the game with Stockfish… move <b>${anaRevProgress.done}</b> of <b>${anaRevProgress.total}</b>.</div>` : '';
+  if (!graded.length) { el.innerHTML = progress; return; }
+  /* per-side tallies */
+  const sum = { w: { n: 0, loss: 0, bad: [] }, b: { n: 0, loss: 0, bad: [] } };
+  for (const { e, g } of graded) {
+    if (g.cls === 'forced') continue;
+    const s = sum[e.side];
+    s.n++; s.loss += Math.min(500, g.loss || 0);
+    if (['inaccuracy', 'mistake', 'blunder'].includes(g.cls)) s.bad.push(g.cls);
+  }
+  const tally = c => {
+    const s = sum[c], counts = ['blunder', 'mistake', 'inaccuracy']
+      .map(k => [s.bad.filter(x => x === k).length, CLS_MARK[k]]).filter(x => x[0])
+      .map(([n, m]) => `${n}×${m}`).join(' ');
+    return `<b>${sideName(c)}</b> avg loss ${s.n ? Math.round(s.loss / s.n) : 0}cp${counts ? ' · ' + counts : ' · clean'}`;
+  };
+  let html = `<div class="why-head" style="margin-bottom:4px;">Game review<span class="why-sub">${graded.length} of ${moveLog.length} moves graded</span></div>`;
+  html += progress;
+  html += `<div class="wh-sum">${tally('w')} &nbsp;&nbsp; ${tally('b')}</div>`;
+  for (const { e, g } of graded) {
+    const cpW = e.side === 'w' ? g.evalAfter : -g.evalAfter;
+    const mark = g.cls && g.cls !== 'good'
+      ? ` <span class="badge-c ${g.cls}" title="${CLS_LABEL[g.cls]}">${CLS_MARK[g.cls] || CLS_LABEL[g.cls]}</span>` : '';
+    let note = '';
+    if (['inaccuracy', 'mistake', 'blunder'].includes(g.cls)) {
+      const cost = g.loss >= 100 && g.loss < MATE / 2 ? `costs ${(g.loss / 100).toFixed(1)} pawns` : 'lets the advantage slip';
+      note = `${CLS_LABEL[g.cls]}: ${cost}${g.betterSan ? `; <b>${g.betterSan}</b> was the move` : ''}.`;
+    } else if (g.cls === 'brilliant') note = 'A sound sacrifice. The material comes back with interest.';
+    else if (g.cls === 'great') note = 'The only good move in the position.';
+    else if (g.cls === 'forced') note = 'Forced: the only legal move.';
+    html += `<div class="wh-row"><span class="wh-num">${e.num}${e.side === 'b' ? '…' : '.'}</span>` +
+            `<span class="wh-san">${e.san}${mark}</span>` +
+            `<span class="wh-ev" style="color:${cpW >= 0 ? '#27ae60' : '#e74c3c'}">${fmtEval(cpW)}</span>` +
+            (note ? `<span class="wh-note">${note}</span>` : '') + `</div>`;
+  }
+  html += `<div class="wh-foot"></div>`;
+  el.innerHTML = html;
 }
 
 /* ===================== the case for each move =====================
@@ -4617,12 +4762,21 @@ function whyRender() {
   body.innerHTML = html;
 }
 function anaMove(moveObj) {
+  /* snapshot the live analysis of the position being left: it grades this move for free */
+  const preFen = game.fen();
+  const pre = (anaLines[0] && anaLines[0].pv && anaLines[0].depth >= 10)
+    ? { score: anaLines[0].score, bestUci: anaLines[0].pv[0], depth: anaLines[0].depth } : null;
   const mv = game.move({ from: moveObj.from, to: moveObj.to, promotion: moveObj.promotion });
   if (!mv) return;
-  pushLog(mv, mv.color, null);
+  const ply = game.history().length - 1;
+  anaGrades.length = Math.min(anaGrades.length, ply);   // grades past this point are for another line now
+  const entry = pushLog(mv, mv.color, null);
+  anaPendingGrade = pre ? { fen: game.fen(), preFen, pre, mv, ply, entry } : null;
   lastMove = { from: mv.from, to: mv.to };
   renderBoard();
   anaAnalyse();
+  if (anaPendingGrade && game.isGameOver()) anaSettleGrade(game.isCheckmate() ? MATE : 0);
+  whyHistRender();
 }
 function anaRebuildLog() {
   moveLog = []; movesBody.innerHTML = '';
@@ -4631,6 +4785,13 @@ function anaRebuildLog() {
      so a loaded PGN (or one starting from a custom FEN) counts up properly */
   h.forEach((m, i) => pushLog(m, m.color, null,
     parseInt((m.before || '').split(' ')[5], 10) || Math.floor(i / 2) + 1));
+  /* undo and reload keep whatever grades still describe these exact moves */
+  anaGrades.length = Math.min(anaGrades.length, h.length);
+  moveLog.forEach((e, i) => {
+    const g = anaGrades[i];
+    if (g && g.san === e.san) { e.info = g; renderBadge(e, true); }
+  });
+  whyHistRender();
   lastMove = h.length ? { from: h[h.length - 1].from, to: h[h.length - 1].to } : null;
 }
 function anaLoadFen(fen) {
@@ -4645,6 +4806,7 @@ function anaLoadFen(fen) {
     }
   } catch (e) {}
   game = probe;
+  anaPendingGrade = null; anaRevProgress = null;
   anaRebuildLog();
   selected = null;
   renderBoard();
@@ -4691,10 +4853,12 @@ function anaLoadPgn(text) {
     probe = c;
   }
   game = probe;
+  anaPendingGrade = null; anaRevProgress = null;
   anaRebuildLog();
   selected = null;
   renderBoard();
   anaAnalyse();
+  anaReviewRun();
   const n = game.history().length;
   const turn = game.turn() === 'w' ? 'White' : 'Black';
   coachMsg.textContent = stoppedAt
@@ -4801,6 +4965,7 @@ function anaLoadText() {
   if (anaLoadFen(txt)) { $('anaFenIn').value = ''; coachMsg.textContent = 'Position loaded.'; return; }
   coachMsg.textContent = 'That did not parse as a FEN or as a move list. Double-check it.';
 }
+$('anaReviewBtn').onclick = () => { if (mode === 'analysis' && !anaSetup) anaReviewRun(); };
 $('anaFenBtn').onclick = anaLoadText;
 $('anaFenIn').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); anaLoadText(); } });
 $('anaSetupBtn').onclick = () => {
