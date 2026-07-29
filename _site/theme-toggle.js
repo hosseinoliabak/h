@@ -50,7 +50,7 @@
     btn.id = 'theme-toggle';
     btn.title = 'Switch theme';
     btn.innerHTML = '🎨';
-    btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;width:42px;height:42px;border-radius:50%;border:2px solid #ccc;background:#fff;font-size:20px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.15);transition:all 0.2s;';
+    btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;width:42px;height:42px;border-radius:50%;border:2px solid var(--site-accent);background:var(--bs-body-bg,#fff);color:var(--site-accent);font-size:20px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.15);transition:all 0.2s;';
 
     btn.addEventListener('mouseenter', function() {
       btn.style.transform = 'scale(1.1)';
