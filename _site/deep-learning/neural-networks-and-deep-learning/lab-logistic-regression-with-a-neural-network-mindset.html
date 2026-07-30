@@ -1,0 +1,1758 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-07-30">
+<meta name="description" content="Build a cat classifier from scratch in NumPy: preprocess images, implement propagation and gradient descent, assemble the model, and tune the learning rate.">
+
+<title>Lab: Logistic Regression with a Neural Network Mindset – Hossein’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../deep-learning/neural-networks-and-deep-learning/lab-python-basics-with-numpy.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-285f71f7c7ab2eebc0170294332e2983.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="Lab: Logistic Regression with a Neural Network Mindset – Hossein’s Notes">
+<meta property="og:description" content="Build a cat classifier from scratch in NumPy: preprocess images, implement propagation and gradient descent, assemble the model, and tune the learning rate.">
+<meta property="og:image" content="https://h.oliabak.com/deep-learning/neural-networks-and-deep-learning/lab-logistic-regression-with-a-neural-network-mindset_files/figure-html/cell-4-output-1.svg">
+<meta property="og:site_name" content="Hossein’s Notes">
+<meta name="twitter:title" content="Lab: Logistic Regression with a Neural Network Mindset – Hossein’s Notes">
+<meta name="twitter:description" content="Build a cat classifier from scratch in NumPy: preprocess images, implement propagation and gradient descent, assemble the model, and tune the learning rate.">
+<meta name="twitter:image" content="https://h.oliabak.com/deep-learning/neural-networks-and-deep-learning/lab-logistic-regression-with-a-neural-network-mindset_files/figure-html/cell-4-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Hossein’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-viewer.html">
+ <span class="dropdown-text">SVG Viewer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/graph.html">
+ <span class="dropdown-text">Function Grapher</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../deep-learning/neural-networks-and-deep-learning/lab-logistic-regression-with-a-neural-network-mindset.html">Lab: Logistic Regression with a Neural Network Mindset</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/neural-networks-and-deep-learning/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Neural Networks and Deep Learning</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/neural-networks-and-deep-learning/introduction-to-deep-learning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to Deep Learning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/neural-networks-and-deep-learning/logistic-regression-as-a-neural-network.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Logistic Regression as a Neural Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/neural-networks-and-deep-learning/derivatives-and-computation-graphs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Derivatives and Computation Graphs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/neural-networks-and-deep-learning/python-and-vectorization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Python and Vectorization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/neural-networks-and-deep-learning/lab-python-basics-with-numpy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Python Basics with NumPy</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/neural-networks-and-deep-learning/lab-logistic-regression-with-a-neural-network-mindset.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Lab: Logistic Regression with a Neural Network Mindset</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#packages" id="toc-packages" class="nav-link active" data-scroll-target="#packages">Packages</a></li>
+  <li><a href="#overview-of-the-problem-set" id="toc-overview-of-the-problem-set" class="nav-link" data-scroll-target="#overview-of-the-problem-set">Overview of the Problem Set</a></li>
+  <li><a href="#general-architecture-of-the-learning-algorithm" id="toc-general-architecture-of-the-learning-algorithm" class="nav-link" data-scroll-target="#general-architecture-of-the-learning-algorithm">General Architecture of the Learning Algorithm</a></li>
+  <li><a href="#building-the-parts-of-our-algorithm" id="toc-building-the-parts-of-our-algorithm" class="nav-link" data-scroll-target="#building-the-parts-of-our-algorithm">Building the Parts of Our Algorithm</a>
+  <ul class="collapse">
+  <li><a href="#helper-functions" id="toc-helper-functions" class="nav-link" data-scroll-target="#helper-functions">Helper Functions</a></li>
+  <li><a href="#initializing-parameters" id="toc-initializing-parameters" class="nav-link" data-scroll-target="#initializing-parameters">Initializing Parameters</a></li>
+  <li><a href="#forward-and-backward-propagation" id="toc-forward-and-backward-propagation" class="nav-link" data-scroll-target="#forward-and-backward-propagation">Forward and Backward Propagation</a></li>
+  <li><a href="#optimization" id="toc-optimization" class="nav-link" data-scroll-target="#optimization">Optimization</a></li>
+  <li><a href="#predict" id="toc-predict" class="nav-link" data-scroll-target="#predict">Predict</a></li>
+  </ul></li>
+  <li><a href="#merge-all-functions-into-a-model" id="toc-merge-all-functions-into-a-model" class="nav-link" data-scroll-target="#merge-all-functions-into-a-model">Merge All Functions into a Model</a></li>
+  <li><a href="#further-analysis-choice-of-learning-rate" id="toc-further-analysis-choice-of-learning-rate" class="nav-link" data-scroll-target="#further-analysis-choice-of-learning-rate">Further Analysis: Choice of Learning Rate</a></li>
+  <li><a href="#test-with-your-own-image" id="toc-test-with-your-own-image" class="nav-link" data-scroll-target="#test-with-your-own-image">Test With Your Own Image</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Lab: Logistic Regression with a Neural Network Mindset</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">logistic-regression</div>
+    <div class="quarto-category">numpy</div>
+    <div class="quarto-category">lab</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Build a cat classifier from scratch in NumPy: preprocess images, implement propagation and gradient descent, assemble the model, and tune the learning rate.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">July 30, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~212 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~2,600 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p>This is the first required programming assignment of the course. You build a logistic regression classifier that recognizes cats, structured with a <strong>neural network mindset</strong>, which also hones your intuitions about deep learning. Everything the course has covered so far comes together here: the <a href="../../deep-learning/neural-networks-and-deep-learning/logistic-regression-as-a-neural-network.html">notation and the model</a>, the <a href="../../deep-learning/neural-networks-and-deep-learning/derivatives-and-computation-graphs.html">derivative formulas</a>, the <a href="../../deep-learning/neural-networks-and-deep-learning/python-and-vectorization.html">vectorized implementation</a>, and the <a href="../../deep-learning/neural-networks-and-deep-learning/lab-python-basics-with-numpy.html">NumPy functions from the previous lab</a>.</p>
+<p>You will learn to build the general architecture of a learning algorithm, including</p>
+<ul>
+<li>initializing parameters,</li>
+<li>calculating the cost function and its gradient,</li>
+<li>using an optimization algorithm (gradient descent),</li>
+</ul>
+<p>and then gather all three functions into a main <code>model()</code> function, in the right order.</p>
+<p>Two standing instructions: do not use for loops or while loops unless explicitly asked, and use <code>np.dot(X, Y)</code> to calculate dot products.</p>
+<section id="packages" class="level2">
+<h2 class="anchored" data-anchor-id="packages">Packages</h2>
+<p>First, import all the packages needed during this assignment.</p>
+<ul>
+<li><a href="https://numpy.org/doc/stable/">numpy</a> is the fundamental package for scientific computing with Python.</li>
+<li><a href="https://www.h5py.org">h5py</a> is a common package to interact with a dataset stored in an <strong>H5 file</strong>, a compact binary format often used for large numerical datasets.</li>
+<li><a href="https://matplotlib.org">matplotlib</a> is a famous library to plot graphs in Python.</li>
+<li><a href="https://pillow.readthedocs.io/en/stable/">PIL</a> is used at the end to test the model with your own pictures.</li>
+<li><code>copy</code> is from the standard library; its <code>deepcopy</code> protects the caller’s arrays from being modified in place during optimization.</li>
+</ul>
+<div id="5dca8ce4" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> copy</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> h5py</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> PIL <span class="im">import</span> Image</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="overview-of-the-problem-set" class="level2">
+<h2 class="anchored" data-anchor-id="overview-of-the-problem-set">Overview of the Problem Set</h2>
+<p><strong>Problem statement.</strong> You are given a dataset containing</p>
+<ul>
+<li>a training set of <code>m_train</code> images labeled as cat (<span class="math inline">\(y = 1\)</span>) or non-cat (<span class="math inline">\(y = 0\)</span>),</li>
+<li>a test set of <code>m_test</code> images labeled as cat or non-cat,</li>
+<li>each image of shape <code>(num_px, num_px, 3)</code>, where 3 is for the three RGB channels. Each image is square.</li>
+</ul>
+<p>You will build a simple image-recognition algorithm that correctly classifies pictures as cat or non-cat. The dataset ships as two H5 files, which you can download here: <a href="../../media/deep-learning/catvnoncat/train_catvnoncat.h5">train_catvnoncat.h5</a> (2.5 MB) and <a href="../../media/deep-learning/catvnoncat/test_catvnoncat.h5">test_catvnoncat.h5</a> (0.6 MB).</p>
+<p>The loader below opens each H5 file with <code>h5py.File</code> and pulls out three things: the image arrays, the label vectors, and the list of class names (<code>non-cat</code>, <code>cat</code>). It also reshapes the label vectors to the course’s row-vector convention, shape <span class="math inline">\((1, m)\)</span>.</p>
+<div id="f7ada8e1" class="cell" data-execution_count="2">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> load_dataset():</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    train_dataset <span class="op">=</span> h5py.File(<span class="st">'../../media/deep-learning/catvnoncat/train_catvnoncat.h5'</span>, <span class="st">"r"</span>)</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    train_set_x_orig <span class="op">=</span> np.array(train_dataset[<span class="st">"train_set_x"</span>][:])  <span class="co"># train set features</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    train_set_y_orig <span class="op">=</span> np.array(train_dataset[<span class="st">"train_set_y"</span>][:])  <span class="co"># train set labels</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    test_dataset <span class="op">=</span> h5py.File(<span class="st">'../../media/deep-learning/catvnoncat/test_catvnoncat.h5'</span>, <span class="st">"r"</span>)</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    test_set_x_orig <span class="op">=</span> np.array(test_dataset[<span class="st">"test_set_x"</span>][:])  <span class="co"># test set features</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    test_set_y_orig <span class="op">=</span> np.array(test_dataset[<span class="st">"test_set_y"</span>][:])  <span class="co"># test set labels</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    classes <span class="op">=</span> np.array(test_dataset[<span class="st">"list_classes"</span>][:])  <span class="co"># the list of classes</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    train_set_y_orig <span class="op">=</span> train_set_y_orig.reshape((<span class="dv">1</span>, train_set_y_orig.shape[<span class="dv">0</span>]))</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    test_set_y_orig <span class="op">=</span> test_set_y_orig.reshape((<span class="dv">1</span>, test_set_y_orig.shape[<span class="dv">0</span>]))</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> train_set_x_orig, train_set_y_orig, test_set_x_orig, test_set_y_orig, classes</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="co"># Loading the data (cat/non-cat)</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>train_set_x_orig, train_set_y, test_set_x_orig, test_set_y, classes <span class="op">=</span> load_dataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The image datasets carry <code>_orig</code> at the end because we are going to preprocess them. After preprocessing we end up with <code>train_set_x</code> and <code>test_set_x</code> (the labels need no preprocessing). Each entry of <code>train_set_x_orig</code> is an array representing an image. You can visualize an example, and feel free to change the <code>index</code> value to see other images.</p>
+<div id="60b9e1e1" class="cell" data-execution_count="3">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Example of a picture</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>index <span class="op">=</span> <span class="dv">25</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>plt.imshow(train_set_x_orig[index])</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>plt.axis(<span class="st">'off'</span>)</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"y = "</span> <span class="op">+</span> <span class="bu">str</span>(train_set_y[:, index]) <span class="op">+</span> <span class="st">", it is a '"</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>      <span class="op">+</span> classes[np.squeeze(train_set_y[:, index])].decode(<span class="st">"utf-8"</span>) <span class="op">+</span> <span class="st">"' picture."</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-logistic-regression-with-a-neural-network-mindset_files/figure-html/cell-4-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>y = [1], it is a 'cat' picture.</code></pre>
+</div>
+</div>
+<p>Many software bugs in deep learning come from having matrix or vector dimensions that do not fit. Keeping your dimensions straight goes a long way toward eliminating bugs. So the first exercise is to read the key dimensions off the arrays: <code>m_train</code> (number of training examples), <code>m_test</code> (number of test examples), and <code>num_px</code> (the height and width of each image). Remember that <code>train_set_x_orig</code> has shape <code>(m_train, num_px, num_px, 3)</code>, so <code>m_train</code> is <code>train_set_x_orig.shape[0]</code>.</p>
+<div id="d234d858" class="cell" data-execution_count="4">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>m_train <span class="op">=</span> train_set_x_orig.shape[<span class="dv">0</span>]</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>m_test <span class="op">=</span> test_set_x_orig.shape[<span class="dv">0</span>]</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>num_px <span class="op">=</span> train_set_x_orig.shape[<span class="dv">1</span>]</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Number of training examples: m_train = "</span> <span class="op">+</span> <span class="bu">str</span>(m_train))</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Number of testing examples: m_test = "</span> <span class="op">+</span> <span class="bu">str</span>(m_test))</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Height/Width of each image: num_px = "</span> <span class="op">+</span> <span class="bu">str</span>(num_px))</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Each image is of size: ("</span> <span class="op">+</span> <span class="bu">str</span>(num_px) <span class="op">+</span> <span class="st">", "</span> <span class="op">+</span> <span class="bu">str</span>(num_px) <span class="op">+</span> <span class="st">", 3)"</span>)</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"train_set_x shape: "</span> <span class="op">+</span> <span class="bu">str</span>(train_set_x_orig.shape))</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"train_set_y shape: "</span> <span class="op">+</span> <span class="bu">str</span>(train_set_y.shape))</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"test_set_x shape: "</span> <span class="op">+</span> <span class="bu">str</span>(test_set_x_orig.shape))</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"test_set_y shape: "</span> <span class="op">+</span> <span class="bu">str</span>(test_set_y.shape))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Number of training examples: m_train = 209
+Number of testing examples: m_test = 50
+Height/Width of each image: num_px = 64
+Each image is of size: (64, 64, 3)
+train_set_x shape: (209, 64, 64, 3)
+train_set_y shape: (1, 209)
+test_set_x shape: (50, 64, 64, 3)
+test_set_y shape: (1, 50)</code></pre>
+</div>
+</div>
+<p>For convenience, now reshape the images of shape <code>(num_px, num_px, 3)</code> into a NumPy array of shape <code>(num_px * num_px * 3, 1)</code>, so that the training and test sets become arrays where <strong>each column is one flattened image</strong>, exactly the <span class="math inline">\(X\)</span> matrix convention from the lectures. There should be <code>m_train</code> (respectively <code>m_test</code>) columns.</p>
+<p>A trick to flatten a matrix <code>X</code> of shape <code>(a, b, c, d)</code> into shape <code>(b*c*d, a)</code> is</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>X_flatten <span class="op">=</span> X.reshape(X.shape[<span class="dv">0</span>], <span class="op">-</span><span class="dv">1</span>).T   <span class="co"># X.T is the transpose of X</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The <code>-1</code> tells NumPy to infer the second dimension, giving <code>(a, b*c*d)</code>, and the transpose flips it so examples sit in columns. The assertions check that the first pixels of the second image land where they should.</p>
+<div id="6024120a" class="cell" data-execution_count="5">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Reshape the training and test examples</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>train_set_x_flatten <span class="op">=</span> train_set_x_orig.reshape(train_set_x_orig.shape[<span class="dv">0</span>], <span class="op">-</span><span class="dv">1</span>).T</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>test_set_x_flatten <span class="op">=</span> test_set_x_orig.reshape(test_set_x_orig.shape[<span class="dv">0</span>], <span class="op">-</span><span class="dv">1</span>).T</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Check that the first 10 pixels of the second image are in the correct place</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> np.<span class="bu">all</span>(train_set_x_flatten[<span class="dv">0</span>:<span class="dv">10</span>, <span class="dv">1</span>] <span class="op">==</span> [<span class="dv">196</span>, <span class="dv">192</span>, <span class="dv">190</span>, <span class="dv">193</span>, <span class="dv">186</span>, <span class="dv">182</span>, <span class="dv">188</span>, <span class="dv">179</span>, <span class="dv">174</span>, <span class="dv">213</span>]), <span class="st">"Wrong solution. Use (X.shape[0], -1).T."</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> np.<span class="bu">all</span>(test_set_x_flatten[<span class="dv">0</span>:<span class="dv">10</span>, <span class="dv">1</span>] <span class="op">==</span> [<span class="dv">115</span>, <span class="dv">110</span>, <span class="dv">111</span>, <span class="dv">137</span>, <span class="dv">129</span>, <span class="dv">129</span>, <span class="dv">155</span>, <span class="dv">146</span>, <span class="dv">145</span>, <span class="dv">159</span>]), <span class="st">"Wrong solution. Use (X.shape[0], -1).T."</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"train_set_x_flatten shape: "</span> <span class="op">+</span> <span class="bu">str</span>(train_set_x_flatten.shape))</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"train_set_y shape: "</span> <span class="op">+</span> <span class="bu">str</span>(train_set_y.shape))</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"test_set_x_flatten shape: "</span> <span class="op">+</span> <span class="bu">str</span>(test_set_x_flatten.shape))</span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"test_set_y shape: "</span> <span class="op">+</span> <span class="bu">str</span>(test_set_y.shape))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>train_set_x_flatten shape: (12288, 209)
+train_set_y shape: (1, 209)
+test_set_x_flatten shape: (12288, 50)
+test_set_y shape: (1, 50)</code></pre>
+</div>
+</div>
+<p>To represent color images, the red, green, and blue channels must be specified for each pixel, so each pixel value is actually a vector of three numbers ranging from 0 to 255.</p>
+<p>One common preprocessing step in machine learning is to center and standardize the dataset, meaning that you subtract the mean of the whole array from each example and then divide by the standard deviation of the whole array. For picture datasets, it is simpler, more convenient, and works almost as well to just <strong>divide every row by 255</strong> (the maximum value of a pixel channel).</p>
+<div id="1e7d4968" class="cell" data-execution_count="6">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>train_set_x <span class="op">=</span> train_set_x_flatten <span class="op">/</span> <span class="fl">255.</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>test_set_x <span class="op">=</span> test_set_x_flatten <span class="op">/</span> <span class="fl">255.</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What You Need to Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Common steps for preprocessing a new dataset are</p>
+<ol type="1">
+<li>Figure out the dimensions and shapes of the problem (<code>m_train</code>, <code>m_test</code>, <code>num_px</code>, and so on).</li>
+<li>Reshape the datasets so that each example is a vector of size <code>(num_px * num_px * 3, 1)</code>.</li>
+<li>“Standardize” the data.</li>
+</ol>
+</div>
+</div>
+</section>
+<section id="general-architecture-of-the-learning-algorithm" class="level2">
+<h2 class="anchored" data-anchor-id="general-architecture-of-the-learning-algorithm">General Architecture of the Learning Algorithm</h2>
+<p>It is time to design a simple algorithm to distinguish cat images from non-cat images. You will build a logistic regression classifier, using a neural network mindset. The following figure explains why <strong>logistic regression is actually a very simple neural network</strong>: the flattened pixels feed a single unit that computes <span class="math inline">\(z\)</span> and applies the sigmoid.</p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="../../media/deep-learning/catvnoncat/LogReg_kiank.png" class="img-fluid figure-img" style="width:37.5%"></p>
+<figcaption>Logistic regression as a one-unit neural network.</figcaption>
+</figure>
+</div>
+<p>Mathematically, for one example <span class="math inline">\(x^{(i)}\)</span>,</p>
+<p><span class="math display">\[
+z^{(i)} = w^T x^{(i)} + b
+\qquad
+\hat{y}^{(i)} = a^{(i)} = \text{sigmoid}\big(z^{(i)}\big)
+\]</span></p>
+<p><span class="math display">\[
+\mathcal{L}\big(a^{(i)}, y^{(i)}\big) = -y^{(i)} \log\big(a^{(i)}\big) - \big(1 - y^{(i)}\big) \log\big(1 - a^{(i)}\big)
+\]</span></p>
+<p>and the cost is computed by averaging over all training examples,</p>
+<p><span class="math display">\[
+J = \frac{1}{m} \sum_{i=1}^{m} \mathcal{L}\big(a^{(i)}, y^{(i)}\big)
+\]</span></p>
+<p><strong>Key steps.</strong> In this exercise you carry out the following: initialize the parameters of the model, learn the parameters by minimizing the cost, use the learned parameters to make predictions on the test set, then analyze the results and conclude.</p>
+</section>
+<section id="building-the-parts-of-our-algorithm" class="level2">
+<h2 class="anchored" data-anchor-id="building-the-parts-of-our-algorithm">Building the Parts of Our Algorithm</h2>
+<p>The main steps for building a neural network are</p>
+<ol type="1">
+<li>Define the model structure (such as the number of input features).</li>
+<li>Initialize the model’s parameters.</li>
+<li>Loop: calculate the current loss (forward propagation), calculate the current gradient (backward propagation), update the parameters (gradient descent).</li>
+</ol>
+<p>You often build steps 1 to 3 separately and integrate them into one function called <code>model()</code>.</p>
+<section id="helper-functions" class="level3">
+<h3 class="anchored" data-anchor-id="helper-functions">Helper Functions</h3>
+<p>Using your code from the <a href="../../deep-learning/neural-networks-and-deep-learning/lab-python-basics-with-numpy.html">previous lab</a>, implement <code>sigmoid()</code>. You need <span class="math inline">\(\text{sigmoid}(z) = \frac{1}{1 + e^{-z}}\)</span> for <span class="math inline">\(z = w^T x + b\)</span> to make predictions.</p>
+<div id="29c9d5b8" class="cell" data-execution_count="7">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> sigmoid(z):</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Compute the sigmoid of z</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="co">    z -- A scalar or numpy array of any size.</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="co">    Return:</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="co">    s -- sigmoid(z)</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>    s <span class="op">=</span> <span class="dv">1</span> <span class="op">/</span> (<span class="dv">1</span> <span class="op">+</span> np.exp(<span class="op">-</span>z))</span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> s</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"sigmoid([0, 2]) = "</span> <span class="op">+</span> <span class="bu">str</span>(sigmoid(np.array([<span class="dv">0</span>, <span class="dv">2</span>]))))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>sigmoid([0, 2]) = [0.5        0.88079708]</code></pre>
+</div>
+</div>
+</section>
+<section id="initializing-parameters" class="level3">
+<h3 class="anchored" data-anchor-id="initializing-parameters">Initializing Parameters</h3>
+<p>Initialize <code>w</code> as a vector of zeros of shape <code>(dim, 1)</code> with <code>np.zeros()</code>, and <code>b</code> as the float 0. Zero initialization is fine for logistic regression, because the <a href="../../deep-learning/neural-networks-and-deep-learning/logistic-regression-as-a-neural-network.html#gradient-descent">cost surface is convex</a>, so gradient descent reaches the same optimum from any starting point.</p>
+<div id="c5399dca" class="cell" data-execution_count="8">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> initialize_with_zeros(dim):</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="co">    This function creates a vector of zeros of shape (dim, 1) for w</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="co">    and initializes b to 0.</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="co">    Argument:</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="co">    dim -- size of the w vector we want (or number of parameters in this case)</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a><span class="co">    w -- initialized vector of shape (dim, 1)</span></span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a><span class="co">    b -- initialized scalar (corresponds to the bias) of type float</span></span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>    w <span class="op">=</span> np.zeros((dim, <span class="dv">1</span>))</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>    b <span class="op">=</span> <span class="fl">0.0</span></span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> w, b</span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>dim <span class="op">=</span> <span class="dv">2</span></span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>w, b <span class="op">=</span> initialize_with_zeros(dim)</span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"w = "</span> <span class="op">+</span> <span class="bu">str</span>(w))</span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"b = "</span> <span class="op">+</span> <span class="bu">str</span>(b))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>w = [[0.]
+ [0.]]
+b = 0.0</code></pre>
+</div>
+</div>
+</section>
+<section id="forward-and-backward-propagation" class="level3">
+<h3 class="anchored" data-anchor-id="forward-and-backward-propagation">Forward and Backward Propagation</h3>
+<p>Now that the parameters are initialized, implement <code>propagate()</code>, which computes the cost function and its gradient in one pass. These are exactly the <a href="../../deep-learning/neural-networks-and-deep-learning/python-and-vectorization.html#vectorizing-the-gradient-output">vectorized formulas</a> derived in the lectures.</p>
+<p><strong>Forward propagation.</strong> From the input <span class="math inline">\(X\)</span>, compute the activations and the cost,</p>
+<p><span class="math display">\[
+A = \sigma(w^T X + b) = \begin{bmatrix} a^{(1)} &amp; a^{(2)} &amp; \cdots &amp; a^{(m)} \end{bmatrix}
+\]</span></p>
+<p><span class="math display">\[
+J = -\frac{1}{m} \sum_{i=1}^{m} \Big( y^{(i)} \log\big(a^{(i)}\big) + \big(1 - y^{(i)}\big) \log\big(1 - a^{(i)}\big) \Big)
+\]</span></p>
+<p><strong>Backward propagation.</strong> The two gradient formulas are</p>
+<p><span class="math display">\[
+\frac{\partial J}{\partial w} = \frac{1}{m} X (A - Y)^T
+\qquad
+\frac{\partial J}{\partial b} = \frac{1}{m} \sum_{i=1}^{m} \big(a^{(i)} - y^{(i)}\big)
+\]</span></p>
+<p>In code, the sum in the cost uses element-wise products and <code>np.sum</code> rather than a loop, and <code>np.squeeze</code> strips the cost down to a plain scalar.</p>
+<div id="b09c5b20" class="cell" data-execution_count="9">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> propagate(w, b, X, Y):</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Implement the cost function and its gradient for the propagation</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="co">    explained above</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="co">    w -- weights, a numpy array of size (num_px * num_px * 3, 1)</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="co">    b -- bias, a scalar</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="co">    X -- data of size (num_px * num_px * 3, number of examples)</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="co">    Y -- true "label" vector (0 if non-cat, 1 if cat) of size (1, number of examples)</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="co">    Return:</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a><span class="co">    grads -- dictionary containing the gradients dw and db</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a><span class="co">    cost -- negative log-likelihood cost for logistic regression</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> X.shape[<span class="dv">1</span>]</span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>    <span class="co"># FORWARD PROPAGATION (FROM X TO COST)</span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>    A <span class="op">=</span> sigmoid(np.dot(w.T, X) <span class="op">+</span> b)</span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>    cost <span class="op">=</span> <span class="op">-</span><span class="dv">1</span> <span class="op">/</span> m <span class="op">*</span> np.<span class="bu">sum</span>(Y <span class="op">*</span> np.log(A) <span class="op">+</span> (<span class="dv">1</span> <span class="op">-</span> Y) <span class="op">*</span> np.log(<span class="dv">1</span> <span class="op">-</span> A))</span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>    <span class="co"># BACKWARD PROPAGATION (TO FIND GRAD)</span></span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>    dw <span class="op">=</span> <span class="dv">1</span> <span class="op">/</span> m <span class="op">*</span> np.dot(X, (A <span class="op">-</span> Y).T)</span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a>    db <span class="op">=</span> <span class="dv">1</span> <span class="op">/</span> m <span class="op">*</span> np.<span class="bu">sum</span>(A <span class="op">-</span> Y)</span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a>    cost <span class="op">=</span> np.squeeze(np.array(cost))</span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a>    grads <span class="op">=</span> {<span class="st">"dw"</span>: dw,</span>
+<span id="cb15-29"><a href="#cb15-29" aria-hidden="true" tabindex="-1"></a>             <span class="st">"db"</span>: db}</span>
+<span id="cb15-30"><a href="#cb15-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-31"><a href="#cb15-31" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> grads, cost</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Test it on a tiny example with 2 features and 3 training examples, stacked column-wise as always.</p>
+<div id="281eb70f" class="cell" data-execution_count="10">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>w <span class="op">=</span> np.array([[<span class="fl">1.</span>], [<span class="dv">2</span>]])</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>b <span class="op">=</span> <span class="fl">1.5</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>X <span class="op">=</span> np.array([[<span class="fl">1.</span>, <span class="op">-</span><span class="fl">2.</span>, <span class="op">-</span><span class="fl">1.</span>], [<span class="fl">3.</span>, <span class="fl">0.5</span>, <span class="op">-</span><span class="fl">3.2</span>]])</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>Y <span class="op">=</span> np.array([[<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">0</span>]])</span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>grads, cost <span class="op">=</span> propagate(w, b, X, Y)</span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"dw = "</span> <span class="op">+</span> <span class="bu">str</span>(grads[<span class="st">"dw"</span>]))</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"db = "</span> <span class="op">+</span> <span class="bu">str</span>(grads[<span class="st">"db"</span>]))</span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cost = "</span> <span class="op">+</span> <span class="bu">str</span>(cost))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>dw = [[ 0.25071532]
+ [-0.06604096]]
+db = -0.1250040450043965
+cost = 0.15900537707692405</code></pre>
+</div>
+</div>
+</section>
+<section id="optimization" class="level3">
+<h3 class="anchored" data-anchor-id="optimization">Optimization</h3>
+<p>You can initialize parameters and compute the cost and its gradient. Now update the parameters using gradient descent. The goal is to learn <span class="math inline">\(w\)</span> and <span class="math inline">\(b\)</span> by minimizing <span class="math inline">\(J\)</span>. For a parameter <span class="math inline">\(\theta\)</span>, the update rule is <span class="math inline">\(\theta = \theta - \alpha \, d\theta\)</span>, where <span class="math inline">\(\alpha\)</span> is the learning rate. The function iterates two steps: call <code>propagate()</code> for the cost and gradient, then apply the update rule, recording the cost every 100 iterations to plot the learning curve later.</p>
+<div id="06d93057" class="cell" data-execution_count="11">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> optimize(w, b, X, Y, num_iterations<span class="op">=</span><span class="dv">100</span>, learning_rate<span class="op">=</span><span class="fl">0.009</span>, print_cost<span class="op">=</span><span class="va">False</span>):</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="co">    This function optimizes w and b by running a gradient descent algorithm</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="co">    w -- weights, a numpy array of size (num_px * num_px * 3, 1)</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="co">    b -- bias, a scalar</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a><span class="co">    X -- data of shape (num_px * num_px * 3, number of examples)</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="co">    Y -- true "label" vector, of shape (1, number of examples)</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a><span class="co">    num_iterations -- number of iterations of the optimization loop</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="co">    learning_rate -- learning rate of the gradient descent update rule</span></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a><span class="co">    print_cost -- True to print the loss every 100 steps</span></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a><span class="co">    params -- dictionary containing the weights w and bias b</span></span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a><span class="co">    grads -- dictionary containing the gradients of the weights and bias</span></span>
+<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a><span class="co">    costs -- list of all the costs computed during the optimization</span></span>
+<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a>    w <span class="op">=</span> copy.deepcopy(w)</span>
+<span id="cb18-20"><a href="#cb18-20" aria-hidden="true" tabindex="-1"></a>    b <span class="op">=</span> copy.deepcopy(b)</span>
+<span id="cb18-21"><a href="#cb18-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-22"><a href="#cb18-22" aria-hidden="true" tabindex="-1"></a>    costs <span class="op">=</span> []</span>
+<span id="cb18-23"><a href="#cb18-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-24"><a href="#cb18-24" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(num_iterations):</span>
+<span id="cb18-25"><a href="#cb18-25" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Cost and gradient calculation</span></span>
+<span id="cb18-26"><a href="#cb18-26" aria-hidden="true" tabindex="-1"></a>        grads, cost <span class="op">=</span> propagate(w, b, X, Y)</span>
+<span id="cb18-27"><a href="#cb18-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-28"><a href="#cb18-28" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Retrieve derivatives from grads</span></span>
+<span id="cb18-29"><a href="#cb18-29" aria-hidden="true" tabindex="-1"></a>        dw <span class="op">=</span> grads[<span class="st">"dw"</span>]</span>
+<span id="cb18-30"><a href="#cb18-30" aria-hidden="true" tabindex="-1"></a>        db <span class="op">=</span> grads[<span class="st">"db"</span>]</span>
+<span id="cb18-31"><a href="#cb18-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-32"><a href="#cb18-32" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Update rule</span></span>
+<span id="cb18-33"><a href="#cb18-33" aria-hidden="true" tabindex="-1"></a>        w <span class="op">=</span> w <span class="op">-</span> learning_rate <span class="op">*</span> dw</span>
+<span id="cb18-34"><a href="#cb18-34" aria-hidden="true" tabindex="-1"></a>        b <span class="op">=</span> b <span class="op">-</span> learning_rate <span class="op">*</span> db</span>
+<span id="cb18-35"><a href="#cb18-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-36"><a href="#cb18-36" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Record the costs</span></span>
+<span id="cb18-37"><a href="#cb18-37" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> i <span class="op">%</span> <span class="dv">100</span> <span class="op">==</span> <span class="dv">0</span>:</span>
+<span id="cb18-38"><a href="#cb18-38" aria-hidden="true" tabindex="-1"></a>            costs.append(cost)</span>
+<span id="cb18-39"><a href="#cb18-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-40"><a href="#cb18-40" aria-hidden="true" tabindex="-1"></a>            <span class="co"># Print the cost every 100 training iterations</span></span>
+<span id="cb18-41"><a href="#cb18-41" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> print_cost:</span>
+<span id="cb18-42"><a href="#cb18-42" aria-hidden="true" tabindex="-1"></a>                <span class="bu">print</span>(<span class="st">"Cost after iteration </span><span class="sc">%i</span><span class="st">: </span><span class="sc">%f</span><span class="st">"</span> <span class="op">%</span> (i, cost))</span>
+<span id="cb18-43"><a href="#cb18-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-44"><a href="#cb18-44" aria-hidden="true" tabindex="-1"></a>    params <span class="op">=</span> {<span class="st">"w"</span>: w,</span>
+<span id="cb18-45"><a href="#cb18-45" aria-hidden="true" tabindex="-1"></a>              <span class="st">"b"</span>: b}</span>
+<span id="cb18-46"><a href="#cb18-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-47"><a href="#cb18-47" aria-hidden="true" tabindex="-1"></a>    grads <span class="op">=</span> {<span class="st">"dw"</span>: dw,</span>
+<span id="cb18-48"><a href="#cb18-48" aria-hidden="true" tabindex="-1"></a>             <span class="st">"db"</span>: db}</span>
+<span id="cb18-49"><a href="#cb18-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-50"><a href="#cb18-50" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> params, grads, costs</span>
+<span id="cb18-51"><a href="#cb18-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-52"><a href="#cb18-52" aria-hidden="true" tabindex="-1"></a>params, grads, costs <span class="op">=</span> optimize(w, b, X, Y, num_iterations<span class="op">=</span><span class="dv">100</span>, learning_rate<span class="op">=</span><span class="fl">0.009</span>, print_cost<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb18-53"><a href="#cb18-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-54"><a href="#cb18-54" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"w = "</span> <span class="op">+</span> <span class="bu">str</span>(params[<span class="st">"w"</span>]))</span>
+<span id="cb18-55"><a href="#cb18-55" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"b = "</span> <span class="op">+</span> <span class="bu">str</span>(params[<span class="st">"b"</span>]))</span>
+<span id="cb18-56"><a href="#cb18-56" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"dw = "</span> <span class="op">+</span> <span class="bu">str</span>(grads[<span class="st">"dw"</span>]))</span>
+<span id="cb18-57"><a href="#cb18-57" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"db = "</span> <span class="op">+</span> <span class="bu">str</span>(grads[<span class="st">"db"</span>]))</span>
+<span id="cb18-58"><a href="#cb18-58" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Costs = "</span> <span class="op">+</span> <span class="bu">str</span>(costs))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>w = [[0.80956046]
+ [2.0508202 ]]
+b = 1.5948713189708588
+dw = [[ 0.17860505]
+ [-0.04840656]]
+db = -0.08888460336847771
+Costs = [array(0.15900538)]</code></pre>
+</div>
+</div>
+</section>
+<section id="predict" class="level3">
+<h3 class="anchored" data-anchor-id="predict">Predict</h3>
+<p>The optimization outputs the learned <span class="math inline">\(w\)</span> and <span class="math inline">\(b\)</span>, which <code>predict()</code> uses to label a dataset <span class="math inline">\(X\)</span> in two steps. First calculate <span class="math inline">\(\hat{Y} = A = \sigma(w^T X + b)\)</span>, then convert each entry into 0 (if the activation is at most 0.5) or 1 (if it is above 0.5). Here the notebook explicitly allows an <code>if</code>/<code>else</code> inside a <code>for</code> loop, though there is also a way to vectorize this.</p>
+<div id="1b7fdddf" class="cell" data-execution_count="12">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> predict(w, b, X):</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">'''</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Predict whether the label is 0 or 1 using learned logistic</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="co">    regression parameters (w, b)</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="co">    w -- weights, a numpy array of size (num_px * num_px * 3, 1)</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a><span class="co">    b -- bias, a scalar</span></span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a><span class="co">    X -- data of size (num_px * num_px * 3, number of examples)</span></span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a><span class="co">    Y_prediction -- a numpy array (vector) containing all predictions (0/1)</span></span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a><span class="co">    '''</span></span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> X.shape[<span class="dv">1</span>]</span>
+<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a>    Y_prediction <span class="op">=</span> np.zeros((<span class="dv">1</span>, m))</span>
+<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a>    w <span class="op">=</span> w.reshape(X.shape[<span class="dv">0</span>], <span class="dv">1</span>)</span>
+<span id="cb20-17"><a href="#cb20-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-18"><a href="#cb20-18" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Compute vector "A" predicting the probabilities of a cat being present</span></span>
+<span id="cb20-19"><a href="#cb20-19" aria-hidden="true" tabindex="-1"></a>    A <span class="op">=</span> sigmoid(np.dot(w.T, X) <span class="op">+</span> b)</span>
+<span id="cb20-20"><a href="#cb20-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-21"><a href="#cb20-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(A.shape[<span class="dv">1</span>]):</span>
+<span id="cb20-22"><a href="#cb20-22" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Convert probabilities A[0,i] to actual predictions p[0,i]</span></span>
+<span id="cb20-23"><a href="#cb20-23" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> A[<span class="dv">0</span>, i] <span class="op">&gt;</span> <span class="fl">0.5</span>:</span>
+<span id="cb20-24"><a href="#cb20-24" aria-hidden="true" tabindex="-1"></a>            Y_prediction[<span class="dv">0</span>, i] <span class="op">=</span> <span class="dv">1</span></span>
+<span id="cb20-25"><a href="#cb20-25" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>:</span>
+<span id="cb20-26"><a href="#cb20-26" aria-hidden="true" tabindex="-1"></a>            Y_prediction[<span class="dv">0</span>, i] <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb20-27"><a href="#cb20-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-28"><a href="#cb20-28" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> Y_prediction</span>
+<span id="cb20-29"><a href="#cb20-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-30"><a href="#cb20-30" aria-hidden="true" tabindex="-1"></a>w <span class="op">=</span> np.array([[<span class="fl">0.1124579</span>], [<span class="fl">0.23106775</span>]])</span>
+<span id="cb20-31"><a href="#cb20-31" aria-hidden="true" tabindex="-1"></a>b <span class="op">=</span> <span class="op">-</span><span class="fl">0.3</span></span>
+<span id="cb20-32"><a href="#cb20-32" aria-hidden="true" tabindex="-1"></a>X <span class="op">=</span> np.array([[<span class="fl">1.</span>, <span class="op">-</span><span class="fl">1.1</span>, <span class="op">-</span><span class="fl">3.2</span>], [<span class="fl">1.2</span>, <span class="fl">2.</span>, <span class="fl">0.1</span>]])</span>
+<span id="cb20-33"><a href="#cb20-33" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"predictions = "</span> <span class="op">+</span> <span class="bu">str</span>(predict(w, b, X)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>predictions = [[1. 1. 0.]]</code></pre>
+</div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What to Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>You have implemented several functions that</p>
+<ul>
+<li>initialize <span class="math inline">\((w, b)\)</span>,</li>
+<li>optimize the loss iteratively to learn <span class="math inline">\((w, b)\)</span>, by computing the cost and its gradient and updating the parameters with gradient descent,</li>
+<li>use the learned <span class="math inline">\((w, b)\)</span> to predict the labels for a given set of examples.</li>
+</ul>
+</div>
+</div>
+</section>
+</section>
+<section id="merge-all-functions-into-a-model" class="level2">
+<h2 class="anchored" data-anchor-id="merge-all-functions-into-a-model">Merge All Functions into a Model</h2>
+<p>Now put all the building blocks together, in the right order, into the overall model. The conventions are <code>Y_prediction_test</code> for predictions on the test set, <code>Y_prediction_train</code> for predictions on the training set, and <code>parameters, grads, costs</code> for the outputs of <code>optimize()</code>.</p>
+<div id="b3d7df1b" class="cell" data-execution_count="13">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> model(X_train, Y_train, X_test, Y_test, num_iterations<span class="op">=</span><span class="dv">2000</span>, learning_rate<span class="op">=</span><span class="fl">0.5</span>, print_cost<span class="op">=</span><span class="va">False</span>):</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Builds the logistic regression model by calling the functions</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a><span class="co">    implemented previously</span></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a><span class="co">    X_train -- training set of shape (num_px * num_px * 3, m_train)</span></span>
+<span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a><span class="co">    Y_train -- training labels of shape (1, m_train)</span></span>
+<span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a><span class="co">    X_test -- test set of shape (num_px * num_px * 3, m_test)</span></span>
+<span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a><span class="co">    Y_test -- test labels of shape (1, m_test)</span></span>
+<span id="cb22-11"><a href="#cb22-11" aria-hidden="true" tabindex="-1"></a><span class="co">    num_iterations -- hyperparameter: number of iterations to optimize the parameters</span></span>
+<span id="cb22-12"><a href="#cb22-12" aria-hidden="true" tabindex="-1"></a><span class="co">    learning_rate -- hyperparameter: learning rate used in the update rule</span></span>
+<span id="cb22-13"><a href="#cb22-13" aria-hidden="true" tabindex="-1"></a><span class="co">    print_cost -- Set to True to print the cost every 100 iterations</span></span>
+<span id="cb22-14"><a href="#cb22-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-15"><a href="#cb22-15" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb22-16"><a href="#cb22-16" aria-hidden="true" tabindex="-1"></a><span class="co">    d -- dictionary containing information about the model.</span></span>
+<span id="cb22-17"><a href="#cb22-17" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb22-18"><a href="#cb22-18" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Initialize parameters with zeros</span></span>
+<span id="cb22-19"><a href="#cb22-19" aria-hidden="true" tabindex="-1"></a>    w, b <span class="op">=</span> initialize_with_zeros(X_train.shape[<span class="dv">0</span>])</span>
+<span id="cb22-20"><a href="#cb22-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-21"><a href="#cb22-21" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Gradient descent</span></span>
+<span id="cb22-22"><a href="#cb22-22" aria-hidden="true" tabindex="-1"></a>    params, grads, costs <span class="op">=</span> optimize(w, b, X_train, Y_train, num_iterations, learning_rate, print_cost)</span>
+<span id="cb22-23"><a href="#cb22-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-24"><a href="#cb22-24" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Retrieve parameters w and b from dictionary "params"</span></span>
+<span id="cb22-25"><a href="#cb22-25" aria-hidden="true" tabindex="-1"></a>    w <span class="op">=</span> params[<span class="st">"w"</span>]</span>
+<span id="cb22-26"><a href="#cb22-26" aria-hidden="true" tabindex="-1"></a>    b <span class="op">=</span> params[<span class="st">"b"</span>]</span>
+<span id="cb22-27"><a href="#cb22-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-28"><a href="#cb22-28" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Predict test/train set examples</span></span>
+<span id="cb22-29"><a href="#cb22-29" aria-hidden="true" tabindex="-1"></a>    Y_prediction_test <span class="op">=</span> predict(w, b, X_test)</span>
+<span id="cb22-30"><a href="#cb22-30" aria-hidden="true" tabindex="-1"></a>    Y_prediction_train <span class="op">=</span> predict(w, b, X_train)</span>
+<span id="cb22-31"><a href="#cb22-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-32"><a href="#cb22-32" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Print train/test Errors</span></span>
+<span id="cb22-33"><a href="#cb22-33" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> print_cost:</span>
+<span id="cb22-34"><a href="#cb22-34" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(<span class="st">"train accuracy: </span><span class="sc">{}</span><span class="st"> %"</span>.<span class="bu">format</span>(<span class="dv">100</span> <span class="op">-</span> np.mean(np.<span class="bu">abs</span>(Y_prediction_train <span class="op">-</span> Y_train)) <span class="op">*</span> <span class="dv">100</span>))</span>
+<span id="cb22-35"><a href="#cb22-35" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(<span class="st">"test accuracy: </span><span class="sc">{}</span><span class="st"> %"</span>.<span class="bu">format</span>(<span class="dv">100</span> <span class="op">-</span> np.mean(np.<span class="bu">abs</span>(Y_prediction_test <span class="op">-</span> Y_test)) <span class="op">*</span> <span class="dv">100</span>))</span>
+<span id="cb22-36"><a href="#cb22-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-37"><a href="#cb22-37" aria-hidden="true" tabindex="-1"></a>    d <span class="op">=</span> {<span class="st">"costs"</span>: costs,</span>
+<span id="cb22-38"><a href="#cb22-38" aria-hidden="true" tabindex="-1"></a>         <span class="st">"Y_prediction_test"</span>: Y_prediction_test,</span>
+<span id="cb22-39"><a href="#cb22-39" aria-hidden="true" tabindex="-1"></a>         <span class="st">"Y_prediction_train"</span>: Y_prediction_train,</span>
+<span id="cb22-40"><a href="#cb22-40" aria-hidden="true" tabindex="-1"></a>         <span class="st">"w"</span>: w,</span>
+<span id="cb22-41"><a href="#cb22-41" aria-hidden="true" tabindex="-1"></a>         <span class="st">"b"</span>: b,</span>
+<span id="cb22-42"><a href="#cb22-42" aria-hidden="true" tabindex="-1"></a>         <span class="st">"learning_rate"</span>: learning_rate,</span>
+<span id="cb22-43"><a href="#cb22-43" aria-hidden="true" tabindex="-1"></a>         <span class="st">"num_iterations"</span>: num_iterations}</span>
+<span id="cb22-44"><a href="#cb22-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-45"><a href="#cb22-45" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> d</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Train the model on the cat dataset with 2000 iterations and a learning rate of 0.005.</p>
+<div id="f59d1ac0" class="cell" data-execution_count="14">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>logistic_regression_model <span class="op">=</span> model(train_set_x, train_set_y, test_set_x, test_set_y,</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>                                  num_iterations<span class="op">=</span><span class="dv">2000</span>, learning_rate<span class="op">=</span><span class="fl">0.005</span>, print_cost<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Cost after iteration 0: 0.693147
+Cost after iteration 100: 0.584508
+Cost after iteration 200: 0.466949
+Cost after iteration 300: 0.376007
+Cost after iteration 400: 0.331463
+Cost after iteration 500: 0.303273
+Cost after iteration 600: 0.279880
+Cost after iteration 700: 0.260042
+Cost after iteration 800: 0.242941
+Cost after iteration 900: 0.228004
+Cost after iteration 1000: 0.214820
+Cost after iteration 1100: 0.203078
+Cost after iteration 1200: 0.192544
+Cost after iteration 1300: 0.183033
+Cost after iteration 1400: 0.174399
+Cost after iteration 1500: 0.166521
+Cost after iteration 1600: 0.159305
+Cost after iteration 1700: 0.152667
+Cost after iteration 1800: 0.146542
+Cost after iteration 1900: 0.140872
+train accuracy: 99.04306220095694 %
+test accuracy: 70.0 %</code></pre>
+</div>
+</div>
+<p><strong>Comment.</strong> Training accuracy is close to 100%. This is a good sanity check: the model is working and has high enough capacity to fit the training data. Test accuracy is 70%, which is actually not bad for this simple model, given the small dataset and the fact that logistic regression is a linear classifier. You will build an even better classifier soon.</p>
+<p>The model is also clearly <strong>overfitting</strong> the training data. Later in the specialization you learn how to reduce overfitting, for example with regularization. Using the code below (and changing the <code>index</code> variable), you can look at predictions on individual pictures of the test set. Index 5 is an example the model gets wrong: a cat it labels as non-cat. Other interesting indices to try are 6, 10, 11, and 13.</p>
+<div id="f047ce5c" class="cell" data-execution_count="15">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Example of a picture that was wrongly classified</span></span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>index <span class="op">=</span> <span class="dv">5</span></span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>plt.imshow(test_set_x[:, index].reshape((num_px, num_px, <span class="dv">3</span>)))</span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>plt.axis(<span class="st">'off'</span>)</span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"y = "</span> <span class="op">+</span> <span class="bu">str</span>(test_set_y[<span class="dv">0</span>, index]) <span class="op">+</span> <span class="st">", you predicted that it is a </span><span class="ch">\"</span><span class="st">"</span></span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a>      <span class="op">+</span> classes[<span class="bu">int</span>(logistic_regression_model[<span class="st">'Y_prediction_test'</span>][<span class="dv">0</span>, index])].decode(<span class="st">"utf-8"</span>) <span class="op">+</span> <span class="st">"</span><span class="ch">\"</span><span class="st"> picture."</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-logistic-regression-with-a-neural-network-mindset_files/figure-html/cell-16-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>y = 0, you predicted that it is a "cat" picture.</code></pre>
+</div>
+</div>
+<p>Let us also plot the cost recorded every 100 iterations, the learning curve.</p>
+<div id="392478fc" class="cell" data-execution_count="16">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Plot learning curve (with costs)</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>costs <span class="op">=</span> np.squeeze(logistic_regression_model[<span class="st">'costs'</span>])</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>plt.plot(costs)</span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>plt.ylabel(<span class="st">'cost'</span>)</span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a>plt.xlabel(<span class="st">'iterations (per hundreds)'</span>)</span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a>plt.title(<span class="st">"Learning rate ="</span> <span class="op">+</span> <span class="bu">str</span>(logistic_regression_model[<span class="st">"learning_rate"</span>]))</span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-logistic-regression-with-a-neural-network-mindset_files/figure-html/cell-17-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>Interpretation.</strong> The cost is decreasing, which shows that the parameters are being learned. You could train the model even more on the training set by increasing the number of iterations. If you do, you might see that the training set accuracy goes up while the test set accuracy goes down. This is called overfitting.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What to Remember From This Assignment
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ol type="1">
+<li>Preprocessing the dataset is important.</li>
+<li>You implemented each function separately, <code>initialize()</code>, <code>propagate()</code>, <code>optimize()</code>, then built a <code>model()</code>.</li>
+<li>Tuning the learning rate (an example of a <strong>hyperparameter</strong>) can make a big difference to the algorithm. More examples of this come later in the course.</li>
+</ol>
+</div>
+</div>
+</section>
+<section id="further-analysis-choice-of-learning-rate" class="level2">
+<h2 class="anchored" data-anchor-id="further-analysis-choice-of-learning-rate">Further Analysis: Choice of Learning Rate</h2>
+<p>For gradient descent to work well, the learning rate <span class="math inline">\(\alpha\)</span> must be chosen wisely. It determines how rapidly the parameters update. If it is too large, we may overshoot the optimal value, and if it is too small, we need too many iterations to converge. Compare the learning curve of the model with three choices of learning rate.</p>
+<div id="1c29cd0f" class="cell" data-execution_count="17">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>learning_rates <span class="op">=</span> [<span class="fl">0.01</span>, <span class="fl">0.001</span>, <span class="fl">0.0001</span>]</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>models <span class="op">=</span> {}</span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> lr <span class="kw">in</span> learning_rates:</span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"Training a model with learning rate: "</span> <span class="op">+</span> <span class="bu">str</span>(lr))</span>
+<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a>    models[<span class="bu">str</span>(lr)] <span class="op">=</span> model(train_set_x, train_set_y, test_set_x, test_set_y,</span>
+<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a>                            num_iterations<span class="op">=</span><span class="dv">1500</span>, learning_rate<span class="op">=</span>lr, print_cost<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'</span><span class="ch">\n</span><span class="st">'</span> <span class="op">+</span> <span class="st">"-------------------------------------------------------"</span> <span class="op">+</span> <span class="st">'</span><span class="ch">\n</span><span class="st">'</span>)</span>
+<span id="cb28-9"><a href="#cb28-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-10"><a href="#cb28-10" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> lr <span class="kw">in</span> learning_rates:</span>
+<span id="cb28-11"><a href="#cb28-11" aria-hidden="true" tabindex="-1"></a>    plt.plot(np.squeeze(models[<span class="bu">str</span>(lr)][<span class="st">"costs"</span>]),</span>
+<span id="cb28-12"><a href="#cb28-12" aria-hidden="true" tabindex="-1"></a>             label<span class="op">=</span><span class="bu">str</span>(models[<span class="bu">str</span>(lr)][<span class="st">"learning_rate"</span>]))</span>
+<span id="cb28-13"><a href="#cb28-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-14"><a href="#cb28-14" aria-hidden="true" tabindex="-1"></a>plt.ylabel(<span class="st">'cost'</span>)</span>
+<span id="cb28-15"><a href="#cb28-15" aria-hidden="true" tabindex="-1"></a>plt.xlabel(<span class="st">'iterations (hundreds)'</span>)</span>
+<span id="cb28-16"><a href="#cb28-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-17"><a href="#cb28-17" aria-hidden="true" tabindex="-1"></a>legend <span class="op">=</span> plt.legend(loc<span class="op">=</span><span class="st">'upper center'</span>, shadow<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb28-18"><a href="#cb28-18" aria-hidden="true" tabindex="-1"></a>frame <span class="op">=</span> legend.get_frame()</span>
+<span id="cb28-19"><a href="#cb28-19" aria-hidden="true" tabindex="-1"></a>frame.set_facecolor(<span class="st">'0.90'</span>)</span>
+<span id="cb28-20"><a href="#cb28-20" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Training a model with learning rate: 0.01
+
+-------------------------------------------------------
+
+Training a model with learning rate: 0.001
+
+-------------------------------------------------------
+
+Training a model with learning rate: 0.0001
+
+-------------------------------------------------------
+</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-logistic-regression-with-a-neural-network-mindset_files/figure-html/cell-18-output-2.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>Interpretation.</strong></p>
+<ul>
+<li>Different learning rates give different costs and thus different prediction results.</li>
+<li>If the learning rate is too large (0.01), the cost may oscillate up and down. It may even diverge, though in this example 0.01 still eventually ends up at a good value for the cost.</li>
+<li>A lower cost does not mean a better model. You have to check whether there is possibly overfitting, which happens when the training accuracy is a lot higher than the test accuracy.</li>
+<li>In deep learning, the usual recommendations are to choose the learning rate that better minimizes the cost function, and if the model overfits, to use other techniques to reduce the overfitting (covered later in the specialization).</li>
+</ul>
+</section>
+<section id="test-with-your-own-image" class="level2">
+<h2 class="anchored" data-anchor-id="test-with-your-own-image">Test With Your Own Image</h2>
+<p>Finally, you can use your own image and see the output of the model on it. The preprocessing repeats exactly what was done to the dataset: open the image, resize it to <code>num_px</code> by <code>num_px</code>, scale to <span class="math inline">\([0, 1]\)</span>, flatten it into a column, and call <code>predict()</code> with the trained parameters.</p>
+<div id="66ed5631" class="cell" data-execution_count="18">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>my_image <span class="op">=</span> <span class="st">"my_image.jpg"</span>   <span class="co"># change this to the name of your image file</span></span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a><span class="co"># We preprocess the image to fit the algorithm.</span></span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>fname <span class="op">=</span> <span class="st">"../../media/deep-learning/catvnoncat/"</span> <span class="op">+</span> my_image</span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>image <span class="op">=</span> np.array(Image.<span class="bu">open</span>(fname).resize((num_px, num_px)))</span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a>plt.imshow(image)</span>
+<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a>plt.axis(<span class="st">'off'</span>)</span>
+<span id="cb30-8"><a href="#cb30-8" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb30-9"><a href="#cb30-9" aria-hidden="true" tabindex="-1"></a>image <span class="op">=</span> image <span class="op">/</span> <span class="fl">255.</span></span>
+<span id="cb30-10"><a href="#cb30-10" aria-hidden="true" tabindex="-1"></a>image <span class="op">=</span> image.reshape((<span class="dv">1</span>, num_px <span class="op">*</span> num_px <span class="op">*</span> <span class="dv">3</span>)).T</span>
+<span id="cb30-11"><a href="#cb30-11" aria-hidden="true" tabindex="-1"></a>my_predicted_image <span class="op">=</span> predict(logistic_regression_model[<span class="st">"w"</span>], logistic_regression_model[<span class="st">"b"</span>], image)</span>
+<span id="cb30-12"><a href="#cb30-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-13"><a href="#cb30-13" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"y = "</span> <span class="op">+</span> <span class="bu">str</span>(np.squeeze(my_predicted_image)) <span class="op">+</span> <span class="st">", your algorithm predicts a </span><span class="ch">\"</span><span class="st">"</span></span>
+<span id="cb30-14"><a href="#cb30-14" aria-hidden="true" tabindex="-1"></a>      <span class="op">+</span> classes[<span class="bu">int</span>(np.squeeze(my_predicted_image)),].decode(<span class="st">"utf-8"</span>) <span class="op">+</span> <span class="st">"</span><span class="ch">\"</span><span class="st"> picture."</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-logistic-regression-with-a-neural-network-mindset_files/figure-html/cell-19-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>y = 0.0, your algorithm predicts a "non-cat" picture.</code></pre>
+</div>
+</div>
+<p>The Eiffel Tower is correctly labeled non-cat. The assignment ships a few more images to play with (<code>cat_in_iran.jpg</code>, <code>gargouille.jpg</code>, <code>la_defense.jpg</code>, <code>my_image2.jpg</code>). Here is one more run, on the cat from Iran, which the model also gets right.</p>
+<div id="06c2c2a9" class="cell" data-execution_count="19">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>my_image <span class="op">=</span> <span class="st">"cat_in_iran.jpg"</span></span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>fname <span class="op">=</span> <span class="st">"../../media/deep-learning/catvnoncat/"</span> <span class="op">+</span> my_image</span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>image <span class="op">=</span> np.array(Image.<span class="bu">open</span>(fname).resize((num_px, num_px)))</span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>plt.imshow(image)</span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>plt.axis(<span class="st">'off'</span>)</span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a>image <span class="op">=</span> image <span class="op">/</span> <span class="fl">255.</span></span>
+<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a>image <span class="op">=</span> image.reshape((<span class="dv">1</span>, num_px <span class="op">*</span> num_px <span class="op">*</span> <span class="dv">3</span>)).T</span>
+<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a>my_predicted_image <span class="op">=</span> predict(logistic_regression_model[<span class="st">"w"</span>], logistic_regression_model[<span class="st">"b"</span>], image)</span>
+<span id="cb32-11"><a href="#cb32-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-12"><a href="#cb32-12" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"y = "</span> <span class="op">+</span> <span class="bu">str</span>(np.squeeze(my_predicted_image)) <span class="op">+</span> <span class="st">", your algorithm predicts a </span><span class="ch">\"</span><span class="st">"</span></span>
+<span id="cb32-13"><a href="#cb32-13" aria-hidden="true" tabindex="-1"></a>      <span class="op">+</span> classes[<span class="bu">int</span>(np.squeeze(my_predicted_image)),].decode(<span class="st">"utf-8"</span>) <span class="op">+</span> <span class="st">"</span><span class="ch">\"</span><span class="st"> picture."</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-logistic-regression-with-a-neural-network-mindset_files/figure-html/cell-20-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>y = 1.0, your algorithm predicts a "cat" picture.</code></pre>
+</div>
+</div>
+<p>If you would like to experiment further, things to try include playing with the learning rate and the number of iterations, trying different initialization methods and comparing the results, and testing other preprocessings, such as centering the data or dividing each row by its standard deviation.</p>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. What are the three common preprocessing steps for a new image dataset, as practiced in this lab?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Figure out the dimensions and shapes of the problem (<code>m_train</code>, <code>m_test</code>, <code>num_px</code>), reshape each example into a column vector of size <code>(num_px * num_px * 3, 1)</code> so examples stack as columns of <span class="math inline">\(X\)</span>, and standardize the data, here by dividing every pixel value by 255.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What does the trick <code>X.reshape(X.shape[0], -1).T</code> do to an array of shape <span class="math inline">\((a, b, c, d)\)</span>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The reshape keeps the first dimension (<span class="math inline">\(a\)</span> examples) and lets <code>-1</code> infer the rest, giving shape <span class="math inline">\((a, b \times c \times d)\)</span>, one flattened example per row. The transpose then flips it to <span class="math inline">\((b \times c \times d, a)\)</span>, one flattened example per <strong>column</strong>, the course’s convention for <span class="math inline">\(X\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Write the two gradient formulas that <code>propagate()</code> implements.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math display">\[
+\frac{\partial J}{\partial w} = \frac{1}{m} X (A - Y)^T
+\qquad
+\frac{\partial J}{\partial b} = \frac{1}{m} \sum_{i=1}^{m} \big(a^{(i)} - y^{(i)}\big)
+\]</span> where <span class="math inline">\(A = \sigma(w^T X + b)\)</span> holds the activations for all <span class="math inline">\(m\)</span> examples.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The trained model reached about 99% training accuracy but 70% test accuracy. What is this phenomenon called, and why is 70% still a reasonable result here?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The gap between training and test accuracy is <strong>overfitting</strong>. The 70% is still reasonable because the dataset is small (209 training images) and logistic regression is a linear classifier, a very simple model for image recognition. Regularization and better models come later in the specialization.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What can happen when the learning rate is too large, and what did the comparison of 0.01, 0.001, and 0.0001 show?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Too large a learning rate can make the cost oscillate up and down or even diverge, because the updates overshoot the minimum. In the comparison, 0.01 oscillates early (though it still ends up at a good cost here), while smaller rates descend more smoothly but converge more slowly. The learning rate is a hyperparameter worth tuning, and a lower final cost alone does not mean a better model, since overfitting must be checked too.</p>
+</div>
+</div>
+</div>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 100%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">100% completed (698 of 698 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../deep-learning/neural-networks-and-deep-learning/lab-python-basics-with-numpy.html" class="pagination-link" aria-label="Lab: Python Basics with NumPy">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Lab: Python Basics with NumPy</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

@@ -1002,6 +1002,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
             <button id="anaReviewBtn">Review game</button>
             <button id="anaPassBtn">Pass turn</button>
             <button id="anaPlayBtn">Play vs bot from here</button>
+            <button id="anaNewBtn" style="border-color:#2c7be5;color:#2c7be5;">New analysis</button>
             <button id="anaExitBtn" style="color:#e74c3c;">Exit</button>
             <select id="themeSelAna" class="theme-sel" title="Board theme" style="font-size:12.5px;"></select>
           </div>
@@ -1518,10 +1519,8 @@ let pendingPre = null;          // SAN moves applied before a normal game starts
 let customStart = false;        // game began from a custom position: play normally, record nothing
 /* assisted analysis */
 let assistSeq = 0, assistRunning = 0, assistTints = null, assistFen = null;
-/* classical mode (90+30): no timed hints, 15 s minimum think per move while coach is on */
+/* classical mode (90+30): no timed hints, only the one-minute piece nudge */
 let classicalMode = false;
-let thinkGateTimer = null;
-const MIN_THINK_MS = 15000;
 const CLASSICAL_HINT_MS = 60000;   // 90+30: piece-only nudge after a minute of thought
 
 /* ============================== setup screen ============================== */
@@ -2747,14 +2746,6 @@ function isSacrifice(fenBefore, ourUci, replyUci, pov = playerColor) {
 }
 
 async function proposeMove(moveObj) {
-  /* classical discipline (90+30, coach on): no committing a move in the first 15 s.
-     Forced moves are exempt, and the gate lifts if the clock runs under 20 s. */
-  if (mode === 'game' && !drillActive && classicalMode && coachOn && phase === 'player'
-      && game.moves().length > 1 && clocks[playerColor] > 20000
-      && turnElapsedBase + (performance.now() - turnStartedAt) < MIN_THINK_MS) {
-    startThinkGateCountdown();
-    return;   // the selection stays; play the move once the wait is over
-  }
   selected = null;
   clearHints();
   assistTints = null; assistFen = null;
@@ -2928,27 +2919,8 @@ function renderHints() {
 }
 function clearHints() {
   if (hintTimer) { clearInterval(hintTimer); hintTimer = null; }
-  clearThinkGate();
   boardEl.querySelectorAll('.hint-from,.hint-to').forEach(x => x.classList.remove('hint-from','hint-to'));
   arrowLayer.innerHTML = '';
-}
-function clearThinkGate() {
-  if (thinkGateTimer) { clearInterval(thinkGateTimer); thinkGateTimer = null; }
-}
-/* live countdown after a too-early move attempt in classical mode */
-function startThinkGateCountdown() {
-  const show = () => {
-    if (phase !== 'player' || !classicalMode || !coachOn) { clearThinkGate(); return; }
-    const left = MIN_THINK_MS - (turnElapsedBase + (performance.now() - turnStartedAt));
-    if (left <= 0) {
-      clearThinkGate();
-      coachMsg.innerHTML = 'You have thought long enough. Play your move.';
-      return;
-    }
-    coachMsg.innerHTML = `⏳ Classical rules: at least 15 seconds of thought before each move. <b>${Math.ceil(left / 1000)}s</b> to go.`;
-  };
-  show();
-  if (!thinkGateTimer) thinkGateTimer = setInterval(show, 400);
 }
 function arrowSVG(from, to, color) {
   const a = orient(from), b = orient(to);
@@ -4215,6 +4187,7 @@ function enterAnalysis() {
   assistTints = null; assistFen = null;
   moveLog = []; movesBody.innerHTML = '';
   anaGrades = []; anaPendingGrade = null; anaRevProgress = null;
+  whyHistRender();   // a fresh session must not show the previous game's review
   game = new Chess();
   playerColor = 'w';
   phase = 'player';
@@ -4785,12 +4758,15 @@ function anaRebuildLog() {
      so a loaded PGN (or one starting from a custom FEN) counts up properly */
   h.forEach((m, i) => pushLog(m, m.color, null,
     parseInt((m.before || '').split(' ')[5], 10) || Math.floor(i / 2) + 1));
-  /* undo and reload keep whatever grades still describe these exact moves */
+  /* undo keeps whatever grades still describe these exact moves. Prefix-strict:
+     a grade is only valid while every move before it also matches, because the
+     same notation at the same ply of a different line is a different position. */
   anaGrades.length = Math.min(anaGrades.length, h.length);
-  moveLog.forEach((e, i) => {
-    const g = anaGrades[i];
-    if (g && g.san === e.san) { e.info = g; renderBadge(e, true); }
-  });
+  for (let i = 0; i < anaGrades.length; i++) {
+    const g = anaGrades[i], e = moveLog[i];
+    if (!g || !e || g.san !== e.san) { anaGrades.length = i; break; }
+    e.info = g; renderBadge(e, true);
+  }
   whyHistRender();
   lastMove = h.length ? { from: h[h.length - 1].from, to: h[h.length - 1].to } : null;
 }
@@ -4853,7 +4829,9 @@ function anaLoadPgn(text) {
     probe = c;
   }
   game = probe;
-  anaPendingGrade = null; anaRevProgress = null;
+  /* a loaded game is a new analysis: verdicts from the previous one do not
+     carry over, even where early moves happen to share their notation */
+  anaGrades = []; anaPendingGrade = null; anaRevProgress = null;
   anaRebuildLog();
   selected = null;
   renderBoard();
@@ -4932,6 +4910,12 @@ function anaSetupClick(sq) {
   renderBoard();
 }
 $('anaOpenBtn').onclick = enterAnalysis;
+/* full reset in place: fresh board, empty move list, no leftover review */
+$('anaNewBtn').onclick = () => {
+  if (mode !== 'analysis') return;
+  $('anaFenIn').value = '';
+  enterAnalysis();
+};
 $('anaExitBtn').onclick = exitTraining;
 $('anaFlipBtn').onclick = () => { if (mode === 'analysis') { playerColor = other(playerColor); renderBoard(); } };
 $('anaPassBtn').onclick = () => {
@@ -5960,7 +5944,7 @@ const GOLDEN_RULES = [
   { phase: 'Thinking habits', items: [
     { d: true, r: 'After every enemy move ask what changed and what it threatens.', w: 'Most blunders are answers to the wrong question. First understand their move, then pick yours.' },
     { d: true, r: 'Check every check, capture, and threat before quiet moves.', w: 'Forcing moves come first in calculation because they cut the tree down to size.' },
-    { d: true, r: 'When you see a good move, look for a better one.', w: 'Lasker’s rule. Sit on your hands; the 90+30 classical mode here enforces exactly this.' },
+    { d: true, r: 'When you see a good move, look for a better one.', w: 'Lasker’s rule. Sit on your hands before committing; the 90+30 classical mode here gives you the time to do exactly this.' },
     { d: true, r: 'Stay calm under attack and calculate the refutation.', w: 'Panic loses more defended positions than tactics do.', g: 'Marshall Attack' },
     { d: false, r: 'Do not play hope chess.', w: 'A move that only works if the opponent misses the reply is already a mistake.' },
   ]},
