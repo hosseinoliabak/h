@@ -1,0 +1,576 @@
+---
+title: "Daily Chess Puzzles"
+description: "A two-year daily chess training plan: 4,015 curated Lichess puzzles that ramp from easy to very difficult, with a streak calendar tied to your Chess Coach name."
+toc: false
+show-reading-time: false
+page-layout: full
+margin-header: ../_templates/empty.html
+resources:
+  - chess-assets/**
+  - chess-assets/pieces/**
+---
+
+```{=html}
+<style>
+.dcp-wrap { max-width: 1220px; margin: 0 auto; }
+.dcp-wrap, .dcp-wrap * { box-sizing: border-box; }
+@media (min-width: 992px) {
+  #quarto-margin-sidebar { display: none; }
+  #quarto-content main.content { grid-column: page-start-inset / page-end-inset !important; }
+}
+
+.dcp-cols { display: flex; gap: 26px; flex-wrap: wrap; align-items: flex-start; margin-top: 10px; }
+/* the board takes every pixel the calendar column does not need, like the
+   Chess Coach page: greedy grow, capped so it still fits on the screen */
+/* 787px column = 748px board once card padding and borders are taken off */
+.dcp-left { flex: 99 1 440px; min-width: 280px; max-width: min(787px, calc(100vh - 220px)); }
+.dcp-right { flex: 1 1 250px; min-width: 220px; max-width: 300px; }
+
+.dcp-card {
+  border: 1.5px solid var(--bs-border-color, #e0e0e0); border-radius: 12px;
+  padding: 16px 18px; margin-bottom: 16px; background: var(--bs-body-bg, #fff);
+}
+.dcp-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.dcp-day { font-weight: 700; font-size: 1.05rem; }
+.dcp-sub { color: #888; font-size: .9rem; }
+.dcp-user { font-size: .9rem; color: #666; margin-bottom: 8px; }
+.dcp-user b { color: var(--site-accent); }
+
+/* board */
+#dcpBoard {
+  display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
+  width: 100%;
+  aspect-ratio: 1; border-radius: 8px; overflow: hidden; user-select: none; touch-action: none;
+  border: 2px solid #b0b0b0;
+}
+.dcp-ghost { position: fixed; pointer-events: none; z-index: 999; opacity: .85; }
+.dcp-sq { position: relative; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.dcp-sq img { width: 88%; height: 88%; pointer-events: none; }
+.dcp-sq.light { background: #f0d9b5; }
+.dcp-sq.dark { background: #b58863; }
+.dcp-sq.sel { outline: 3px solid #f6c144; outline-offset: -3px; }
+.dcp-sq.last { box-shadow: inset 0 0 0 100px rgba(155, 199, 0, .28); }
+.dcp-sq.hintsq { box-shadow: inset 0 0 0 100px rgba(70, 130, 180, .38); }
+.dcp-sq.wrongsq { box-shadow: inset 0 0 0 100px rgba(204, 0, 0, .35); }
+.dcp-sq .dot { position: absolute; width: 26%; height: 26%; border-radius: 50%; background: rgba(0,0,0,.18); }
+
+.dcp-status { min-height: 26px; margin-top: 10px; font-size: .96rem; }
+.dcp-status .ok { color: #1E6B3E; font-weight: 600; }
+.dcp-status .bad { color: #CC0000; font-weight: 600; }
+
+.dcp-btns { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.dcp-btn {
+  border: 1.5px solid var(--site-accent); color: var(--site-accent); background: transparent;
+  border-radius: 8px; padding: 6px 14px; font-size: .92rem; cursor: pointer;
+}
+.dcp-btn:hover { background: var(--site-accent); color: var(--site-accent-contrast); }
+.dcp-btn:disabled { opacity: .45; cursor: default; }
+.dcp-btn:disabled:hover { background: transparent; color: var(--site-accent); }
+
+/* progress pills for today's quota */
+.dcp-quota { display: flex; gap: 6px; margin: 10px 0 2px; flex-wrap: wrap; }
+.dcp-pill { width: 26px; height: 10px; border-radius: 5px; background: #e3e3e3; }
+.dcp-pill.done { background: #2E8B57; }
+.dcp-pill.cur { background: var(--site-accent); }
+
+/* overall progress */
+.dcp-prog-outer { background: #ececec; border-radius: 6px; height: 10px; overflow: hidden; margin-top: 6px; }
+.dcp-prog-inner { background: var(--site-accent); height: 100%; width: 0; transition: width .4s; }
+
+/* calendar (compact: about half the board's width) */
+.dcp-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.dcp-cal-title { font-weight: 700; font-size: .9rem; }
+.dcp-cal-nav { border: none; background: transparent; color: var(--site-accent); font-size: 1.05rem; cursor: pointer; padding: 2px 8px; }
+.dcp-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.dcp-cal-dow { text-align: center; font-size: .62rem; color: #999; padding-bottom: 2px; }
+.dcp-cal-cell {
+  aspect-ratio: 1; border-radius: 5px; background: var(--bs-tertiary-bg, #f3f3f3);
+  display: flex; align-items: center; justify-content: center; font-size: .7rem; color: #777;
+}
+.dcp-cal-cell.empty { background: transparent; }
+.dcp-cal-cell.green { background: #2E8B57; color: #fff; font-weight: 600; }
+.dcp-cal-cell.today { outline: 2px solid var(--site-accent); outline-offset: -2px; }
+
+.dcp-big {
+  text-align: center; padding: 26px 12px; font-size: 1.15rem; line-height: 1.7;
+}
+.dcp-big .huge { font-size: 2rem; }
+.dcp-note { font-size: .85rem; color: #999; margin-top: 10px; }
+.dcp-stats { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 4px; font-size: .92rem; color: #555; }
+.dcp-stats b { color: var(--site-accent); }
+</style>
+
+<div class="dcp-wrap">
+  <p>One set of puzzles per day for two years, ramping from easy to very difficult. Early days serve ten quick puzzles; the final days serve a single monster. Skipped days are never lost. Your next unsolved set always waits for you, and the calendar turns green on each day you finish a set. Puzzles are drawn from the Lichess puzzle database (CC0), curated for quality, with trivial one-movers excluded. Your progress follows the name you joined the <a href="chess.html">Chess Coach</a> leaderboard with, or stays in this browser if you have not joined.</p>
+
+  <div class="dcp-cols">
+    <div class="dcp-left">
+      <div class="dcp-card">
+        <div class="dcp-user" id="dcpUser"></div>
+        <div class="dcp-head">
+          <span class="dcp-day" id="dcpDayLabel">Loading…</span>
+          <span class="dcp-sub" id="dcpPuzzleLabel"></span>
+        </div>
+        <div class="dcp-quota" id="dcpQuota"></div>
+        <div id="dcpBoard"></div>
+        <div class="dcp-status" id="dcpStatus"></div>
+        <div class="dcp-btns">
+          <button class="dcp-btn" id="dcpHint">Hint</button>
+          <button class="dcp-btn" id="dcpRetry">Retry puzzle</button>
+        </div>
+      </div>
+    </div>
+    <div class="dcp-right">
+      <div class="dcp-card">
+        <div class="dcp-cal-head">
+          <button class="dcp-cal-nav" id="calPrev" aria-label="Previous month">‹</button>
+          <span class="dcp-cal-title" id="calTitle"></span>
+          <button class="dcp-cal-nav" id="calNext" aria-label="Next month">›</button>
+        </div>
+        <div class="dcp-cal-grid" id="calGrid"></div>
+      </div>
+      <div class="dcp-card">
+        <div class="dcp-stats">
+          <span>Days completed: <b id="statDays">0</b> / 730</span>
+          <span>Streak: <b id="statStreak">0</b></span>
+        </div>
+        <div class="dcp-prog-outer"><div class="dcp-prog-inner" id="dcpProg"></div></div>
+        <div class="dcp-note" id="dcpPhase"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script type="module">
+/* runs after the deferred compat scripts, so the page paints without waiting for them */
+try {
+  try { firebase.app(); } catch (e) {
+    firebase.initializeApp({
+      apiKey: "AIzaSyDpRFBtX8LUmZmEX7VcIeMxQKQOtLVdf-A",
+      authDomain: "oliabak-paste.firebaseapp.com",
+      databaseURL: "https://oliabak-paste-default-rtdb.firebaseio.com",
+      projectId: "oliabak-paste",
+      storageBucket: "oliabak-paste.firebasestorage.app",
+      messagingSenderId: "968986695208",
+      appId: "1:968986695208:web:fc5f3d37911810b2e0471d"
+    });
+    firebase.appCheck().activate('6LdhmdosAAAAAGh4ojYqXCU0JOeVo3X-R1qmMaZq', true);
+  }
+  window.__dcpFdb = firebase.database();
+  window.__dcpAuthP = firebase.auth().signInAnonymously()
+    .then(c => (c && c.user && c.user.uid) || null)
+    .catch(() => null);
+} catch (e) { window.__dcpFdb = null; window.__dcpAuthP = Promise.resolve(null); }
+</script>
+
+<script type="module">
+import { Chess } from './chess-assets/chess.js';
+
+/* ---------- schedule: 730 days, quota steps 10..1 every 73 days ---------- */
+const DAYS = 730;
+const quotaOf = d => 10 - Math.floor((d - 1) / 73);        // day 1..730
+const startIndex = d => {                                   // puzzles consumed before day d
+  let s = 0;
+  for (let k = 1; k < d; k++) s += quotaOf(k);
+  return s;
+};
+const phaseName = q =>
+  q >= 9 ? 'easy' : q >= 7 ? 'easy-medium' : q >= 5 ? 'medium' :
+  q >= 3 ? 'difficult' : q === 2 ? 'very difficult' : 'very difficult';
+
+/* ---------- identity: reuse the Chess Coach cloud profile ---------- */
+const fdb = window.__dcpFdb || null;
+const authP = window.__dcpAuthP || Promise.resolve(null);
+let cloudProfile = null;
+try { cloudProfile = JSON.parse(localStorage.getItem('chess-coach-cloud-v1')); } catch (e) {}
+if (cloudProfile && (!cloudProfile.key || !cloudProfile.name)) cloudProfile = null;
+
+const LOCAL_KEY = 'daily-chess-v1';
+const $ = id => document.getElementById(id);
+const todayStr = () => new Date().toLocaleDateString('en-CA');
+
+/* state = { done: {dayNumber: 'YYYY-MM-DD'}, cur: {day, solved} } */
+let state = { done: {}, cur: null };
+
+function loadLocal() {
+  try { const v = JSON.parse(localStorage.getItem(LOCAL_KEY)); if (v && v.done) return v; } catch (e) {}
+  return { done: {}, cur: null };
+}
+const saveLocal = () => { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(state)); } catch (e) {} };
+
+function mergeStates(a, b) {
+  const out = { done: Object.assign({}, a.done), cur: a.cur };
+  for (const [d, dt] of Object.entries(b.done || {})) if (!out.done[d]) out.done[d] = dt;
+  const ca = a.cur, cb = b.cur;
+  if (cb && (!ca || cb.day > ca.day || (cb.day === ca.day && cb.solved > ca.solved))) out.cur = cb;
+  return out;
+}
+
+async function cloudLoad() {
+  if (!cloudProfile || !fdb) return null;
+  try {
+    /* one deadline over the whole trip: auth handshake plus the read */
+    const v = await Promise.race([
+      (async () => {
+        const uid = await authP;
+        if (!uid) return undefined;
+        const snap = await fdb.ref('chess/players/' + cloudProfile.key + '/daily').once('value');
+        return snap.val();
+      })(),
+      new Promise((res, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
+    ]);
+    if (v === undefined) return null;
+    if (!v) return { done: {}, cur: null };
+    return { done: v.done || {}, cur: v.cur || null };
+  } catch (e) { return null; }
+}
+function cloudSave() {
+  if (!cloudProfile || !fdb) return;
+  const payload = { done: state.done, updatedAt: Date.now() };
+  if (state.cur) payload.cur = state.cur;
+  fdb.ref('chess/players/' + cloudProfile.key + '/daily').set(payload).catch(() => {});
+}
+const persist = () => { saveLocal(); cloudSave(); };
+
+/* ---------- derived progress ---------- */
+const daysDone = () => Object.keys(state.done).length;
+const currentDay = () => {
+  for (let d = 1; d <= DAYS; d++) if (!state.done[d]) return d;
+  return null;                                            // all 730 done
+};
+function streak() {
+  const dates = new Set(Object.values(state.done));
+  let n = 0;
+  const t = new Date();
+  if (!dates.has(t.toLocaleDateString('en-CA'))) t.setDate(t.getDate() - 1);
+  while (dates.has(t.toLocaleDateString('en-CA'))) { n++; t.setDate(t.getDate() - 1); }
+  return n;
+}
+
+/* ---------- board ---------- */
+const FILES = 'abcdefgh';
+let game = null, puzzle = null, solIdx = 0, userColor = 'w', selected = null, lastMove = null, boardLocked = true, hintStage = 0;
+
+function sqName(r, c, flip) { return flip ? FILES[7 - c] + (r + 1) : FILES[c] + (8 - r); }
+function drawBoard() {
+  const el = $('dcpBoard');
+  el.innerHTML = '';
+  const flip = userColor === 'b';
+  const pos = game ? game.board() : null;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const sq = document.createElement('div');
+    const name = sqName(r, c, flip);
+    sq.className = 'dcp-sq ' + (((r + c) % 2 === 0) ? 'light' : 'dark');
+    sq.dataset.sq = name;
+    /* chess.js board(): index 0 = rank 8, columns a..h */
+    const p = pos ? pos[flip ? 7 - r : r][flip ? 7 - c : c] : null;
+    if (p) {
+      const img = document.createElement('img');
+      img.src = 'chess-assets/pieces/' + p.color + p.type.toUpperCase() + '.svg';
+      img.alt = p.color + p.type;
+      sq.appendChild(img);
+    }
+    if (lastMove && (name === lastMove.from || name === lastMove.to)) sq.classList.add('last');
+    if (selected === name) sq.classList.add('sel');
+    el.appendChild(sq);
+  }
+}
+function markMoves(from) {
+  const ms = game.moves({ square: from, verbose: true });
+  for (const m of ms) {
+    const cell = document.querySelector(`[data-sq="${m.to}"]`);
+    if (cell && !cell.querySelector('.dot')) {
+      const dot = document.createElement('div'); dot.className = 'dot'; cell.appendChild(dot);
+    }
+  }
+}
+function flash(name, cls) {
+  const cell = document.querySelector(`[data-sq="${name}"]`);
+  if (!cell) return;
+  cell.classList.add(cls);
+  setTimeout(() => cell.classList.remove(cls), 700);
+}
+
+/* one pointer flow serves both input styles: click a piece then click the
+   target, or press, drag the piece, and drop it on the target */
+const boardWrap = $('dcpBoard');
+let drag = null;
+function squareUnder(e) {
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const sq = el && el.closest && el.closest('.dcp-sq');
+  return sq ? sq.dataset.sq : null;
+}
+boardWrap.addEventListener('pointerdown', e => {
+  if (boardLocked || !game) return;
+  const name = squareUnder(e);
+  if (!name) return;
+  e.preventDefault();
+  const piece = game.get(name);
+  if (piece && piece.color === userColor) {
+    const again = selected === name;
+    selected = name;
+    drawBoard(); markMoves(name);
+    const img = boardWrap.querySelector(`[data-sq="${name}"] img`);
+    drag = { from: name, again, moved: false, startX: e.clientX, startY: e.clientY,
+             ghost: null, src: img ? img.src : null };
+  } else if (selected) {
+    tryMove(selected, name);
+  }
+});
+document.addEventListener('pointermove', e => {
+  if (!drag) return;
+  if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 6) {
+    drag.moved = true;
+    if (drag.src) {
+      const g = document.createElement('img');
+      g.src = drag.src; g.className = 'dcp-ghost';
+      const s = boardWrap.clientWidth / 8 * 0.92;
+      g.style.width = s + 'px'; g.style.height = s + 'px';
+      document.body.appendChild(g);
+      drag.ghost = g;
+      const orig = boardWrap.querySelector(`[data-sq="${drag.from}"] img`);
+      if (orig) orig.style.opacity = .35;
+    }
+  }
+  if (drag.ghost) {
+    const s = parseFloat(drag.ghost.style.width);
+    drag.ghost.style.left = (e.clientX - s / 2) + 'px';
+    drag.ghost.style.top = (e.clientY - s / 2) + 'px';
+  }
+});
+document.addEventListener('pointerup', e => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.ghost) d.ghost.remove();
+  const orig = boardWrap.querySelector(`[data-sq="${d.from}"] img`);
+  if (orig) orig.style.opacity = '';
+  if (d.moved) {
+    const target = squareUnder(e);
+    if (target && target !== d.from) tryMove(d.from, target);
+    else { selected = null; drawBoard(); }
+  } else if (d.again) {                  // second press on the same piece deselects it
+    selected = null; drawBoard();
+  }
+});
+document.addEventListener('pointercancel', () => {
+  if (!drag) return;
+  if (drag.ghost) drag.ghost.remove();
+  drag = null; selected = null; drawBoard();
+});
+
+function tryMove(from, to) {
+  const expected = puzzle.moves[solIdx];                    // UCI like e2e4 or e7e8q
+  const uciBase = from + to;
+  let promo = '';
+  if (expected.slice(0, 4) === uciBase && expected.length === 5) promo = expected[4];
+  const legal = game.moves({ square: from, verbose: true }).some(m => m.to === to);
+  if (!legal) { selected = null; drawBoard(); return; }
+  const played = uciBase + promo;
+  if (played !== expected && uciBase !== expected) {
+    /* wrong move: show it briefly, then revert */
+    const undoMe = game.move({ from, to, promotion: promo || 'q' });
+    selected = null; lastMove = { from, to };
+    drawBoard();
+    flash(to, 'wrongsq');
+    setStatus('<span class="bad">Not this one. Try again.</span>');
+    boardLocked = true;
+    setTimeout(() => {
+      if (undoMe) game.undo();
+      lastMove = null; boardLocked = false; drawBoard();
+    }, 650);
+    return;
+  }
+  game.move({ from, to, promotion: promo || 'q' });
+  selected = null; lastMove = { from, to }; hintStage = 0;
+  solIdx++;
+  drawBoard();
+  if (solIdx >= puzzle.moves.length) { puzzleSolved(); return; }
+  /* auto-play the opponent reply */
+  boardLocked = true;
+  setStatus('Good. Keep going…');
+  setTimeout(() => {
+    const reply = puzzle.moves[solIdx];
+    game.move({ from: reply.slice(0, 2), to: reply.slice(2, 4), promotion: reply[4] || 'q' });
+    lastMove = { from: reply.slice(0, 2), to: reply.slice(2, 4) };
+    solIdx++;
+    boardLocked = false;
+    drawBoard();
+    setStatus('Your move.');
+  }, 450);
+}
+
+function setStatus(html) { $('dcpStatus').innerHTML = html; }
+
+/* ---------- puzzle flow ---------- */
+let puzzles = null;
+
+function startPuzzle() {
+  const day = state.cur.day, q = quotaOf(day);
+  const idx = startIndex(day) + state.cur.solved;
+  const row = puzzles[idx];
+  puzzle = { id: row[0], fen: row[1], moves: row[2].split(' '), rating: row[3], themes: row[4] };
+  game = new Chess(puzzle.fen);
+  solIdx = 0; selected = null; hintStage = 0;
+  userColor = game.turn() === 'w' ? 'b' : 'w';             // user moves after the setup move
+  $('dcpDayLabel').textContent = `Day ${day} of ${DAYS}`;
+  $('dcpPuzzleLabel').textContent = `puzzle ${state.cur.solved + 1} of ${q} • rating ${puzzle.rating}`;
+  renderQuota();
+  boardLocked = true;
+  lastMove = null;
+  drawBoard();
+  setStatus('Watch the opponent’s move…');
+  setTimeout(() => {
+    const m0 = puzzle.moves[0];
+    game.move({ from: m0.slice(0, 2), to: m0.slice(2, 4), promotion: m0[4] || 'q' });
+    lastMove = { from: m0.slice(0, 2), to: m0.slice(2, 4) };
+    solIdx = 1;
+    boardLocked = false;
+    drawBoard();
+    setStatus(`${userColor === 'w' ? 'White' : 'Black'} to move. Find the best line.`);
+  }, 700);
+}
+
+function puzzleSolved() {
+  boardLocked = true;
+  state.cur.solved++;
+  const day = state.cur.day, q = quotaOf(day);
+  if (state.cur.solved >= q) {
+    state.done[day] = todayStr();
+    state.cur = null;
+    persist();
+    renderAll();
+    return;
+  }
+  persist();
+  renderQuota();
+  setStatus('<span class="ok">Solved!</span> Next puzzle…');
+  setTimeout(startPuzzle, 900);
+}
+
+$('dcpHint').onclick = () => {
+  if (boardLocked || !puzzle || solIdx >= puzzle.moves.length) return;
+  const mv = puzzle.moves[solIdx];
+  if (hintStage === 0) { flash(mv.slice(0, 2), 'hintsq'); hintStage = 1; }
+  else { flash(mv.slice(0, 2), 'hintsq'); flash(mv.slice(2, 4), 'hintsq'); }
+};
+$('dcpRetry').onclick = () => { if (puzzle && state.cur) startPuzzle(); };
+
+/* ---------- quota pills, stats, phase ---------- */
+function renderQuota() {
+  const el = $('dcpQuota');
+  el.innerHTML = '';
+  if (!state.cur) return;
+  const q = quotaOf(state.cur.day);
+  for (let i = 0; i < q; i++) {
+    const p = document.createElement('div');
+    p.className = 'dcp-pill' + (i < state.cur.solved ? ' done' : (i === state.cur.solved ? ' cur' : ''));
+    el.appendChild(p);
+  }
+}
+function renderStats() {
+  const n = daysDone();
+  $('statDays').textContent = n;
+  $('statStreak').textContent = streak();
+  $('dcpProg').style.width = (100 * n / DAYS).toFixed(1) + '%';
+  const d = currentDay();
+  if (d) $('dcpPhase').textContent = `Current phase: ${phaseName(quotaOf(d))} (${quotaOf(d)} puzzle${quotaOf(d) > 1 ? 's' : ''} per day)`;
+  else $('dcpPhase').textContent = 'Plan complete.';
+}
+
+/* ---------- calendar ---------- */
+let calY, calM;                                            // displayed month
+function renderCalendar() {
+  const greens = new Set(Object.values(state.done));
+  const first = new Date(calY, calM, 1);
+  const title = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  $('calTitle').textContent = title;
+  const grid = $('calGrid');
+  grid.innerHTML = '';
+  for (const dow of ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']) {
+    const h = document.createElement('div'); h.className = 'dcp-cal-dow'; h.textContent = dow; grid.appendChild(h);
+  }
+  const lead = (first.getDay() + 6) % 7;                   // Monday-first
+  for (let i = 0; i < lead; i++) {
+    const e = document.createElement('div'); e.className = 'dcp-cal-cell empty'; grid.appendChild(e);
+  }
+  const nDays = new Date(calY, calM + 1, 0).getDate();
+  const tStr = todayStr();
+  for (let d = 1; d <= nDays; d++) {
+    const cell = document.createElement('div');
+    const ds = new Date(calY, calM, d).toLocaleDateString('en-CA');
+    cell.className = 'dcp-cal-cell' + (greens.has(ds) ? ' green' : '') + (ds === tStr ? ' today' : '');
+    cell.textContent = d;
+    grid.appendChild(cell);
+  }
+}
+$('calPrev').onclick = () => { calM--; if (calM < 0) { calM = 11; calY--; } renderCalendar(); };
+$('calNext').onclick = () => { calM++; if (calM > 11) { calM = 0; calY++; } renderCalendar(); };
+
+/* ---------- top-level render ---------- */
+function renderAll() {
+  renderStats();
+  renderCalendar();
+  const d = currentDay();
+  if (d === null) {
+    $('dcpDayLabel').textContent = 'No more puzzles left.';
+    $('dcpPuzzleLabel').textContent = '';
+    $('dcpQuota').innerHTML = '';
+    $('dcpBoard').innerHTML = '';
+    $('dcpBoard').style.display = 'none';
+    $('dcpHint').disabled = true; $('dcpRetry').disabled = true;
+    setStatus('<div class="dcp-big"><span class="huge">🏆</span><br><b>Congrats!</b> You finished all 730 days and 4,015 puzzles of the two-year plan.</div>');
+    return;
+  }
+  const doneDates = new Set(Object.values(state.done));
+  if (doneDates.has(todayStr()) && (!state.cur || state.cur.day !== d)) {
+    /* one set per calendar day */
+    $('dcpDayLabel').textContent = 'Done for today.';
+    $('dcpPuzzleLabel').textContent = `Day ${d} of ${DAYS} unlocks tomorrow.`;
+    $('dcpQuota').innerHTML = '';
+    $('dcpBoard').style.display = 'none';
+    $('dcpHint').disabled = true; $('dcpRetry').disabled = true;
+    setStatus('<span class="ok">Set complete. Come back tomorrow.</span>');
+    return;
+  }
+  $('dcpBoard').style.display = 'grid';
+  $('dcpHint').disabled = false; $('dcpRetry').disabled = false;
+  if (!state.cur || state.cur.day !== d) state.cur = { day: d, solved: 0 };
+  startPuzzle();
+}
+
+/* ---------- boot ---------- */
+/* Paint from local state right away; the puzzles file starts the first puzzle
+   the moment it arrives, and the cloud copy merges in whenever it is ready.
+   Nothing on screen ever waits for the network round trips. */
+(function init() {
+  $('dcpUser').innerHTML = cloudProfile
+    ? `Training as <b></b> (synced online)`
+    : `Progress is stored in this browser only. Join the <a href="chess.html">Chess Coach</a> leaderboard to sync it to a name.`;
+  if (cloudProfile) $('dcpUser').querySelector('b').textContent = cloudProfile.name;
+
+  const t = new Date(); calY = t.getFullYear(); calM = t.getMonth();
+
+  state = loadLocal();
+  renderStats();
+  renderCalendar();
+
+  fetch('chess-assets/daily-puzzles.json')
+    .then(r => r.json())
+    .then(data => { puzzles = data.puzzles; renderAll(); })
+    .catch(() => { $('dcpDayLabel').textContent = 'Could not load the puzzles. Refresh to try again.'; });
+
+  cloudLoad().then(cloud => {
+    if (!cloud) return;
+    const merged = mergeStates(state, cloud);
+    const changed = JSON.stringify(merged) !== JSON.stringify(state);
+    state = merged;
+    persist();
+    if (changed && puzzles) renderAll();
+  });
+})();
+</script>
+```
