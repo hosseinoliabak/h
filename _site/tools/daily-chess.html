@@ -6,7 +6,7 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="A two-year daily chess training plan: 4,015 curated Lichess puzzles that ramp from easy to very difficult, with a streak calendar tied to your Chess Coach name.">
+<meta name="description" content="A 1000-day chess training plan built around one tactical technique at a time: a teaching day for each pattern, a review day mixing it back in, climbing from easy to a 2600+ extreme finish.">
 
 <title>Daily Chess Puzzles – Hossein’s Notes</title>
 <style>
@@ -76,10 +76,10 @@ ul.task-list li input[type="checkbox"] {
 
 <link rel="stylesheet" href="../styles.css">
 <meta property="og:title" content="Daily Chess Puzzles – Hossein’s Notes">
-<meta property="og:description" content="A two-year daily chess training plan: 4,015 curated Lichess puzzles that ramp from easy to very difficult, with a streak calendar tied to your Chess Coach name.">
+<meta property="og:description" content="A 1000-day chess training plan built around one tactical technique at a time: a teaching day for each pattern, a review day mixing it back in, climbing from easy to a 2600+ extreme finish.">
 <meta property="og:site_name" content="Hossein’s Notes">
 <meta name="twitter:title" content="Daily Chess Puzzles – Hossein’s Notes">
-<meta name="twitter:description" content="A two-year daily chess training plan: 4,015 curated Lichess puzzles that ramp from easy to very difficult, with a streak calendar tied to your Chess Coach name.">
+<meta name="twitter:description" content="A 1000-day chess training plan built around one tactical technique at a time: a teaching day for each pattern, a review day mixing it back in, climbing from easy to a 2600+ extreme finish.">
 <meta name="twitter:card" content="summary">
 </head>
 
@@ -284,7 +284,7 @@ ul.task-list li input[type="checkbox"] {
 
 <div>
   <div class="description">
-    A two-year daily chess training plan: 4,015 curated Lichess puzzles that ramp from easy to very difficult, with a streak calendar tied to your Chess Coach name.
+    A 1000-day chess training plan built around one tactical technique at a time: a teaching day for each pattern, a review day mixing it back in, climbing from easy to a 2600+ extreme finish.
   </div>
 </div>
 
@@ -391,6 +391,13 @@ ul.task-list li input[type="checkbox"] {
 .dcp-note { font-size: .85rem; color: #999; margin-top: 10px; }
 .dcp-stats { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 4px; font-size: .92rem; color: #555; }
 .dcp-stats b { color: var(--site-accent); }
+
+/* technique label + coach primer */
+.dcp-tech { font-size: .88rem; color: var(--site-accent); font-weight: 600; margin: 2px 0 8px; }
+.dcp-primer { max-width: 900px; margin-top: 4px; }
+.dcp-primer-head { font-weight: 700; font-size: 1rem; margin-bottom: 6px; }
+.dcp-primer-row { font-size: .92rem; line-height: 1.55; margin: 4px 0; color: #444; }
+.dcp-primer-row b { color: #222; }
 </style>
 
 <div class="dcp-wrap">
@@ -402,6 +409,7 @@ ul.task-list li input[type="checkbox"] {
           <span class="dcp-day" id="dcpDayLabel">Loading…</span>
           <span class="dcp-sub" id="dcpPuzzleLabel"></span>
         </div>
+        <div class="dcp-tech" id="dcpTechLabel" style="display:none;"></div>
         <div class="dcp-quota" id="dcpQuota"></div>
         <div id="dcpBoard"></div>
         <div class="dcp-status" id="dcpStatus"></div>
@@ -422,7 +430,7 @@ ul.task-list li input[type="checkbox"] {
       </div>
       <div class="dcp-card">
         <div class="dcp-stats">
-          <span>Days completed: <b id="statDays">0</b> / 730</span>
+          <span>Days completed: <b id="statDays">0</b> / 1000</span>
           <span>Streak: <b id="statStreak">0</b></span>
         </div>
         <div class="dcp-prog-outer"><div class="dcp-prog-inner" id="dcpProg"></div></div>
@@ -431,7 +439,9 @@ ul.task-list li input[type="checkbox"] {
     </div>
   </div>
 
-  <p class="dcp-note" style="max-width: 900px;">One set of puzzles per day for two years, ramping from easy to very difficult. Early days serve ten quick puzzles; the final days serve a single monster. Skipped days are never lost. Your next unsolved set always waits for you, and the calendar turns green on each day you finish a set. Puzzles are drawn from the Lichess puzzle database (CC0), curated for quality, with trivial one-movers excluded. Your progress follows the name you joined the <a href="chess.html">Chess Coach</a> leaderboard with, or stays in this browser if you have not joined.</p>
+  <div class="dcp-primer" id="dcpPrimer" style="display:none;"></div>
+
+  <p class="dcp-note" style="max-width: 900px;">One set of puzzles per day for 1000 days. Puzzles are grouped by tactical technique: a day introducing a new pattern is followed by a day mixing it back in with the last few you learned, so patterns stay recognizable once the lesson is over rather than fading after a single solve. Each full pass through the technique list climbs to a harder rating band. The final 270 days serve one puzzle a day rated 2600 and up — as hard as this collection gets. Skipped days are never lost; your next unsolved set always waits, and the calendar turns green on each day you finish a set. Puzzles are drawn from the Lichess puzzle database (CC0), curated for quality, with trivial one-movers excluded. Your progress follows the name you joined the <a href="chess.html">Chess Coach</a> leaderboard with, or stays in this browser if you have not joined.</p>
 </div>
 
 <script defer="" src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -463,17 +473,129 @@ try {
 <script type="module">
 import { Chess } from './chess-assets/chess.js';
 
-/* ---------- schedule: 730 days, quota steps 10..1 every 73 days ---------- */
-const DAYS = 730;
-const quotaOf = d => 10 - Math.floor((d - 1) / 73);        // day 1..730
+/* ---------- schedule: 1000 days. Days 1-730 keep the original quota ramp
+   (10 -> 1 puzzle/day, stepping down every 73 days); days 731-1000 hold at
+   1 extremely hard puzzle/day (see curate-daily-puzzles.py for how that
+   tail is curated -- rating >=2600, preferring >=2700 per technique). ---------- */
+const DAYS = 1000;
+const quotaOf = d => d <= 730 ? 10 - Math.floor((d - 1) / 73) : 1;
 const startIndex = d => {                                   // puzzles consumed before day d
   let s = 0;
   for (let k = 1; k < d; k++) s += quotaOf(k);
   return s;
 };
-const phaseName = q =>
+const phaseName = (day, q) =>
+  day > 730 ? 'extreme (2600+)' :
   q >= 9 ? 'easy' : q >= 7 ? 'easy-medium' : q >= 5 ? 'medium' :
   q >= 3 ? 'difficult' : q === 2 ? 'very difficult' : 'very difficult';
+
+/* ---------- technique curriculum: display names + coach primers ----------
+   Written carefully and conservatively: specific historical claims are only
+   included where they're well-established chess lore, not invented for
+   flavor. Many entries skip "history" and/or a closing note entirely where
+   there's nothing genuinely worth adding beyond how the pattern works. */
+const TECH_LABEL = {
+  hangingPiece: 'Hanging Piece', fork: 'Fork', pin: 'Pin', skewer: 'Skewer',
+  discoveredAttack: 'Discovered Attack', discoveredCheck: 'Discovered Check', doubleCheck: 'Double Check',
+  deflection: 'Deflection', attraction: 'Attraction', clearance: 'Clearance', interference: 'Interference',
+  capturingDefender: 'Capturing the Defender', xRayAttack: 'X-Ray Attack', trappedPiece: 'Trapped Piece',
+  intermezzo: 'Intermezzo (Zwischenzug)',
+  exposedKing: 'Exposed King', kingsideAttack: 'Kingside Attack', queensideAttack: 'Queenside Attack',
+  mateIn2: 'Mate in Two', backRankMate: 'Back-Rank Mate', mateIn3: 'Mate in Three',
+  mateIn4: 'Mate in Four', mateIn5: 'Mate in Five',
+  pawnEndgame: 'Pawn Endgame', rookEndgame: 'Rook Endgame', bishopEndgame: 'Bishop Endgame',
+  knightEndgame: 'Knight Endgame', queenEndgame: 'Queen Endgame', queenRookEndgame: 'Queen & Rook Endgame',
+  advancedPawn: 'Advanced Pawn', promotion: 'Promotion', zugzwang: 'Zugzwang',
+  quietMove: 'Quiet Move', defensiveMove: 'Defensive Move', sacrifice: 'Sacrifice',
+  attackingF2F7: 'Attacking f2 / f7',
+};
+const PRIMERS = {
+  hangingPiece: { how: "A piece with no defender at all. Before anything fancy, scan every one of the opponent's pieces and ask whether it's actually protected.",
+    freq: "The single most common way games are decided below expert level — most blunders are simply an unguarded piece, not a deep combination." },
+  fork: { how: "One piece attacks two or more enemy targets at once, so only one can be saved. Knights are the classic forking piece because their L-shaped attack is easy to miss.",
+    freq: "One of the most frequent tactics in games at every level, knight forks especially.",
+    history: "The 'family fork' — a knight forking king, queen, and rook simultaneously — is one of the most prized patterns in chess and shows up constantly in tactics books as the archetypal fork." },
+  pin: { how: "A piece can't safely move because that would expose a more valuable piece behind it on the same line — often the king. A pin against the king is absolute: the pinned piece is completely immobile.",
+    freq: "Extremely common, especially with bishops and rooks along open lines.",
+    note: "A pinned piece is often not just stuck — it's a target: pile on more attackers than the defender can add, and it falls." },
+  skewer: { how: "Like a pin in reverse: the more valuable piece is in front and forced to move, exposing the piece behind it. Line up a bishop, rook, or queen through both." },
+  discoveredAttack: { how: "Move one piece out of the way and a different piece behind it suddenly attacks something. The piece that moved can make its own threat at the same time.",
+    note: "Discovered attacks are prized precisely because the moving piece gets two jobs at once." },
+  discoveredCheck: { how: "A discovered attack where the revealed piece gives check. Since check must be answered immediately, the piece that moved is often free to cause damage while the opponent deals with the king." },
+  doubleCheck: { how: "A discovered check where the moving piece also gives check, attacking the king with two pieces at once. Blocking or capturing can only deal with one attacker, so the king almost always has to move.",
+    freq: "Rare in practice, but when a double check is available it is very often winning, because the king's escape squares are usually more limited than the defender expects." },
+  deflection: { how: "Force a defending piece away from the square or line it's guarding — with a check, a capture, or a threat it can't ignore — so whatever it was protecting falls." },
+  attraction: { how: "Force a piece, often the king, onto a specific square — usually with a check or a capture it's obligated to make — so it lands somewhere your next move can exploit." },
+  clearance: { how: "Move a piece out of the way, often with a sacrifice, so a square or line opens up for a different one of your own pieces." },
+  interference: { how: "Place a piece between an enemy piece and whatever it's defending or attacking, cutting the connection along that line — the mirror image of clearance." },
+  capturingDefender: { how: "Before taking the piece you actually want, first capture (or otherwise remove) whatever is protecting it, so it falls for free or at a profit." },
+  xRayAttack: { how: "A rook, bishop, or queen attacks a target through one of the opponent's own pieces standing in the way — the attack behind it activates the moment that piece moves or is captured." },
+  trappedPiece: { how: "A piece — often a knight or bishop that wandered too far forward — has no safe square to retreat to. Look for pieces that pushed ahead without an escape route." },
+  intermezzo: { how: "Instead of playing the expected recapture or reply immediately, insert a forcing move first — a check, a bigger capture, a threat — then come back to finish the original idea once the position favors you more.",
+    note: "The German term zwischenzug ('in-between move') is what most players actually call this, even in English." },
+  exposedKing: { how: "The king has lost its pawn cover or sits on open lines. Even without an immediate tactic, an exposed king is a long-term weakness worth attacking with every piece available." },
+  kingsideAttack: { how: "A coordinated assault on the side of the board where the enemy king has castled — pushing pawns toward it, opening files, and bringing pieces over to join in." },
+  queensideAttack: { how: "The same idea as a kingside attack, mirrored to the other side of the board — most relevant when the enemy king castled queenside." },
+  mateIn2: { how: "A forced checkmate reachable in exactly two moves, regardless of how the opponent replies to the first one. Solving these builds the habit of calculating a forcing line all the way to the end before playing the first move." },
+  backRankMate: { how: "The king is trapped on its own first rank, boxed in by its own pawns, with a rook or queen delivering mate along that rank because there's no escape square.",
+    freq: "Extremely common at every level — it's the main reason to keep a 'luft' (an escape square) for a castled king once the position opens up." },
+  mateIn3: { how: "A forced mate found three moves deep. Requires calculating not just your own moves but the opponent's only defenses at each step, since a genuine 'mate in three' has to work against every possible reply." },
+  mateIn4: { how: "The same idea as mate in three, one move deeper — real calculation stamina is needed to be sure every branch is actually forced." },
+  mateIn5: { how: "The deepest of the forced-mate family here. At this depth it's less about spotting a pattern and more about disciplined, systematic calculation of every defense." },
+  pawnEndgame: { how: "With most pieces traded off, precise king and pawn technique decides everything. A single tempo, or the opposition (facing kings with the move belonging to the wrong side), can be the whole game." },
+  rookEndgame: { how: "The most common endgame type in practical play. Rooks belong behind passed pawns — yours to push them, the opponent's to stop them — and an active rook is worth more than extra pawns." },
+  bishopEndgame: { how: "Bishops are strongest with pawns on both sides of the board, since each one only ever touches squares of one color.",
+    note: "A bishop of the 'wrong' color for a passed pawn's queening square is a well-known way to hold a draw." },
+  knightEndgame: { how: "Knights need several moves to cross the board, unlike a bishop or rook that can do it in one — so speed and pawn-race calculation matter more here than in most other endgames." },
+  queenEndgame: { how: "Perpetual check is always a danger for both sides, and a single well-placed check or tempo can flip the result. Among the hardest endgames to calculate precisely." },
+  queenRookEndgame: { how: "The heaviest, most tactical endgame pairing — mating nets and perpetual checks are both constantly in the air, and king safety often matters more than material count." },
+  advancedPawn: { how: "A pawn pushed deep into enemy territory, especially the 6th or 7th rank, ties down defensive pieces and constantly threatens to promote." },
+  promotion: { how: "Get a pawn to the far rank and it becomes a queen (or another piece of choice). Recognizing when a pawn race or a sacrifice clears the path to promote is a key endgame skill." },
+  zugzwang: { how: "A position where the side to move would rather pass, because every available move makes things worse. Common in endgames, rare but devastating when found in the middlegame.",
+    note: "The German word itself ('compulsion to move') is used untranslated in essentially every language's chess vocabulary." },
+  quietMove: { how: "The winning move makes no check, no capture, and no obvious threat — which is exactly why it's easy to miss. It typically improves a piece or removes the opponent's only useful reply, setting up something forcing next.",
+    freq: "Quiet moves stay genuinely hard to spot even for very strong players, unlike short forced mates, which get easier to categorize as puzzle difficulty rises." },
+  defensiveMove: { how: "Instead of attacking, the best move neutralizes the opponent's threat — a save, a blockade, or a trade that defuses the danger. Knowing when to defend is as important as knowing when to attack." },
+  sacrifice: { how: "Giving up material on purpose because what it buys — an attack, a mating net, a decisive positional gain — is worth more than the points on the board. Arguably the hardest tactical skill, since it means trusting a calculation instead of just counting pieces.",
+    history: "Some of the most celebrated games in chess history are remembered specifically for one brilliant sacrifice — material was always a means, never the goal." },
+  attackingF2F7: { how: "The square beside the king (f7 for Black, f2 for White) is defended by the king alone in the opening, before castling — the classic early weak point.",
+    history: "This is exactly the weakness Scholar's Mate and the Fried Liver Attack are built around." },
+};
+
+function todaysTechniques(day) {
+  const q = quotaOf(day), start = startIndex(day), seen = [];
+  for (let i = 0; i < q; i++) {
+    const row = puzzles && puzzles[start + i];
+    const t = row && row[5];
+    if (t && !seen.includes(t)) seen.push(t);
+  }
+  return seen;
+}
+function renderPrimer(tech) {
+  const box = $('dcpPrimer');
+  const p = tech && PRIMERS[tech];
+  if (!p) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = 'block';
+  let html = `<div class="dcp-primer-head">${TECH_LABEL[tech] || tech}</div>`;
+  html += `<div class="dcp-primer-row"><b>How to spot it:</b> ${p.how}</div>`;
+  if (p.freq) html += `<div class="dcp-primer-row"><b>How often it comes up:</b> ${p.freq}</div>`;
+  if (p.history) html += `<div class="dcp-primer-row"><b>Worth knowing:</b> ${p.history}</div>`;
+  if (p.note) html += `<div class="dcp-primer-row">${p.note}</div>`;
+  box.innerHTML = html;
+}
+function renderTechLabel(day) {
+  const techs = todaysTechniques(day);
+  const el = $('dcpTechLabel');
+  if (!techs.length) { el.style.display = 'none'; renderPrimer(null); return; }
+  el.style.display = 'block';
+  if (techs.length === 1) {
+    el.textContent = `Today's technique: ${TECH_LABEL[techs[0]] || techs[0]}`;
+    renderPrimer(techs[0]);
+  } else {
+    el.textContent = `Mixed review: ${techs.map(t => TECH_LABEL[t] || t).join(', ')}`;
+    renderPrimer(null);
+  }
+}
 
 /* ---------- identity: reuse the Chess Coach cloud profile ---------- */
 const fdb = window.__dcpFdb || null;
@@ -705,7 +827,8 @@ function startPuzzle() {
   const day = state.cur.day, q = quotaOf(day);
   const idx = startIndex(day) + state.cur.solved;
   const row = puzzles[idx];
-  puzzle = { id: row[0], fen: row[1], moves: row[2].split(' '), rating: row[3], themes: row[4] };
+  puzzle = { id: row[0], fen: row[1], moves: row[2].split(' '), rating: row[3], themes: row[4],
+             dayTheme: row[5], dayType: row[6] };
   game = new Chess(puzzle.fen);
   solIdx = 0; selected = null; hintStage = 0;
   userColor = game.turn() === 'w' ? 'b' : 'w';             // user moves after the setup move
@@ -770,7 +893,7 @@ function renderStats() {
   $('statStreak').textContent = streak();
   $('dcpProg').style.width = (100 * n / DAYS).toFixed(1) + '%';
   const d = currentDay();
-  if (d) $('dcpPhase').textContent = `Current phase: ${phaseName(quotaOf(d))} (${quotaOf(d)} puzzle${quotaOf(d) > 1 ? 's' : ''} per day)`;
+  if (d) $('dcpPhase').textContent = `Current phase: ${phaseName(d, quotaOf(d))} (${quotaOf(d)} puzzle${quotaOf(d) > 1 ? 's' : ''} per day)`;
   else $('dcpPhase').textContent = 'Plan complete.';
 }
 
@@ -815,7 +938,8 @@ function renderAll() {
     $('dcpBoard').innerHTML = '';
     $('dcpBoard').style.display = 'none';
     $('dcpHint').disabled = true; $('dcpRetry').disabled = true;
-    setStatus('<div class="dcp-big"><span class="huge">🏆</span><br><b>Congrats!</b> You finished all 730 days and 4,015 puzzles of the two-year plan.</div>');
+    $('dcpTechLabel').style.display = 'none'; renderPrimer(null);
+    setStatus('<div class="dcp-big"><span class="huge">🏆</span><br><b>Congrats!</b> You finished all 1000 days of the plan.</div>');
     return;
   }
   const doneDates = new Set(Object.values(state.done));
@@ -823,6 +947,7 @@ function renderAll() {
     /* one set per calendar day */
     $('dcpDayLabel').textContent = 'Done for today.';
     $('dcpPuzzleLabel').textContent = `Day ${d} of ${DAYS} unlocks tomorrow.`;
+    $('dcpTechLabel').style.display = 'none'; renderPrimer(null);
     $('dcpQuota').innerHTML = '';
     $('dcpBoard').style.display = 'none';
     $('dcpHint').disabled = true; $('dcpRetry').disabled = true;
@@ -831,6 +956,7 @@ function renderAll() {
   }
   $('dcpBoard').style.display = 'grid';
   $('dcpHint').disabled = false; $('dcpRetry').disabled = false;
+  renderTechLabel(d);
   if (!state.cur || state.cur.day !== d) state.cur = { day: d, solved: 0 };
   startPuzzle();
 }
