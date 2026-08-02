@@ -1034,8 +1034,10 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
           </div>
           <label class="late-row"><input type="checkbox" id="lateHint"> Late hints: wait 60&nbsp;s / 2&nbsp;min before helping</label>
           <label class="late-row"><input type="checkbox" id="assistChk"> Assisted analysis: color the squares a picked-up piece can go to</label>
+          <label class="late-row"><input type="checkbox" id="movesChk"> Candidate moves: rank the engine's top choices with their evaluations</label>
           </div>
           <div class="coach-msg" id="coachMsg" style="margin-top:8px;">Make your move. If you think for a while, I'll point you in the right direction.</div>
+          <div class="ana-lines" id="gameLines" style="display:none; margin-top:6px;"></div>
           <div class="book-line" id="bookLine" style="display:none;"></div>
           <div class="perf-line" id="perfLine" style="display:none;"></div>
         </div>
@@ -1429,12 +1431,14 @@ class Engine {
       return { ...(last || { score:0, mate:null, depth:0, pv:[] }), bestUci:best };
     });
   }
-  /* Streaming full-strength analysis; onInfo fires as depth grows.
-     MultiPV 2 so the gap to the second-best move is known (Great detection). */
+  /* Streaming full-strength analysis; onInfo fires as depth grows. MultiPV 3:
+     the top line grades the move played, the second-best line detects Great
+     (only-good-move) moments, and the third feeds the optional candidate-move
+     panel shown during the player's turn. */
   analyse(fen, onInfo) {
     return this.run({
       kind:'analysis',
-      cmds:[...this.fullStrengthCmds(), 'setoption name MultiPV value 2', `position fen ${fen}`, 'go depth 22'],
+      cmds:[...this.fullStrengthCmds(), 'setoption name MultiPV value 3', `position fen ${fen}`, 'go depth 22'],
       onLine:l => { const i = Engine.parseInfo(l); if (i) onInfo(i); },
       done:l => l.startsWith('bestmove'),
     });
@@ -2125,10 +2129,11 @@ function enterPlayerTurn(retry) {
 function startTurnAnalysis() {
   const seq = gameSeq;
   const fen = game.fen();
-  analysis = { fen, best: null, bestUci: null, second: null };
+  analysis = { fen, best: null, bestUci: null, second: null, third: null };
   engine.analyse(fen, info => {
     if (seq !== gameSeq || !analysis || analysis.fen !== fen) return;
-    if (info.multipv === 2) { analysis.second = info; return; }
+    if (info.multipv === 2) { analysis.second = info; renderGameLines(); return; }
+    if (info.multipv === 3) { analysis.third = info; renderGameLines(); return; }
     analysis.best = info;
     analysis.bestUci = info.pv[0];
     if (pendingBotGrade && pendingBotGrade.fen === fen && info.depth >= 11) finalizeBotGrade(info.score);
@@ -2136,6 +2141,7 @@ function startTurnAnalysis() {
       setEvalDisplay(scoreToWhite(info.score, playerColor), info.mate);
       if (hintLevel > 0) renderHints();
     }
+    renderGameLines();
     lcMaybeWrite(fen, info);
   });
 }
@@ -2209,6 +2215,34 @@ $('assistChk').onchange = e => {
   lsSet('chess-trainer-assist', assistOn ? '1' : '0');
   if (!assistOn) { assistTints = null; renderBoard(); }
 };
+
+/* candidate-move panel: an opt-in ranked list of the engine's top choices with
+   their evaluations, shown during the player's own turn -- the live-game
+   counterpart to the Analysis board's three-line panel. */
+let movesOn = lsGet('chess-trainer-moves') === '1';
+$('movesChk').checked = movesOn;
+$('movesChk').onchange = e => {
+  movesOn = e.target.checked;
+  lsSet('chess-trainer-moves', movesOn ? '1' : '0');
+  renderGameLines();
+};
+function renderGameLines() {
+  const box = $('gameLines');
+  if (!box) return;
+  if (!movesOn || !coachOn || mode !== 'game' || phase !== 'player' || !analysis) {
+    box.style.display = 'none'; box.innerHTML = '';
+    return;
+  }
+  const lines = [analysis.best, analysis.second, analysis.third].filter(l => l && l.pv && l.pv.length);
+  if (!lines.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const fen = analysis.fen, stm = game.turn();
+  box.style.display = 'block';
+  box.innerHTML = lines.map(l => {
+    const cpW = scoreToWhite(l.score, stm);
+    return `<div class="al-row"><span class="al-ev" style="color:${cpW >= 0 ? '#27ae60' : '#e74c3c'}">${fmtEval(cpW)}</span>` +
+           ` <span style="color:#999;">d${l.depth}</span> ${pvToSan(fen, l.pv, 6)}</div>`;
+  }).join('');
+}
 
 /* ============================== crowd book ("Let's Check") ============================== */
 /* Whenever any visitor's browser analyzes an opening position deeply, the eval is
@@ -2916,6 +2950,7 @@ function renderHints() {
 function clearHints() {
   if (hintTimer) { clearInterval(hintTimer); hintTimer = null; }
   arrowLayer.innerHTML = '';   // also relied on by other modes' "reveal answer" arrows
+  renderGameLines();          // hides itself once phase/mode no longer qualify
 }
 function arrowSVG(from, to, color) {
   const a = orient(from), b = orient(to);
