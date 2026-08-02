@@ -381,8 +381,10 @@ ul.task-list li input[type="checkbox"] {
   display: flex; align-items: center; justify-content: center; font-size: .7rem; color: #777;
 }
 .dcp-cal-cell.empty { background: transparent; }
-.dcp-cal-cell.green { background: #2E8B57; color: #fff; font-weight: 600; }
+.dcp-cal-cell.green { background: #2E8B57; color: #fff; font-weight: 600; cursor: pointer; }
+.dcp-cal-cell.green:hover { background: #256e46; }
 .dcp-cal-cell.today { outline: 2px solid var(--site-accent); outline-offset: -2px; }
+.dcp-cal-cell.reviewing { outline: 2px solid #e67e22; outline-offset: -2px; }
 
 .dcp-big {
   text-align: center; padding: 26px 12px; font-size: 1.15rem; line-height: 1.7;
@@ -414,6 +416,7 @@ ul.task-list li input[type="checkbox"] {
         <div id="dcpBoard"></div>
         <div class="dcp-status" id="dcpStatus"></div>
         <div class="dcp-btns">
+          <button class="dcp-btn" id="dcpExitReview" style="display:none;">Exit review</button>
           <button class="dcp-btn" id="dcpHint">Hint</button>
           <button class="dcp-btn" id="dcpRetry">Retry puzzle</button>
         </div>
@@ -441,7 +444,7 @@ ul.task-list li input[type="checkbox"] {
 
   <div class="dcp-primer" id="dcpPrimer" style="display:none;"></div>
 
-  <p class="dcp-note" style="max-width: 900px;">One set of puzzles per day for 1000 days. Puzzles are grouped by tactical technique: a day introducing a new pattern is followed by a day mixing it back in with the last few you learned, so patterns stay recognizable once the lesson is over rather than fading after a single solve. Each full pass through the technique list climbs to a harder rating band. The final 270 days serve one puzzle a day rated 2600 and up — as hard as this collection gets. Skipped days are never lost; your next unsolved set always waits, and the calendar turns green on each day you finish a set. Puzzles are drawn from the Lichess puzzle database (CC0), curated for quality, with trivial one-movers excluded. Your progress follows the name you joined the <a href="chess.html">Chess Coach</a> leaderboard with, or stays in this browser if you have not joined.</p>
+  <p class="dcp-note" style="max-width: 900px;">One set of puzzles per day for 1000 days. Puzzles are grouped by tactical technique: a day introducing a new pattern is followed by a day mixing it back in with the last few you learned, so patterns stay recognizable once the lesson is over rather than fading after a single solve. Each full pass through the technique list climbs to a harder rating band. The final 270 days serve one puzzle a day rated 2600 and up — as hard as this collection gets. Skipped days are never lost; your next unsolved set always waits, and the calendar turns green on each day you finish a set — click any green day to replay it. Puzzles are drawn from the Lichess puzzle database (CC0), curated for quality, with trivial one-movers excluded. Your progress follows the name you joined the <a href="chess.html">Chess Coach</a> leaderboard with, or stays in this browser if you have not joined.</p>
 </div>
 
 <script defer="" src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -670,6 +673,30 @@ function streak() {
 const FILES = 'abcdefgh';
 let game = null, puzzle = null, solIdx = 0, userColor = 'w', selected = null, lastMove = null, boardLocked = true, hintStage = 0;
 
+/* ---------- review: replay any completed day without touching live progress ----------
+   reviewDay/reviewIdx stand in for state.cur/state.cur.solved while active; nothing
+   here ever writes to state.done or state.cur, so exiting review resumes the live
+   session exactly where it was. */
+let reviewDay = null, reviewIdx = 0;
+function activeCtx() {
+  if (reviewDay !== null) return { day: reviewDay, idx: reviewIdx, review: true };
+  if (state.cur) return { day: state.cur.day, idx: state.cur.solved, review: false };
+  return null;
+}
+function startReview(day) {
+  if (!puzzles || !state.done[day]) return;
+  reviewDay = day; reviewIdx = 0;
+  renderCalendar();
+  $('dcpBoard').style.display = 'grid';
+  $('dcpHint').disabled = false; $('dcpRetry').disabled = false;
+  startPuzzle();
+}
+function exitReview() {
+  reviewDay = null; reviewIdx = 0;
+  renderAll();
+}
+$('dcpExitReview').onclick = exitReview;
+
 function sqName(r, c, flip) { return flip ? FILES[7 - c] + (r + 1) : FILES[c] + (8 - r); }
 function drawBoard() {
   const el = $('dcpBoard');
@@ -824,16 +851,20 @@ function setStatus(html) { $('dcpStatus').innerHTML = html; }
 let puzzles = null;
 
 function startPuzzle() {
-  const day = state.cur.day, q = quotaOf(day);
-  const idx = startIndex(day) + state.cur.solved;
+  const ctx = activeCtx();
+  if (!ctx) return;
+  const day = ctx.day, q = quotaOf(day);
+  const idx = startIndex(day) + ctx.idx;
   const row = puzzles[idx];
   puzzle = { id: row[0], fen: row[1], moves: row[2].split(' '), rating: row[3], themes: row[4],
              dayTheme: row[5], dayType: row[6] };
   game = new Chess(puzzle.fen);
   solIdx = 0; selected = null; hintStage = 0;
   userColor = game.turn() === 'w' ? 'b' : 'w';             // user moves after the setup move
-  $('dcpDayLabel').textContent = `Day ${day} of ${DAYS}`;
-  $('dcpPuzzleLabel').textContent = `puzzle ${state.cur.solved + 1} of ${q} • rating ${puzzle.rating}`;
+  $('dcpDayLabel').textContent = ctx.review ? `Reviewing Day ${day}` : `Day ${day} of ${DAYS}`;
+  $('dcpPuzzleLabel').textContent = `puzzle ${ctx.idx + 1} of ${q} • rating ${puzzle.rating}`;
+  $('dcpExitReview').style.display = ctx.review ? '' : 'none';
+  renderTechLabel(day);
   renderQuota();
   boardLocked = true;
   lastMove = null;
@@ -852,6 +883,7 @@ function startPuzzle() {
 
 function puzzleSolved() {
   boardLocked = true;
+  if (reviewDay !== null) return reviewAdvance();
   state.cur.solved++;
   const day = state.cur.day, q = quotaOf(day);
   if (state.cur.solved >= q) {
@@ -866,6 +898,16 @@ function puzzleSolved() {
   setStatus('<span class="ok">Solved!</span> Next puzzle…');
   setTimeout(startPuzzle, 900);
 }
+function reviewAdvance() {
+  reviewIdx++;
+  renderQuota();
+  if (reviewIdx >= quotaOf(reviewDay)) {
+    setStatus('<span class="ok">Review complete.</span> "Retry puzzle" replays this set from the start, or "Exit review" goes back.');
+    return;
+  }
+  setStatus('<span class="ok">Solved!</span> Next puzzle…');
+  setTimeout(startPuzzle, 900);
+}
 
 $('dcpHint').onclick = () => {
   if (boardLocked || !puzzle || solIdx >= puzzle.moves.length) return;
@@ -873,17 +915,23 @@ $('dcpHint').onclick = () => {
   if (hintStage === 0) { flash(mv.slice(0, 2), 'hintsq'); hintStage = 1; }
   else { flash(mv.slice(0, 2), 'hintsq'); flash(mv.slice(2, 4), 'hintsq'); }
 };
-$('dcpRetry').onclick = () => { if (puzzle && state.cur) startPuzzle(); };
+$('dcpRetry').onclick = () => {
+  if (!puzzle) return;
+  /* a finished review set has no "current" puzzle to retry -- restart it from puzzle 1 */
+  if (reviewDay !== null && reviewIdx >= quotaOf(reviewDay)) { reviewIdx = 0; startPuzzle(); return; }
+  if (activeCtx()) startPuzzle();
+};
 
 /* ---------- quota pills, stats, phase ---------- */
 function renderQuota() {
   const el = $('dcpQuota');
   el.innerHTML = '';
-  if (!state.cur) return;
-  const q = quotaOf(state.cur.day);
+  const ctx = activeCtx();
+  if (!ctx) return;
+  const q = quotaOf(ctx.day);
   for (let i = 0; i < q; i++) {
     const p = document.createElement('div');
-    p.className = 'dcp-pill' + (i < state.cur.solved ? ' done' : (i === state.cur.solved ? ' cur' : ''));
+    p.className = 'dcp-pill' + (i < ctx.idx ? ' done' : (i === ctx.idx ? ' cur' : ''));
     el.appendChild(p);
   }
 }
@@ -901,6 +949,10 @@ function renderStats() {
 let calY, calM;                                            // displayed month
 function renderCalendar() {
   const greens = new Set(Object.values(state.done));
+  /* reverse lookup so a click on a date can find which plan-day it completed */
+  const dayForDate = {};
+  for (const [d, dt] of Object.entries(state.done)) dayForDate[dt] = d;
+  const reviewDate = reviewDay !== null ? state.done[reviewDay] : null;
   const first = new Date(calY, calM, 1);
   const title = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   $('calTitle').textContent = title;
@@ -918,8 +970,10 @@ function renderCalendar() {
   for (let d = 1; d <= nDays; d++) {
     const cell = document.createElement('div');
     const ds = new Date(calY, calM, d).toLocaleDateString('en-CA');
-    cell.className = 'dcp-cal-cell' + (greens.has(ds) ? ' green' : '') + (ds === tStr ? ' today' : '');
+    const isGreen = greens.has(ds);
+    cell.className = 'dcp-cal-cell' + (isGreen ? ' green' : '') + (ds === tStr ? ' today' : '') + (ds === reviewDate ? ' reviewing' : '');
     cell.textContent = d;
+    if (isGreen) { cell.title = 'Click to review this day'; cell.onclick = () => startReview(+dayForDate[ds]); }
     grid.appendChild(cell);
   }
 }
@@ -928,6 +982,8 @@ $('calNext').onclick = () => { calM++; if (calM > 11) { calM = 0; calY++; } rend
 
 /* ---------- top-level render ---------- */
 function renderAll() {
+  if (reviewDay !== null) return;   // a background cloud sync must not interrupt an open review
+  $('dcpExitReview').style.display = 'none';   // stale from a just-exited review, if any
   renderStats();
   renderCalendar();
   const d = currentDay();
@@ -956,7 +1012,6 @@ function renderAll() {
   }
   $('dcpBoard').style.display = 'grid';
   $('dcpHint').disabled = false; $('dcpRetry').disabled = false;
-  renderTechLabel(d);
   if (!state.cur || state.cur.day !== d) state.cur = { day: d, solved: 0 };
   startPuzzle();
 }
