@@ -10,6 +10,70 @@
     document.documentElement.classList.add('theme-midnight');
   }
 
+  // Font cycle: default -> reader -> garamond -> default
+  var fonts = [
+    { id: 'default',  cls: null,             label: 'Aa', title: 'Font: Default (Nunito + PT Sans)' },
+    { id: 'reader',   cls: 'font-reader',    label: 'Aa', title: 'Font: Reader (Inter + Literata)' },
+    { id: 'garamond', cls: 'font-garamond',  label: 'Aa', title: 'Font: Garamond' }
+  ];
+  var savedFont = localStorage.getItem('site-font') || 'default';
+
+  function applyFont(id) {
+    var root = document.documentElement;
+    root.classList.remove('font-reader', 'font-garamond');
+    for (var i = 0; i < fonts.length; i++) {
+      if (fonts[i].id === id && fonts[i].cls) root.classList.add(fonts[i].cls);
+    }
+  }
+
+  function fontMeta(id) {
+    for (var i = 0; i < fonts.length; i++) {
+      if (fonts[i].id === id) return fonts[i];
+    }
+    return fonts[0];
+  }
+
+  applyFont(savedFont);
+
+  // Printing always uses the light surface and the Garamond font theme.
+  // The .theme-warm / .theme-midnight rules hardcode colors at a higher
+  // specificity than the accent tokens, so the class itself has to come
+  // off for the duration of the print job, then go back afterwards.
+  var printRestore = null;
+
+  function enterPrint() {
+    if (printRestore) return;
+    var root = document.documentElement;
+    printRestore = {
+      theme: localStorage.getItem('site-theme') || 'default',
+      font: localStorage.getItem('site-font') || 'default'
+    };
+    root.classList.remove('theme-warm', 'theme-midnight');
+    root.classList.remove('font-reader', 'font-garamond');
+  }
+
+  function exitPrint() {
+    if (!printRestore) return;
+    var root = document.documentElement;
+    if (printRestore.theme === 'warm') root.classList.add('theme-warm');
+    else if (printRestore.theme === 'midnight') root.classList.add('theme-midnight');
+    if (printRestore.font === 'reader') root.classList.add('font-reader');
+    else if (printRestore.font === 'garamond') root.classList.add('font-garamond');
+    printRestore = null;
+  }
+
+  window.addEventListener('beforeprint', enterPrint);
+  window.addEventListener('afterprint', exitPrint);
+
+  // Safari and some headless renderers drive printing through the media
+  // query rather than the events, so listen to both.
+  if (window.matchMedia) {
+    var printQuery = window.matchMedia('print');
+    var onPrintChange = function(e) { if (e.matches) enterPrint(); else exitPrint(); };
+    if (printQuery.addEventListener) printQuery.addEventListener('change', onPrintChange);
+    else if (printQuery.addListener) printQuery.addListener(onPrintChange);
+  }
+
   // Map theme names to giscus theme URLs
   function getGiscusTheme(theme) {
     var base = 'https://h.oliabak.com';
@@ -79,5 +143,34 @@
     });
 
     document.body.appendChild(btn);
+
+    // Font toggle, stacked directly above the color toggle
+    var fbtn = document.createElement('button');
+    fbtn.id = 'font-toggle';
+    fbtn.innerHTML = 'Aa';
+    fbtn.style.cssText = 'position:fixed;bottom:72px;right:20px;z-index:9999;width:42px;height:42px;border-radius:50%;border:2px solid var(--site-accent);background:var(--bs-body-bg,#fff);color:var(--site-accent);font-size:17px;font-weight:600;line-height:1;font-family:var(--site-font-heading);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.15);transition:all 0.2s;';
+    fbtn.title = fontMeta(savedFont).title;
+
+    fbtn.addEventListener('mouseenter', function() {
+      fbtn.style.transform = 'scale(1.1)';
+    });
+    fbtn.addEventListener('mouseleave', function() {
+      fbtn.style.transform = 'scale(1)';
+    });
+
+    fbtn.addEventListener('click', function() {
+      var current = localStorage.getItem('site-font') || 'default';
+      var idx = -1;
+      for (var i = 0; i < fonts.length; i++) {
+        if (fonts[i].id === current) idx = i;
+      }
+      var next = fonts[(idx + 1) % fonts.length];
+
+      applyFont(next.id);
+      localStorage.setItem('site-font', next.id);
+      fbtn.title = next.title;
+    });
+
+    document.body.appendChild(fbtn);
   });
 })();
