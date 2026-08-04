@@ -163,6 +163,10 @@ ul.task-list li input[type="checkbox"] {
     <a class="dropdown-item" href="../deep-learning/neural-networks-and-deep-learning/index.html">
  <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
   </li>  
+        <li>
+    <a class="dropdown-item" href="../deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization</span></a>
+  </li>  
     </ul>
   </li>
   <li class="nav-item dropdown ">
@@ -189,6 +193,8 @@ ul.task-list li input[type="checkbox"] {
     <a class="dropdown-item" href="../tools/index.html">
  <span class="dropdown-text">Overview</span></a>
   </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
         <li>
     <a class="dropdown-item" href="../tools/pastebin.html">
  <span class="dropdown-text">Pastebin</span></a>
@@ -198,9 +204,11 @@ ul.task-list li input[type="checkbox"] {
  <span class="dropdown-text">QR Code Generator</span></a>
   </li>  
         <li>
-    <a class="dropdown-item" href="../tools/svg-viewer.html">
- <span class="dropdown-text">SVG Viewer</span></a>
+    <a class="dropdown-item" href="../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text Generator</span></a>
   </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
         <li>
     <a class="dropdown-item" href="../tools/graph.html">
  <span class="dropdown-text">Function Grapher</span></a>
@@ -213,10 +221,18 @@ ul.task-list li input[type="checkbox"] {
     <a class="dropdown-item" href="../tools/latex-preview.html">
  <span class="dropdown-text">LaTeX Preview</span></a>
   </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
         <li>
-    <a class="dropdown-item" href="../tools/fancy-text.html">
- <span class="dropdown-text">Fancy Text Generator</span></a>
+    <a class="dropdown-item" href="../tools/svg-viewer.html">
+ <span class="dropdown-text">SVG Viewer</span></a>
   </li>  
+        <li>
+    <a class="dropdown-item" href="../tools/color-palette.html">
+ <span class="dropdown-text">Color Palette Generator</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Chess</li>
         <li>
     <a class="dropdown-item" href="../tools/chess.html">
  <span class="dropdown-text">Chess Coach</span></a>
@@ -362,9 +378,11 @@ ul.task-list li input[type="checkbox"] {
 
 /* progress pills for today's quota */
 .dcp-quota { display: flex; gap: 6px; margin: 10px 0 2px; flex-wrap: wrap; }
-.dcp-pill { width: 26px; height: 10px; border-radius: 5px; background: #e3e3e3; }
+.dcp-pill { width: 26px; height: 10px; border-radius: 5px; background: #e3e3e3; border: none; padding: 0; }
 .dcp-pill.done { background: #2E8B57; }
 .dcp-pill.cur { background: var(--site-accent); }
+.dcp-pill.pick { cursor: pointer; }
+.dcp-pill.pick:hover { outline: 2px solid var(--site-accent); outline-offset: 2px; }
 
 /* overall progress */
 .dcp-prog-outer { background: #ececec; border-radius: 6px; height: 10px; overflow: hidden; margin-top: 6px; }
@@ -678,21 +696,23 @@ let game = null, puzzle = null, solIdx = 0, userColor = 'w', selected = null, la
    here ever writes to state.done or state.cur, so exiting review resumes the live
    session exactly where it was. */
 let reviewDay = null, reviewIdx = 0;
+let liveReplay = null;   /* index of an already-solved puzzle being replayed inside the live day */
 function activeCtx() {
   if (reviewDay !== null) return { day: reviewDay, idx: reviewIdx, review: true };
+  if (state.cur && liveReplay !== null) return { day: state.cur.day, idx: liveReplay, review: false, replay: true };
   if (state.cur) return { day: state.cur.day, idx: state.cur.solved, review: false };
   return null;
 }
 function startReview(day) {
   if (!puzzles || !state.done[day]) return;
-  reviewDay = day; reviewIdx = 0;
+  reviewDay = day; reviewIdx = 0; liveReplay = null;
   renderCalendar();
   $('dcpBoard').style.display = 'grid';
   $('dcpHint').disabled = false; $('dcpRetry').disabled = false;
   startPuzzle();
 }
 function exitReview() {
-  reviewDay = null; reviewIdx = 0;
+  reviewDay = null; reviewIdx = 0; liveReplay = null;
   renderAll();
 }
 $('dcpExitReview').onclick = exitReview;
@@ -862,8 +882,10 @@ function startPuzzle() {
   solIdx = 0; selected = null; hintStage = 0;
   userColor = game.turn() === 'w' ? 'b' : 'w';             // user moves after the setup move
   $('dcpDayLabel').textContent = ctx.review ? `Reviewing Day ${day}` : `Day ${day} of ${DAYS}`;
-  $('dcpPuzzleLabel').textContent = `puzzle ${ctx.idx + 1} of ${q} • rating ${puzzle.rating}`;
-  $('dcpExitReview').style.display = ctx.review ? '' : 'none';
+  $('dcpPuzzleLabel').textContent = `puzzle ${ctx.idx + 1} of ${q} • rating ${puzzle.rating}` + (ctx.replay ? ' • replay' : '');
+  const exitBtn = $('dcpExitReview');
+  exitBtn.style.display = (ctx.review || ctx.replay) ? '' : 'none';
+  exitBtn.textContent = ctx.replay ? 'Back to current puzzle' : 'Exit review';
   renderTechLabel(day);
   renderQuota();
   boardLocked = true;
@@ -884,6 +906,13 @@ function startPuzzle() {
 function puzzleSolved() {
   boardLocked = true;
   if (reviewDay !== null) return reviewAdvance();
+  /* a replayed puzzle was already counted; just drop back to the live one */
+  if (liveReplay !== null) {
+    liveReplay = null;
+    setStatus('<span class="ok">Solved!</span> Back to your current puzzle…');
+    setTimeout(startPuzzle, 900);
+    return;
+  }
   state.cur.solved++;
   const day = state.cur.day, q = quotaOf(day);
   if (state.cur.solved >= q) {
@@ -929,9 +958,22 @@ function renderQuota() {
   const ctx = activeCtx();
   if (!ctx) return;
   const q = quotaOf(ctx.day);
+  /* in review the whole set is already solved, so any pill may be jumped to;
+     in a live session only the solved (green) pills can be replayed */
+  const solved = ctx.review ? q : state.cur.solved;
   for (let i = 0; i < q; i++) {
-    const p = document.createElement('div');
-    p.className = 'dcp-pill' + (i < ctx.idx ? ' done' : (i === ctx.idx ? ' cur' : ''));
+    const clickable = i < solved || ctx.review;
+    const p = document.createElement(clickable ? 'button' : 'div');
+    const done = ctx.review ? i < ctx.idx : (i < solved && i !== ctx.idx);
+    p.className = 'dcp-pill' + (done ? ' done' : (i === ctx.idx ? ' cur' : '')) + (clickable ? ' pick' : '');
+    if (clickable) {
+      p.type = 'button';
+      p.title = `Go to puzzle ${i + 1}`;
+      p.setAttribute('aria-label', `Go to puzzle ${i + 1} of ${q}`);
+      p.onclick = ctx.review
+        ? () => { reviewIdx = i; startPuzzle(); }
+        : () => { liveReplay = i; startPuzzle(); };
+    }
     el.appendChild(p);
   }
 }
@@ -982,7 +1024,7 @@ $('calNext').onclick = () => { calM++; if (calM > 11) { calM = 0; calY++; } rend
 
 /* ---------- top-level render ---------- */
 function renderAll() {
-  if (reviewDay !== null) return;   // a background cloud sync must not interrupt an open review
+  if (reviewDay !== null || liveReplay !== null) return;   // a background cloud sync must not interrupt an open review or replay
   $('dcpExitReview').style.display = 'none';   // stale from a just-exited review, if any
   renderStats();
   renderCalendar();
