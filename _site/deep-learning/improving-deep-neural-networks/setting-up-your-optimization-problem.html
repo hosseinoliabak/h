@@ -1,0 +1,1621 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-04">
+<meta name="description" content="Input normalization, vanishing and exploding gradients, careful weight initialization, and gradient checking to verify backpropagation.">
+
+<title>Setting Up Your Optimization Problem – Hossein’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../deep-learning/improving-deep-neural-networks/lab-initialization.html" rel="next">
+<link href="../../deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-285f71f7c7ab2eebc0170294332e2983.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="Setting Up Your Optimization Problem – Hossein’s Notes">
+<meta property="og:description" content="Input normalization, vanishing and exploding gradients, careful weight initialization, and gradient checking to verify backpropagation.">
+<meta property="og:image" content="https://h.oliabak.com/deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="Hossein’s Notes">
+<meta name="twitter:title" content="Setting Up Your Optimization Problem – Hossein’s Notes">
+<meta name="twitter:description" content="Input normalization, vanishing and exploding gradients, careful weight initialization, and gradient checking to verify backpropagation.">
+<meta name="twitter:image" content="https://h.oliabak.com/deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Hossein’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text Generator</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/graph.html">
+ <span class="dropdown-text">Function Grapher</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-viewer.html">
+ <span class="dropdown-text">SVG Viewer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/color-palette.html">
+ <span class="dropdown-text">Color Palette Generator</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Chess</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem.html">Setting Up Your Optimization Problem</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/setting-up-your-machine-learning-application.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Setting Up Your Machine Learning Application</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regularizing Your Neural Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Setting Up Your Optimization Problem</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/lab-initialization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Initialization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/lab-regularization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Regularization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/lab-gradient-checking.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Gradient Checking</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#normalizing-inputs" id="toc-normalizing-inputs" class="nav-link active" data-scroll-target="#normalizing-inputs">Normalizing Inputs</a>
+  <ul class="collapse">
+  <li><a href="#why-normalize-the-inputs" id="toc-why-normalize-the-inputs" class="nav-link" data-scroll-target="#why-normalize-the-inputs">Why Normalize the Inputs</a></li>
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#vanishing-and-exploding-gradients" id="toc-vanishing-and-exploding-gradients" class="nav-link" data-scroll-target="#vanishing-and-exploding-gradients">Vanishing and Exploding Gradients</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#weight-initialization-for-deep-networks" id="toc-weight-initialization-for-deep-networks" class="nav-link" data-scroll-target="#weight-initialization-for-deep-networks">Weight Initialization for Deep Networks</a>
+  <ul class="collapse">
+  <li><a href="#single-neuron-intuition" id="toc-single-neuron-intuition" class="nav-link" data-scroll-target="#single-neuron-intuition">Single Neuron Intuition</a></li>
+  <li><a href="#general-rule-per-layer" id="toc-general-rule-per-layer" class="nav-link" data-scroll-target="#general-rule-per-layer">General Rule per Layer</a></li>
+  <li><a href="#other-variants" id="toc-other-variants" class="nav-link" data-scroll-target="#other-variants">Other Variants</a></li>
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#numerical-approximation-of-gradients" id="toc-numerical-approximation-of-gradients" class="nav-link" data-scroll-target="#numerical-approximation-of-gradients">Numerical Approximation of Gradients</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#gradient-checking" id="toc-gradient-checking" class="nav-link" data-scroll-target="#gradient-checking">Gradient Checking</a>
+  <ul class="collapse">
+  <li><a href="#grad-check-procedure" id="toc-grad-check-procedure" class="nav-link" data-scroll-target="#grad-check-procedure">Grad Check Procedure</a></li>
+  <li><a href="#measuring-closeness" id="toc-measuring-closeness" class="nav-link" data-scroll-target="#measuring-closeness">Measuring Closeness</a></li>
+  <li><a href="#review-questions-4" id="toc-review-questions-4" class="nav-link" data-scroll-target="#review-questions-4">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#gradient-checking-implementation-notes" id="toc-gradient-checking-implementation-notes" class="nav-link" data-scroll-target="#gradient-checking-implementation-notes">Gradient Checking Implementation Notes</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-5" id="toc-review-questions-5" class="nav-link" data-scroll-target="#review-questions-5">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Setting Up Your Optimization Problem</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">optimization</div>
+    <div class="quarto-category">initialization</div>
+    <div class="quarto-category">gradient-checking</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Input normalization, vanishing and exploding gradients, careful weight initialization, and gradient checking to verify backpropagation.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 4, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~87 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~5,100 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p>The <a href="../../deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html">previous page</a> covered techniques for reducing overfitting. This page turns to the optimization problem itself, with tricks that make training faster and more reliable. It covers normalizing the inputs, the problem of vanishing and exploding gradients, the weight initialization that partially fixes it, and gradient checking, a debugging technique for verifying that your implementation of backpropagation is correct.</p>
+<section id="normalizing-inputs" class="level2">
+<h2 class="anchored" data-anchor-id="normalizing-inputs">Normalizing Inputs</h2>
+<p>When training a neural network, one of the techniques to speed up training is to normalize your inputs. Consider a training set with two input features, so <span class="math inline">\(x\)</span> is two-dimensional. Normalizing the inputs corresponds to two steps.</p>
+<p><strong>Step 1, subtract out the mean.</strong> Compute the mean vector and shift every training example by it.</p>
+<p><span class="math display">\[
+\mu = \frac{1}{m} \sum_{i=1}^{m} x^{(i)}, \qquad x := x - \mu
+\]</span></p>
+<p>Here <span class="math inline">\(\mu\)</span> is a vector with one entry per feature. This step just moves the training set until it has zero mean.</p>
+<p><strong>Step 2, normalize the variances.</strong> In the picture below, the feature <span class="math inline">\(x_1\)</span> has a much larger variance than the feature <span class="math inline">\(x_2\)</span>. Compute the vector of per-feature variances</p>
+<p><span class="math display">\[
+\sigma^2 = \frac{1}{m} \sum_{i=1}^{m} \left( x^{(i)} \right)^{2}
+\]</span></p>
+<p>where the squaring is elementwise. Since the mean has already been subtracted out, each elementwise square is just the variance of that feature. Then divide each example, elementwise, by the standard deviation <span class="math inline">\(\sigma\)</span>. After this step the variance of <span class="math inline">\(x_1\)</span> and the variance of <span class="math inline">\(x_2\)</span> are both equal to one.</p>
+<div id="9d8579da" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="setting-up-your-optimization-problem_files/figure-html/cell-2-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Important</span>Use the Same <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma\)</span> for the Test Set
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If you use these steps to scale your training data, then use the <strong>same</strong> <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma\)</span> to normalize your test set. Do not estimate <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span> separately on the training set and the test set. You want both training and test examples to go through the exact same transformation, defined by the same <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span> calculated on your training data.</p>
+</div>
+</div>
+<section id="why-normalize-the-inputs" class="level3">
+<h3 class="anchored" data-anchor-id="why-normalize-the-inputs">Why Normalize the Inputs</h3>
+<p>Recall the cost function</p>
+<p><span class="math display">\[
+J(w, b) = \frac{1}{m} \sum_{i=1}^{m} \mathcal{L}(\hat{y}^{(i)}, y^{(i)})
+\]</span></p>
+<p>If you use unnormalized input features, it is more likely that your cost function looks like a very squished out, very elongated bowl. Say the feature <span class="math inline">\(x_1\)</span> ranges from 1 to 1,000 and the feature <span class="math inline">\(x_2\)</span> ranges from 0 to 1. Then the range of values for the parameters <span class="math inline">\(w_1\)</span> and <span class="math inline">\(w_2\)</span> ends up being very different, and if you plot the contours of the cost function, you get a very elongated shape. If instead you normalize the features, the cost function on average looks more symmetric, with more spherical contours.</p>
+<div id="3b171da0" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="setting-up-your-optimization-problem_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>If you run gradient descent on a cost function like the one on the left, you might have to use a very small learning rate, because gradient descent may need a lot of steps, oscillating back and forth, before it finally finds its way to the minimum. With more spherical contours, wherever you start, gradient descent can pretty much go straight to the minimum, taking much larger steps rather than oscillating around.</p>
+<p>Of course in practice <span class="math inline">\(w\)</span> is a high dimensional vector, so trying to plot this in 2D does not convey all the intuitions correctly. But the rough intuition holds. The cost function is rounder and easier to optimize when the features are all on similar scales, not from 1 to 1,000 for one and 0 to 1 for another, but mostly from minus 1 to 1, or at least with similar variances as each other.</p>
+<p>In practice, if one feature ranges from 0 to 1, another from minus 1 to 1, and a third from 1 to 2, these are fairly similar ranges and training will work just fine. The real damage happens when features are on dramatically different ranges, such as one from 1 to 1,000 and another from 0 to 1. Setting all features to zero mean and variance one guarantees a similar scale and usually helps the learning algorithm run faster. If your features already come in on similar scales, this step matters less, although performing this type of normalization pretty much never does any harm, so it is often done anyway when in doubt.</p>
+</section>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. What are the two steps of input normalization, and what does the training set look like afterwards?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Step 1 subtracts the mean, <span class="math inline">\(\mu = \frac{1}{m} \sum_i x^{(i)}\)</span> followed by <span class="math inline">\(x := x - \mu\)</span>, which moves the training set to zero mean. Step 2 computes the per-feature variance vector <span class="math inline">\(\sigma^2 = \frac{1}{m} \sum_i (x^{(i)})^2\)</span> (elementwise squaring, after the mean has been removed) and divides each example elementwise by <span class="math inline">\(\sigma\)</span>. Afterwards every feature has zero mean and variance one.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You normalize the training set with its own <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma\)</span>, and the test set with a separate <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma\)</span> estimated on the test set. What is wrong?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The training and test data no longer go through the same transformation, so an input processed at test time is not on the scale the network was trained on. The rule is to compute <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span> on the training data once, and then use those same values in the same two formulas to scale the test set.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does gradient descent converge faster on normalized inputs?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>With features on very different scales, the parameters take on very different ranges of values and the cost function becomes a very elongated bowl. Gradient descent then needs a small learning rate and many steps that oscillate back and forth across the narrow valley. With normalized features the contours are more spherical, so gradient descent can take larger steps and head fairly directly to the minimum.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Feature <span class="math inline">\(x_1\)</span> ranges from 0 to 1, <span class="math inline">\(x_2\)</span> from minus 1 to 1, and <span class="math inline">\(x_3\)</span> from 1 to 2. Is normalization essential here?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Not really. These ranges are already fairly similar, so training will work just fine without normalization. The step becomes important when ranges differ dramatically, such as 1 to 1,000 versus 0 to 1. That said, normalization pretty much never does any harm, so it is often applied anyway when you are not sure whether it will help.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Which of the following is the correct expression to normalize the input <span class="math inline">\(x\)</span>?</strong></p>
+<ol type="a">
+<li><p><span class="math inline">\(x = \frac{1}{m} \sum_{i=1}^{m} x^{(i)}\)</span></p></li>
+<li><p><span class="math inline">\(x = \dfrac{x - \mu}{\sigma}\)</span></p></li>
+<li><p><span class="math inline">\(x = \dfrac{x}{\sigma}\)</span></p></li>
+<li><p><span class="math inline">\(x = \frac{1}{m} \sum_{i=1}^{m} \left( x^{(i)} \right)^2\)</span></p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b.</strong> Subtracting <span class="math inline">\(\mu\)</span> shifts the mean of the input to the origin, and dividing by <span class="math inline">\(\sigma\)</span> makes the variance one in each coordinate. Option (a) is the formula for the mean <span class="math inline">\(\mu\)</span> itself, and (d) is the formula for the variance vector <span class="math inline">\(\sigma^2\)</span> once the mean has been removed; neither is the transformation applied to <span class="math inline">\(x\)</span>. Option (c) scales the variance but forgets to zero out the mean first.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="vanishing-and-exploding-gradients" class="level2">
+<h2 class="anchored" data-anchor-id="vanishing-and-exploding-gradients">Vanishing and Exploding Gradients</h2>
+<p>One of the problems of training neural networks, especially very deep ones, is vanishing and exploding gradients. When you train a very deep network, your derivatives or slopes can sometimes get either very, very big or very, very small, maybe even exponentially small, and this makes training difficult.</p>
+<p>To see where this comes from, take a very deep network with parameters <span class="math inline">\(w^{[1]}, w^{[2]}, \ldots, w^{[L]}\)</span>, and to keep the math simple make two assumptions. The activation function is linear, <span class="math inline">\(g(z) = z\)</span>, and every bias is zero, <span class="math inline">\(b^{[l]} = 0\)</span>. In that case the output is just the product of all the weight matrices applied to the input.</p>
+<p><span class="math display">\[
+\hat{y} = w^{[L]} \, w^{[L-1]} \cdots w^{[2]} \, w^{[1]} \, x
+\]</span></p>
+<p>To check this, <span class="math inline">\(z^{[1]} = w^{[1]} x\)</span> since <span class="math inline">\(b = 0\)</span>, and <span class="math inline">\(a^{[1]} = g(z^{[1]}) = z^{[1]}\)</span> because the activation is linear, so <span class="math inline">\(a^{[1]} = w^{[1]} x\)</span>. By the same reasoning <span class="math inline">\(a^{[2]} = w^{[2]} w^{[1]} x\)</span>, and so on, until the product of all the matrices gives <span class="math inline">\(\hat{y}\)</span>.</p>
+<p>Now suppose each weight matrix is just a little bit larger than the identity,</p>
+<p><span class="math display">\[
+w^{[l]} = \begin{bmatrix} 1.5 &amp; 0 \\ 0 &amp; 1.5 \end{bmatrix} = 1.5 \, I
+\]</span></p>
+<p>(technically the last matrix has different dimensions, so say this holds for the rest of them). Then</p>
+<p><span class="math display">\[
+\hat{y} = w^{[L]} \begin{bmatrix} 1.5 &amp; 0 \\ 0 &amp; 1.5 \end{bmatrix}^{L-1} x
+\]</span></p>
+<p>so <span class="math inline">\(\hat{y}\)</span> grows essentially like <span class="math inline">\(1.5^{L}\)</span>. For a very deep network, a large <span class="math inline">\(L\)</span>, the value of <span class="math inline">\(\hat{y}\)</span> <strong>explodes</strong> exponentially with the number of layers.</p>
+<p>Conversely, replace 1.5 with 0.5, so each matrix is a little bit less than the identity. Then the factor becomes <span class="math inline">\(0.5^{L-1}\)</span>, and if the input were <span class="math inline">\(x_1 = x_2 = 1\)</span>, the activations would be one half, one half, then one fourth, one fourth, one eighth, one eighth, and so on, down to <span class="math inline">\(1 / 2^{L}\)</span>. In a very deep network the activations <strong>decrease exponentially</strong> with depth.</p>
+<div id="89d4c812" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="setting-up-your-optimization-problem_files/figure-html/cell-4-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The intuition to take away is this. If the weights <span class="math inline">\(w\)</span> are all just a little bit bigger than one, or a little bit bigger than the identity matrix, then with a very deep network the activations can explode. If <span class="math inline">\(w\)</span> is just a little bit less than the identity, say with 0.9 on the diagonal, then the activations decrease exponentially. And although the argument here is stated in terms of activations, a similar argument shows that the derivatives, the gradients computed by backpropagation, also increase or decrease exponentially as a function of the number of layers.</p>
+<div id="ae3c45d3" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="setting-up-your-optimization-problem_files/figure-html/cell-5-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Some modern neural networks have around <span class="math inline">\(L = 150\)</span> layers (Microsoft got great results with a 152 layer network). With such depth, if activations or gradients grow or shrink exponentially in <span class="math inline">\(L\)</span>, the values can get really big or really small, and training becomes difficult. In particular, if the gradients are exponentially small, gradient descent takes tiny little steps and needs a very long time to learn anything. For a long time this problem was a huge barrier to training deep neural networks. It turns out there is a partial solution that does not completely solve the problem but helps a lot, which is a careful choice of how you initialize the weights.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. Under the simplifying assumptions <span class="math inline">\(g(z) = z\)</span> and <span class="math inline">\(b^{[l]} = 0\)</span>, what does the output of a deep network reduce to, and why does that cause trouble?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The output reduces to the product of all the weight matrices applied to the input, <span class="math inline">\(\hat{y} = w^{[L]} w^{[L-1]} \cdots w^{[1]} x\)</span>. If each matrix is slightly larger than the identity, say <span class="math inline">\(1.5 I\)</span>, the product grows like <span class="math inline">\(1.5^{L}\)</span> and the activations explode. If each is slightly smaller, say <span class="math inline">\(0.5 I\)</span>, the product shrinks like <span class="math inline">\(0.5^{L}\)</span> and the activations vanish. The same exponential behavior applies to the gradients, not just the activations.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why do exponentially small gradients make training slow?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Gradient descent updates the parameters in steps proportional to the gradient. If the gradients are exponentially small in the number of layers, each update is a tiny little step, and it takes a very long time for gradient descent to learn anything.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="weight-initialization-for-deep-networks" class="level2">
+<h2 class="anchored" data-anchor-id="weight-initialization-for-deep-networks">Weight Initialization for Deep Networks</h2>
+<p>A partial solution to the vanishing and exploding gradients problem, one that does not solve it entirely but helps a lot, is a better or more careful choice of the random initialization for your neural network.</p>
+<section id="single-neuron-intuition" class="level3">
+<h3 class="anchored" data-anchor-id="single-neuron-intuition">Single Neuron Intuition</h3>
+<p>Start with a single neuron with <span class="math inline">\(n\)</span> input features <span class="math inline">\(x_1, \ldots, x_n\)</span>, computing <span class="math inline">\(a = g(z)\)</span> where (ignoring <span class="math inline">\(b\)</span>, so set <span class="math inline">\(b = 0\)</span>)</p>
+<p><span class="math display">\[
+z = w_1 x_1 + w_2 x_2 + \cdots + w_n x_n
+\]</span></p>
+<p>For <span class="math inline">\(z\)</span> not to blow up and not to become too small, notice that the larger <span class="math inline">\(n\)</span> is, the smaller you want each <span class="math inline">\(w_i\)</span> to be, because <span class="math inline">\(z\)</span> is the sum of <span class="math inline">\(n\)</span> terms <span class="math inline">\(w_i x_i\)</span>. If you are adding up a lot of terms, you want each term to be smaller. One reasonable thing to do is to set the variance of each <span class="math inline">\(w_i\)</span> to be <span class="math inline">\(\frac{1}{n}\)</span>, where <span class="math inline">\(n\)</span> is the number of input features going into the neuron.</p>
+</section>
+<section id="general-rule-per-layer" class="level3">
+<h3 class="anchored" data-anchor-id="general-rule-per-layer">General Rule per Layer</h3>
+<p>In a deep network, the inputs to layer <span class="math inline">\(l\)</span> are the <span class="math inline">\(n^{[l-1]}\)</span> activations of the previous layer, so the same idea gives, in code,</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>W_l <span class="op">=</span> np.random.randn(shape) <span class="op">*</span> np.sqrt(<span class="dv">1</span> <span class="op">/</span> n_prev)   <span class="co"># n_prev = n^{[l-1]}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Multiplying a Gaussian random variable by <span class="math inline">\(\sqrt{\frac{1}{n^{[l-1]}}}\)</span> sets its variance to <span class="math inline">\(\frac{1}{n^{[l-1]}}\)</span>.</p>
+<p>It turns out that if you are using a <strong>ReLU</strong> activation function, setting the variance to <span class="math inline">\(\frac{2}{n}\)</span> works a little bit better, so you often see this in initialization when the activation is ReLU. This version, from a paper by He et al., uses</p>
+<p><span class="math display">\[
+\text{Var}(w_i) = \frac{2}{n^{[l-1]}}
+\qquad \Longrightarrow \qquad
+w^{[l]} = \texttt{np.random.randn(shape)} \times \sqrt{\frac{2}{n^{[l-1]}}}
+\]</span></p>
+<p>If the input activations are roughly mean 0 and variance 1, this causes <span class="math inline">\(z\)</span> to also take on a similar scale. It does not solve the vanishing and exploding gradients problem, but it definitely helps reduce it, because it tries to set each weight matrix <span class="math inline">\(w^{[l]}\)</span> so that it is not too much bigger than 1 and not too much less than 1, so activations do not explode or vanish too quickly.</p>
+</section>
+<section id="other-variants" class="level3">
+<h3 class="anchored" data-anchor-id="other-variants">Other Variants</h3>
+<p>A few other variants exist for other activation functions.</p>
+<ul>
+<li><strong>tanh activation.</strong> A paper shows it is better to use the constant 1 instead of 2, that is, multiply by <span class="math inline">\(\sqrt{\frac{1}{n^{[l-1]}}}\)</span>. This is called <strong>Xavier initialization</strong>.</li>
+<li><strong>Another version</strong>, taught by Yoshua Bengio and colleagues and seen in some papers, uses <span class="math inline">\(\sqrt{\frac{2}{n^{[l-1]} + n^{[l]}}}\)</span>, with its own theoretical justification.</li>
+</ul>
+<p>If you are using a ReLU activation function, which is really the most common one, the He formula with the constant 2 is the recommended choice. If you are using tanh, try the Xavier version instead.</p>
+<p>In practice, all of these formulas just give you a starting point, a default value for the variance of the initialization of the weight matrices. If you wish, this variance parameter could be one more thing to tune among your hyperparameters. You could have another multiplier on the formula and tune it as part of the hyperparameter search. Tuning it sometimes has a modest effect. It is not one of the first hyperparameters to try tuning, but on some problems tuning it helps a reasonable amount. It sits fairly low in the importance ordering relative to the other hyperparameters.</p>
+<p>Hopefully this makes your weights not explode too quickly and not decay to zero too quickly, so you can train a reasonably deep network without the weights or the gradients exploding or vanishing too much. This is another trick that helps neural networks train much more quickly.</p>
+</section>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. Why should the initial weights of a neuron be smaller when it has more inputs?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because <span class="math inline">\(z = w_1 x_1 + \cdots + w_n x_n\)</span> is a sum of <span class="math inline">\(n\)</span> terms. The larger <span class="math inline">\(n\)</span> is, the more terms are being added up, so each term needs to be smaller for <span class="math inline">\(z\)</span> not to blow up. Setting the variance of each <span class="math inline">\(w_i\)</span> to something like <span class="math inline">\(\frac{1}{n}\)</span> (or <span class="math inline">\(\frac{2}{n}\)</span> for ReLU) keeps <span class="math inline">\(z\)</span> on a reasonable scale when the inputs have roughly mean 0 and variance 1.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Match the initialization scaling to the situation. Which factor is recommended for a layer with ReLU activation?</strong></p>
+<ol type="a">
+<li><p><span class="math inline">\(\sqrt{\dfrac{1}{n^{[l-1]}}}\)</span></p></li>
+<li><p><span class="math inline">\(\sqrt{\dfrac{2}{n^{[l-1]}}}\)</span></p></li>
+<li><p><span class="math inline">\(\sqrt{\dfrac{2}{n^{[l-1]} + n^{[l]}}}\)</span></p></li>
+<li><p>No scaling, plain <code>np.random.randn</code></p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b.</strong> For ReLU, the most common activation function, setting the variance to <span class="math inline">\(\frac{2}{n^{[l-1]}}\)</span> (He et al.) works a little better. Option (a) with the constant 1 is Xavier initialization, appropriate for tanh. Option (c) is the variant by Bengio and colleagues. All of these are starting-point defaults rather than exact rules.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Does careful weight initialization solve the vanishing and exploding gradients problem?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>No, it is a partial solution. It does not completely solve the problem, but it helps a lot, because it sets each weight matrix so that it is not too much bigger than 1 and not too much less than 1, which keeps the activations and gradients from exploding or vanishing too quickly. The variance multiplier can even be treated as a hyperparameter, though it is usually a low-priority one to tune.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="numerical-approximation-of-gradients" class="level2">
+<h2 class="anchored" data-anchor-id="numerical-approximation-of-gradients">Numerical Approximation of Gradients</h2>
+<p>When you implement backpropagation, there is a test called gradient checking that can really help you make sure your implementation is correct, because sometimes you write down all these equations and you are just not 100% sure you got all the details right. To build up to gradient checking, first look at how to numerically approximate the derivative of a function.</p>
+<p>Take the function <span class="math inline">\(f(\theta) = \theta^3\)</span> and start at <span class="math inline">\(\theta = 1\)</span>. Instead of nudging <span class="math inline">\(\theta\)</span> only to the right to get <span class="math inline">\(\theta + \epsilon\)</span>, nudge it in both directions to get <span class="math inline">\(\theta - \epsilon\)</span> and <span class="math inline">\(\theta + \epsilon\)</span>, with <span class="math inline">\(\epsilon = 0.01\)</span>, so the two points are 0.99 and 1.01.</p>
+<div id="59297db7" class="cell" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="setting-up-your-optimization-problem_files/figure-html/cell-6-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Rather than taking the little triangle between <span class="math inline">\(\theta\)</span> and <span class="math inline">\(\theta + \epsilon\)</span> and computing its height over its width, you get a much better estimate of the gradient by taking the bigger triangle spanning <span class="math inline">\(\theta - \epsilon\)</span> to <span class="math inline">\(\theta + \epsilon\)</span>. Intuitively, the big triangle takes both the lower-left and the upper-right small triangles into account, so instead of a one-sided difference you are taking a <strong>two-sided difference</strong>.</p>
+<p>Work out the math. The height of the big triangle is <span class="math inline">\(f(\theta + \epsilon) - f(\theta - \epsilon)\)</span>, and its width is <span class="math inline">\(2\epsilon\)</span>, so the approximation is</p>
+<p><span class="math display">\[
+\frac{f(\theta + \epsilon) - f(\theta - \epsilon)}{2\epsilon} \approx g(\theta)
+\]</span></p>
+<p>where <span class="math inline">\(g(\theta)\)</span> is the claimed derivative. Plug in the values for <span class="math inline">\(f(\theta) = \theta^3\)</span> at <span class="math inline">\(\theta = 1\)</span> with <span class="math inline">\(\epsilon = 0.01\)</span>.</p>
+<p><span class="math display">\[
+\frac{(1.01)^3 - (0.99)^3}{2 \times 0.01} = \frac{1.030301 - 0.970299}{0.02} = 3.0001
+\]</span></p>
+<p>The true derivative is <span class="math inline">\(g(\theta) = 3\theta^2 = 3\)</span> at <span class="math inline">\(\theta = 1\)</span>, so the two values are very close. The approximation error is 0.0001. With the one-sided difference, <span class="math inline">\(\frac{f(\theta + \epsilon) - f(\theta)}{\epsilon}\)</span>, you would have gotten 3.0301, an approximation error of 0.03 rather than 0.0001. The two-sided difference gives much greater confidence that <span class="math inline">\(g(\theta)\)</span> really is a correct implementation of the derivative of <span class="math inline">\(f\)</span>.</p>
+<p>The cost is speed. Used for gradient checking, the two-sided difference runs twice as slow as the one-sided version, but in practice it is worth it because it is so much more accurate.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Optional Theory, Why the Error is <span class="math inline">\(O(\epsilon^2)\)</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>For readers more familiar with calculus, the formal definition of the derivative is</p>
+<p><span class="math display">\[
+f'(\theta) = \lim_{\epsilon \to 0} \frac{f(\theta + \epsilon) - f(\theta - \epsilon)}{2\epsilon}
+\]</span></p>
+<p>For a nonzero value of <span class="math inline">\(\epsilon\)</span>, one can show the error of this two-sided approximation is on the order of <span class="math inline">\(\epsilon^2\)</span>, written <span class="math inline">\(O(\epsilon^2)\)</span>. Since <span class="math inline">\(\epsilon\)</span> is a very small number, if <span class="math inline">\(\epsilon = 0.01\)</span> then <span class="math inline">\(\epsilon^2 = 0.0001\)</span>. Big O notation means the error is some constant times <span class="math inline">\(\epsilon^2\)</span>, and in the example above that constant happens to be 1, which matches the error of 0.0001 exactly.</p>
+<p>In contrast, the one-sided formula <span class="math inline">\(\frac{f(\theta + \epsilon) - f(\theta)}{\epsilon}\)</span> has error on the order of <span class="math inline">\(\epsilon\)</span>, that is <span class="math inline">\(O(\epsilon)\)</span>. When <span class="math inline">\(\epsilon\)</span> is a number less than 1, <span class="math inline">\(\epsilon\)</span> is much bigger than <span class="math inline">\(\epsilon^2\)</span>, which is why the one-sided formula is a much less accurate approximation. This is exactly why gradient checking uses the two-sided difference.</p>
+</div>
+</div>
+</div>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. For <span class="math inline">\(f(\theta) = \theta^3\)</span> at <span class="math inline">\(\theta = 1\)</span> with <span class="math inline">\(\epsilon = 0.01\)</span>, compute the two-sided difference approximation and its error against the true derivative.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The two-sided difference is <span class="math inline">\(\frac{(1.01)^3 - (0.99)^3}{0.02} = \frac{1.030301 - 0.970299}{0.02} = 3.0001\)</span>. The true derivative is <span class="math inline">\(3\theta^2 = 3\)</span>, so the error is 0.0001. The one-sided difference would give 3.0301, an error of 0.03, which is 300 times larger.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why is the two-sided difference preferred for gradient checking even though it is twice as slow as the one-sided difference?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-14" class="callout-14-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because its approximation error is on the order of <span class="math inline">\(\epsilon^2\)</span> rather than <span class="math inline">\(\epsilon\)</span>. With <span class="math inline">\(\epsilon\)</span> a small number less than 1, <span class="math inline">\(\epsilon^2\)</span> is far smaller than <span class="math inline">\(\epsilon\)</span>, so the two-sided estimate is much more accurate, and the extra factor of two in computation is worth it for a debugging check.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="gradient-checking" class="level2">
+<h2 class="anchored" data-anchor-id="gradient-checking">Gradient Checking</h2>
+<p>Gradient checking, often abbreviated <strong>grad check</strong>, is a technique that has saved tons of time and helped find bugs in implementations of backpropagation many times. Here is how to use it to verify that your implementation of backprop is correct.</p>
+<p>Your network has parameters <span class="math inline">\(w^{[1]}, b^{[1]}, \ldots, w^{[L]}, b^{[L]}\)</span>. The first step is to take all of these parameters and reshape them into one giant vector <span class="math inline">\(\theta\)</span>. Reshape each matrix <span class="math inline">\(w^{[l]}\)</span> into a vector, then concatenate all the reshaped <span class="math inline">\(w\)</span>’s and the <span class="math inline">\(b\)</span>’s into the giant vector <span class="math inline">\(\theta\)</span>. The cost function, previously a function of the <span class="math inline">\(w\)</span>’s and <span class="math inline">\(b\)</span>’s, is now just a function of <span class="math inline">\(\theta\)</span>, so <span class="math inline">\(J(\theta)\)</span>.</p>
+<p>Next, with the <span class="math inline">\(dW\)</span>’s and <span class="math inline">\(db\)</span>’s ordered the same way, reshape <span class="math inline">\(dw^{[1]}, db^{[1]}, \ldots, dw^{[L]}, db^{[L]}\)</span> into a giant vector <span class="math inline">\(d\theta\)</span> of the same dimension as <span class="math inline">\(\theta\)</span>. Remember <span class="math inline">\(dw^{[1]}\)</span> has the same dimension as <span class="math inline">\(w^{[1]}\)</span> and <span class="math inline">\(db^{[1]}\)</span> has the same dimension as <span class="math inline">\(b^{[1]}\)</span>, so the same reshaping and concatenation works.</p>
+<p>The question grad check answers is this. Is <span class="math inline">\(d\theta\)</span> really the gradient, the slope, of the cost function <span class="math inline">\(J(\theta)\)</span>?</p>
+<section id="grad-check-procedure" class="level3">
+<h3 class="anchored" data-anchor-id="grad-check-procedure">Grad Check Procedure</h3>
+<p>Write <span class="math inline">\(J\)</span> as a function of the components of the giant vector, <span class="math inline">\(J(\theta_1, \theta_2, \theta_3, \ldots)\)</span>. Then implement a loop over each component <span class="math inline">\(i\)</span> of <span class="math inline">\(\theta\)</span>, computing a two-sided difference in which only <span class="math inline">\(\theta_i\)</span> is nudged and every other component is left alone.</p>
+<p><span class="math display">\[
+d\theta_{\text{approx}}[i] = \frac{J(\theta_1, \ldots, \theta_i + \epsilon, \ldots) - J(\theta_1, \ldots, \theta_i - \epsilon, \ldots)}{2\epsilon}
+\]</span></p>
+<p>From the previous section, this should be approximately equal to <span class="math inline">\(d\theta[i]\)</span>, the partial derivative of <span class="math inline">\(J\)</span> with respect to <span class="math inline">\(\theta_i\)</span>, if <span class="math inline">\(d\theta\)</span> really is the gradient of <span class="math inline">\(J\)</span>. Computing this for every value of <span class="math inline">\(i\)</span> leaves you with two vectors, <span class="math inline">\(d\theta_{\text{approx}}\)</span> and <span class="math inline">\(d\theta\)</span>, both of the same dimension as <span class="math inline">\(\theta\)</span>. Then check whether these two vectors are approximately equal.</p>
+</section>
+<section id="measuring-closeness" class="level3">
+<h3 class="anchored" data-anchor-id="measuring-closeness">Measuring Closeness</h3>
+<p>How do you define whether two vectors are reasonably close to each other? Compute the Euclidean distance between them, the <span class="math inline">\(L_2\)</span> norm of the difference (no square on top, so sum the squares of the elementwise differences, then take a square root), and normalize by the lengths of the vectors.</p>
+<p><span class="math display">\[
+\frac{\left\| d\theta_{\text{approx}} - d\theta \right\|_2}{\left\| d\theta_{\text{approx}} \right\|_2 + \left\| d\theta \right\|_2}
+\]</span></p>
+<p>The denominator turns the formula into a ratio, in case the vectors themselves are really small or really large. In practice, use <span class="math inline">\(\epsilon = 10^{-7}\)</span>. Then interpret the ratio as follows.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Ratio</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><span class="math inline">\(\approx 10^{-7}\)</span> or smaller</td>
+<td>Great. The derivative approximation is very likely correct.</td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(\approx 10^{-5}\)</span></td>
+<td>Take a careful look. Maybe this is okay, but double-check that no individual component of the difference is too large.</td>
+</tr>
+<tr class="odd">
+<td><span class="math inline">\(\approx 10^{-3}\)</span> or bigger</td>
+<td>Seriously worry that there may be a bug.</td>
+</tr>
+</tbody>
+</table>
+<p>If the check produces a large value, look at the individual components of the vectors to see if there is a specific value of <span class="math inline">\(i\)</span> for which <span class="math inline">\(d\theta_{\text{approx}}[i]\)</span> is very different from <span class="math inline">\(d\theta[i]\)</span>, and use that to try to track down which derivative computation might be incorrect. When implementing a neural network, what often happens is you implement forward prop and backprop, grad check reveals a relatively big value, you suspect a bug, debug for a while, and when grad check finally passes with a small value, you can be much more confident the implementation is correct.</p>
+</section>
+<section id="review-questions-4" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-4">Review Questions</h3>
+<p><strong>1. What are the two giant vectors compared in gradient checking, and where does each come from?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The vector <span class="math inline">\(d\theta\)</span> comes from backpropagation. All the <span class="math inline">\(dw^{[l]}\)</span> and <span class="math inline">\(db^{[l]}\)</span> are reshaped and concatenated in the same order as the parameters. The vector <span class="math inline">\(d\theta_{\text{approx}}\)</span> comes from numerically differentiating the cost. For each component <span class="math inline">\(i\)</span>, only <span class="math inline">\(\theta_i\)</span> is nudged by <span class="math inline">\(\pm\epsilon\)</span> and the two-sided difference <span class="math inline">\(\frac{J(\ldots, \theta_i + \epsilon, \ldots) - J(\ldots, \theta_i - \epsilon, \ldots)}{2\epsilon}\)</span> is computed. If backprop is correct, the two vectors should be approximately equal.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Your grad check ratio with <span class="math inline">\(\epsilon = 10^{-7}\)</span> comes out to about <span class="math inline">\(10^{-3}\)</span>. What should you conclude and do?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-16-contents" aria-controls="callout-16" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-16" class="callout-16-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Be seriously worried that there is a bug, since correct implementations should give values much smaller than <span class="math inline">\(10^{-3}\)</span>, typically around <span class="math inline">\(10^{-7}\)</span>. Look at the individual components to find specific indices <span class="math inline">\(i\)</span> where <span class="math inline">\(d\theta_{\text{approx}}[i]\)</span> differs a lot from <span class="math inline">\(d\theta[i]\)</span>, and use those to track down which derivative computation is incorrect. A ratio around <span class="math inline">\(10^{-5}\)</span> deserves a careful look, and around <span class="math inline">\(10^{-7}\)</span> is great.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does the closeness formula divide by <span class="math inline">\(\| d\theta_{\text{approx}} \|_2 + \| d\theta \|_2\)</span>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-17-contents" aria-controls="callout-17" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-17" class="callout-17-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The denominator normalizes by the lengths of the vectors, turning the distance into a ratio. Without it, the raw Euclidean distance would look artificially small when the gradient vectors themselves are tiny and artificially large when they are huge, making the fixed thresholds like <span class="math inline">\(10^{-7}\)</span> meaningless.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="gradient-checking-implementation-notes" class="level2">
+<h2 class="anchored" data-anchor-id="gradient-checking-implementation-notes">Gradient Checking Implementation Notes</h2>
+<p>Some practical tips on how to actually implement gradient checking for your neural network.</p>
+<ol type="1">
+<li><p><strong>Do not use grad check in training, only to debug.</strong> Computing <span class="math inline">\(d\theta_{\text{approx}}[i]\)</span> for all values of <span class="math inline">\(i\)</span> is a very slow computation. To train, use backprop to compute <span class="math inline">\(d\theta\)</span>, and only while debugging compute the numerical approximation to make sure it is close. Once done, turn grad check off. Do not run it on every iteration of gradient descent, because that is just much too slow.</p></li>
+<li><p><strong>If the algorithm fails grad check, look at the components to identify the bug.</strong> If <span class="math inline">\(d\theta_{\text{approx}}\)</span> is very far from <span class="math inline">\(d\theta\)</span>, look at which values of <span class="math inline">\(i\)</span> differ the most. If, for example, all the components that are very far off correspond to <span class="math inline">\(db^{[l]}\)</span> for some layer while the <span class="math inline">\(dw\)</span> components are quite close, the bug is probably in how you compute <span class="math inline">\(db\)</span>. And vice versa, if the far-off components all come from <span class="math inline">\(dw\)</span> in a certain layer, that helps you hone in on the location of the bug. This does not always identify the bug right away, but it gives useful guesses about where to track it down.</p></li>
+<li><p><strong>Remember the regularization term.</strong> If the cost is <span class="math inline">\(J(\theta) = \frac{1}{m} \sum_i \mathcal{L}(\hat{y}^{(i)}, y^{(i)}) + \frac{\lambda}{2m} \sum_l \| w^{[l]} \|_F^2\)</span>, then <span class="math inline">\(d\theta\)</span> must be the gradient of <span class="math inline">\(J\)</span> <strong>including</strong> the regularization term, so make sure the check includes it.</p></li>
+<li><p><strong>Grad check does not work with dropout.</strong> On every iteration, dropout randomly eliminates different subsets of hidden units, so there is no easy-to-compute cost function <span class="math inline">\(J\)</span> that dropout is doing gradient descent on. Dropout can be viewed as optimizing a cost function defined by summing over all exponentially many subsets of nodes it could eliminate, but that cost is very difficult to compute; each iteration only samples it. The usual practice is to turn dropout off by setting <code>keep_prob = 1.0</code>, use grad check to verify the algorithm is correct without dropout, and then turn dropout back on. (You could also fix the pattern of dropped nodes and check gradients for that fixed pattern, but in practice this is rarely done.)</p></li>
+<li><p><strong>Run grad check again after some training (a subtlety, rarely needed).</strong> It is not impossible, though it rarely happens, that an implementation of backprop is correct when <span class="math inline">\(w\)</span> and <span class="math inline">\(b\)</span> are close to 0, at random initialization, but grows inaccurate as <span class="math inline">\(w\)</span> and <span class="math inline">\(b\)</span> become larger. One thing you could do, though not often needed, is run grad check at random initialization, train for a while so <span class="math inline">\(w\)</span> and <span class="math inline">\(b\)</span> have time to wander away from their small initial values, and then run grad check again.</p></li>
+</ol>
+<p>That wraps up this part of the course. You have seen how to set up your train, dev, and test sets, how to analyze <a href="../../deep-learning/improving-deep-neural-networks/setting-up-your-machine-learning-application.html#bias-and-variance">bias and variance</a> and what to do when bias or variance (or both) is high, how to apply <a href="../../deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html">regularization techniques</a> like L2 regularization and dropout, tricks like input normalization and careful weight initialization for speeding up training, and finally gradient checking for verifying backpropagation.</p>
+<section id="review-questions-5" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-5">Review Questions</h3>
+<p><strong>1. Why should gradient checking be turned off during training?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-18-contents" aria-controls="callout-18" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-18" class="callout-18-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because computing <span class="math inline">\(d\theta_{\text{approx}}[i]\)</span> for every component <span class="math inline">\(i\)</span> requires two full cost evaluations per parameter, which is a very slow computation. Backprop is the efficient way to compute gradients for training. Grad check is a debugging tool, used once to gain confidence that backprop is correct, and then switched off.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Grad check fails, and the components of <span class="math inline">\(d\theta_{\text{approx}}\)</span> that are far from <span class="math inline">\(d\theta\)</span> all correspond to <span class="math inline">\(db^{[3]}\)</span>, while every <span class="math inline">\(dw\)</span> component matches closely. What does this suggest?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-19-contents" aria-controls="callout-19" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-19" class="callout-19-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Different components of <span class="math inline">\(\theta\)</span> correspond to different parameters <span class="math inline">\(w\)</span> and <span class="math inline">\(b\)</span>, so a mismatch concentrated in the components for <span class="math inline">\(db^{[3]}\)</span> suggests the bug is in how the derivative with respect to <span class="math inline">\(b\)</span> in layer 3 is computed. This kind of component-level inspection does not always pinpoint the bug immediately, but it narrows down where to look.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why can gradient checking not be used directly while dropout is turned on, and what is the standard workaround?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-20-contents" aria-controls="callout-20" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-20" class="callout-20-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Dropout randomly eliminates a different subset of hidden units on every iteration, so there is no easy-to-compute cost function <span class="math inline">\(J\)</span> being optimized. The cost dropout optimizes is a sum over exponentially many subsets of nodes, and each iteration merely samples it. The workaround is to set <code>keep_prob = 1.0</code>, run grad check to verify the implementation without dropout, and then turn dropout back on.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. When doing grad check on a network trained with L2 regularization, a colleague computes <span class="math inline">\(d\theta\)</span> from backprop including the regularization gradient, but evaluates <span class="math inline">\(J\)</span> in the numerical differences without the penalty term. What happens?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-21-contents" aria-controls="callout-21" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-21" class="callout-21-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The check will report a mismatch even if backprop is perfectly correct, because the two sides are differentiating different functions. The numerical approximation differentiates the unregularized cost while <span class="math inline">\(d\theta\)</span> is the gradient of the regularized cost. The definition of <span class="math inline">\(J\)</span> used in grad check must include the <span class="math inline">\(\frac{\lambda}{2m} \sum_l \|w^{[l]}\|_F^2\)</span> term whenever the gradients include it.</p>
+</div>
+</div>
+</div>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 35%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">35% completed (230 of 647 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html" class="pagination-link" aria-label="Regularizing Your Neural Network">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Regularizing Your Neural Network</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../deep-learning/improving-deep-neural-networks/lab-initialization.html" class="pagination-link" aria-label="Lab: Initialization">
+        <span class="nav-page-text">Lab: Initialization</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

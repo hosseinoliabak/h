@@ -1,0 +1,1853 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-04">
+<meta name="description" content="Implement L2 regularization and inverted dropout by hand, then compare a baseline, an L2 model, and a dropout model on a 2D football dataset.">
+
+<title>Lab: Regularization – Hossein’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../deep-learning/improving-deep-neural-networks/lab-gradient-checking.html" rel="next">
+<link href="../../deep-learning/improving-deep-neural-networks/lab-initialization.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-285f71f7c7ab2eebc0170294332e2983.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="Lab: Regularization – Hossein’s Notes">
+<meta property="og:description" content="Implement L2 regularization and inverted dropout by hand, then compare a baseline, an L2 model, and a dropout model on a 2D football dataset.">
+<meta property="og:image" content="https://h.oliabak.com/deep-learning/improving-deep-neural-networks/lab-regularization_files/figure-html/cell-5-output-1.svg">
+<meta property="og:site_name" content="Hossein’s Notes">
+<meta name="twitter:title" content="Lab: Regularization – Hossein’s Notes">
+<meta name="twitter:description" content="Implement L2 regularization and inverted dropout by hand, then compare a baseline, an L2 model, and a dropout model on a 2D football dataset.">
+<meta name="twitter:image" content="https://h.oliabak.com/deep-learning/improving-deep-neural-networks/lab-regularization_files/figure-html/cell-5-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Hossein’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text Generator</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/graph.html">
+ <span class="dropdown-text">Function Grapher</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-viewer.html">
+ <span class="dropdown-text">SVG Viewer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/color-palette.html">
+ <span class="dropdown-text">Color Palette Generator</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Chess</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../deep-learning/improving-deep-neural-networks/lab-regularization.html">Lab: Regularization</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/setting-up-your-machine-learning-application.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Setting Up Your Machine Learning Application</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regularizing Your Neural Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Setting Up Your Optimization Problem</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/lab-initialization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Initialization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/lab-regularization.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Lab: Regularization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/lab-gradient-checking.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Gradient Checking</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#packages-and-helpers" id="toc-packages-and-helpers" class="nav-link active" data-scroll-target="#packages-and-helpers">Packages and Helpers</a></li>
+  <li><a href="#problem-statement" id="toc-problem-statement" class="nav-link" data-scroll-target="#problem-statement">Problem Statement</a></li>
+  <li><a href="#loading-the-dataset" id="toc-loading-the-dataset" class="nav-link" data-scroll-target="#loading-the-dataset">Loading the Dataset</a></li>
+  <li><a href="#non-regularized-model" id="toc-non-regularized-model" class="nav-link" data-scroll-target="#non-regularized-model">Non-Regularized Model</a></li>
+  <li><a href="#l2-regularization" id="toc-l2-regularization" class="nav-link" data-scroll-target="#l2-regularization">L2 Regularization</a>
+  <ul class="collapse">
+  <li><a href="#exercise-1-compute_cost_with_regularization" id="toc-exercise-1-compute_cost_with_regularization" class="nav-link" data-scroll-target="#exercise-1-compute_cost_with_regularization">Exercise 1, compute_cost_with_regularization</a></li>
+  <li><a href="#exercise-2-backward_propagation_with_regularization" id="toc-exercise-2-backward_propagation_with_regularization" class="nav-link" data-scroll-target="#exercise-2-backward_propagation_with_regularization">Exercise 2, backward_propagation_with_regularization</a></li>
+  </ul></li>
+  <li><a href="#dropout" id="toc-dropout" class="nav-link" data-scroll-target="#dropout">Dropout</a>
+  <ul class="collapse">
+  <li><a href="#exercise-3-forward_propagation_with_dropout" id="toc-exercise-3-forward_propagation_with_dropout" class="nav-link" data-scroll-target="#exercise-3-forward_propagation_with_dropout">Exercise 3, forward_propagation_with_dropout</a></li>
+  <li><a href="#exercise-4-backward_propagation_with_dropout" id="toc-exercise-4-backward_propagation_with_dropout" class="nav-link" data-scroll-target="#exercise-4-backward_propagation_with_dropout">Exercise 4, backward_propagation_with_dropout</a></li>
+  </ul></li>
+  <li><a href="#conclusions" id="toc-conclusions" class="nav-link" data-scroll-target="#conclusions">Conclusions</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Lab: Regularization</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">lab</div>
+    <div class="quarto-category">regularization</div>
+    <div class="quarto-category">dropout</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Implement L2 regularization and inverted dropout by hand, then compare a baseline, an L2 model, and a dropout model on a 2D football dataset.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 4, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~166 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~2,100 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p>This lab is the second programming assignment of the course, and it puts the <a href="../../deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html">regularization page</a> into practice. Deep learning models have so much flexibility and capacity that overfitting can be a serious problem if the training dataset is not big enough. The model does well on the training set, but the learned network does not generalize to new examples it has never seen. You will implement L2 regularization and dropout by hand, plug each into the same 3-layer network, and watch the decision boundary change.</p>
+<section id="packages-and-helpers" class="level2">
+<h2 class="anchored" data-anchor-id="packages-and-helpers">Packages and Helpers</h2>
+<p>Besides NumPy and matplotlib, this lab uses SciPy to read the dataset, which ships as a MATLAB <code>.mat</code> file.</p>
+<div id="2c207a8d" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>config InlineBackend.figure_formats <span class="op">=</span> [<span class="st">'svg'</span>]</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> scipy.io</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>plt.rcParams[<span class="st">'figure.figsize'</span>] <span class="op">=</span> (<span class="fl">7.0</span>, <span class="fl">4.0</span>)   <span class="co"># default size of plots</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The course provides a helper file, <a href="../../media/deep-learning/regularization/reg_utils.py">reg_utils.py</a>, with the pieces that are not the point of this lab, including the parameter initialization (the <span class="math inline">\(1/\sqrt{n^{[l-1]}}\)</span> scaling from the <a href="../../deep-learning/neural-networks-and-deep-learning/lab-deep-neural-network-application.html">previous course</a>), the plain forward and backward propagation, the unregularized cost, prediction, and plotting. They are reproduced in the collapsed callout below with the same two compatibility fixes as in the <a href="../../deep-learning/improving-deep-neural-networks/lab-initialization.html">Initialization lab</a> (<code>dtype=int</code> instead of the removed <code>np.int</code>, and <code>.ravel()</code> on scatter colors). The dataset loader reads the <code>.mat</code> file from this site’s media folder, <a href="../../media/deep-learning/regularization/data.mat">data.mat</a>.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Helper Functions from reg_utils.py
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<div id="d2d748da" class="cell" data-execution_count="2">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> sigmoid(x):</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Compute the sigmoid of x."""</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    s <span class="op">=</span> <span class="dv">1</span> <span class="op">/</span> (<span class="dv">1</span> <span class="op">+</span> np.exp(<span class="op">-</span>x))</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> s</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> relu(x):</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Compute the relu of x."""</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    s <span class="op">=</span> np.maximum(<span class="dv">0</span>, x)</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> s</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> initialize_parameters(layer_dims):</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Random initialization scaled by 1/sqrt(previous layer size)."""</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    np.random.seed(<span class="dv">3</span>)</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    parameters <span class="op">=</span> {}</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    L <span class="op">=</span> <span class="bu">len</span>(layer_dims)  <span class="co"># number of layers in the network</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> l <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">1</span>, L):</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>        parameters[<span class="st">'W'</span> <span class="op">+</span> <span class="bu">str</span>(l)] <span class="op">=</span> np.random.randn(layer_dims[l], layer_dims[l <span class="op">-</span> <span class="dv">1</span>]) <span class="op">/</span> np.sqrt(layer_dims[l <span class="op">-</span> <span class="dv">1</span>])</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>        parameters[<span class="st">'b'</span> <span class="op">+</span> <span class="bu">str</span>(l)] <span class="op">=</span> np.zeros((layer_dims[l], <span class="dv">1</span>))</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> parameters</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> forward_propagation(X, parameters):</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""LINEAR -&gt; RELU -&gt; LINEAR -&gt; RELU -&gt; LINEAR -&gt; SIGMOID."""</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>    W1 <span class="op">=</span> parameters[<span class="st">"W1"</span>]</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>    b1 <span class="op">=</span> parameters[<span class="st">"b1"</span>]</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>    W2 <span class="op">=</span> parameters[<span class="st">"W2"</span>]</span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>    b2 <span class="op">=</span> parameters[<span class="st">"b2"</span>]</span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>    W3 <span class="op">=</span> parameters[<span class="st">"W3"</span>]</span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>    b3 <span class="op">=</span> parameters[<span class="st">"b3"</span>]</span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>    Z1 <span class="op">=</span> np.dot(W1, X) <span class="op">+</span> b1</span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>    A1 <span class="op">=</span> relu(Z1)</span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>    Z2 <span class="op">=</span> np.dot(W2, A1) <span class="op">+</span> b2</span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>    A2 <span class="op">=</span> relu(Z2)</span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>    Z3 <span class="op">=</span> np.dot(W3, A2) <span class="op">+</span> b3</span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>    A3 <span class="op">=</span> sigmoid(Z3)</span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>    cache <span class="op">=</span> (Z1, A1, W1, b1, Z2, A2, W2, b2, Z3, A3, W3, b3)</span>
+<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> A3, cache</span>
+<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> backward_propagation(X, Y, cache):</span>
+<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Backward propagation for the 3-layer network, no regularization."""</span></span>
+<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> X.shape[<span class="dv">1</span>]</span>
+<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a>    (Z1, A1, W1, b1, Z2, A2, W2, b2, Z3, A3, W3, b3) <span class="op">=</span> cache</span>
+<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a>    dZ3 <span class="op">=</span> A3 <span class="op">-</span> Y</span>
+<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a>    dW3 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.dot(dZ3, A2.T)</span>
+<span id="cb2-48"><a href="#cb2-48" aria-hidden="true" tabindex="-1"></a>    db3 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.<span class="bu">sum</span>(dZ3, axis<span class="op">=</span><span class="dv">1</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a>    dA2 <span class="op">=</span> np.dot(W3.T, dZ3)</span>
+<span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a>    dZ2 <span class="op">=</span> np.multiply(dA2, np.int64(A2 <span class="op">&gt;</span> <span class="dv">0</span>))</span>
+<span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a>    dW2 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.dot(dZ2, A1.T)</span>
+<span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a>    db2 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.<span class="bu">sum</span>(dZ2, axis<span class="op">=</span><span class="dv">1</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a>    dA1 <span class="op">=</span> np.dot(W2.T, dZ2)</span>
+<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a>    dZ1 <span class="op">=</span> np.multiply(dA1, np.int64(A1 <span class="op">&gt;</span> <span class="dv">0</span>))</span>
+<span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a>    dW1 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.dot(dZ1, X.T)</span>
+<span id="cb2-58"><a href="#cb2-58" aria-hidden="true" tabindex="-1"></a>    db1 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.<span class="bu">sum</span>(dZ1, axis<span class="op">=</span><span class="dv">1</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a>    gradients <span class="op">=</span> {<span class="st">"dZ3"</span>: dZ3, <span class="st">"dW3"</span>: dW3, <span class="st">"db3"</span>: db3,</span>
+<span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"dA2"</span>: dA2, <span class="st">"dZ2"</span>: dZ2, <span class="st">"dW2"</span>: dW2, <span class="st">"db2"</span>: db2,</span>
+<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"dA1"</span>: dA1, <span class="st">"dZ1"</span>: dZ1, <span class="st">"dW1"</span>: dW1, <span class="st">"db1"</span>: db1}</span>
+<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> gradients</span>
+<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> update_parameters(parameters, grads, learning_rate):</span>
+<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Update parameters using gradient descent."""</span></span>
+<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a>    n <span class="op">=</span> <span class="bu">len</span>(parameters) <span class="op">//</span> <span class="dv">2</span>  <span class="co"># number of layers in the neural network</span></span>
+<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> k <span class="kw">in</span> <span class="bu">range</span>(n):</span>
+<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a>        parameters[<span class="st">"W"</span> <span class="op">+</span> <span class="bu">str</span>(k <span class="op">+</span> <span class="dv">1</span>)] <span class="op">=</span> parameters[<span class="st">"W"</span> <span class="op">+</span> <span class="bu">str</span>(k <span class="op">+</span> <span class="dv">1</span>)] <span class="op">-</span> learning_rate <span class="op">*</span> grads[<span class="st">"dW"</span> <span class="op">+</span> <span class="bu">str</span>(k <span class="op">+</span> <span class="dv">1</span>)]</span>
+<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>        parameters[<span class="st">"b"</span> <span class="op">+</span> <span class="bu">str</span>(k <span class="op">+</span> <span class="dv">1</span>)] <span class="op">=</span> parameters[<span class="st">"b"</span> <span class="op">+</span> <span class="bu">str</span>(k <span class="op">+</span> <span class="dv">1</span>)] <span class="op">-</span> learning_rate <span class="op">*</span> grads[<span class="st">"db"</span> <span class="op">+</span> <span class="bu">str</span>(k <span class="op">+</span> <span class="dv">1</span>)]</span>
+<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> parameters</span>
+<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> predict(X, y, parameters):</span>
+<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Predict 0/1 labels and print the accuracy."""</span></span>
+<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> X.shape[<span class="dv">1</span>]</span>
+<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a>    p <span class="op">=</span> np.zeros((<span class="dv">1</span>, m), dtype<span class="op">=</span><span class="bu">int</span>)</span>
+<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a>    a3, caches <span class="op">=</span> forward_propagation(X, parameters)</span>
+<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">0</span>, a3.shape[<span class="dv">1</span>]):</span>
+<span id="cb2-79"><a href="#cb2-79" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> a3[<span class="dv">0</span>, i] <span class="op">&gt;</span> <span class="fl">0.5</span>:</span>
+<span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a>            p[<span class="dv">0</span>, i] <span class="op">=</span> <span class="dv">1</span></span>
+<span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>:</span>
+<span id="cb2-82"><a href="#cb2-82" aria-hidden="true" tabindex="-1"></a>            p[<span class="dv">0</span>, i] <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"Accuracy: "</span> <span class="op">+</span> <span class="bu">str</span>(np.mean((p[<span class="dv">0</span>, :] <span class="op">==</span> y[<span class="dv">0</span>, :]))))</span>
+<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> p</span>
+<span id="cb2-85"><a href="#cb2-85" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-86"><a href="#cb2-86" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> compute_cost(a3, Y):</span>
+<span id="cb2-87"><a href="#cb2-87" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Cross-entropy cost averaged over the training set."""</span></span>
+<span id="cb2-88"><a href="#cb2-88" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> Y.shape[<span class="dv">1</span>]</span>
+<span id="cb2-89"><a href="#cb2-89" aria-hidden="true" tabindex="-1"></a>    logprobs <span class="op">=</span> np.multiply(<span class="op">-</span>np.log(a3), Y) <span class="op">+</span> np.multiply(<span class="op">-</span>np.log(<span class="dv">1</span> <span class="op">-</span> a3), <span class="dv">1</span> <span class="op">-</span> Y)</span>
+<span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a>    cost <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.nansum(logprobs)</span>
+<span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> cost</span>
+<span id="cb2-92"><a href="#cb2-92" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-93"><a href="#cb2-93" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> predict_dec(parameters, X):</span>
+<span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Predictions used for plotting the decision boundary."""</span></span>
+<span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a>    a3, cache <span class="op">=</span> forward_propagation(X, parameters)</span>
+<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a>    predictions <span class="op">=</span> (a3 <span class="op">&gt;</span> <span class="fl">0.5</span>)</span>
+<span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> predictions</span>
+<span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> plot_decision_boundary(model, X, y):</span>
+<span id="cb2-100"><a href="#cb2-100" aria-hidden="true" tabindex="-1"></a>    x_min, x_max <span class="op">=</span> X[<span class="dv">0</span>, :].<span class="bu">min</span>() <span class="op">-</span> <span class="dv">1</span>, X[<span class="dv">0</span>, :].<span class="bu">max</span>() <span class="op">+</span> <span class="dv">1</span></span>
+<span id="cb2-101"><a href="#cb2-101" aria-hidden="true" tabindex="-1"></a>    y_min, y_max <span class="op">=</span> X[<span class="dv">1</span>, :].<span class="bu">min</span>() <span class="op">-</span> <span class="dv">1</span>, X[<span class="dv">1</span>, :].<span class="bu">max</span>() <span class="op">+</span> <span class="dv">1</span></span>
+<span id="cb2-102"><a href="#cb2-102" aria-hidden="true" tabindex="-1"></a>    h <span class="op">=</span> <span class="fl">0.01</span></span>
+<span id="cb2-103"><a href="#cb2-103" aria-hidden="true" tabindex="-1"></a>    xx, yy <span class="op">=</span> np.meshgrid(np.arange(x_min, x_max, h), np.arange(y_min, y_max, h))</span>
+<span id="cb2-104"><a href="#cb2-104" aria-hidden="true" tabindex="-1"></a>    Z <span class="op">=</span> model(np.c_[xx.ravel(), yy.ravel()])</span>
+<span id="cb2-105"><a href="#cb2-105" aria-hidden="true" tabindex="-1"></a>    Z <span class="op">=</span> Z.reshape(xx.shape)</span>
+<span id="cb2-106"><a href="#cb2-106" aria-hidden="true" tabindex="-1"></a>    plt.contourf(xx, yy, Z, cmap<span class="op">=</span>plt.cm.Spectral)</span>
+<span id="cb2-107"><a href="#cb2-107" aria-hidden="true" tabindex="-1"></a>    plt.ylabel(<span class="st">'x2'</span>)</span>
+<span id="cb2-108"><a href="#cb2-108" aria-hidden="true" tabindex="-1"></a>    plt.xlabel(<span class="st">'x1'</span>)</span>
+<span id="cb2-109"><a href="#cb2-109" aria-hidden="true" tabindex="-1"></a>    plt.scatter(X[<span class="dv">0</span>, :], X[<span class="dv">1</span>, :], c<span class="op">=</span>y.ravel(), cmap<span class="op">=</span>plt.cm.Spectral)</span>
+<span id="cb2-110"><a href="#cb2-110" aria-hidden="true" tabindex="-1"></a>    plt.show()</span>
+<span id="cb2-111"><a href="#cb2-111" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> load_2D_dataset():</span>
+<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>    data <span class="op">=</span> scipy.io.loadmat(<span class="st">'../../media/deep-learning/regularization/data.mat'</span>)</span>
+<span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a>    train_X <span class="op">=</span> data[<span class="st">'X'</span>].T</span>
+<span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a>    train_Y <span class="op">=</span> data[<span class="st">'y'</span>].T</span>
+<span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a>    test_X <span class="op">=</span> data[<span class="st">'Xval'</span>].T</span>
+<span id="cb2-117"><a href="#cb2-117" aria-hidden="true" tabindex="-1"></a>    test_Y <span class="op">=</span> data[<span class="st">'yval'</span>].T</span>
+<span id="cb2-118"><a href="#cb2-118" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-119"><a href="#cb2-119" aria-hidden="true" tabindex="-1"></a>    plt.scatter(train_X[<span class="dv">0</span>, :], train_X[<span class="dv">1</span>, :], c<span class="op">=</span>train_Y.ravel(), s<span class="op">=</span><span class="dv">40</span>, cmap<span class="op">=</span>plt.cm.Spectral)</span>
+<span id="cb2-120"><a href="#cb2-120" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-121"><a href="#cb2-121" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> train_X, train_Y, test_X, test_Y</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</div>
+</div>
+<p>The exercise test cases from <a href="../../media/deep-learning/regularization/testCases.py">testCases.py</a> are in this second callout. Each one builds small seeded inputs so the printed outputs of your functions can be compared against the course’s expected values.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Test Cases from testCases.py
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<div id="66a68dde" class="cell" data-execution_count="3">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> compute_cost_with_regularization_test_case():</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    np.random.seed(<span class="dv">1</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    Y_assess <span class="op">=</span> np.array([[<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">0</span>]])</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    W1 <span class="op">=</span> np.random.randn(<span class="dv">2</span>, <span class="dv">3</span>)</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    b1 <span class="op">=</span> np.random.randn(<span class="dv">2</span>, <span class="dv">1</span>)</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    W2 <span class="op">=</span> np.random.randn(<span class="dv">3</span>, <span class="dv">2</span>)</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    b2 <span class="op">=</span> np.random.randn(<span class="dv">3</span>, <span class="dv">1</span>)</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    W3 <span class="op">=</span> np.random.randn(<span class="dv">1</span>, <span class="dv">3</span>)</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    b3 <span class="op">=</span> np.random.randn(<span class="dv">1</span>, <span class="dv">1</span>)</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    parameters <span class="op">=</span> {<span class="st">"W1"</span>: W1, <span class="st">"b1"</span>: b1, <span class="st">"W2"</span>: W2, <span class="st">"b2"</span>: b2, <span class="st">"W3"</span>: W3, <span class="st">"b3"</span>: b3}</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    a3 <span class="op">=</span> np.array([[<span class="fl">0.40682402</span>, <span class="fl">0.01629284</span>, <span class="fl">0.16722898</span>, <span class="fl">0.10118111</span>, <span class="fl">0.40682402</span>]])</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> a3, Y_assess, parameters</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> backward_propagation_with_regularization_test_case():</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    np.random.seed(<span class="dv">1</span>)</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    X_assess <span class="op">=</span> np.random.randn(<span class="dv">3</span>, <span class="dv">5</span>)</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    Y_assess <span class="op">=</span> np.array([[<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">0</span>]])</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    cache <span class="op">=</span> (np.array([[<span class="op">-</span><span class="fl">1.52855314</span>,  <span class="fl">3.32524635</span>,  <span class="fl">2.13994541</span>,  <span class="fl">2.60700654</span>, <span class="op">-</span><span class="fl">0.75942115</span>],</span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">1.98043538</span>,  <span class="fl">4.1600994</span> ,  <span class="fl">0.79051021</span>,  <span class="fl">1.46493512</span>, <span class="op">-</span><span class="fl">0.45506242</span>]]),</span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">0.</span>        ,  <span class="fl">3.32524635</span>,  <span class="fl">2.13994541</span>,  <span class="fl">2.60700654</span>,  <span class="fl">0.</span>        ],</span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>                       [ <span class="fl">0.</span>        ,  <span class="fl">4.1600994</span> ,  <span class="fl">0.79051021</span>,  <span class="fl">1.46493512</span>,  <span class="fl">0.</span>        ]]),</span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>             np.array([[<span class="op">-</span><span class="fl">1.09989127</span>, <span class="op">-</span><span class="fl">0.17242821</span>, <span class="op">-</span><span class="fl">0.87785842</span>],</span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>                       [ <span class="fl">0.04221375</span>,  <span class="fl">0.58281521</span>, <span class="op">-</span><span class="fl">1.10061918</span>]]),</span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">1.14472371</span>],</span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>                       [ <span class="fl">0.90159072</span>]]),</span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">0.53035547</span>,  <span class="fl">5.94892323</span>,  <span class="fl">2.31780174</span>,  <span class="fl">3.16005701</span>,  <span class="fl">0.53035547</span>],</span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">0.69166075</span>, <span class="op">-</span><span class="fl">3.47645987</span>, <span class="op">-</span><span class="fl">2.25194702</span>, <span class="op">-</span><span class="fl">2.65416996</span>, <span class="op">-</span><span class="fl">0.69166075</span>],</span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">0.39675353</span>, <span class="op">-</span><span class="fl">4.62285846</span>, <span class="op">-</span><span class="fl">2.61101729</span>, <span class="op">-</span><span class="fl">3.22874921</span>, <span class="op">-</span><span class="fl">0.39675353</span>]]),</span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">0.53035547</span>,  <span class="fl">5.94892323</span>,  <span class="fl">2.31780174</span>,  <span class="fl">3.16005701</span>,  <span class="fl">0.53035547</span>],</span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a>                       [ <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ],</span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a>                       [ <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ]]),</span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">0.50249434</span>,  <span class="fl">0.90085595</span>],</span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">0.68372786</span>, <span class="op">-</span><span class="fl">0.12289023</span>],</span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">0.93576943</span>, <span class="op">-</span><span class="fl">0.26788808</span>]]),</span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">0.53035547</span>],</span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">0.69166075</span>],</span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">0.39675353</span>]]),</span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a>             np.array([[<span class="op">-</span><span class="fl">0.3771104</span> , <span class="op">-</span><span class="fl">4.10060224</span>, <span class="op">-</span><span class="fl">1.60539468</span>, <span class="op">-</span><span class="fl">2.18416951</span>, <span class="op">-</span><span class="fl">0.3771104</span> ]]),</span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">0.40682402</span>,  <span class="fl">0.01629284</span>,  <span class="fl">0.16722898</span>,  <span class="fl">0.10118111</span>,  <span class="fl">0.40682402</span>]]),</span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a>             np.array([[<span class="op">-</span><span class="fl">0.6871727</span> , <span class="op">-</span><span class="fl">0.84520564</span>, <span class="op">-</span><span class="fl">0.67124613</span>]]),</span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a>             np.array([[<span class="op">-</span><span class="fl">0.0126646</span>]]))</span>
+<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> X_assess, Y_assess, cache</span>
+<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> forward_propagation_with_dropout_test_case():</span>
+<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a>    np.random.seed(<span class="dv">1</span>)</span>
+<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a>    X_assess <span class="op">=</span> np.random.randn(<span class="dv">3</span>, <span class="dv">5</span>)</span>
+<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a>    W1 <span class="op">=</span> np.random.randn(<span class="dv">2</span>, <span class="dv">3</span>)</span>
+<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a>    b1 <span class="op">=</span> np.random.randn(<span class="dv">2</span>, <span class="dv">1</span>)</span>
+<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a>    W2 <span class="op">=</span> np.random.randn(<span class="dv">3</span>, <span class="dv">2</span>)</span>
+<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a>    b2 <span class="op">=</span> np.random.randn(<span class="dv">3</span>, <span class="dv">1</span>)</span>
+<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a>    W3 <span class="op">=</span> np.random.randn(<span class="dv">1</span>, <span class="dv">3</span>)</span>
+<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a>    b3 <span class="op">=</span> np.random.randn(<span class="dv">1</span>, <span class="dv">1</span>)</span>
+<span id="cb3-53"><a href="#cb3-53" aria-hidden="true" tabindex="-1"></a>    parameters <span class="op">=</span> {<span class="st">"W1"</span>: W1, <span class="st">"b1"</span>: b1, <span class="st">"W2"</span>: W2, <span class="st">"b2"</span>: b2, <span class="st">"W3"</span>: W3, <span class="st">"b3"</span>: b3}</span>
+<span id="cb3-54"><a href="#cb3-54" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> X_assess, parameters</span>
+<span id="cb3-55"><a href="#cb3-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-56"><a href="#cb3-56" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> backward_propagation_with_dropout_test_case():</span>
+<span id="cb3-57"><a href="#cb3-57" aria-hidden="true" tabindex="-1"></a>    np.random.seed(<span class="dv">1</span>)</span>
+<span id="cb3-58"><a href="#cb3-58" aria-hidden="true" tabindex="-1"></a>    X_assess <span class="op">=</span> np.random.randn(<span class="dv">3</span>, <span class="dv">5</span>)</span>
+<span id="cb3-59"><a href="#cb3-59" aria-hidden="true" tabindex="-1"></a>    Y_assess <span class="op">=</span> np.array([[<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">0</span>]])</span>
+<span id="cb3-60"><a href="#cb3-60" aria-hidden="true" tabindex="-1"></a>    cache <span class="op">=</span> (np.array([[<span class="op">-</span><span class="fl">1.52855314</span>,  <span class="fl">3.32524635</span>,  <span class="fl">2.13994541</span>,  <span class="fl">2.60700654</span>, <span class="op">-</span><span class="fl">0.75942115</span>],</span>
+<span id="cb3-61"><a href="#cb3-61" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">1.98043538</span>,  <span class="fl">4.1600994</span> ,  <span class="fl">0.79051021</span>,  <span class="fl">1.46493512</span>, <span class="op">-</span><span class="fl">0.45506242</span>]]),</span>
+<span id="cb3-62"><a href="#cb3-62" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="va">True</span>, <span class="va">False</span>,  <span class="va">True</span>,  <span class="va">True</span>,  <span class="va">True</span>],</span>
+<span id="cb3-63"><a href="#cb3-63" aria-hidden="true" tabindex="-1"></a>                       [ <span class="va">True</span>,  <span class="va">True</span>,  <span class="va">True</span>,  <span class="va">True</span>, <span class="va">False</span>]]),</span>
+<span id="cb3-64"><a href="#cb3-64" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">4.27989081</span>,  <span class="fl">5.21401307</span>,  <span class="fl">0.</span>        ],</span>
+<span id="cb3-65"><a href="#cb3-65" aria-hidden="true" tabindex="-1"></a>                       [ <span class="fl">0.</span>        ,  <span class="fl">8.32019881</span>,  <span class="fl">1.58102041</span>,  <span class="fl">2.92987024</span>,  <span class="fl">0.</span>        ]]),</span>
+<span id="cb3-66"><a href="#cb3-66" aria-hidden="true" tabindex="-1"></a>             np.array([[<span class="op">-</span><span class="fl">1.09989127</span>, <span class="op">-</span><span class="fl">0.17242821</span>, <span class="op">-</span><span class="fl">0.87785842</span>],</span>
+<span id="cb3-67"><a href="#cb3-67" aria-hidden="true" tabindex="-1"></a>                       [ <span class="fl">0.04221375</span>,  <span class="fl">0.58281521</span>, <span class="op">-</span><span class="fl">1.10061918</span>]]),</span>
+<span id="cb3-68"><a href="#cb3-68" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">1.14472371</span>],</span>
+<span id="cb3-69"><a href="#cb3-69" aria-hidden="true" tabindex="-1"></a>                       [ <span class="fl">0.90159072</span>]]),</span>
+<span id="cb3-70"><a href="#cb3-70" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">0.53035547</span>,  <span class="fl">8.02565606</span>,  <span class="fl">4.10524802</span>,  <span class="fl">5.78975856</span>,  <span class="fl">0.53035547</span>],</span>
+<span id="cb3-71"><a href="#cb3-71" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">0.69166075</span>, <span class="op">-</span><span class="fl">1.71413186</span>, <span class="op">-</span><span class="fl">3.81223329</span>, <span class="op">-</span><span class="fl">4.61667916</span>, <span class="op">-</span><span class="fl">0.69166075</span>],</span>
+<span id="cb3-72"><a href="#cb3-72" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">0.39675353</span>, <span class="op">-</span><span class="fl">2.62563561</span>, <span class="op">-</span><span class="fl">4.82528105</span>, <span class="op">-</span><span class="fl">6.0607449</span> , <span class="op">-</span><span class="fl">0.39675353</span>]]),</span>
+<span id="cb3-73"><a href="#cb3-73" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="va">True</span>, <span class="va">False</span>,  <span class="va">True</span>, <span class="va">False</span>,  <span class="va">True</span>],</span>
+<span id="cb3-74"><a href="#cb3-74" aria-hidden="true" tabindex="-1"></a>                       [<span class="va">False</span>,  <span class="va">True</span>, <span class="va">False</span>,  <span class="va">True</span>,  <span class="va">True</span>],</span>
+<span id="cb3-75"><a href="#cb3-75" aria-hidden="true" tabindex="-1"></a>                       [<span class="va">False</span>, <span class="va">False</span>,  <span class="va">True</span>, <span class="va">False</span>, <span class="va">False</span>]]),</span>
+<span id="cb3-76"><a href="#cb3-76" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">1.06071093</span>,  <span class="fl">0.</span>        ,  <span class="fl">8.21049603</span>,  <span class="fl">0.</span>        ,  <span class="fl">1.06071093</span>],</span>
+<span id="cb3-77"><a href="#cb3-77" aria-hidden="true" tabindex="-1"></a>                       [ <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ],</span>
+<span id="cb3-78"><a href="#cb3-78" aria-hidden="true" tabindex="-1"></a>                       [ <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ,  <span class="fl">0.</span>        ]]),</span>
+<span id="cb3-79"><a href="#cb3-79" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">0.50249434</span>,  <span class="fl">0.90085595</span>],</span>
+<span id="cb3-80"><a href="#cb3-80" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">0.68372786</span>, <span class="op">-</span><span class="fl">0.12289023</span>],</span>
+<span id="cb3-81"><a href="#cb3-81" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">0.93576943</span>, <span class="op">-</span><span class="fl">0.26788808</span>]]),</span>
+<span id="cb3-82"><a href="#cb3-82" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">0.53035547</span>],</span>
+<span id="cb3-83"><a href="#cb3-83" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">0.69166075</span>],</span>
+<span id="cb3-84"><a href="#cb3-84" aria-hidden="true" tabindex="-1"></a>                       [<span class="op">-</span><span class="fl">0.39675353</span>]]),</span>
+<span id="cb3-85"><a href="#cb3-85" aria-hidden="true" tabindex="-1"></a>             np.array([[<span class="op">-</span><span class="fl">0.7415562</span> , <span class="op">-</span><span class="fl">0.0126646</span> , <span class="op">-</span><span class="fl">5.65469333</span>, <span class="op">-</span><span class="fl">0.0126646</span> , <span class="op">-</span><span class="fl">0.7415562</span> ]]),</span>
+<span id="cb3-86"><a href="#cb3-86" aria-hidden="true" tabindex="-1"></a>             np.array([[ <span class="fl">0.32266394</span>,  <span class="fl">0.49683389</span>,  <span class="fl">0.00348883</span>,  <span class="fl">0.49683389</span>,  <span class="fl">0.32266394</span>]]),</span>
+<span id="cb3-87"><a href="#cb3-87" aria-hidden="true" tabindex="-1"></a>             np.array([[<span class="op">-</span><span class="fl">0.6871727</span> , <span class="op">-</span><span class="fl">0.84520564</span>, <span class="op">-</span><span class="fl">0.67124613</span>]]),</span>
+<span id="cb3-88"><a href="#cb3-88" aria-hidden="true" tabindex="-1"></a>             np.array([[<span class="op">-</span><span class="fl">0.0126646</span>]]))</span>
+<span id="cb3-89"><a href="#cb3-89" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> X_assess, Y_assess, cache</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section id="problem-statement" class="level2">
+<h2 class="anchored" data-anchor-id="problem-statement">Problem Statement</h2>
+<p>You have just been hired as an AI expert by the French Football Corporation. They would like you to recommend positions where France’s goal keeper should kick the ball so that the French team’s players can then hit it with their head.</p>
+<div id="e7ed18c5" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-regularization_files/figure-html/cell-5-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The corporation gives you a 2D dataset from France’s past 10 games. Each dot marks a position on the field where a player hit the ball with their head after the French goal keeper shot it from the left side. A blue dot means a French player managed to hit the ball there, and a red dot means a player of the other team got to it first. Your goal is to use a deep learning model to find the positions on the field where the goal keeper should kick the ball.</p>
+</section>
+<section id="loading-the-dataset" class="level2">
+<h2 class="anchored" data-anchor-id="loading-the-dataset">Loading the Dataset</h2>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Lab Files Download
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Everything this lab needs, ready to download.</p>
+<ul>
+<li><a href="../../media/deep-learning/regularization/data.mat">data.mat</a> (6 KB), the dataset, with a training split (<code>X</code>, <code>y</code>, 211 positions) and a test split (<code>Xval</code>, <code>yval</code>, 200 positions)</li>
+<li><a href="../../media/deep-learning/regularization/reg_utils.py">reg_utils.py</a> (7 KB), the helper functions</li>
+<li><a href="../../media/deep-learning/regularization/testCases.py">testCases.py</a> (4 KB), the seeded exercise test cases</li>
+</ul>
+<p>To run the lab outside this page, put <code>data.mat</code> in a <code>datasets/</code> folder next to the two <code>.py</code> files, matching the course layout that <code>load_2D_dataset()</code> expects. The hosted <code>.py</code> files already include the small compatibility fixes for current NumPy and matplotlib versions.</p>
+</div>
+</div>
+<div id="9a5916bf" class="cell" data-execution_count="5">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>train_X, train_Y, test_X, test_Y <span class="op">=</span> load_2D_dataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-regularization_files/figure-html/cell-6-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The dataset is a little noisy, but a diagonal line separating the upper left half (blue) from the lower right half (red) looks like it would work well. You will first try a non-regularized model, then regularize it, and decide which model to recommend to the French Football Corporation.</p>
+</section>
+<section id="non-regularized-model" class="level2">
+<h2 class="anchored" data-anchor-id="non-regularized-model">Non-Regularized Model</h2>
+<p>The 3-layer network below is already implemented, with layer sizes <span class="math inline">\([2, 20, 3, 1]\)</span>. It can be used in three modes.</p>
+<ul>
+<li><strong>Plain mode</strong> is the default, with no regularization.</li>
+<li><strong>Regularization mode</strong> is enabled by setting the <code>lambd</code> input to a non-zero value. (The variable is spelled <code>lambd</code> instead of <code>lambda</code> because <code>lambda</code> is a reserved keyword in Python, as noted on the <a href="../../deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html#l2-regularization">regularization page</a>.)</li>
+<li><strong>Dropout mode</strong> is enabled by setting <code>keep_prob</code> to a value less than one.</li>
+</ul>
+<p>You will first try the model without any regularization, then implement <code>compute_cost_with_regularization()</code> and <code>backward_propagation_with_regularization()</code> for L2, and <code>forward_propagation_with_dropout()</code> and <code>backward_propagation_with_dropout()</code> for dropout. In each part the same <code>model()</code> runs with the correct inputs so that it calls the functions you implemented. This assignment explores one technique at a time, so the model never uses L2 and dropout together.</p>
+<div id="b2ab1b32" class="cell" data-execution_count="6">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> model(X, Y, learning_rate<span class="op">=</span><span class="fl">0.3</span>, num_iterations<span class="op">=</span><span class="dv">30000</span>, print_cost<span class="op">=</span><span class="va">True</span>, lambd<span class="op">=</span><span class="dv">0</span>, keep_prob<span class="op">=</span><span class="dv">1</span>):</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Implements a three-layer neural network: LINEAR-&gt;RELU-&gt;LINEAR-&gt;RELU-&gt;LINEAR-&gt;SIGMOID.</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">    X -- input data, of shape (input size, number of examples)</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co">    Y -- true "label" vector (1 for blue dot / 0 for red dot), of shape (output size, number of examples)</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co">    learning_rate -- learning rate of the optimization</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="co">    num_iterations -- number of iterations of the optimization loop</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="co">    print_cost -- If True, print the cost every 10000 iterations</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="co">    lambd -- regularization hyperparameter, scalar</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="co">    keep_prob -- probability of keeping a neuron active during drop-out, scalar</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="co">    parameters -- parameters learned by the model. They can then be used to predict.</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    grads <span class="op">=</span> {}</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>    costs <span class="op">=</span> []                            <span class="co"># to keep track of the cost</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> X.shape[<span class="dv">1</span>]                        <span class="co"># number of examples</span></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>    layers_dims <span class="op">=</span> [X.shape[<span class="dv">0</span>], <span class="dv">20</span>, <span class="dv">3</span>, <span class="dv">1</span>]</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Initialize parameters dictionary.</span></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    parameters <span class="op">=</span> initialize_parameters(layers_dims)</span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Loop (gradient descent)</span></span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">0</span>, num_iterations):</span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Forward propagation: LINEAR -&gt; RELU -&gt; LINEAR -&gt; RELU -&gt; LINEAR -&gt; SIGMOID.</span></span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> keep_prob <span class="op">==</span> <span class="dv">1</span>:</span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>            a3, cache <span class="op">=</span> forward_propagation(X, parameters)</span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>        <span class="cf">elif</span> keep_prob <span class="op">&lt;</span> <span class="dv">1</span>:</span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>            a3, cache <span class="op">=</span> forward_propagation_with_dropout(X, parameters, keep_prob)</span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Cost function</span></span>
+<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> lambd <span class="op">==</span> <span class="dv">0</span>:</span>
+<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a>            cost <span class="op">=</span> compute_cost(a3, Y)</span>
+<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>:</span>
+<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>            cost <span class="op">=</span> compute_cost_with_regularization(a3, Y, parameters, lambd)</span>
+<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Backward propagation.</span></span>
+<span id="cb5-41"><a href="#cb5-41" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> (lambd <span class="op">==</span> <span class="dv">0</span> <span class="kw">or</span> keep_prob <span class="op">==</span> <span class="dv">1</span>)   <span class="co"># it is possible to use both L2 regularization and dropout,</span></span>
+<span id="cb5-42"><a href="#cb5-42" aria-hidden="true" tabindex="-1"></a>                                                <span class="co"># but this assignment will only explore one at a time</span></span>
+<span id="cb5-43"><a href="#cb5-43" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> lambd <span class="op">==</span> <span class="dv">0</span> <span class="kw">and</span> keep_prob <span class="op">==</span> <span class="dv">1</span>:</span>
+<span id="cb5-44"><a href="#cb5-44" aria-hidden="true" tabindex="-1"></a>            grads <span class="op">=</span> backward_propagation(X, Y, cache)</span>
+<span id="cb5-45"><a href="#cb5-45" aria-hidden="true" tabindex="-1"></a>        <span class="cf">elif</span> lambd <span class="op">!=</span> <span class="dv">0</span>:</span>
+<span id="cb5-46"><a href="#cb5-46" aria-hidden="true" tabindex="-1"></a>            grads <span class="op">=</span> backward_propagation_with_regularization(X, Y, cache, lambd)</span>
+<span id="cb5-47"><a href="#cb5-47" aria-hidden="true" tabindex="-1"></a>        <span class="cf">elif</span> keep_prob <span class="op">&lt;</span> <span class="dv">1</span>:</span>
+<span id="cb5-48"><a href="#cb5-48" aria-hidden="true" tabindex="-1"></a>            grads <span class="op">=</span> backward_propagation_with_dropout(X, Y, cache, keep_prob)</span>
+<span id="cb5-49"><a href="#cb5-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-50"><a href="#cb5-50" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Update parameters.</span></span>
+<span id="cb5-51"><a href="#cb5-51" aria-hidden="true" tabindex="-1"></a>        parameters <span class="op">=</span> update_parameters(parameters, grads, learning_rate)</span>
+<span id="cb5-52"><a href="#cb5-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-53"><a href="#cb5-53" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Print the loss every 10000 iterations</span></span>
+<span id="cb5-54"><a href="#cb5-54" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> print_cost <span class="kw">and</span> i <span class="op">%</span> <span class="dv">10000</span> <span class="op">==</span> <span class="dv">0</span>:</span>
+<span id="cb5-55"><a href="#cb5-55" aria-hidden="true" tabindex="-1"></a>            <span class="bu">print</span>(<span class="st">"Cost after iteration </span><span class="sc">{}</span><span class="st">: </span><span class="sc">{}</span><span class="st">"</span>.<span class="bu">format</span>(i, cost))</span>
+<span id="cb5-56"><a href="#cb5-56" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> print_cost <span class="kw">and</span> i <span class="op">%</span> <span class="dv">1000</span> <span class="op">==</span> <span class="dv">0</span>:</span>
+<span id="cb5-57"><a href="#cb5-57" aria-hidden="true" tabindex="-1"></a>            costs.append(cost)</span>
+<span id="cb5-58"><a href="#cb5-58" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-59"><a href="#cb5-59" aria-hidden="true" tabindex="-1"></a>    <span class="co"># plot the cost</span></span>
+<span id="cb5-60"><a href="#cb5-60" aria-hidden="true" tabindex="-1"></a>    plt.plot(costs)</span>
+<span id="cb5-61"><a href="#cb5-61" aria-hidden="true" tabindex="-1"></a>    plt.ylabel(<span class="st">'cost'</span>)</span>
+<span id="cb5-62"><a href="#cb5-62" aria-hidden="true" tabindex="-1"></a>    plt.xlabel(<span class="st">'iterations (x1,000)'</span>)</span>
+<span id="cb5-63"><a href="#cb5-63" aria-hidden="true" tabindex="-1"></a>    plt.title(<span class="st">"Learning rate ="</span> <span class="op">+</span> <span class="bu">str</span>(learning_rate))</span>
+<span id="cb5-64"><a href="#cb5-64" aria-hidden="true" tabindex="-1"></a>    plt.show()</span>
+<span id="cb5-65"><a href="#cb5-65" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-66"><a href="#cb5-66" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> parameters</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Train the model without any regularization and observe the accuracy on the train and test sets.</p>
+<div id="607b9130" class="cell" data-execution_count="7">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>parameters <span class="op">=</span> model(train_X, train_Y)</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"On the training set:"</span>)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>predictions_train <span class="op">=</span> predict(train_X, train_Y, parameters)</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"On the test set:"</span>)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>predictions_test <span class="op">=</span> predict(test_X, test_Y, parameters)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Cost after iteration 0: 0.6557412523481002
+Cost after iteration 10000: 0.16329987525724202
+Cost after iteration 20000: 0.13851642423267832</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-regularization_files/figure-html/cell-8-output-2.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>On the training set:
+Accuracy: 0.9478672985781991
+On the test set:
+Accuracy: 0.915</code></pre>
+</div>
+</div>
+<p>The train accuracy is 94.8% while the test accuracy is 91.5%. This is the <strong>baseline model</strong>, and the rest of the lab observes the impact of regularization on it. Plot its decision boundary.</p>
+<div id="52112831" class="cell" data-execution_count="8">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>plt.title(<span class="st">"Model without regularization"</span>)</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>axes <span class="op">=</span> plt.gca()</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>axes.set_xlim([<span class="op">-</span><span class="fl">0.75</span>, <span class="fl">0.40</span>])</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>axes.set_ylim([<span class="op">-</span><span class="fl">0.75</span>, <span class="fl">0.65</span>])</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>plot_decision_boundary(<span class="kw">lambda</span> x: predict_dec(parameters, x.T), train_X, train_Y)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-regularization_files/figure-html/cell-9-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The non-regularized model is obviously overfitting the training set. It is fitting the noisy points! Now look at two techniques to reduce overfitting.</p>
+</section>
+<section id="l2-regularization" class="level2">
+<h2 class="anchored" data-anchor-id="l2-regularization">L2 Regularization</h2>
+<p>The standard way to avoid overfitting is <strong>L2 regularization</strong>, which modifies the cost function from</p>
+<p><span class="math display">\[
+J = -\frac{1}{m} \sum_{i=1}^{m} \left( y^{(i)} \log\left(a^{[L](i)}\right) + (1 - y^{(i)}) \log\left(1 - a^{[L](i)}\right) \right)
+\]</span></p>
+<p>to</p>
+<p><span class="math display">\[
+J_{\text{regularized}} = \underbrace{-\frac{1}{m} \sum_{i=1}^{m} \left( y^{(i)} \log\left(a^{[L](i)}\right) + (1 - y^{(i)}) \log\left(1 - a^{[L](i)}\right) \right)}_{\text{cross-entropy cost}} + \underbrace{\frac{1}{m} \frac{\lambda}{2} \sum_l \sum_k \sum_j W_{k,j}^{[l]\,2}}_{\text{L2 regularization cost}}
+\]</span></p>
+<p>exactly the Frobenius norm penalty from the <a href="../../deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html#regularizing-a-neural-network">regularization page</a>.</p>
+<section id="exercise-1-compute_cost_with_regularization" class="level3">
+<h3 class="anchored" data-anchor-id="exercise-1-compute_cost_with_regularization">Exercise 1, compute_cost_with_regularization</h3>
+<p>Compute the regularized cost. For each weight matrix, <span class="math inline">\(\sum_k \sum_j W_{k,j}^{[l]\,2}\)</span> is <code>np.sum(np.square(Wl))</code>. Do this for <span class="math inline">\(W^{[1]}\)</span>, <span class="math inline">\(W^{[2]}\)</span>, and <span class="math inline">\(W^{[3]}\)</span>, sum the three terms, and multiply by <span class="math inline">\(\frac{1}{m} \frac{\lambda}{2}\)</span>.</p>
+<div id="0c98cab7" class="cell" data-execution_count="9">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> compute_cost_with_regularization(A3, Y, parameters, lambd):</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Implement the cost function with L2 regularization.</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="co">    A3 -- post-activation, output of forward propagation, of shape (output size, number of examples)</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="co">    Y -- "true" labels vector, of shape (output size, number of examples)</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="co">    parameters -- python dictionary containing parameters of the model</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="co">    lambd -- regularization hyperparameter, scalar</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="co">    cost -- value of the regularized loss function</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> Y.shape[<span class="dv">1</span>]</span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>    W1 <span class="op">=</span> parameters[<span class="st">"W1"</span>]</span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>    W2 <span class="op">=</span> parameters[<span class="st">"W2"</span>]</span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>    W3 <span class="op">=</span> parameters[<span class="st">"W3"</span>]</span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a>    cross_entropy_cost <span class="op">=</span> compute_cost(A3, Y)  <span class="co"># This gives you the cross-entropy part of the cost</span></span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a>    L2_regularization_cost <span class="op">=</span> (<span class="fl">1.</span> <span class="op">/</span> m) <span class="op">*</span> (lambd <span class="op">/</span> <span class="dv">2</span>) <span class="op">*</span> (</span>
+<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a>        np.<span class="bu">sum</span>(np.square(W1)) <span class="op">+</span> np.<span class="bu">sum</span>(np.square(W2)) <span class="op">+</span> np.<span class="bu">sum</span>(np.square(W3)))</span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a>    cost <span class="op">=</span> cross_entropy_cost <span class="op">+</span> L2_regularization_cost</span>
+<span id="cb10-25"><a href="#cb10-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> cost</span>
+<span id="cb10-26"><a href="#cb10-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-27"><a href="#cb10-27" aria-hidden="true" tabindex="-1"></a>A3, t_Y, parameters <span class="op">=</span> compute_cost_with_regularization_test_case()</span>
+<span id="cb10-28"><a href="#cb10-28" aria-hidden="true" tabindex="-1"></a>cost <span class="op">=</span> compute_cost_with_regularization(A3, t_Y, parameters, lambd<span class="op">=</span><span class="fl">0.1</span>)</span>
+<span id="cb10-29"><a href="#cb10-29" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cost = "</span> <span class="op">+</span> <span class="bu">str</span>(cost))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>cost = 1.7864859451590758</code></pre>
+</div>
+</div>
+</section>
+<section id="exercise-2-backward_propagation_with_regularization" class="level3">
+<h3 class="anchored" data-anchor-id="exercise-2-backward_propagation_with_regularization">Exercise 2, backward_propagation_with_regularization</h3>
+<p>Because the cost changed, backward propagation has to change as well; all gradients are computed with respect to the new cost. The changes only concern <code>dW1</code>, <code>dW2</code>, and <code>dW3</code>. For each, add the gradient of the regularization term,</p>
+<p><span class="math display">\[
+\frac{d}{dW} \left( \frac{1}{2} \frac{\lambda}{m} W^2 \right) = \frac{\lambda}{m} W
+\]</span></p>
+<div id="4f31fcdf" class="cell" data-execution_count="10">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> backward_propagation_with_regularization(X, Y, cache, lambd):</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Implements the backward propagation of our baseline model to which we added an L2 regularization.</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="co">    X -- input dataset, of shape (input size, number of examples)</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="co">    Y -- "true" labels vector, of shape (output size, number of examples)</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="co">    cache -- cache output from forward_propagation()</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a><span class="co">    lambd -- regularization hyperparameter, scalar</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a><span class="co">    gradients -- A dictionary with the gradients with respect to each parameter, activation and pre-activation variables</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> X.shape[<span class="dv">1</span>]</span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a>    (Z1, A1, W1, b1, Z2, A2, W2, b2, Z3, A3, W3, b3) <span class="op">=</span> cache</span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>    dZ3 <span class="op">=</span> A3 <span class="op">-</span> Y</span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>    dW3 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.dot(dZ3, A2.T) <span class="op">+</span> (lambd <span class="op">/</span> m) <span class="op">*</span> W3</span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>    db3 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.<span class="bu">sum</span>(dZ3, axis<span class="op">=</span><span class="dv">1</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>    dA2 <span class="op">=</span> np.dot(W3.T, dZ3)</span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>    dZ2 <span class="op">=</span> np.multiply(dA2, np.int64(A2 <span class="op">&gt;</span> <span class="dv">0</span>))</span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a>    dW2 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.dot(dZ2, A1.T) <span class="op">+</span> (lambd <span class="op">/</span> m) <span class="op">*</span> W2</span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a>    db2 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.<span class="bu">sum</span>(dZ2, axis<span class="op">=</span><span class="dv">1</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a>    dA1 <span class="op">=</span> np.dot(W2.T, dZ2)</span>
+<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a>    dZ1 <span class="op">=</span> np.multiply(dA1, np.int64(A1 <span class="op">&gt;</span> <span class="dv">0</span>))</span>
+<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a>    dW1 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.dot(dZ1, X.T) <span class="op">+</span> (lambd <span class="op">/</span> m) <span class="op">*</span> W1</span>
+<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a>    db1 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.<span class="bu">sum</span>(dZ1, axis<span class="op">=</span><span class="dv">1</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a>    gradients <span class="op">=</span> {<span class="st">"dZ3"</span>: dZ3, <span class="st">"dW3"</span>: dW3, <span class="st">"db3"</span>: db3, <span class="st">"dA2"</span>: dA2,</span>
+<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"dZ2"</span>: dZ2, <span class="st">"dW2"</span>: dW2, <span class="st">"db2"</span>: db2, <span class="st">"dA1"</span>: dA1,</span>
+<span id="cb12-33"><a href="#cb12-33" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"dZ1"</span>: dZ1, <span class="st">"dW1"</span>: dW1, <span class="st">"db1"</span>: db1}</span>
+<span id="cb12-34"><a href="#cb12-34" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> gradients</span>
+<span id="cb12-35"><a href="#cb12-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-36"><a href="#cb12-36" aria-hidden="true" tabindex="-1"></a>t_X, t_Y, cache <span class="op">=</span> backward_propagation_with_regularization_test_case()</span>
+<span id="cb12-37"><a href="#cb12-37" aria-hidden="true" tabindex="-1"></a>grads <span class="op">=</span> backward_propagation_with_regularization(t_X, t_Y, cache, lambd<span class="op">=</span><span class="fl">0.7</span>)</span>
+<span id="cb12-38"><a href="#cb12-38" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"dW1 = </span><span class="ch">\n</span><span class="st">"</span> <span class="op">+</span> <span class="bu">str</span>(grads[<span class="st">"dW1"</span>]))</span>
+<span id="cb12-39"><a href="#cb12-39" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"dW2 = </span><span class="ch">\n</span><span class="st">"</span> <span class="op">+</span> <span class="bu">str</span>(grads[<span class="st">"dW2"</span>]))</span>
+<span id="cb12-40"><a href="#cb12-40" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"dW3 = </span><span class="ch">\n</span><span class="st">"</span> <span class="op">+</span> <span class="bu">str</span>(grads[<span class="st">"dW3"</span>]))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>dW1 = 
+[[-0.25604646  0.12298827 -0.28297129]
+ [-0.17706303  0.34536094 -0.4410571 ]]
+dW2 = 
+[[ 0.79276486  0.85133918]
+ [-0.0957219  -0.01720463]
+ [-0.13100772 -0.03750433]]
+dW3 = 
+[[-1.77691347 -0.11832879 -0.09397446]]</code></pre>
+</div>
+</div>
+<p>Now run the model with L2 regularization (<span class="math inline">\(\lambda = 0.7\)</span>). The <code>model()</code> function calls <code>compute_cost_with_regularization</code> instead of <code>compute_cost</code>, and <code>backward_propagation_with_regularization</code> instead of <code>backward_propagation</code>.</p>
+<div id="7af58fc5" class="cell" data-execution_count="11">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>parameters <span class="op">=</span> model(train_X, train_Y, lambd<span class="op">=</span><span class="fl">0.7</span>)</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"On the train set:"</span>)</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>predictions_train <span class="op">=</span> predict(train_X, train_Y, parameters)</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"On the test set:"</span>)</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>predictions_test <span class="op">=</span> predict(test_X, test_Y, parameters)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Cost after iteration 0: 0.6974484493131264
+Cost after iteration 10000: 0.26849188732822393
+Cost after iteration 20000: 0.2680916337127301</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-regularization_files/figure-html/cell-12-output-2.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>On the train set:
+Accuracy: 0.9383886255924171
+On the test set:
+Accuracy: 0.93</code></pre>
+</div>
+</div>
+<p>The test set accuracy increased to 93%. You have saved the French football team! The model is no longer overfitting the training data. Plot the decision boundary.</p>
+<div id="e378fe86" class="cell" data-execution_count="12">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>plt.title(<span class="st">"Model with L2-regularization"</span>)</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>axes <span class="op">=</span> plt.gca()</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>axes.set_xlim([<span class="op">-</span><span class="fl">0.75</span>, <span class="fl">0.40</span>])</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>axes.set_ylim([<span class="op">-</span><span class="fl">0.75</span>, <span class="fl">0.65</span>])</span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>plot_decision_boundary(<span class="kw">lambda</span> x: predict_dec(parameters, x.T), train_X, train_Y)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-regularization_files/figure-html/cell-13-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Observations from this experiment.</p>
+<ul>
+<li>The value of <span class="math inline">\(\lambda\)</span> is a hyperparameter that you can tune using a dev set.</li>
+<li>L2 regularization makes the decision boundary smoother. If <span class="math inline">\(\lambda\)</span> is too large, it is also possible to “oversmooth”, resulting in a model with high bias.</li>
+</ul>
+<p>What is L2 regularization actually doing? It relies on the assumption that a model with small weights is simpler than a model with large weights. By penalizing the square values of the weights in the cost function, you drive all the weights to smaller values. It becomes too costly for the cost to have large weights! This leads to a smoother model in which the output changes more slowly as the input changes.</p>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Important</span>What You Should Remember About L2 Regularization
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>The cost computation gains a regularization term.</li>
+<li>The backpropagation function gains extra terms in the gradients with respect to the weight matrices.</li>
+<li>Weights end up smaller (<a href="../../deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html#weight-decay">weight decay</a>); they are pushed to smaller values.</li>
+</ul>
+</div>
+</div>
+</section>
+</section>
+<section id="dropout" class="level2">
+<h2 class="anchored" data-anchor-id="dropout">Dropout</h2>
+<p>Finally, <strong>dropout</strong> is a widely used regularization technique that is specific to deep learning. It randomly shuts down some neurons in each iteration. Watch these two animations to see what this means.</p>
+<div style="text-align:center;">
+<video controls="" width="1054" style="max-width:100%;" src="../../media/deep-learning/regularization/dropout1_kiank.mp4" type="video/mp4"></video>
+</div>
+<p><strong>Dropout on the second hidden layer.</strong> At each iteration, you shut down (set to zero) each neuron of a layer with probability <span class="math inline">\(1 - keep\_prob\)</span> or keep it with probability <span class="math inline">\(keep\_prob\)</span> (50% here). The dropped neurons contribute to neither the forward nor the backward propagation of that iteration.</p>
+<div style="text-align:center;">
+<video controls="" width="1054" style="max-width:100%;" src="../../media/deep-learning/regularization/dropout2_kiank.mp4" type="video/mp4"></video>
+</div>
+<p><strong>Dropout on the first and third hidden layers.</strong> The first layer shuts down on average 40% of its neurons, the third layer on average 20%.</p>
+<p>When you shut some neurons down, you actually modify your model. The idea behind dropout is that at each iteration you train a different model that uses only a subset of your neurons. With dropout, neurons become less sensitive to the activation of one other specific neuron, because that other neuron might be shut down at any time. This is the same <a href="../../deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html#inverted-dropout-implementation">inverted dropout</a> technique from the notes, now implemented for real.</p>
+<section id="exercise-3-forward_propagation_with_dropout" class="level3">
+<h3 class="anchored" data-anchor-id="exercise-3-forward_propagation_with_dropout">Exercise 3, forward_propagation_with_dropout</h3>
+<p>Implement forward propagation with dropout for the 3-layer network, adding dropout to the first and second hidden layers. Dropout is applied to neither the input layer nor the output layer. Four steps per layer:</p>
+<ol type="1">
+<li>Create a random matrix <span class="math inline">\(D^{[1]}\)</span> of the same dimension as <span class="math inline">\(A^{[1]}\)</span> using <code>np.random.rand()</code>, which draws numbers uniformly between 0 and 1. This is the vectorized version of the per-unit coin toss, <span class="math inline">\(D^{[1]} = [d^{[1](1)} \, d^{[1](2)} \cdots d^{[1](m)}]\)</span>.</li>
+<li>Convert each entry of <span class="math inline">\(D^{[1]}\)</span> to 1 with probability <code>keep_prob</code> and 0 otherwise, with the comparison <code>(D1 &lt; keep_prob)</code>. Adding <code>.astype(int)</code> turns the boolean array into explicit ones and zeros. (Multiplying booleans with numbers works too, since Python converts <code>True</code>/<code>False</code> to 1/0, but converting to the intended data type is better practice.)</li>
+<li>Set <span class="math inline">\(A^{[1]}\)</span> to <span class="math inline">\(A^{[1]} * D^{[1]}\)</span>, shutting down the masked neurons. Think of <span class="math inline">\(D^{[1]}\)</span> as a mask that zeroes out some values when multiplied elementwise.</li>
+<li>Divide <span class="math inline">\(A^{[1]}\)</span> by <code>keep_prob</code>, which keeps the expected value of the activations the same as without dropout (inverted dropout).</li>
+</ol>
+<div id="6ce66c64" class="cell" data-execution_count="13">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> forward_propagation_with_dropout(X, parameters, keep_prob<span class="op">=</span><span class="fl">0.5</span>):</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Implements the forward propagation: LINEAR -&gt; RELU + DROPOUT -&gt; LINEAR -&gt; RELU + DROPOUT -&gt; LINEAR -&gt; SIGMOID.</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="co">    X -- input dataset, of shape (2, number of examples)</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="co">    parameters -- python dictionary containing your parameters "W1", "b1", "W2", "b2", "W3", "b3"</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a><span class="co">    keep_prob -- probability of keeping a neuron active during drop-out, scalar</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="co">    A3 -- last activation value, output of the forward propagation, of shape (1,1)</span></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a><span class="co">    cache -- tuple, information stored for computing the backward propagation</span></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a>    np.random.seed(<span class="dv">1</span>)</span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a>    <span class="co"># retrieve parameters</span></span>
+<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a>    W1 <span class="op">=</span> parameters[<span class="st">"W1"</span>]</span>
+<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a>    b1 <span class="op">=</span> parameters[<span class="st">"b1"</span>]</span>
+<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a>    W2 <span class="op">=</span> parameters[<span class="st">"W2"</span>]</span>
+<span id="cb18-20"><a href="#cb18-20" aria-hidden="true" tabindex="-1"></a>    b2 <span class="op">=</span> parameters[<span class="st">"b2"</span>]</span>
+<span id="cb18-21"><a href="#cb18-21" aria-hidden="true" tabindex="-1"></a>    W3 <span class="op">=</span> parameters[<span class="st">"W3"</span>]</span>
+<span id="cb18-22"><a href="#cb18-22" aria-hidden="true" tabindex="-1"></a>    b3 <span class="op">=</span> parameters[<span class="st">"b3"</span>]</span>
+<span id="cb18-23"><a href="#cb18-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-24"><a href="#cb18-24" aria-hidden="true" tabindex="-1"></a>    <span class="co"># LINEAR -&gt; RELU -&gt; LINEAR -&gt; RELU -&gt; LINEAR -&gt; SIGMOID</span></span>
+<span id="cb18-25"><a href="#cb18-25" aria-hidden="true" tabindex="-1"></a>    Z1 <span class="op">=</span> np.dot(W1, X) <span class="op">+</span> b1</span>
+<span id="cb18-26"><a href="#cb18-26" aria-hidden="true" tabindex="-1"></a>    A1 <span class="op">=</span> relu(Z1)</span>
+<span id="cb18-27"><a href="#cb18-27" aria-hidden="true" tabindex="-1"></a>    D1 <span class="op">=</span> np.random.rand(A1.shape[<span class="dv">0</span>], A1.shape[<span class="dv">1</span>])   <span class="co"># Step 1: initialize matrix D1</span></span>
+<span id="cb18-28"><a href="#cb18-28" aria-hidden="true" tabindex="-1"></a>    D1 <span class="op">=</span> (D1 <span class="op">&lt;</span> keep_prob).astype(<span class="bu">int</span>)               <span class="co"># Step 2: convert entries of D1 to 0 or 1</span></span>
+<span id="cb18-29"><a href="#cb18-29" aria-hidden="true" tabindex="-1"></a>    A1 <span class="op">=</span> A1 <span class="op">*</span> D1                                    <span class="co"># Step 3: shut down some neurons of A1</span></span>
+<span id="cb18-30"><a href="#cb18-30" aria-hidden="true" tabindex="-1"></a>    A1 <span class="op">=</span> A1 <span class="op">/</span> keep_prob                             <span class="co"># Step 4: scale the value of neurons that have not been shut down</span></span>
+<span id="cb18-31"><a href="#cb18-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-32"><a href="#cb18-32" aria-hidden="true" tabindex="-1"></a>    Z2 <span class="op">=</span> np.dot(W2, A1) <span class="op">+</span> b2</span>
+<span id="cb18-33"><a href="#cb18-33" aria-hidden="true" tabindex="-1"></a>    A2 <span class="op">=</span> relu(Z2)</span>
+<span id="cb18-34"><a href="#cb18-34" aria-hidden="true" tabindex="-1"></a>    D2 <span class="op">=</span> np.random.rand(A2.shape[<span class="dv">0</span>], A2.shape[<span class="dv">1</span>])   <span class="co"># Step 1: initialize matrix D2</span></span>
+<span id="cb18-35"><a href="#cb18-35" aria-hidden="true" tabindex="-1"></a>    D2 <span class="op">=</span> (D2 <span class="op">&lt;</span> keep_prob).astype(<span class="bu">int</span>)               <span class="co"># Step 2: convert entries of D2 to 0 or 1</span></span>
+<span id="cb18-36"><a href="#cb18-36" aria-hidden="true" tabindex="-1"></a>    A2 <span class="op">=</span> A2 <span class="op">*</span> D2                                    <span class="co"># Step 3: shut down some neurons of A2</span></span>
+<span id="cb18-37"><a href="#cb18-37" aria-hidden="true" tabindex="-1"></a>    A2 <span class="op">=</span> A2 <span class="op">/</span> keep_prob                             <span class="co"># Step 4: scale the value of neurons that have not been shut down</span></span>
+<span id="cb18-38"><a href="#cb18-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-39"><a href="#cb18-39" aria-hidden="true" tabindex="-1"></a>    Z3 <span class="op">=</span> np.dot(W3, A2) <span class="op">+</span> b3</span>
+<span id="cb18-40"><a href="#cb18-40" aria-hidden="true" tabindex="-1"></a>    A3 <span class="op">=</span> sigmoid(Z3)</span>
+<span id="cb18-41"><a href="#cb18-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-42"><a href="#cb18-42" aria-hidden="true" tabindex="-1"></a>    cache <span class="op">=</span> (Z1, D1, A1, W1, b1, Z2, D2, A2, W2, b2, Z3, A3, W3, b3)</span>
+<span id="cb18-43"><a href="#cb18-43" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> A3, cache</span>
+<span id="cb18-44"><a href="#cb18-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-45"><a href="#cb18-45" aria-hidden="true" tabindex="-1"></a>t_X, parameters <span class="op">=</span> forward_propagation_with_dropout_test_case()</span>
+<span id="cb18-46"><a href="#cb18-46" aria-hidden="true" tabindex="-1"></a>A3, cache <span class="op">=</span> forward_propagation_with_dropout(t_X, parameters, keep_prob<span class="op">=</span><span class="fl">0.7</span>)</span>
+<span id="cb18-47"><a href="#cb18-47" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"A3 = "</span> <span class="op">+</span> <span class="bu">str</span>(A3))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>A3 = [[0.36974721 0.00305176 0.04565099 0.49683389 0.36974721]]</code></pre>
+</div>
+</div>
+</section>
+<section id="exercise-4-backward_propagation_with_dropout" class="level3">
+<h3 class="anchored" data-anchor-id="exercise-4-backward_propagation_with_dropout">Exercise 4, backward_propagation_with_dropout</h3>
+<p>Backpropagation with dropout is actually quite easy, only two steps, using the masks <span class="math inline">\(D^{[1]}\)</span> and <span class="math inline">\(D^{[2]}\)</span> stored in the cache.</p>
+<ol type="1">
+<li>During forward propagation you shut down some neurons by applying the mask <span class="math inline">\(D^{[1]}\)</span> to <code>A1</code>. In backpropagation, shut down the same neurons by reapplying the same mask <span class="math inline">\(D^{[1]}\)</span> to <code>dA1</code>.</li>
+<li>During forward propagation you divided <code>A1</code> by <code>keep_prob</code>. In backpropagation, divide <code>dA1</code> by <code>keep_prob</code> again. (The calculus interpretation is that if <span class="math inline">\(A^{[1]}\)</span> is scaled by <code>keep_prob</code>, then its derivative <span class="math inline">\(dA^{[1]}\)</span> is scaled by the same <code>keep_prob</code>.)</li>
+</ol>
+<div id="c3d7d1be" class="cell" data-execution_count="14">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> backward_propagation_with_dropout(X, Y, cache, keep_prob):</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Implements the backward propagation of our baseline model to which we added dropout.</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="co">    X -- input dataset, of shape (2, number of examples)</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="co">    Y -- "true" labels vector, of shape (output size, number of examples)</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a><span class="co">    cache -- cache output from forward_propagation_with_dropout()</span></span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a><span class="co">    keep_prob -- probability of keeping a neuron active during drop-out, scalar</span></span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a><span class="co">    gradients -- A dictionary with the gradients with respect to each parameter, activation and pre-activation variables</span></span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> X.shape[<span class="dv">1</span>]</span>
+<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a>    (Z1, D1, A1, W1, b1, Z2, D2, A2, W2, b2, Z3, A3, W3, b3) <span class="op">=</span> cache</span>
+<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-17"><a href="#cb20-17" aria-hidden="true" tabindex="-1"></a>    dZ3 <span class="op">=</span> A3 <span class="op">-</span> Y</span>
+<span id="cb20-18"><a href="#cb20-18" aria-hidden="true" tabindex="-1"></a>    dW3 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.dot(dZ3, A2.T)</span>
+<span id="cb20-19"><a href="#cb20-19" aria-hidden="true" tabindex="-1"></a>    db3 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.<span class="bu">sum</span>(dZ3, axis<span class="op">=</span><span class="dv">1</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb20-20"><a href="#cb20-20" aria-hidden="true" tabindex="-1"></a>    dA2 <span class="op">=</span> np.dot(W3.T, dZ3)</span>
+<span id="cb20-21"><a href="#cb20-21" aria-hidden="true" tabindex="-1"></a>    dA2 <span class="op">=</span> dA2 <span class="op">*</span> D2              <span class="co"># Step 1: Apply mask D2 to shut down the same neurons as during the forward propagation</span></span>
+<span id="cb20-22"><a href="#cb20-22" aria-hidden="true" tabindex="-1"></a>    dA2 <span class="op">=</span> dA2 <span class="op">/</span> keep_prob       <span class="co"># Step 2: Scale the value of neurons that have not been shut down</span></span>
+<span id="cb20-23"><a href="#cb20-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-24"><a href="#cb20-24" aria-hidden="true" tabindex="-1"></a>    dZ2 <span class="op">=</span> np.multiply(dA2, np.int64(A2 <span class="op">&gt;</span> <span class="dv">0</span>))</span>
+<span id="cb20-25"><a href="#cb20-25" aria-hidden="true" tabindex="-1"></a>    dW2 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.dot(dZ2, A1.T)</span>
+<span id="cb20-26"><a href="#cb20-26" aria-hidden="true" tabindex="-1"></a>    db2 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.<span class="bu">sum</span>(dZ2, axis<span class="op">=</span><span class="dv">1</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb20-27"><a href="#cb20-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-28"><a href="#cb20-28" aria-hidden="true" tabindex="-1"></a>    dA1 <span class="op">=</span> np.dot(W2.T, dZ2)</span>
+<span id="cb20-29"><a href="#cb20-29" aria-hidden="true" tabindex="-1"></a>    dA1 <span class="op">=</span> dA1 <span class="op">*</span> D1              <span class="co"># Step 1: Apply mask D1 to shut down the same neurons as during the forward propagation</span></span>
+<span id="cb20-30"><a href="#cb20-30" aria-hidden="true" tabindex="-1"></a>    dA1 <span class="op">=</span> dA1 <span class="op">/</span> keep_prob       <span class="co"># Step 2: Scale the value of neurons that have not been shut down</span></span>
+<span id="cb20-31"><a href="#cb20-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-32"><a href="#cb20-32" aria-hidden="true" tabindex="-1"></a>    dZ1 <span class="op">=</span> np.multiply(dA1, np.int64(A1 <span class="op">&gt;</span> <span class="dv">0</span>))</span>
+<span id="cb20-33"><a href="#cb20-33" aria-hidden="true" tabindex="-1"></a>    dW1 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.dot(dZ1, X.T)</span>
+<span id="cb20-34"><a href="#cb20-34" aria-hidden="true" tabindex="-1"></a>    db1 <span class="op">=</span> <span class="fl">1.</span> <span class="op">/</span> m <span class="op">*</span> np.<span class="bu">sum</span>(dZ1, axis<span class="op">=</span><span class="dv">1</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb20-35"><a href="#cb20-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-36"><a href="#cb20-36" aria-hidden="true" tabindex="-1"></a>    gradients <span class="op">=</span> {<span class="st">"dZ3"</span>: dZ3, <span class="st">"dW3"</span>: dW3, <span class="st">"db3"</span>: db3, <span class="st">"dA2"</span>: dA2,</span>
+<span id="cb20-37"><a href="#cb20-37" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"dZ2"</span>: dZ2, <span class="st">"dW2"</span>: dW2, <span class="st">"db2"</span>: db2, <span class="st">"dA1"</span>: dA1,</span>
+<span id="cb20-38"><a href="#cb20-38" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"dZ1"</span>: dZ1, <span class="st">"dW1"</span>: dW1, <span class="st">"db1"</span>: db1}</span>
+<span id="cb20-39"><a href="#cb20-39" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> gradients</span>
+<span id="cb20-40"><a href="#cb20-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-41"><a href="#cb20-41" aria-hidden="true" tabindex="-1"></a>t_X, t_Y, cache <span class="op">=</span> backward_propagation_with_dropout_test_case()</span>
+<span id="cb20-42"><a href="#cb20-42" aria-hidden="true" tabindex="-1"></a>gradients <span class="op">=</span> backward_propagation_with_dropout(t_X, t_Y, cache, keep_prob<span class="op">=</span><span class="fl">0.8</span>)</span>
+<span id="cb20-43"><a href="#cb20-43" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"dA1 = </span><span class="ch">\n</span><span class="st">"</span> <span class="op">+</span> <span class="bu">str</span>(gradients[<span class="st">"dA1"</span>]))</span>
+<span id="cb20-44"><a href="#cb20-44" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"dA2 = </span><span class="ch">\n</span><span class="st">"</span> <span class="op">+</span> <span class="bu">str</span>(gradients[<span class="st">"dA2"</span>]))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>dA1 = 
+[[ 0.36544439  0.         -0.00188233  0.         -0.17408748]
+ [ 0.65515713  0.         -0.00337459  0.         -0.        ]]
+dA2 = 
+[[ 0.58180856  0.         -0.00299679  0.         -0.27715731]
+ [ 0.          0.53159854 -0.          0.53159854 -0.34089673]
+ [ 0.          0.         -0.00292733  0.         -0.        ]]</code></pre>
+</div>
+</div>
+<p>Now run the model with dropout (<code>keep_prob = 0.86</code>), which means at every iteration each neuron of layers 1 and 2 is shut down with 14% probability. The <code>model()</code> function calls <code>forward_propagation_with_dropout</code> instead of <code>forward_propagation</code>, and <code>backward_propagation_with_dropout</code> instead of <code>backward_propagation</code>.</p>
+<div id="994fa945" class="cell" data-execution_count="15">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>parameters <span class="op">=</span> model(train_X, train_Y, keep_prob<span class="op">=</span><span class="fl">0.86</span>, learning_rate<span class="op">=</span><span class="fl">0.3</span>)</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"On the train set:"</span>)</span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>predictions_train <span class="op">=</span> predict(train_X, train_Y, parameters)</span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"On the test set:"</span>)</span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>predictions_test <span class="op">=</span> predict(test_X, test_Y, parameters)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Cost after iteration 0: 0.6543912405149825</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Cost after iteration 10000: 0.0610169865749056
+Cost after iteration 20000: 0.060582435798513114</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-regularization_files/figure-html/cell-16-output-3.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>On the train set:
+Accuracy: 0.9289099526066351
+On the test set:
+Accuracy: 0.95</code></pre>
+</div>
+</div>
+<p>Dropout works great! The test accuracy has increased again, to 95%. The model is not overfitting the training set and does a great job on the test set. The French football team will be forever grateful to you! Plot the decision boundary.</p>
+<div id="7e5c7fb9" class="cell" data-execution_count="16">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>plt.title(<span class="st">"Model with dropout"</span>)</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>axes <span class="op">=</span> plt.gca()</span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>axes.set_xlim([<span class="op">-</span><span class="fl">0.75</span>, <span class="fl">0.40</span>])</span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>axes.set_ylim([<span class="op">-</span><span class="fl">0.75</span>, <span class="fl">0.65</span>])</span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a>plot_decision_boundary(<span class="kw">lambda</span> x: predict_dec(parameters, x.T), train_X, train_Y)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="lab-regularization_files/figure-html/cell-17-output-1.svg" class="img-fluid figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Two notes before wrapping up.</p>
+<ul>
+<li>A <strong>common mistake</strong> when using dropout is to apply it both in training and testing. Use dropout (randomly eliminate nodes) only in training, exactly as the <a href="../../deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html#no-dropout-at-test-time">notes on test time</a> explain.</li>
+<li>Deep learning frameworks like <a href="https://www.tensorflow.org/api_docs/python/tf/nn/dropout">TensorFlow</a>, <a href="https://www.paddlepaddle.org.cn/documentation/docs/en/api/paddle/nn/Dropout_en.html#dropout">PaddlePaddle</a>, <a href="https://keras.io/api/layers/regularization_layers/dropout/">Keras</a>, and <a href="https://caffe.berkeleyvision.org/doxygen/classcaffe_1_1DropoutLayer.html">Caffe</a> come with a dropout layer implementation, so you will not always write it by hand. Some of these frameworks appear later in the specialization.</li>
+</ul>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Important</span>What You Should Remember About Dropout
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>Dropout is a regularization technique.</li>
+<li>Only use dropout during training. Do not use dropout (randomly eliminate nodes) during test time.</li>
+<li>Apply dropout both during forward and backward propagation.</li>
+<li>During training, divide each dropout layer by <code>keep_prob</code> to keep the same expected value for the activations. For example, if <code>keep_prob</code> is 0.5, then on average half the nodes are shut down, so the output would be scaled down by 0.5 since only the remaining half contribute. Dividing by 0.5 is equivalent to multiplying by 2, so the output keeps the same expected value. This works for any value of <code>keep_prob</code>, not just 0.5.</li>
+</ul>
+</div>
+</div>
+</section>
+</section>
+<section id="conclusions" class="level2">
+<h2 class="anchored" data-anchor-id="conclusions">Conclusions</h2>
+<p>Here are the results of the three models.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Model</th>
+<th>Train accuracy</th>
+<th>Test accuracy</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>3-layer NN without regularization</td>
+<td>95%</td>
+<td>91.5%</td>
+</tr>
+<tr class="even">
+<td>3-layer NN with L2 regularization</td>
+<td>94%</td>
+<td>93%</td>
+</tr>
+<tr class="odd">
+<td>3-layer NN with dropout</td>
+<td>93%</td>
+<td>95%</td>
+</tr>
+</tbody>
+</table>
+<p>Note that <strong>regularization hurts training set performance</strong>. This is because it limits the ability of the network to overfit the training set. But since it ultimately gives better test accuracy, it is helping the system. Congratulations for finishing this lab, and for revolutionizing French football.</p>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Important</span>What to Remember from This Lab
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>Regularization helps reduce overfitting.</li>
+<li>Regularization drives the weights to lower values.</li>
+<li>L2 regularization and dropout are two very effective regularization techniques.</li>
+</ul>
+</div>
+</div>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 78%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">78% completed (510 of 647 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../deep-learning/improving-deep-neural-networks/lab-initialization.html" class="pagination-link" aria-label="Lab: Initialization">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Lab: Initialization</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../deep-learning/improving-deep-neural-networks/lab-gradient-checking.html" class="pagination-link" aria-label="Lab: Gradient Checking">
+        <span class="nav-page-text">Lab: Gradient Checking</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
