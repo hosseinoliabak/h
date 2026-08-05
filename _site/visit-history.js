@@ -1,11 +1,11 @@
 (function () {
-  // Tracks the last 5 distinct content pages the visitor read, in this browser
+  // Tracks the last 3 distinct content pages the visitor read, in this browser
   // only (localStorage, no server). Renders "Continue Where You Left Off" on
   // the home page. Same eligible-page rules as resume-reading.js: skip the
   // home page itself and the /tools/ utility pages (nothing to "continue" there).
 
   var STORAGE_KEY = "visit-history";
-  var MAX_ENTRIES = 5;
+  var MAX_ENTRIES = 3;
 
   function isHome(path) {
     return path === "/" || path === "/index.html";
@@ -20,7 +20,7 @@
   function getPageTitle() {
     var titleEl = document.querySelector("h1.title, .quarto-title h1, h1");
     if (titleEl) return titleEl.textContent.trim();
-    return document.title.replace(" - Hossein's Notes", "").trim();
+    return document.title.replace(" - H's Notes", "").trim();
   }
 
   function load() {
@@ -66,7 +66,7 @@
     var container = document.getElementById("continue-reading-section");
     if (!container) return;
 
-    var list = load();
+    var list = load().slice(0, MAX_ENTRIES);
     if (list.length === 0) {
       container.innerHTML = '<p class="empty-state">Pages you read will show up here.</p>';
       return;

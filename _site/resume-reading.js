@@ -17,7 +17,7 @@
   function getPageTitle() {
     var titleEl = document.querySelector('h1.title, .quarto-title h1, h1');
     if (titleEl) return titleEl.textContent.trim();
-    return document.title.replace(" - Hossein's Notes", '').trim();
+    return document.title.replace(" - H's Notes", '').trim();
   }
 
   // Get scroll percentage
