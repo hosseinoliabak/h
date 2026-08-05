@@ -9,7 +9,7 @@
 <meta name="dcterms.date" content="2026-08-04">
 <meta name="description" content="Verify backpropagation with gradient checking, from a 1D linear model to a full 3-layer network, and hunt down two planted backprop bugs.">
 
-<title>Lab: Gradient Checking – Hossein’s Notes</title>
+<title>Lab: Gradient Checking – H’s Notes</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -70,6 +70,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../../">
+<link href="../../deep-learning/improving-deep-neural-networks/mini-batch-gradient-descent.html" rel="next">
 <link href="../../deep-learning/improving-deep-neural-networks/lab-regularization.html" rel="prev">
 <link href="../../media/favicon.ico" rel="icon">
 <script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
@@ -141,11 +142,11 @@ window.Quarto = {
 </script>
 
 <link rel="stylesheet" href="../../styles.css">
-<meta property="og:title" content="Lab: Gradient Checking – Hossein’s Notes">
+<meta property="og:title" content="Lab: Gradient Checking – H’s Notes">
 <meta property="og:description" content="Verify backpropagation with gradient checking, from a 1D linear model to a full 3-layer network, and hunt down two planted backprop bugs.">
 <meta property="og:image" content="https://h.oliabak.com/deep-learning/improving-deep-neural-networks/lab-gradient-checking_files/figure-html/cell-4-output-1.svg">
-<meta property="og:site_name" content="Hossein’s Notes">
-<meta name="twitter:title" content="Lab: Gradient Checking – Hossein’s Notes">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Lab: Gradient Checking – H’s Notes">
 <meta name="twitter:description" content="Verify backpropagation with gradient checking, from a 1D linear model to a full 3-layer network, and hunt down two planted backprop bugs.">
 <meta name="twitter:image" content="https://h.oliabak.com/deep-learning/improving-deep-neural-networks/lab-gradient-checking_files/figure-html/cell-4-output-1.svg">
 <meta name="twitter:card" content="summary_large_image">
@@ -159,7 +160,7 @@ window.Quarto = {
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
     <a class="navbar-brand" href="../../index.html">
-    <span class="navbar-title">Hossein’s Notes</span>
+    <span class="navbar-title">H’s Notes</span>
     </a>
   </div>
             <div id="quarto-search" class="" title="Search"></div>
@@ -405,6 +406,30 @@ window.Quarto = {
  <span class="menu-text">Lab: Gradient Checking</span></a>
   </div>
 </li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/mini-batch-gradient-descent.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mini-batch Gradient Descent</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/exponentially-weighted-averages.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Exponentially Weighted Averages</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/momentum-rmsprop-and-adam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Momentum, RMSprop, and Adam</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/improving-deep-neural-networks/lab-optimization-methods.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Lab: Optimization Methods</span></a>
+  </div>
+</li>
     </ul>
     </div>
 </nav>
@@ -539,7 +564,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <section id="packages-and-helpers" class="level2">
 <h2 class="anchored" data-anchor-id="packages-and-helpers">Packages and Helpers</h2>
 <p>The whole lab runs on plain NumPy.</p>
-<div id="d747526b" class="cell" data-execution_count="1">
+<div id="bcf244ed" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>The course provides a helper file, <a href="../../media/deep-learning/gradient-checking/gc_utils.py">gc_utils.py</a>, with the activation functions and the three reshaping utilities that convert between the parameters dictionary and the giant vector <span class="math inline">\(\theta\)</span>. They are reproduced in the collapsed callout below, together with the seeded test case from <a href="../../media/deep-learning/gradient-checking/testCases.py">testCases.py</a>.</p>
@@ -572,7 +597,7 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-2" class="callout-2-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<div id="962b7cf0" class="cell" data-execution_count="2">
+<div id="e59f00b9" class="cell" data-execution_count="2">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> sigmoid(x):</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Compute the sigmoid of x."""</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    s <span class="op">=</span> <span class="dv">1</span> <span class="op">/</span> (<span class="dv">1</span> <span class="op">+</span> np.exp(<span class="op">-</span>x))</span>
@@ -652,7 +677,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <section id="dimensional-gradient-checking" class="level2">
 <h2 class="anchored" data-anchor-id="dimensional-gradient-checking">1-Dimensional Gradient Checking</h2>
 <p>Consider a 1D linear function <span class="math inline">\(J(\theta) = \theta x\)</span>. The model contains only a single real-valued parameter <span class="math inline">\(\theta\)</span> and takes <span class="math inline">\(x\)</span> as input. You will implement code to compute <span class="math inline">\(J\)</span> and its derivative <span class="math inline">\(\frac{\partial J}{\partial \theta}\)</span>, then use gradient checking to make sure the derivative computation is correct.</p>
-<div id="7d78c9e6" class="cell" data-execution_count="3">
+<div id="4a87e7fd" class="cell" data-execution_count="3">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -665,7 +690,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <section id="exercise-1-forward_propagation" class="level3">
 <h3 class="anchored" data-anchor-id="exercise-1-forward_propagation">Exercise 1, forward_propagation</h3>
 <p>Implement the forward propagation. For this simple function, just compute <span class="math inline">\(J\)</span>.</p>
-<div id="a2d724f3" class="cell" data-execution_count="4">
+<div id="6c745d26" class="cell" data-execution_count="4">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> forward_propagation(x, theta):</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Implement the linear forward propagation (compute J) presented in Figure 1 (J(theta) = theta * x)</span></span>
@@ -691,7 +716,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <section id="exercise-2-backward_propagation" class="level3">
 <h3 class="anchored" data-anchor-id="exercise-2-backward_propagation">Exercise 2, backward_propagation</h3>
 <p>Now implement the backward propagation step, the derivative of <span class="math inline">\(J(\theta) = \theta x\)</span> with respect to <span class="math inline">\(\theta\)</span>. To save you from doing the calculus, you should get <span class="math inline">\(d\theta = \frac{\partial J}{\partial \theta} = x\)</span>.</p>
-<div id="5056b293" class="cell" data-execution_count="5">
+<div id="2e98da96" class="cell" data-execution_count="5">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> backward_propagation(x, theta):</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Computes the derivative of J with respect to theta (see Figure 1).</span></span>
@@ -729,7 +754,7 @@ document.addEventListener("DOMContentLoaded", function () {
 difference = \frac{\left\| grad - gradapprox \right\|_2}{\left\| grad \right\|_2 + \left\| gradapprox \right\|_2}
 \]</span></p>
 <p>in three steps, the numerator with <code>np.linalg.norm(...)</code>, the denominator with two more calls to <code>np.linalg.norm(...)</code>, and the division. If this difference is small (say less than <span class="math inline">\(10^{-7}\)</span>), you can be quite confident the gradient is computed correctly.</p>
-<div id="2e541812" class="cell" data-execution_count="6">
+<div id="523553e8" class="cell" data-execution_count="6">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> gradient_check(x, theta, epsilon<span class="op">=</span><span class="fl">1e-7</span>, print_msg<span class="op">=</span><span class="va">False</span>):</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Implement gradient checking for the 1D linear model.</span></span>
@@ -780,7 +805,7 @@ difference = \frac{\left\| grad - gradapprox \right\|_2}{\left\| grad \right\|_2
 <section id="n-dimensional-gradient-checking" class="level2">
 <h2 class="anchored" data-anchor-id="n-dimensional-gradient-checking">N-Dimensional Gradient Checking</h2>
 <p>The figure below describes the forward and backward propagation of your fraud detection model, a 3-layer network with the by-now familiar architecture.</p>
-<div id="06ac1531" class="cell" data-execution_count="7">
+<div id="fd01d093" class="cell" data-execution_count="7">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -790,7 +815,7 @@ difference = \frac{\left\| grad - gradapprox \right\|_2}{\left\| grad \right\|_2
 </div>
 </div>
 <p>Below are the implementations provided for <code>forward_propagation_n</code> and <code>backward_propagation_n</code>, where <code>n</code> in the name signals that they work in n dimensions. The forward pass also computes the cost, since gradient checking needs it.</p>
-<div id="1472536d" class="cell" data-execution_count="8">
+<div id="68eb798f" class="cell" data-execution_count="8">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> forward_propagation_n(X, Y, parameters):</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Implements the forward propagation (and computes the cost) for the 3-layer model.</span></span>
@@ -834,7 +859,7 @@ difference = \frac{\left\| grad - gradapprox \right\|_2}{\left\| grad \right\|_2
 <span id="cb8-41"><a href="#cb8-41" aria-hidden="true" tabindex="-1"></a>    cache <span class="op">=</span> (Z1, A1, W1, b1, Z2, A2, W2, b2, Z3, A3, W3, b3)</span>
 <span id="cb8-42"><a href="#cb8-42" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> cost, cache</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<div id="f3f1ed9d" class="cell" data-execution_count="9">
+<div id="52a39952" class="cell" data-execution_count="9">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> backward_propagation_n(X, Y, cache):</span>
 <span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Implement the backward propagation for the 3-layer model.</span></span>
@@ -873,7 +898,7 @@ difference = \frac{\left\| grad - gradapprox \right\|_2}{\left\| grad \right\|_2
 <section id="from-dictionary-to-vector" class="level3">
 <h3 class="anchored" data-anchor-id="from-dictionary-to-vector">From Dictionary to Vector</h3>
 <p>As in the 1D case, you want to compare <code>gradapprox</code> to the gradient computed by backpropagation, using the same two-sided difference formula. However, <span class="math inline">\(\theta\)</span> is not a scalar anymore. It is a dictionary called <code>parameters</code>. The helper <code>dictionary_to_vector()</code> converts the dictionary into a vector called <code>values</code>, obtained by reshaping all parameters (<span class="math inline">\(W^{[1]}, b^{[1]}, W^{[2]}, b^{[2]}, W^{[3]}, b^{[3]}\)</span>) into column vectors and concatenating them, exactly the giant <span class="math inline">\(\theta\)</span> vector from the <a href="../../deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem.html#gradient-checking">notes</a>. The inverse function, <code>vector_to_dictionary()</code>, turns the vector back into the dictionary the network needs.</p>
-<div id="37a76b62" class="cell" data-execution_count="10">
+<div id="cde5e91f" class="cell" data-execution_count="10">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -898,7 +923,7 @@ difference = \frac{\left\| grad - gradapprox \right\|_2}{\left\| grad \right\|_2
 <li>Compute <span class="math inline">\(gradapprox[i] = \frac{J^{+}_i - J^{-}_i}{2\varepsilon}\)</span></li>
 </ul>
 <p>You get a vector <code>gradapprox</code>, where <code>gradapprox[i]</code> is an approximation of the gradient with respect to <code>parameters_values[i]</code>. Compare it to the <code>grad</code> vector from backpropagation with the same three norm steps as in the 1D case.</p>
-<div id="d00130fe" class="cell" data-execution_count="11">
+<div id="329ebda2" class="cell" data-execution_count="11">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> gradient_check_n(parameters, gradients, X, Y, epsilon<span class="op">=</span><span class="fl">1e-7</span>, print_msg<span class="op">=</span><span class="va">False</span>):</span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Checks if backward_propagation_n computes correctly the gradient of the cost output by forward_propagation_n</span></span>
@@ -974,7 +999,7 @@ difference = \frac{\left\| grad - gradapprox \right\|_2}{\left\| grad \right\|_2
 <li><code>db1</code> is computed as <code>4. / m * np.sum(dZ1, ...)</code>, but the correct coefficient is <code>1. / m</code>.</li>
 </ul>
 <p>Both bugs live in the derivative computations for specific parameters, which is exactly what the component-wise inspection tip from the notes would have surfaced, since the far-off entries of <span class="math inline">\(d\theta_{\text{approx}} - d\theta\)</span> all correspond to <span class="math inline">\(dW^{[2]}\)</span> and <span class="math inline">\(db^{[1]}\)</span>. Fix the two lines and run the gradient check again.</p>
-<div id="a318b9bb" class="cell" data-execution_count="12">
+<div id="c38e1bd8" class="cell" data-execution_count="12">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> backward_propagation_n(X, Y, cache):</span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Corrected backward propagation for the 3-layer model."""</span></span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> X.shape[<span class="dv">1</span>]</span>
@@ -1036,9 +1061,9 @@ difference = \frac{\left\| grad - gradapprox \right\|_2}{\left\| grad \right\|_2
 <div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
   <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
   <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
-    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 100%; border-radius: 6px;"></div>
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 56%; border-radius: 6px;"></div>
   </div>
-  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">100% completed (647 of 647 min)</p>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">56% completed (647 of 1142 min)</p>
 </div>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -1487,6 +1512,9 @@ document.addEventListener("DOMContentLoaded", function() {
       </a>          
   </div>
   <div class="nav-page nav-page-next">
+      <a href="../../deep-learning/improving-deep-neural-networks/mini-batch-gradient-descent.html" class="pagination-link" aria-label="Mini-batch Gradient Descent">
+        <span class="nav-page-text">Mini-batch Gradient Descent</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
   </div>
 </nav>
 </div> <!-- /content -->
