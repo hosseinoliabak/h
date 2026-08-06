@@ -6,7 +6,6 @@
 -- and displays a difficulty indicator.
 
 local WPM = 150
-local MAX_MINUTES = 180  -- cap: no single page is billed above 3 hours
 
 -- Group an integer with thousands separators: 5300 -> "5,300"
 local function commafy(n)
@@ -92,6 +91,9 @@ end
 
 local function find_source_file(basename)
   local search_paths = {
+    -- Quarto runs the filter from the source file's own directory, so the
+    -- cwd-relative name is the reliable hit; the rest are legacy fallbacks.
+    basename .. ".qmd",
     "math/calculus/" .. basename .. ".qmd",
     "math/linear-algebra/" .. basename .. ".qmd",
     "math/probability-statistics/" .. basename .. ".qmd",
@@ -99,7 +101,6 @@ local function find_source_file(basename)
     "ai/agentic/" .. basename .. ".qmd",
     "ai/deep-learning/" .. basename .. ".qmd",
     "ai/machine-learning/" .. basename .. ".qmd",
-    basename .. ".qmd",
   }
   for _, path in ipairs(search_paths) do
     local f = io.open(path, "r")
@@ -112,6 +113,32 @@ local function find_source_file(basename)
   return nil
 end
 
+-- A code block the reader has to work through. Two fence styles count:
+-- executable cells (```{python}), and display-only blocks (```python) that the
+-- reader copies into their own notebook, such as labs that need an environment
+-- the site cannot render. Both cost the same to follow, so both are billed.
+local function opens_code_block(line)
+  return line:match("^```{python}") ~= nil
+      or line:match("^```{r}") ~= nil
+      or line:match("^```python%s*$") ~= nil
+      or line:match("^```py%s*$") ~= nil
+      or line:match("^```r%s*$") ~= nil
+end
+
+-- Figures the reader stops and studies, in any format. Inline SVG markup counts,
+-- and so does a raster or vector image (png, gif, jpg, svg) given as a Markdown
+-- image or an <img> tag that stands on its own line. An image embedded mid-line
+-- is not a figure. It is an icon inside a sentence or a thumbnail inside a table
+-- cell, already paid for by the surrounding text, so it is not billed again.
+local function count_figures(content)
+  local n = 0
+  for _ in content:gmatch("<svg") do n = n + 1 end
+  for line in content:gmatch("[^\n]+") do
+    if line:match("^!%[") or line:match("^<img") then n = n + 1 end
+  end
+  return n
+end
+
 local function count_extras_from_source(basename)
   local content = find_source_file(basename)
   if not content then return 0, 0, 0, 0 end
@@ -119,8 +146,7 @@ local function count_extras_from_source(basename)
   local questions = 0
   for _ in content:gmatch("{%.callout%-tip") do questions = questions + 1 end
 
-  local figures = 0
-  for _ in content:gmatch("<svg") do figures = figures + 1 end
+  local figures = count_figures(content)
 
   local code_lines = 0
   local in_code = false
@@ -132,7 +158,7 @@ local function count_extras_from_source(basename)
     elseif not in_code and in_collapsed and line:match("^:::%s*$") then
       in_collapsed = false
     end
-    if line:match("^```{python}") or line:match("^```{r}") then
+    if opens_code_block(line) then
       in_code = true; is_hidden = false
     elseif line:match("^```") and in_code then
       in_code = false; is_hidden = false
@@ -367,7 +393,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
   local multiplier = DIFFICULTY_MULTIPLIERS[difficulty] or 1.0
   local minutes = math.ceil(raw_minutes * multiplier)
-  if minutes > MAX_MINUTES then minutes = MAX_MINUTES end
 
   -- Save to shared JSON (single source of truth)
   -- Only save if we are in a subdirectory (not at project root)
@@ -409,7 +434,7 @@ document.addEventListener("DOMContentLoaded", function () {
   -- Inject reading time, length, difficulty and the weekday-stamped date.
   -- Grid order: Length (1) · Published (2) · Reading Time (3) · Difficulty (4).
   local label = "~" .. minutes .. " min read"
-  local tooltip = "Estimated based on " .. WPM .. " words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level and capped at 3 hours."
+  local tooltip = "Estimated based on " .. WPM .. " words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level."
   local script = pandoc.RawBlock("html", [[
 <script>
 document.addEventListener("DOMContentLoaded", function () {
