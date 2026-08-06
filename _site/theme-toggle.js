@@ -1,14 +1,17 @@
 (function() {
-  // Theme cycle: default -> warm -> midnight -> default
-  var themes = ['default', 'warm', 'midnight'];
+  // Theme cycle: default -> flatly -> warm -> midnight -> default
+  var themes = ['default', 'flatly', 'warm', 'midnight'];
+  var themeClasses = ['theme-flatly', 'theme-warm', 'theme-midnight'];
   var saved = localStorage.getItem('site-theme') || 'default';
 
-  // Apply saved theme on load (before paint)
-  if (saved === 'warm') {
-    document.documentElement.classList.add('theme-warm');
-  } else if (saved === 'midnight') {
-    document.documentElement.classList.add('theme-midnight');
+  function applyTheme(id) {
+    var root = document.documentElement;
+    for (var i = 0; i < themeClasses.length; i++) root.classList.remove(themeClasses[i]);
+    if (id !== 'default' && themes.indexOf(id) !== -1) root.classList.add('theme-' + id);
   }
+
+  // Apply saved theme on load (before paint)
+  applyTheme(saved);
 
   // Font cycle: default -> reader -> garamond -> default
   var fonts = [
@@ -48,15 +51,14 @@
       theme: localStorage.getItem('site-theme') || 'default',
       font: localStorage.getItem('site-font') || 'default'
     };
-    root.classList.remove('theme-warm', 'theme-midnight');
+    applyTheme('default');
     root.classList.remove('font-reader', 'font-garamond');
   }
 
   function exitPrint() {
     if (!printRestore) return;
     var root = document.documentElement;
-    if (printRestore.theme === 'warm') root.classList.add('theme-warm');
-    else if (printRestore.theme === 'midnight') root.classList.add('theme-midnight');
+    applyTheme(printRestore.theme);
     if (printRestore.font === 'reader') root.classList.add('font-reader');
     else if (printRestore.font === 'garamond') root.classList.add('font-garamond');
     printRestore = null;
@@ -79,6 +81,7 @@
     var base = 'https://h.oliabak.com';
     if (theme === 'midnight') return base + '/giscus-theme-midnight.css';
     if (theme === 'warm') return base + '/giscus-theme-warm.css';
+    if (theme === 'flatly') return base + '/giscus-theme-flatly.css';
     return base + '/giscus-theme.css';
   }
 
@@ -108,6 +111,15 @@
     }
   });
 
+  // Small corner badge showing the 1-based position in the cycle, so you
+  // can tell how far you are from wrapping back to theme/font 1.
+  function makeBadge(text) {
+    var badge = document.createElement('span');
+    badge.style.cssText = 'position:absolute;top:-5px;right:-5px;min-width:16px;height:16px;line-height:16px;border-radius:8px;background:var(--site-accent);color:var(--site-accent-contrast);font-size:10px;font-weight:700;font-family:sans-serif;text-align:center;pointer-events:none;';
+    badge.textContent = text;
+    return badge;
+  }
+
   // Create toggle button after DOM loads
   document.addEventListener('DOMContentLoaded', function() {
     var btn = document.createElement('button');
@@ -123,23 +135,18 @@
       btn.style.transform = 'scale(1)';
     });
 
+    var themeBadge = makeBadge(String(themes.indexOf(localStorage.getItem('site-theme') || 'default') + 1));
+    btn.appendChild(themeBadge);
+
     btn.addEventListener('click', function() {
       var current = localStorage.getItem('site-theme') || 'default';
       var idx = themes.indexOf(current);
       var next = themes[(idx + 1) % themes.length];
 
-      // Remove all theme classes
-      document.documentElement.classList.remove('theme-warm', 'theme-midnight');
-
-      // Apply next theme
-      if (next === 'warm') {
-        document.documentElement.classList.add('theme-warm');
-      } else if (next === 'midnight') {
-        document.documentElement.classList.add('theme-midnight');
-      }
-
+      applyTheme(next);
       localStorage.setItem('site-theme', next);
       setGiscusTheme(next);
+      themeBadge.textContent = String(themes.indexOf(next) + 1);
     });
 
     document.body.appendChild(btn);
@@ -150,6 +157,13 @@
     fbtn.innerHTML = 'Aa';
     fbtn.style.cssText = 'position:fixed;bottom:72px;right:20px;z-index:9999;width:42px;height:42px;border-radius:50%;border:2px solid var(--site-accent);background:var(--bs-body-bg,#fff);color:var(--site-accent);font-size:17px;font-weight:600;line-height:1;font-family:var(--site-font-heading);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.15);transition:all 0.2s;';
     fbtn.title = fontMeta(savedFont).title;
+
+    var savedFontIdx = 0;
+    for (var fi = 0; fi < fonts.length; fi++) {
+      if (fonts[fi].id === (localStorage.getItem('site-font') || 'default')) savedFontIdx = fi;
+    }
+    var fontBadge = makeBadge(String(savedFontIdx + 1));
+    fbtn.appendChild(fontBadge);
 
     fbtn.addEventListener('mouseenter', function() {
       fbtn.style.transform = 'scale(1.1)';
@@ -169,6 +183,7 @@
       applyFont(next.id);
       localStorage.setItem('site-font', next.id);
       fbtn.title = next.title;
+      fontBadge.textContent = String((idx + 1) % fonts.length + 1);
     });
 
     document.body.appendChild(fbtn);
