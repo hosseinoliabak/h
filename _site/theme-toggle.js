@@ -38,6 +38,85 @@
 
   applyFont(savedFont);
 
+  // --- Custom font theme -------------------------------------------------
+  // The typography tool (tools/typography.qmd) can write a set of family
+  // stacks plus the two scale knobs here, which then applies to every page.
+  // It lives in localStorage and nowhere else. Nothing is sent to a server,
+  // so it does not follow the reader to another browser. Picking any of the
+  // three built-in font themes with the Aa button throws it away.
+  var CUSTOM_KEY = 'site-font-custom';
+  var customMonoStyle = null;
+
+  function readCustomFont() {
+    try {
+      var raw = localStorage.getItem(CUSTOM_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function hasCustomFont() {
+    return !!readCustomFont();
+  }
+
+  function head() {
+    return document.head || document.documentElement;
+  }
+
+  function applyCustomFont(cfg) {
+    if (!cfg) return;
+    var root = document.documentElement;
+    if (cfg.body) root.style.setProperty('--site-font-body', cfg.body);
+    if (cfg.heading) root.style.setProperty('--site-font-heading', cfg.heading);
+    if (cfg.size) root.style.setProperty('--site-font-size', cfg.size);
+    if (cfg.lead) root.style.setProperty('--site-line-height', cfg.lead);
+    if (cfg.mono) {
+      root.style.setProperty('--site-font-mono', cfg.mono);
+      if (!customMonoStyle) {
+        customMonoStyle = document.createElement('style');
+        customMonoStyle.setAttribute('data-site-font', 'mono');
+        customMonoStyle.textContent = 'code, pre, kbd, samp { font-family: var(--site-font-mono) !important; }';
+        head().appendChild(customMonoStyle);
+      }
+    }
+    // The chosen families are usually not among the ones styles.css imports,
+    // so each page has to pull them in for itself.
+    (cfg.links || []).forEach(function(href) {
+      if (document.querySelector('link[data-site-font][href="' + href + '"]')) return;
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = href;
+      link.setAttribute('data-site-font', 'family');
+      head().appendChild(link);
+    });
+  }
+
+  function clearCustomFont(forget) {
+    var root = document.documentElement;
+    ['--site-font-body', '--site-font-heading', '--site-font-size', '--site-line-height', '--site-font-mono']
+      .forEach(function(prop) { root.style.removeProperty(prop); });
+    var stale = document.querySelectorAll('link[data-site-font], style[data-site-font]');
+    for (var i = 0; i < stale.length; i++) {
+      if (stale[i].parentNode) stale[i].parentNode.removeChild(stale[i]);
+    }
+    customMonoStyle = null;
+    if (forget) {
+      try { localStorage.removeItem(CUSTOM_KEY); } catch (e) {}
+    }
+  }
+
+  applyCustomFont(readCustomFont());
+
+  // Anything on the page that mirrors these settings, such as the typography
+  // tool, listens for this so it can re-read them after a corner button has
+  // changed them underneath it.
+  function announce(kind) {
+    try {
+      document.dispatchEvent(new CustomEvent('sitechrome:change', { detail: { kind: kind } }));
+    } catch (e) {}
+  }
+
   // Printing always uses the light surface and the Garamond font theme.
   // The .theme-warm / .theme-midnight rules hardcode colors at a higher
   // specificity than the accent tokens, so the class itself has to come
@@ -49,10 +128,13 @@
     var root = document.documentElement;
     printRestore = {
       theme: localStorage.getItem('site-theme') || 'default',
-      font: localStorage.getItem('site-font') || 'default'
+      font: localStorage.getItem('site-font') || 'default',
+      custom: readCustomFont()
     };
     applyTheme('default');
     root.classList.remove('font-reader', 'font-garamond');
+    // A custom font theme is a screen choice. Print keeps the house style.
+    clearCustomFont(false);
   }
 
   function exitPrint() {
@@ -61,6 +143,7 @@
     applyTheme(printRestore.theme);
     if (printRestore.font === 'reader') root.classList.add('font-reader');
     else if (printRestore.font === 'garamond') root.classList.add('font-garamond');
+    applyCustomFont(printRestore.custom);
     printRestore = null;
   }
 
@@ -115,10 +198,15 @@
   // can tell how far you are from wrapping back to theme/font 1.
   function makeBadge(text) {
     var badge = document.createElement('span');
-    badge.style.cssText = 'position:absolute;top:-5px;right:-5px;min-width:16px;height:16px;line-height:16px;border-radius:8px;background:var(--site-accent);color:var(--site-accent-contrast);font-size:10px;font-weight:700;font-family:sans-serif;text-align:center;pointer-events:none;';
+    badge.style.cssText = 'position:absolute;top:-5px;right:-5px;box-sizing:border-box;min-width:16px;height:16px;line-height:13px;border-radius:8px;border:1.5px solid var(--site-accent);background:var(--bs-body-bg,#fff);color:var(--site-accent);font-size:10px;font-weight:700;font-family:sans-serif;text-align:center;pointer-events:none;';
     badge.textContent = text;
     return badge;
   }
+
+  // The two corner badges are created below but also updated from the
+  // exposed API, so they live at module scope.
+  var themeBadge = null;
+  var fontBadge = null;
 
   // Create toggle button after DOM loads
   document.addEventListener('DOMContentLoaded', function() {
@@ -135,7 +223,7 @@
       btn.style.transform = 'scale(1)';
     });
 
-    var themeBadge = makeBadge(String(themes.indexOf(localStorage.getItem('site-theme') || 'default') + 1));
+    themeBadge = makeBadge(String(themes.indexOf(localStorage.getItem('site-theme') || 'default') + 1));
     btn.appendChild(themeBadge);
 
     btn.addEventListener('click', function() {
@@ -147,6 +235,7 @@
       localStorage.setItem('site-theme', next);
       setGiscusTheme(next);
       themeBadge.textContent = String(themes.indexOf(next) + 1);
+      announce('theme');
     });
 
     document.body.appendChild(btn);
@@ -162,7 +251,7 @@
     for (var fi = 0; fi < fonts.length; fi++) {
       if (fonts[fi].id === (localStorage.getItem('site-font') || 'default')) savedFontIdx = fi;
     }
-    var fontBadge = makeBadge(String(savedFontIdx + 1));
+    fontBadge = makeBadge(String(savedFontIdx + 1));
     fbtn.appendChild(fontBadge);
 
     fbtn.addEventListener('mouseenter', function() {
@@ -173,6 +262,9 @@
     });
 
     fbtn.addEventListener('click', function() {
+      // Choosing one of the built-in font themes is how a reader gets out
+      // of a custom one set by the typography tool.
+      clearCustomFont(true);
       var current = localStorage.getItem('site-font') || 'default';
       var idx = -1;
       for (var i = 0; i < fonts.length; i++) {
@@ -184,8 +276,48 @@
       localStorage.setItem('site-font', next.id);
       fbtn.title = next.title;
       fontBadge.textContent = String((idx + 1) % fonts.length + 1);
+      announce('font');
     });
 
     document.body.appendChild(fbtn);
   });
+
+  // --- Public API --------------------------------------------------------
+  // The typography tool drives the site chrome through this, so the theme
+  // classes, the badges, the giscus theme, and the storage keys keep a
+  // single owner. Everything here is localStorage only.
+  window.siteChrome = {
+    themes: themes,
+
+    getTheme: function() {
+      try { return localStorage.getItem('site-theme') || 'default'; } catch (e) { return 'default'; }
+    },
+
+    // persist false previews a theme on this page only, leaving the saved
+    // preference alone so the corner button still restores it.
+    setTheme: function(id, persist) {
+      applyTheme(id);
+      setGiscusTheme(id);
+      if (persist) {
+        try { localStorage.setItem('site-theme', id); } catch (e) {}
+        if (themeBadge) themeBadge.textContent = String(themes.indexOf(id) + 1);
+      }
+    },
+
+    hasCustomFont: hasCustomFont,
+    readCustomFont: readCustomFont,
+    applyCustomFont: applyCustomFont,
+
+    saveCustomFont: function(cfg) {
+      try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(cfg)); } catch (e) {}
+      applyCustomFont(cfg);
+    },
+
+    // forget false drops the styling but keeps the stored choice, which is
+    // what a page-scoped undo needs when a site-wide choice is also saved.
+    clearCustomFont: function(forget) {
+      clearCustomFont(forget !== false);
+      applyFont(localStorage.getItem('site-font') || 'default');
+    }
+  };
 })();
