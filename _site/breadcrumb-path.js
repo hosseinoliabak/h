@@ -9,14 +9,25 @@
     var meta = document.querySelector(".quarto-title-meta");
     if (!meta) return;
 
-    // --- Resolve any href to a root-relative "dir/dir/file.html" path -----------
+    // --- Resolve any href to a root-relative "dir/dir/" or "dir/file.html" path -
+    // Quarto emits ".../index.html" in the source, but the navbar hrefs are
+    // rewritten to clean directory URLs at runtime. Both forms collapse to the
+    // same key so the label lookup works whichever one is in the DOM.
     function normPath(href) {
       if (!href) return null;
       try {
-        return new URL(href, window.location.href).pathname.replace(/^\/+/, "");
+        var p = new URL(href, window.location.href).pathname.replace(/^\/+/, "");
+        return p.replace(/(^|\/)index\.html?$/, "$1");
       } catch (e) {
         return null;
       }
+    }
+
+    // Section names carry a full course title ("Improving Deep Neural Networks:
+    // Hyperparameter Tuning, Regularization and Optimization"). A breadcrumb only
+    // needs the leading phrase.
+    function shortLabel(text) {
+      return text.split(/[:,]/)[0].trim() || text;
     }
 
     // --- Label lookups built from the navbar -----------------------------------
@@ -24,13 +35,25 @@
     var topSegToText = {}; // "machine-learning"                -> "Machine Learning"
 
     document.querySelectorAll(".navbar a[href]").forEach(function (a) {
+      // Dropdown toggles open a menu rather than pointing anywhere. Their href
+      // is "#" in the source but gets rewritten to "<current page>#" at runtime,
+      // so match on the toggle itself instead of on the href shape.
+      if (a.classList.contains("dropdown-toggle")) return;
       var href = a.getAttribute("href");
-      // Dropdown toggles use href="#", which resolves to the current page and
-      // would clobber that page's real label. Skip fragment-only links.
       if (!href || href.charAt(0) === "#") return;
       var p = normPath(href);
       var t = (a.textContent || "").trim();
       if (p && t) pathToText[p] = t;
+    });
+
+    // An archived section is deliberately absent from the navbar, so fall back
+    // to the sidebar, whose first entry links to the section index under its
+    // proper name. Navbar labels win, so this only fills gaps. The "Archived"
+    // badge is a CSS pseudo-element and never lands in textContent.
+    document.querySelectorAll("#quarto-sidebar a[href]").forEach(function (a) {
+      var p = normPath(a.getAttribute("href"));
+      var t = (a.textContent || "").trim();
+      if (p && t && !pathToText[p]) pathToText[p] = t;
     });
 
     document.querySelectorAll(".navbar .dropdown, .navbar .nav-item.dropdown")
@@ -63,9 +86,10 @@
     var crumbs = [];
     dirs.forEach(function (dir, i) {
       var indexPath = dirs.slice(0, i + 1).join("/") + "/index.html";
-      var label = i === 0
-        ? (topSegToText[dir] || pathToText[indexPath] || titleCase(dir))
-        : (pathToText[indexPath] || titleCase(dir));
+      var named = i === 0
+        ? (topSegToText[dir] || pathToText[normPath("/" + indexPath)])
+        : pathToText[normPath("/" + indexPath)];
+      var label = named ? shortLabel(named) : titleCase(dir);
       crumbs.push({ label: label, href: "/" + indexPath });
     });
 
