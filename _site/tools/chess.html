@@ -349,6 +349,7 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
+<link rel="stylesheet" href="chess-assets/board-field.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=PT+Sans:wght@400;700&display=swap');
 body { font-family: 'PT Sans', sans-serif; }
@@ -491,6 +492,8 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 .chess-wrap.th-marble .sq.dark {
   background-image: linear-gradient(125deg, rgba(255,255,255,.13), rgba(255,255,255,0) 35%, rgba(255,255,255,.05) 60%, rgba(0,0,0,.22));
 }
+/* the Battlefield theme's stone and grass live in chess-assets/board-field.css,
+   shared with the Daily Puzzles board */
 .sq .coord { position:absolute; font-size:min(1.7vw,11px); font-weight:700; opacity:.75; pointer-events:none; font-family:'Nunito',sans-serif; }
 .sq .coord.file { right:3px; bottom:1px; }
 .sq .coord.rank { left:3px; top:2px; }
@@ -1054,9 +1057,19 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
             <button id="anaUndoBtn">Undo</button>
             <button id="anaReviewBtn">Review game</button>
             <button id="anaPassBtn">Pass turn</button>
-            <button id="anaPlayBtn">Play vs bot from here</button>
+            <button id="anaPlayBtn">Play vs Kira from here</button>
             <button id="anaNewBtn" style="border-color:#2c7be5;color:#2c7be5;">New analysis</button>
             <button id="anaExitBtn" style="color:#e74c3c;">Exit</button>
+            <select id="anaMaiaSel" class="theme-sel" title="Second opinion: a neural net's pick, drawn in amber" style="font-size:12.5px;">
+              <option value="">2nd view: off</option>
+              <option value="t70-703810" data-label="Leela" data-bot="quinn">Leela T70</option>
+              <option value="maia-1100" data-label="a 1100 human" data-human="1" data-bot="fiona">Human 1100</option>
+              <option value="maia-1300" data-label="a 1300 human" data-human="1" data-bot="grace">Human 1300</option>
+              <option value="maia-1400" data-label="a 1400 human" data-human="1" data-bot="henry">Human 1400</option>
+              <option value="maia-1600" data-label="a 1600 human" data-human="1" data-bot="iris">Human 1600</option>
+              <option value="maia-1700" data-label="a 1700 human" data-human="1" data-bot="jack">Human 1700</option>
+              <option value="maia-1900" data-label="a 1900 human" data-human="1" data-bot="kira" selected="">Human 1900</option>
+            </select>
             <select id="themeSelAna" class="theme-sel" title="Board theme" style="font-size:12.5px;"></select>
           </div>
           <div class="ana-fen"><input id="anaFenIn" placeholder="paste a FEN or a PGN / move list" spellcheck="false"><button class="hint-btn" id="anaFenBtn" style="padding:4px 9px;">Load</button></div>
@@ -1069,7 +1082,8 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
             </div>
             <div class="ana-row">
               <button id="anaClearBtn">Clear board</button>
-              <button id="anaDoneBtn" style="border-color:var(--site-accent);color:var(--site-accent);">Done</button>
+              <button id="anaSetupFlipBtn">Flip</button>
+              <button id="anaDoneBtn" style="border-color:var(--site-accent);color:var(--site-accent);" title="Leave setup and analyze the position you just built">Analyze this position</button>
               <button id="anaCancelBtn">Cancel</button>
             </div>
             <div class="engine-note" id="anaSetupNote">Pick a piece, then click squares to place it. Pick the ✕ to erase. Both kings are required.</div>
@@ -1302,8 +1316,9 @@ const THEMES = {
   green:   { light:'#ffffdd', dark:'#86a666', label:'Tournament Green' },
   blue:    { light:'#dee3e6', dark:'#8ca2ad', label:'Ice Blue' },
   walnut:  { light:'#e3c193', dark:'#a1683f', label:'Walnut' },
-  marble:  { light:'#dfe6ee', dark:'#42474f', label:'Marble' },
+  marble:  { light:'#dfe6ee', dark:'#42474f', label:'Marble', cls:'th-marble' },
   slate:   { light:'#d1d5d9', dark:'#7a8290', label:'Slate' },
+  field:   { light:'#e7e1d4', dark:'#5c7d40', label:'Battlefield', cls:'th-field' },
 };
 const FILES = 'abcdefgh';
 const PIECE_SRC = p => `chess-assets/pieces/${p.color}${p.type.toUpperCase()}.svg`;
@@ -1547,8 +1562,7 @@ class Engine {
    value-head lookahead. Stockfish still runs the coach, the eval bar and all
    grading, and remains the fallback when the network cannot load. */
 const leelaNets = new Map();          // net file stem -> Promise<LeelaNet>
-function ensureLeela(bot) {
-  const stem = bot.leela.net;
+function ensureLeelaNet(stem) {
   if (!leelaNets.has(stem))
     leelaNets.set(stem, new LeelaNet().load(stem + '.onnx.gz').catch(e => {
       leelaNets.delete(stem);         // allow a retry on a later game
@@ -1556,6 +1570,7 @@ function ensureLeela(bot) {
     }));
   return leelaNets.get(stem);
 }
+function ensureLeela(bot) { return ensureLeelaNet(bot.leela.net); }
 
 /* the game line as FENs, oldest first, for the net's 8-position history */
 function gameFens() {
@@ -1666,17 +1681,17 @@ const CLASSICAL_HINT_MS = 60000;   // 90+30: piece-only nudge after a minute of 
 /* ============================== setup screen ============================== */
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
-/* Marble is the default. The stored value is written only when the player picks a
-   theme deliberately; the old v1 key was auto-saved on every visit, so only a
-   non-classic value migrates from it. */
+/* Battlefield is the default. The stored value is written only when the player
+   picks a theme deliberately; the old v1 key was auto-saved on every visit, so
+   only a non-classic value migrates from it. */
 let chosen = { color:'w', tc:'15+10', coach:'on', pace:'real',
                theme: (() => {
                  const v2 = lsGet('chess-trainer-theme2');
                  if (v2) return v2 === 'mac' ? 'marble' : v2;
                  const old = lsGet('chess-trainer-theme');
-                 return old && old !== 'classic' ? old : 'marble';
+                 return old && old !== 'classic' ? old : 'field';
                })() };
-if (!THEMES[chosen.theme]) chosen.theme = 'marble';
+if (!THEMES[chosen.theme]) chosen.theme = 'field';
 
 const themeSel = $('themeSel'), themeSelGame = $('themeSelGame');
 const themeSels = [themeSel, themeSelGame, $('themeSelTrain'), $('themeSelAna')];
@@ -1701,7 +1716,8 @@ function applyBoardLook() {
   const wrap = document.querySelector('.chess-wrap');
   wrap.style.setProperty('--sq-light', t.light);
   wrap.style.setProperty('--sq-dark', t.dark);
-  wrap.classList.toggle('th-marble', chosen.theme === 'marble');
+  for (const [key, th] of Object.entries(THEMES))
+    if (th.cls) wrap.classList.toggle(th.cls, chosen.theme === key);
 }
 const botGrid = $('botGrid');
 /* ---------- local progress storage (this browser only) ---------- */
@@ -2646,6 +2662,14 @@ function renderClocks() {
 /* ============================== board render ============================== */
 function other(c) { return c === 'w' ? 'b' : 'w'; }
 function sqColor(f, r) { return (f + r) % 2 === 0 ? 'dark' : 'light'; }  // f,r 0-indexed from a1
+/* Which Battlefield highlight placement a square gets (see board-field.css).
+   A 4x4 tile rather than a formula: anything linear in f and r has the same
+   parity as f+r, so one square colour would only ever see two of the four
+   variants. This tile hands all four to the light squares and all four to the
+   dark ones. Keyed on the square, not the screen cell, so a square keeps its
+   look when the board is flipped. */
+const BF_TILE = [0,1,2,3,  2,1,0,3,  3,0,1,2,  3,2,1,0];
+function bfVariant(f, r) { return BF_TILE[(r % 4) * 4 + (f % 4)]; }
 let boardFlip = false;   // "Flip board": view from the other side without changing sides
 function viewColor() { return boardFlip ? other(playerColor) : playerColor; }
 function orient(sq) {
@@ -2665,7 +2689,7 @@ function renderBoard() {
     const sq = squareAt(x, y);
     const f = FILES.indexOf(sq[0]), r = +sq[1] - 1;
     const d = document.createElement('div');
-    d.className = `sq ${sqColor(f, r)}`;
+    d.className = `sq ${sqColor(f, r)} bf-v${bfVariant(f, r)}`;
     d.dataset.sq = sq;
     let piece = game.get(sq) || null;
     /* ghost rendering: show the tentative move before it is committed */
@@ -3108,7 +3132,9 @@ function clearHints() {
   arrowLayer.innerHTML = '';   // also relied on by other modes' "reveal answer" arrows
   renderGameLines();          // hides itself once phase/mode no longer qualify
 }
-function arrowSVG(from, to, color) {
+/* scale thins the whole arrow (shaft and head together) without moving its ends,
+   so a set of arrows can rank itself by weight while all still point square to square */
+function arrowSVG(from, to, color, scale = 1) {
   const a = orient(from), b = orient(to);
   const x1 = a.x + .5, y1 = a.y + .5, x2 = b.x + .5, y2 = b.y + .5;
   const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy);
@@ -3116,10 +3142,10 @@ function arrowSVG(from, to, color) {
   const ux = dx / len, uy = dy / len;
   const sx = x1 + ux * .35, sy = y1 + uy * .35;
   const ex = x2 - ux * .32, ey = y2 - uy * .32;
-  const hw = .17, hl = .3;
+  const hw = .17 * scale, hl = .3 * scale;
   const bx = ex - ux * hl, by = ey - uy * hl;
   return `
-    <line x1="${sx}" y1="${sy}" x2="${bx}" y2="${by}" stroke="${color}" stroke-width="0.16" stroke-linecap="round"/>
+    <line x1="${sx}" y1="${sy}" x2="${bx}" y2="${by}" stroke="${color}" stroke-width="${(.16 * scale).toFixed(3)}" stroke-linecap="round"/>
     <polygon points="${ex},${ey} ${bx - uy * hw},${by + ux * hw} ${bx + uy * hw},${by - ux * hw}" fill="${color}"/>`;
 }
 function drawArrow(from, to) {
@@ -4395,6 +4421,8 @@ function enterAnalysis() {
   anaAnalyse();
 }
 let anaThreat = null;   // best move for the side NOT on turn: the standing threat
+let anaMaia = null;     // { uci, san, prob, label, human }: the second-opinion net's pick
+let anaMaiaWait = '';   // label of the net still downloading, for the "loading" row
 let anaGrades = [];          // per-ply grade of the current move list (game review)
 let anaPendingGrade = null;  // hand-played move waiting for the live analysis to grade it
 let anaRevSeq = 0;           // bumps to abandon a running review
@@ -4420,12 +4448,39 @@ function anaThreatSearch(fen, seq, live) {
     scheduleAnaDraw();
   }).catch(() => {});
 }
+/* Maia's policy head is one forward pass, so the "what would a human play" arrow
+   costs a single evaluation and no search. temperature 0 takes the net's most
+   likely move rather than sampling one, which is what an advice arrow wants. */
+function anaMaiaProbe(fen, live) {
+  const opt = $('anaMaiaSel').selectedOptions[0];
+  const stem = opt && opt.value;
+  if (!stem) return;
+  const label = opt.dataset.label, human = !!opt.dataset.human;
+  /* capture the position now: the net download can outlast this position */
+  const fens = gameFens();
+  const legal = game.moves({ verbose: true }).map(m => m.from + m.to + (m.promotion || ''));
+  const black = game.turn() === 'b';
+  if (!legal.length) return;
+  if (!leelaNets.has(stem)) { anaMaiaWait = label; scheduleAnaDraw(); }
+  return ensureLeelaNet(stem)
+    .then(net => net.evaluate(fens))
+    .then(({ policy }) => {
+      if (anaMaiaWait === label) anaMaiaWait = '';
+      if (!live()) return;
+      const res = leelaChoose(policy, legal, black, { temperature: 0 });
+      if (!res) return;
+      anaMaia = { uci: res.uci, san: uciToSan(fen, res.uci), prob: res.prob, label, human };
+      scheduleAnaDraw();
+    })
+    .catch(() => { if (anaMaiaWait === label) { anaMaiaWait = ''; scheduleAnaDraw(); } });
+}
 function anaAnalyse() {
   if (mode !== 'analysis' || anaSetup) return;
   const fen = game.fen();
   const seq = ++anaSeq;
   anaLines = [null, null, null];
   anaThreat = null;
+  anaMaia = null;
   anaLinesDraw();
   anaStopSearches();
   if (game.isGameOver()) {
@@ -4449,6 +4504,7 @@ function anaAnalyse() {
     scheduleAnaDraw();
   };
   const inCheck = game.inCheck();
+  anaMaiaProbe(fen, live);   // separate runtime from the engine worker, so it runs alongside
   engine.analyseMulti(fen, take, 18)
     .then(() => { if (live() && !inCheck) return anaThreatSearch(fen, seq, live); })
     .then(() => { if (live()) return engine.analyseMulti(fen, take, 30); })
@@ -4480,6 +4536,19 @@ function anaLinesDraw() {
     return `<div class="al-row"><span class="al-ev" style="color:${cpW >= 0 ? '#27ae60' : '#e74c3c'}">${fmtEval(cpW)}</span>` +
            ` <span style="color:#999;">d${l.depth}</span> ${pvToSan(fen, l.pv, 8)}</div>`;
   }).join('');
+  if (anaMaiaWait)
+    html += `<div class="al-row" style="color:#bbb;">loading the net for ${anaMaiaWait}…</div>`;
+  else if (anaMaia) {
+    const agrees = anaMaia.uci === (anaLines[0] && anaLines[0].pv && anaLines[0].pv[0]);
+    const pct = Math.round(anaMaia.prob * 100);
+    /* a Maia percentage is how often that rating plays the move; Leela's is a policy
+       prior from one look at the position, with no search behind it */
+    html += `<div class="al-row" style="color:#b57a1a;">♟ ` +
+            (anaMaia.human
+              ? `${anaMaia.label.replace(/^a/, 'A')} plays <b>${anaMaia.san || anaMaia.uci}</b> (${pct}% of the time)`
+              : `${anaMaia.label} likes <b>${anaMaia.san || anaMaia.uci}</b> on instinct (policy ${pct}%, no search)`) +
+            `${agrees ? ', the engine’s top choice too' : ''}</div>`;
+  }
   if (anaThreat)
     html += `<div class="al-row" style="color:#b05555;">⚠ If it were ${stm === 'w' ? 'Black' : 'White'} to move: ` +
             `<b>${anaThreat.san || anaThreat.uci}</b> (${fmtEval(anaThreat.cpW)})</div>`;
@@ -4487,11 +4556,29 @@ function anaLinesDraw() {
   anaDrawArrows();
   whyRender();
 }
+/* One blue per engine line, ranked by weight and alpha rather than by hue, so the
+   board encodes "how good" in one channel and leaves color free to mean "whose
+   idea": blue is Stockfish, amber is the human net, red is the opponent's threat. */
+const ANA_RANK = [
+  { color:'rgba(44,123,229,.85)', scale:1   },
+  { color:'rgba(44,123,229,.50)', scale:.78 },
+  { color:'rgba(44,123,229,.32)', scale:.60 },
+];
+const ANA_MAIA_COLOR = 'rgba(224,150,26,.78)';
 function anaDrawArrows() {
   if (mode !== 'analysis' || anaSetup) return;
+  const picks = [];
+  anaLines.forEach((l, i) => {
+    const uci = l && l.pv && l.pv[0];
+    if (uci && !picks.some(p => p.uci === uci)) picks.push({ uci, ...ANA_RANK[i] });
+  });
   let svg = '';
-  const best = anaLines[0] && anaLines[0].pv && anaLines[0].pv[0];
-  if (best) svg += arrowSVG(best.slice(0, 2), best.slice(2, 4), 'rgba(44,123,229,.8)');
+  /* the human arrow goes down first and the lines paint back to front, so the
+     best move stays on top wherever two arrows cross */
+  if (anaMaia && anaMaia.uci && !picks.some(p => p.uci === anaMaia.uci))
+    svg += arrowSVG(anaMaia.uci.slice(0, 2), anaMaia.uci.slice(2, 4), ANA_MAIA_COLOR, .82);
+  for (let i = picks.length - 1; i >= 0; i--)
+    svg += arrowSVG(picks[i].uci.slice(0, 2), picks[i].uci.slice(2, 4), picks[i].color, picks[i].scale);
   if (anaThreat && anaThreat.uci)
     svg += arrowSVG(anaThreat.uci.slice(0, 2), anaThreat.uci.slice(2, 4), 'rgba(231,76,60,.5)');
   arrowLayer.innerHTML = svg;
@@ -5106,7 +5193,42 @@ $('anaNewBtn').onclick = () => {
   enterAnalysis();
 };
 $('anaExitBtn').onclick = exitTraining;
-$('anaFlipBtn').onclick = () => { if (mode === 'analysis') { playerColor = other(playerColor); renderBoard(); } };
+/* the setup UI hides anaCtrls, so setup gets its own Flip button: a position built
+   from Black's point of view should be arranged from Black's side of the board */
+const anaFlip = () => { if (mode === 'analysis') { playerColor = other(playerColor); renderBoard(); } };
+$('anaFlipBtn').onclick = anaFlip;
+$('anaSetupFlipBtn').onclick = anaFlip;
+/* Sparring partner follows the second opinion: every net on that menu has exactly
+   one persona built on it, so the amber arrow and the opponent are the same brain.
+   Watch a 1600's blind spots, then play the 1600. With the menu off there is no net
+   to match, so it falls back to Kira, the strongest of the human-like ones. */
+function anaSparBot() {
+  const opt = $('anaMaiaSel').selectedOptions[0];
+  const id = (opt && opt.dataset.bot) || 'kira';
+  return BOTS.find(b => b.id === id) || BOTS.find(b => b.id === 'kira');
+}
+function anaPlayLabel() {
+  const b = anaSparBot();
+  $('anaPlayBtn').textContent = `Play vs ${b.name} from here`;
+  $('anaPlayBtn').title = `${bName(b)} · ${b.eloLabel || b.elo} Elo — ${b.blurb}`;
+}
+/* which net to consult is a preference, not per-session state */
+{
+  const saved = lsGet('chess-ana-human');
+  if (saved !== null && [...$('anaMaiaSel').options].some(o => o.value === saved))
+    $('anaMaiaSel').value = saved;
+  anaPlayLabel();
+}
+$('anaMaiaSel').onchange = () => {
+  lsSet('chess-ana-human', $('anaMaiaSel').value);
+  anaMaia = null; anaMaiaWait = '';
+  anaPlayLabel();
+  if (mode !== 'analysis' || anaSetup) return;
+  /* re-probe on its own guard: the running engine searches stay untouched */
+  const fen = game.fen(), seq = anaSeq;
+  anaLinesDraw();
+  anaMaiaProbe(fen, () => seq === anaSeq && mode === 'analysis' && !anaSetup && game.fen() === fen);
+};
 $('anaPassBtn').onclick = () => {
   if (mode !== 'analysis' || anaSetup) return;
   if (game.inCheck()) { coachMsg.textContent = 'Cannot pass the turn while the side to move is in check.'; return; }
@@ -5149,7 +5271,7 @@ $('anaSetupBtn').onclick = () => {
   $('anaLines').innerHTML = '';
   $('anaSetupNote').textContent = 'Drag pieces from the palette onto the board, drag pieces around, or drag them off the board to remove them. Clicking works too: pick a palette piece (or the ✕ eraser), then click squares. Both kings are required.';
   selected = null; lastMove = null;
-  coachMsg.textContent = 'Setup mode. Arrange the position, choose who moves, then press Done.';
+  coachMsg.textContent = 'Setup mode. Arrange the position, choose who moves, then press Analyze this position.';
   renderBoard();
 };
 $('anaClearBtn').onclick = () => { if (anaSetup) { game.clear(); renderBoard(); } };
@@ -5197,6 +5319,7 @@ $('anaTurnSeg').querySelectorAll('button').forEach(btn => {
 });
 $('anaPlayBtn').onclick = () => {
   if (mode !== 'analysis' || anaSetup || game.isGameOver()) return;
+  selectBot(anaSparBot());
   startCustomGame(game.fen());
 };
 buildAnaPal();
