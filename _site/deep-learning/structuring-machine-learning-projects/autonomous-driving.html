@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-10">
+<meta name="description" content="A machine learning flight simulator case study on autonomous driving covering error analysis, data mismatch, data synthesis, and transfer versus end-to-end learning.">
+
+<title>Case Study: Autonomous Driving – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../deep-learning/structuring-machine-learning-projects/end-to-end-deep-learning.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-87fe4da730787eeec4a7ec728bf0e0b5.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="Case Study: Autonomous Driving – H’s Notes">
+<meta property="og:description" content="A machine learning flight simulator case study on autonomous driving covering error analysis, data mismatch, data synthesis, and transfer versus end-to-end learning.">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Case Study: Autonomous Driving – H’s Notes">
+<meta name="twitter:description" content="A machine learning flight simulator case study on autonomous driving covering error analysis, data mismatch, data synthesis, and transfer versus end-to-end learning.">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../networking/archive.html">
+ <span class="dropdown-text">Archive</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/asn-converter.html">
+ <span class="dropdown-text">ASN Converter</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text Generator</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/graph.html">
+ <span class="dropdown-text">Function Grapher</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-viewer.html">
+ <span class="dropdown-text">SVG Viewer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/color-palette.html">
+ <span class="dropdown-text">Color Palette Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/typography.html">
+ <span class="dropdown-text">Typography Designer</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../deep-learning/structuring-machine-learning-projects/autonomous-driving.html">Case Study: Autonomous Driving</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/structuring-machine-learning-projects/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Structuring Machine Learning Projects</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/structuring-machine-learning-projects/introduction-to-ml-strategy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to ML Strategy</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/structuring-machine-learning-projects/setting-up-your-goal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Setting Up Your Goal</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/structuring-machine-learning-projects/comparing-to-human-level-performance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Comparing to Human-Level Performance</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/structuring-machine-learning-projects/bird-recognition-in-peacetopia.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Case Study: Bird Recognition in the City of Peacetopia</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/structuring-machine-learning-projects/error-analysis.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Error Analysis</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/structuring-machine-learning-projects/mismatched-training-and-dev-test-sets.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mismatched Training and Dev/Test Sets</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/structuring-machine-learning-projects/learning-from-multiple-tasks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning from Multiple Tasks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/structuring-machine-learning-projects/end-to-end-deep-learning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">End-to-End Deep Learning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/structuring-machine-learning-projects/autonomous-driving.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Case Study: Autonomous Driving</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#problem-statement" id="toc-problem-statement" class="nav-link active" data-scroll-target="#problem-statement">Problem Statement</a></li>
+  <li><a href="#getting-started" id="toc-getting-started" class="nav-link" data-scroll-target="#getting-started">Getting Started</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#working-with-two-data-sources" id="toc-working-with-two-data-sources" class="nav-link" data-scroll-target="#working-with-two-data-sources">Working with Two Data Sources</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#diagnosing-bias-variance-and-data-mismatch" id="toc-diagnosing-bias-variance-and-data-mismatch" class="nav-link" data-scroll-target="#diagnosing-bias-variance-and-data-mismatch">Diagnosing Bias, Variance, and Data Mismatch</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#error-analysis-on-the-dev-set" id="toc-error-analysis-on-the-dev-set" class="nav-link" data-scroll-target="#error-analysis-on-the-dev-set">Error Analysis on the Dev Set</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#transfer-learning-multi-task-learning-and-end-to-end" id="toc-transfer-learning-multi-task-learning-and-end-to-end" class="nav-link" data-scroll-target="#transfer-learning-multi-task-learning-and-end-to-end">Transfer Learning, Multi-Task Learning, and End-to-End</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-4" id="toc-review-questions-4" class="nav-link" data-scroll-target="#review-questions-4">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../nav-columns.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Case Study: Autonomous Driving</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">ml-strategy</div>
+    <div class="quarto-category">case-study</div>
+    <div class="quarto-category">flight-simulator</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    A machine learning flight simulator case study on autonomous driving covering error analysis, data mismatch, data synthesis, and transfer versus end-to-end learning.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 10, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~42 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,800 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p>This is the second machine learning flight simulator of the course. Like <a href="../../deep-learning/structuring-machine-learning-projects/bird-recognition-in-peacetopia.html">Bird Recognition in the City of Peacetopia</a>, it presents one project as a running story and asks you to make the decisions a real team faces. The first case study exercised metric choice and data splits. This one exercises the later material, meaning error analysis, handling mismatched training and dev/test distributions, transfer and multi-task learning, and the choice between a pipeline and an end-to-end system.</p>
+<section id="problem-statement" class="level2">
+<h2 class="anchored" data-anchor-id="problem-statement">Problem Statement</h2>
+<p>You are employed by a startup building self-driving cars. You are in charge of detecting road signs (stop sign, pedestrian crossing sign, construction ahead sign) and traffic signals (red and green lights) in images. The goal is to recognize which of these objects appear in each image. For example, an image showing a pedestrian crossing sign and red traffic lights would be labeled</p>
+<p><span class="math display">\[
+y^{(i)} = \begin{bmatrix} 0 \\ 1 \\ 0 \\ 1 \\ 0 \end{bmatrix}
+\begin{array}{l}
+\text{stop sign} \\
+\text{pedestrian crossing sign} \\
+\text{construction ahead sign} \\
+\text{red traffic light} \\
+\text{green traffic light}
+\end{array}
+\]</span></p>
+<p>Your 100,000 labeled images are taken using the front-facing camera of your car. This is also the distribution of data you care most about doing well on. You think you might be able to get a much larger dataset off the internet, which could be helpful for training even if the distribution of internet data is not the same.</p>
+</section>
+<section id="getting-started" class="level2">
+<h2 class="anchored" data-anchor-id="getting-started">Getting Started</h2>
+<p>The ideas behind this first group of questions come from <a href="../../deep-learning/structuring-machine-learning-projects/error-analysis.html#build-your-first-system-quickly-then-iterate">Build Your First System Quickly, Then Iterate</a>, <a href="../../deep-learning/structuring-machine-learning-projects/error-analysis.html#carrying-out-error-analysis">Carrying Out Error Analysis</a>, and <a href="../../deep-learning/structuring-machine-learning-projects/learning-from-multiple-tasks.html#multi-task-learning">Multi-task Learning</a>.</p>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. You are getting started with this project. What is the first thing you do? Assume each of the steps below would take about an equal amount of time (a few days).</strong></p>
+<ol type="a">
+<li><p>Spend some time searching the internet for the data most similar to the conditions you expect on production.</p></li>
+<li><p>Train a basic model and do error analysis.</p></li>
+<li><p>Spend a few days collecting more data using the front-facing camera of your car, to better understand how much data per unit time you can collect.</p></li>
+<li><p>Invest a few days in thinking on potential difficulties, and then some more days brainstorming about possible solutions, before training any model.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b.</strong> Applied machine learning is an iterative process, and the recommendation for a brand new application is to build a first system quickly and then iterate. A basic model plus error analysis replaces speculation with evidence, because the mistakes the model actually makes tell you whether internet data, more camera data, or something else entirely deserves the next few days. Options a, c, and d all spend days acting on guesses about what will matter before a single experiment has produced any signal.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Your goal is to detect road signs and traffic signals in images, and you plan to use a deep neural network with ReLU units in the hidden layers. Suppose that you use a sigmoid function for the output layer, and the output <span class="math inline">\(\hat{y}\)</span> has shape (5, 1). Which of the following best describes the cost function?</strong></p>
+<ol type="a">
+<li><p><span class="math inline">\(\displaystyle \frac{1}{m} \sum_{i=1}^{m} \left( -y^{(i)} \log \hat{y}^{(i)} - (1 - y^{(i)}) \log(1 - \hat{y}^{(i)}) \right)\)</span></p></li>
+<li><p><span class="math inline">\(\displaystyle \frac{1}{m} \sum_{i=1}^{m} \sum_{j=1}^{5} \mathcal{L}(\hat{y}_j^{(i)}, y_j^{(i)})\)</span></p></li>
+<li><p><span class="math inline">\(\displaystyle \frac{1}{m} \sum_{i=1}^{m} \sum_{j=1}^{5} \mathcal{L}(\hat{y}_i^{(j)}, y_i^{(j)})\)</span></p></li>
+<li><p><span class="math inline">\(\displaystyle \frac{\exp \hat{y}_j^{(i)}}{\sum_{j=1}^{5} \exp \hat{y}_j^{(i)}}\)</span></p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b.</strong> This is multi-task learning. One image can contain several of the five objects at once, so the network has five sigmoid output units, and the cost sums the logistic loss over the five components of each label vector and then averages over the <span class="math inline">\(m\)</span> training examples. The superscript <span class="math inline">\((i)\)</span> indexes training examples and the subscript <span class="math inline">\(j\)</span> indexes the five objects, which is exactly what option b writes. Option a is the cost for a single binary output. Option c swaps the two indices, so it sums over five training examples and averages over objects, which is not a meaningful quantity. Option d is a softmax activation rather than a cost function, and softmax would be wrong here anyway because it forces exactly one class per image while these images can contain several objects.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You are carrying out error analysis and counting up what errors the algorithm makes. Which of these datasets do you think you should manually go through and carefully examine, one image at a time?</strong></p>
+<ol type="a">
+<li><p>10,000 randomly chosen images</p></li>
+<li><p>10,000 images on which the algorithm made a mistake</p></li>
+<li><p>500 images on which the algorithm made a mistake</p></li>
+<li><p>500 randomly chosen images</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>c.</strong> Error analysis means looking at the examples the algorithm got wrong, because correctly classified images tell you nothing about what to fix. That rules out the two random samples, which would be dominated by correct predictions. Between the remaining two, around 100 to 500 mistakes is enough to estimate what fraction of errors falls into each category and therefore where the ceilings are, while hand-examining 10,000 mistakes costs twenty times the effort for very little extra precision. Keep the manual pass small enough to actually finish.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="working-with-two-data-sources" class="level2">
+<h2 class="anchored" data-anchor-id="working-with-two-data-sources">Working with Two Data Sources</h2>
+<p>After working on the data for several weeks, your team ends up with 100,000 labeled images taken from the front-facing camera and 900,000 labeled images of roads downloaded from the internet. Each image’s labels precisely indicate the presence of any specific road signs and traffic signals or combinations of them, so for example <span class="math inline">\(y^{(i)} = \begin{bmatrix} 1 &amp; 0 &amp; 0 &amp; 1 &amp; 0 \end{bmatrix}^T\)</span> means the image contains a stop sign and a red traffic light. These questions come from <a href="../../deep-learning/structuring-machine-learning-projects/learning-from-multiple-tasks.html#partially-labeled-data">Partially Labeled Data</a> and <a href="../../deep-learning/structuring-machine-learning-projects/mismatched-training-and-dev-test-sets.html#training-and-testing-on-different-distributions">Training and Testing on Different Distributions</a>.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. True or False: Because this is a multi-task learning problem, when an image is not fully labeled, for example <span class="math inline">\(y^{(i)} = \begin{bmatrix} 0 &amp; ? &amp; ? &amp; 1 &amp; 0 \end{bmatrix}^T\)</span>, you can use it if you ignore those entries when calculating the loss function.</strong></p>
+<ol type="a">
+<li><p>False</p></li>
+<li><p>True</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b. True.</strong> With one sigmoid unit per label, the inner sum of the cost only needs to run over the components that actually have a 0 or 1 label, skipping the question marks. A partially labeled image still contributes gradient signal for the objects that were labeled, so the data remains usable. This is one of the practical conveniences of the multi-task setup.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. True or False: The distribution of data you care about contains images from your car’s front-facing camera, which comes from a different distribution than the images you were able to find and download off the internet. The best way to split the data is using the 900,000 internet images to train, and divide the 100,000 images from your car’s front-facing camera between dev and test sets.</strong></p>
+<ol type="a">
+<li><p>False</p></li>
+<li><p>True</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a. False.</strong> Dev and test must indeed contain only front-facing camera images, but 50,000 examples each is far more than an evaluation needs, and every camera image parked in dev or test is one the training set never benefits from. A better split moves most of the camera images into training, for example 900,000 internet plus 80,000 camera images to train on, with 10,000 camera images each for dev and test. That keeps the target on the camera distribution while letting the algorithm see a substantial amount of data from the distribution it will be judged on, exactly as in the speech activated rearview mirror example.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="diagnosing-bias-variance-and-data-mismatch" class="level2">
+<h2 class="anchored" data-anchor-id="diagnosing-bias-variance-and-data-mismatch">Diagnosing Bias, Variance, and Data Mismatch</h2>
+<p>The splits are chosen and the error numbers start coming in. These questions come from <a href="../../deep-learning/structuring-machine-learning-projects/mismatched-training-and-dev-test-sets.html#bias-and-variance-with-mismatched-data-distributions">Bias and Variance with Mismatched Data Distributions</a>.</p>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. Assume you have finally chosen the following split between the data. You also know that human-level error on the road sign and traffic signals classification task is around 0.5%. Which of the following is true?</strong></p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 27%">
+<col style="width: 27%">
+<col style="width: 45%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Dataset</th>
+<th>Contains</th>
+<th style="text-align: center;">Error of the algorithm</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Training</td>
+<td>940,000 images randomly picked from (900,000 internet images + 60,000 car’s front-facing camera images)</td>
+<td style="text-align: center;">1%</td>
+</tr>
+<tr class="even">
+<td>Training-dev</td>
+<td>20,000 images randomly picked from (900,000 internet images + 60,000 car’s front-facing camera images)</td>
+<td style="text-align: center;">5.1%</td>
+</tr>
+<tr class="odd">
+<td>Dev</td>
+<td>20,000 images from your car’s front-facing camera</td>
+<td style="text-align: center;">5.6%</td>
+</tr>
+<tr class="even">
+<td>Test</td>
+<td>20,000 images from the car’s front-facing camera</td>
+<td style="text-align: center;">6.8%</td>
+</tr>
+</tbody>
+</table>
+<ol type="a">
+<li><p>The size of the train-dev set is too large.</p></li>
+<li><p>You have a high bias.</p></li>
+<li><p>You have a large data-mismatch problem.</p></li>
+<li><p>You have a high variance problem.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>d.</strong> Walk down the list of gaps. Avoidable bias is training error minus human-level error, 1% minus 0.5%, which is 0.5% and small. Variance is training-dev error minus training error, 5.1% minus 1%, which is 4.1% and by far the largest gap. Data mismatch is dev error minus training-dev error, 5.6% minus 5.1%, which is 0.5% and small. The error jumps on data from the very same distribution the network trained on but never saw, so the network is failing to generalize, which is a variance problem. Option a is wrong because 20,000 examples is a perfectly reasonable training-dev size, and options b and c point at the two small gaps.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Assume you have finally chosen the following split between the data. Human-level error on this task is approximately 0.5%, and human-level error is a good estimation of Bayes error. True or False: Based on this, the Bayes error for the car camera images (dev/test) is higher than the Bayes error for the mixed internet/car images (training).</strong></p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 27%">
+<col style="width: 27%">
+<col style="width: 45%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Dataset</th>
+<th>Contains</th>
+<th style="text-align: center;">Error of the algorithm</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Training</td>
+<td>940,000 images randomly picked from (900,000 internet images + 60,000 car’s front-facing camera images)</td>
+<td style="text-align: center;">2%</td>
+</tr>
+<tr class="even">
+<td>Training-dev</td>
+<td>20,000 images randomly picked from (900,000 internet images + 60,000 car’s front-facing camera images)</td>
+<td style="text-align: center;">2.3%</td>
+</tr>
+<tr class="odd">
+<td>Dev</td>
+<td>20,000 images from your car’s front-facing camera</td>
+<td style="text-align: center;">1.3%</td>
+</tr>
+<tr class="even">
+<td>Test</td>
+<td>20,000 images from the car’s front-facing camera</td>
+<td style="text-align: center;">1.1%</td>
+</tr>
+</tbody>
+</table>
+<ol type="a">
+<li><p>True</p></li>
+<li><p>False</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b. False.</strong> The first two rows are measured on the mixed distribution and the last two on the camera distribution, and the numbers go down when you cross that boundary, from 2.3% on training-dev to 1.3% on dev and 1.1% on test. The algorithm performs better on the camera images than on the data it was trained on, which suggests the camera images are the easier distribution. That is evidence that their Bayes error is, if anything, lower than for the mixed internet and car images, not higher. This is the situation from the <a href="../../deep-learning/structuring-machine-learning-projects/mismatched-training-and-dev-test-sets.html#more-general-formulation">more general formulation</a>, where the dev and test distribution happens to be easier and the usual always-increasing pattern of errors reverses.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="error-analysis-on-the-dev-set" class="level2">
+<h2 class="anchored" data-anchor-id="error-analysis-on-the-dev-set">Error Analysis on the Dev Set</h2>
+<p>You decide to focus on the dev set and check by hand what the errors are due to. Here is a table summarizing your discoveries.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 37%">
+<col style="width: 62%">
+</colgroup>
+<tbody>
+<tr class="odd">
+<td>Overall dev set error</td>
+<td style="text-align: center;">15.3%</td>
+</tr>
+<tr class="even">
+<td>Errors due to incorrectly labeled data</td>
+<td style="text-align: center;">4.1%</td>
+</tr>
+<tr class="odd">
+<td>Errors due to foggy pictures</td>
+<td style="text-align: center;">8.0%</td>
+</tr>
+<tr class="even">
+<td>Errors due to rain drops stuck on your car’s front-facing camera</td>
+<td style="text-align: center;">2.2%</td>
+</tr>
+<tr class="odd">
+<td>Errors due to other causes</td>
+<td style="text-align: center;">1.0%</td>
+</tr>
+</tbody>
+</table>
+<p>In this table, 4.1%, 8.0%, and so on are a fraction of the total dev set, not just of the examples your algorithm mislabeled. For example, about 8.0/15.3 = 52% of your errors are due to foggy pictures. These questions come from <a href="../../deep-learning/structuring-machine-learning-projects/error-analysis.html#carrying-out-error-analysis">Carrying Out Error Analysis</a>, <a href="../../deep-learning/structuring-machine-learning-projects/mismatched-training-and-dev-test-sets.html#addressing-data-mismatch">Addressing Data Mismatch</a>, and <a href="../../deep-learning/structuring-machine-learning-projects/error-analysis.html#cleaning-up-incorrectly-labeled-data">Cleaning Up Incorrectly Labeled Data</a>.</p>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. True or False: Should the team’s highest priority be to bring more foggy pictures into the training set to address the 8.0% of errors in that category?</strong></p>
+<ol type="a">
+<li><p>True because it is the largest category of errors. We should always prioritize the largest category of errors as this will make the best use of the team’s time.</p></li>
+<li><p>First start with the sources of error that are least costly to fix.</p></li>
+<li><p>False because it depends on how easy it is to add foggy data. If foggy data is very hard and costly to collect, it might not be worth the team’s effort.</p></li>
+<li><p>True because it is greater than the other error categories added together (8.0 &gt; 4.1 + 2.2 + 1.0).</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>c.</strong> The 8.0% figure is a ceiling, meaning the most that perfect performance on foggy images could improve the overall error. A ceiling tells you the potential value of a fix, but choosing what to work on weighs that value against the cost and feasibility of the fix, and collecting or synthesizing enough foggy data might be very expensive. Options a and d turn the largest category into an automatic winner, which ignores that trade-off entirely, and option b makes the opposite mistake by ranking on cost alone while ignoring how much each fix could possibly buy.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You can buy a specially designed windshield wiper that helps wipe off some of the raindrops on the front-facing camera. Which one of the following statements do you agree with?</strong></p>
+<ol type="a">
+<li><p>2.2% would be a reasonable estimate of the maximum amount this windshield wiper could improve performance.</p></li>
+<li><p>2.2% would be a reasonable estimate of the minimum amount this windshield wiper could improve performance.</p></li>
+<li><p>2.2% would be a reasonable estimate of how much this windshield wiper could worsen performance in the worst case.</p></li>
+<li><p>2.2% would be a reasonable estimate of how much this windshield wiper will improve performance.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a.</strong> Raindrop errors account for 2.2% of the dev set, so even a wiper that removed every raindrop perfectly could reduce the overall error by at most 2.2 percentage points. The realistic gain is smaller, since the wiper only wipes off some of the drops and some raindrop images might be misclassified for other reasons too. That makes 2.2% a ceiling, not a guarantee, which is why options b and d overpromise. Option c is about a risk the table says nothing about.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You decide to use data augmentation to address foggy images. You find 1,000 pictures of fog off the internet and “add” them to clean images to synthesize foggy days. Which one of the following do you agree with?</strong></p>
+<ol type="a">
+<li><p>With this technique, we duplicate the size of the training set by synthesizing a new foggy image for each image in the training set.</p></li>
+<li><p>If used, the synthetic data should be added to the training/dev/test sets in equal proportions.</p></li>
+<li><p>If used, the synthetic data should be added to the training set.</p></li>
+<li><p>It is irrelevant how the resulting foggy images are perceived by the human eye; the most important thing is that they are correctly synthesized.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>c.</strong> Artificial data synthesis is a training set technique. The dev and test sets define the target and must contain only real images from the front-facing camera, so synthetic images have no place there, which also rules out option b. Option d has it backwards, because if the synthesized fog does not look like real fog to a person, there is little reason to expect it to match what the camera will see, and the whole point is to move the training data closer to the real distribution. Option a describes something the technique does not require, and pasting the same 1,000 fog patterns across the entire training set would risk the <a href="../../deep-learning/structuring-machine-learning-projects/mismatched-training-and-dev-test-sets.html#caution-about-synthesizing-from-a-small-subset">small subset problem</a>, where the network overfits to that tiny slice of all possible fog.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. After working further on the problem, you have decided to correct the incorrectly labeled data. Your team corrects the labels of the wrongly predicted images on the dev set. True or False: You need to correct the labels of the test set so that the test and dev sets have the same distribution, but you will not change the labels on the train set because most models are robust enough that they are not severely affected by the difference in distributions.</strong></p>
+<ol type="a">
+<li><p>False, the test set should not be changed since we want to know how the model performs with uncorrected or original data.</p></li>
+<li><p>True, as pointed out, we must keep dev and test with the same distribution. The labels in the training set should be fixed only in case of a systematic error.</p></li>
+<li><p>False, the test set should be changed, but also the train set to keep the same distribution between the train, dev, and test sets.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b.</strong> Whatever label correction process you apply to the dev set must be applied to the test set as well, because the two sets have to keep coming from the same distribution or the target splits in two. The training set is different. Learning algorithms are quite robust to random label errors in a large training set, and this page has already established that training may come from a different distribution anyway, so retouching a million training labels is rarely worth the effort. The exception is systematic errors, such as a labeler consistently marking green lights as red, which the algorithm will learn as if they were true.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="transfer-learning-multi-task-learning-and-end-to-end" class="level2">
+<h2 class="anchored" data-anchor-id="transfer-learning-multi-task-learning-and-end-to-end">Transfer Learning, Multi-Task Learning, and End-to-End</h2>
+<p>The detector works, and now colleagues start asking how your work and your data can help their projects. These questions come from <a href="../../deep-learning/structuring-machine-learning-projects/learning-from-multiple-tasks.html#transfer-learning">Transfer Learning</a>, <a href="../../deep-learning/structuring-machine-learning-projects/learning-from-multiple-tasks.html#multi-task-learning">Multi-task Learning</a>, and <a href="../../deep-learning/structuring-machine-learning-projects/end-to-end-deep-learning.html#whether-to-use-end-to-end-deep-learning">Whether to Use End-to-End Deep Learning</a>.</p>
+<section id="review-questions-4" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-4">Review Questions</h3>
+<p><strong>1. One of your colleagues at the startup is starting a project to classify road signs as stop, dangerous curve, construction ahead, dead-end, and speed limit signs. Given how specific the signs are, your colleague has only a small dataset and has not been able to create a good model. You offer your help providing the trained weights (parameters) of your model to transfer knowledge. True or False: Your colleague points out that this problem has more specific items than the ones you used to train your model. This makes the transfer of knowledge impossible.</strong></p>
+<ol type="a">
+<li><p>False</p></li>
+<li><p>True</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a. False.</strong> This is the classic setting where transfer learning shines. Both tasks take the same input type, road images, you have a lot of data for the source task, and your colleague has little data for the target task. The early layers of your network have already learned low level image features such as edges, shapes, and sign-like textures from a large dataset, and those features are just as useful for distinguishing dead-end signs from speed limit signs. Your colleague deletes your output layer, adds a new one for the five sign classes, and fine-tunes on the small dataset. The output labels being different is not an obstacle, it is the normal case for transfer learning.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Another colleague wants to use microphones placed outside the car to better hear if there are other vehicles around you. For example, if there is a police vehicle behind you, you would be able to hear their siren. However, your colleague does not have much data to train this audio system. How can you help?</strong></p>
+<ol type="a">
+<li><p>Multi-task learning from your vision dataset could help your colleague get going faster. Transfer learning seems significantly less promising.</p></li>
+<li><p>Either transfer learning or multi-task learning could help our colleague get going faster.</p></li>
+<li><p>Transfer learning from your vision dataset could help your colleague get going faster. Multi-task learning seems significantly less promising.</p></li>
+<li><p>Neither transfer learning nor multi-task learning seems promising.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>d.</strong> Both techniques need the tasks to share an input. Transfer learning helps when the source and target tasks have the same input type, but the low level features a network learns from camera images say nothing useful about audio waveforms. Multi-task learning trains a single network on one shared input <span class="math inline">\(x\)</span> with several outputs, and an image and an audio clip cannot be the same <span class="math inline">\(x\)</span>. However much goodwill there is between the two projects, a vision dataset simply has nothing to transfer to a sound problem.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You are building a system to recognize stop signs. Your approach is that first, a neural network predicts bounding box coordinates around potential traffic signs in an image, and second, a separate neural network determines if each predicted sign is a stop sign. Is this an example of multi-task learning?</strong></p>
+<ol type="a">
+<li><p>False</p></li>
+<li><p>True</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-14" class="callout-14-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a. False.</strong> Multi-task learning means one network, trained on one input, producing several outputs simultaneously, like the five-component label vector at the top of this page. What is described here is two networks in a pipeline, where the output of a localization network becomes the input of a classification network. Each network does exactly one task. That is a hand-designed multi-step pipeline, which is a perfectly reasonable architecture, but it is the opposite of folding several tasks into a single network.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. To recognize a stop sign, you use the following approach. First, localize any traffic sign in an image. After that, determine if the sign is a stop sign or not. This is a better approach than an end-to-end model for which of the following cases? Choose the best answer.</strong></p>
+<ol type="a">
+<li><p>There is not enough data to train a big neural network.</p></li>
+<li><p>There is a large amount of data.</p></li>
+<li><p>The problem has a high Bayes error.</p></li>
+<li><p>There are available models which we can use to transfer knowledge.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a.</strong> The key question for end-to-end deep learning is whether you have enough data to learn the full function mapping directly from image to stop-sign-or-not. When you do not, breaking the problem into two simpler subtasks wins, because each subtask needs a less complex function and each usually has more data available, such as datasets of localized signs and datasets of cropped signs to classify. Option b is precisely the case where end-to-end starts to shine and the pipeline loses its advantage. Bayes error and the availability of pretrained models are separate concerns that do not decide between the two designs.</p>
+</div>
+</div>
+</div>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 100%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">100% completed (410 of 410 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../deep-learning/structuring-machine-learning-projects/end-to-end-deep-learning.html" class="pagination-link" aria-label="End-to-End Deep Learning">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">End-to-End Deep Learning</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
