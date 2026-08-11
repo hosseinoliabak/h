@@ -56,7 +56,7 @@ LESSONS = [
         text=[
             "Bishops and knights are both worth about three points, which is exactly the kind of accounting that hides the truth. What matters is what each one does in the position actually on the board.",
             "White has a bishop raking two long diagonals that cut into the black position. Black has a knight with nowhere useful to go and no square it can reach that changes anything. The point count says the game is level. The board says otherwise.",
-            "The bishop is not the only difference here. White also owns more central and queenside space, a target on a7 that a rook can reach through b1 and b7, and a mating idea after the bishop steps to c3 and the queen follows to d4. Imbalances stack up, and the winning plan usually uses several at once.",
+            "The bishop is not the only difference here. White also owns more central and queenside space, a target on a7 that a rook can attack after walking through b1 to b7, and a mating idea after the bishop steps to c3 and the queen follows to d4. Imbalances stack up, and the winning plan usually uses several at once.",
         ],
         ex=[
             dict(kind="piece",
@@ -84,7 +84,7 @@ LESSONS = [
         text=[
             "Reverse the previous lesson and nothing about the principle changes. Here the bishop is the bad piece, hemmed in by pawns on squares it can never attack, and the knight is the best piece on the board.",
             "The knight sits on e6 and cannot be removed. That is the difference between a good square and a home. A piece that can be chased away is a visitor. A piece that no pawn can ever attack has moved in permanently.",
-            "White adds space on all three sectors and a rook route to b7 hitting a7 and c7. Again the win comes from stacking imbalances rather than from any single clever move.",
+            "Count White's pluses the way the book does. Space in the centre, on the queenside and on the kingside, control of the hole on e6, and, once the a1 rook walks through b1 to b7, pressure against the pawns on a7 and c7. Silman's verdict is that Black would be well advised to resign as quickly as possible.",
         ],
         ex=[
             dict(kind="piece",
@@ -101,10 +101,10 @@ LESSONS = [
                  ok=1,
                  why="Only a pawn on d7 or f7 could hit e6, and neither pawn exists any more. A square no enemy pawn can reach is a permanent home."),
             dict(kind="move",
-                 prompt="Open a second front. Start the rook manoeuvre aimed at a7 and c7.",
+                 prompt="Open a second front. Send the queenside rook toward b7, where it will press on a7 and c7.",
                  ok_san=["Rab1"],
                  then_san=["Rb8", "Rb7"],
-                 why="The rook lands on the seventh rank with tempo. Black cannot both hold the b file and watch the knight."),
+                 why="The rook reaches b7 anyway, because capturing it lets the a6 pawn retake, and the new b7 pawn would hit the queen on c8. From the seventh rank the rook leans on a7 and c7 while the knight keeps its grip, one worry more than the defence can carry."),
         ],
     ),
     # ---------------------------------------------------------------- 4
