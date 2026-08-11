@@ -1,0 +1,1501 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-11">
+<meta name="description" content="Why large images break fully connected networks, how the convolution operation detects vertical and horizontal edges, and how padding preserves image size.">
+
+<title>Convolutions and Edge Detection – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-87fe4da730787eeec4a7ec728bf0e0b5.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="Convolutions and Edge Detection – H’s Notes">
+<meta property="og:description" content="Why large images break fully connected networks, how the convolution operation detects vertical and horizontal edges, and how padding preserves image size.">
+<meta property="og:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/convolutions-and-edge-detection_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Convolutions and Edge Detection – H’s Notes">
+<meta name="twitter:description" content="Why large images break fully connected networks, how the convolution operation detects vertical and horizontal edges, and how padding preserves image size.">
+<meta name="twitter:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/convolutions-and-edge-detection_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../networking/archive.html">
+ <span class="dropdown-text">Archive</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/asn-converter.html">
+ <span class="dropdown-text">ASN Converter</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text Generator</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/graph.html">
+ <span class="dropdown-text">Function Grapher</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-viewer.html">
+ <span class="dropdown-text">SVG Viewer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/color-palette.html">
+ <span class="dropdown-text">Color Palette Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/typography.html">
+ <span class="dropdown-text">Typography Designer</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../deep-learning/convolutional-neural-networks/convolutions-and-edge-detection.html">Convolutions and Edge Detection</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutional Neural Networks</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/convolutions-and-edge-detection.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Convolutions and Edge Detection</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#computer-vision-problems" id="toc-computer-vision-problems" class="nav-link active" data-scroll-target="#computer-vision-problems">Computer Vision Problems</a></li>
+  <li><a href="#deep-learning-on-large-images" id="toc-deep-learning-on-large-images" class="nav-link" data-scroll-target="#deep-learning-on-large-images">Deep Learning on Large Images</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#convolution-operation" id="toc-convolution-operation" class="nav-link" data-scroll-target="#convolution-operation">Convolution Operation</a>
+  <ul class="collapse">
+  <li><a href="#convolving-a-filter-over-an-image" id="toc-convolving-a-filter-over-an-image" class="nav-link" data-scroll-target="#convolving-a-filter-over-an-image">Convolving a Filter Over an Image</a></li>
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#why-this-detects-vertical-edges" id="toc-why-this-detects-vertical-edges" class="nav-link" data-scroll-target="#why-this-detects-vertical-edges">Why This Detects Vertical Edges</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#positive-and-negative-edges" id="toc-positive-and-negative-edges" class="nav-link" data-scroll-target="#positive-and-negative-edges">Positive and Negative Edges</a></li>
+  <li><a href="#horizontal-edge-detection" id="toc-horizontal-edge-detection" class="nav-link" data-scroll-target="#horizontal-edge-detection">Horizontal Edge Detection</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#learning-the-filter" id="toc-learning-the-filter" class="nav-link" data-scroll-target="#learning-the-filter">Learning the Filter</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-4" id="toc-review-questions-4" class="nav-link" data-scroll-target="#review-questions-4">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#padding" id="toc-padding" class="nav-link" data-scroll-target="#padding">Padding</a>
+  <ul class="collapse">
+  <li><a href="#padding-the-image" id="toc-padding-the-image" class="nav-link" data-scroll-target="#padding-the-image">Padding the Image</a></li>
+  <li><a href="#valid-and-same-convolutions" id="toc-valid-and-same-convolutions" class="nav-link" data-scroll-target="#valid-and-same-convolutions">Valid and Same Convolutions</a></li>
+  <li><a href="#why-filters-have-odd-dimensions" id="toc-why-filters-have-odd-dimensions" class="nav-link" data-scroll-target="#why-filters-have-odd-dimensions">Why Filters Have Odd Dimensions</a></li>
+  <li><a href="#review-questions-5" id="toc-review-questions-5" class="nav-link" data-scroll-target="#review-questions-5">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../nav-columns.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Convolutions and Edge Detection</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">convolutional-neural-networks</div>
+    <div class="quarto-category">computer-vision</div>
+    <div class="quarto-category">edge-detection</div>
+    <div class="quarto-category">padding</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Why large images break fully connected networks, how the convolution operation detects vertical and horizontal edges, and how padding preserves image size.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 11, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~62 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~5,600 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p>Computer vision is one of the areas that has been advancing rapidly thanks to deep learning. Deep learning computer vision is now helping self-driving cars figure out where the other cars and pedestrians around them are, so as to avoid them. It is making face recognition work much better than ever before, so that you may already be able to unlock a phone, or even unlock a door, using just your face. And if you look at your cell phone, there are probably many apps that show you pictures of food, or pictures of a hotel, or just fun pictures of scenery. Some of the companies that build those apps use deep learning to show you the most attractive, the most beautiful, or the most relevant pictures. Deep learning is even enabling new types of art to be created.</p>
+<p>There are two reasons to be excited about deep learning for computer vision. First, rapid advances in computer vision are enabling brand new applications that were impossible a few years ago, and by learning these tools you may be able to invent some of those new products yourself. Second, even if you do not end up building computer vision systems, the computer vision research community has been so creative and so inventive in coming up with new neural network architectures and algorithms that a lot of cross-fertilization happens into other areas as well. Ideas from computer vision have been borrowed into the speech recognition literature, for example. So even if you do not end up working on computer vision, some of the ideas here may be useful for your own algorithms and architectures.</p>
+<section id="computer-vision-problems" class="level2">
+<h2 class="anchored" data-anchor-id="computer-vision-problems">Computer Vision Problems</h2>
+<p>Here are some examples of computer vision problems covered in this course.</p>
+<p><strong>Image classification</strong>, sometimes also called image recognition. You take as input a 64 by 64 image, say, and try to figure out whether it is a cat. This is the problem the <a href="../../deep-learning/neural-networks-and-deep-learning/lab-logistic-regression-with-a-neural-network-mindset.html">cat classifier</a> solved.</p>
+<p><strong>Object detection</strong>. If you are building a self-driving car, maybe you do not just need to figure out that there are other cars in the image. Instead you need to figure out the position of the other cars in the picture, so that your car can avoid them. In object detection, you usually have to not just figure out that these other objects are cars, but also draw boxes around them, or find some other way of recognizing where in the picture those objects are. Notice also that there can be multiple cars in the same picture, or at least several of them within a certain distance of your car.</p>
+<p><strong>Neural style transfer</strong>. Say you have a picture and you want it repainted in a different style. In neural style transfer you have a content image and you have a style image. A neural network puts them together and repaints the content image in the style of the style image. Algorithms like these are enabling new types of artwork to be created, and you will learn how to do this yourself in this course.</p>
+</section>
+<section id="deep-learning-on-large-images" class="level2">
+<h2 class="anchored" data-anchor-id="deep-learning-on-large-images">Deep Learning on Large Images</h2>
+<p>One of the challenges of computer vision problems is that the inputs can get really big. In previous courses you worked with 64 by 64 images. That is 64 by 64 by 3, because there are three color channels, and if you multiply that out you get 12,288. So the input <span class="math inline">\(x\)</span> has dimension <span class="math inline">\(n_x = 12{,}288\)</span>. That is not too bad.</p>
+<p>But 64 by 64 is actually a very small image. If you work with larger images, maybe a 1000 pixel by 1000 pixel image, which is just one megapixel, then the dimension of the input features will be 1000 by 1000 by 3, because you have three RGB channels, and that is three million. So <span class="math inline">\(x\)</span> is now three million dimensional.</p>
+<p>Suppose the first hidden layer has just 1000 hidden units, and you use a standard <a href="../../deep-learning/neural-networks-and-deep-learning/deep-l-layer-networks.html">fully connected network</a> like the ones in Courses 1 and 2. The weight matrix <span class="math inline">\(W^{[1]}\)</span> would then have shape <span class="math inline">\(1000 \times 3{,}000{,}000\)</span>, which means it has three billion parameters.</p>
+<div id="83fd09b7" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="convolutions-and-edge-detection_files/figure-html/cell-2-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Both axes are on a logarithmic scale, so each step up the axis is a factor of ten. Going from a small image to a one megapixel image multiplies the input dimension by about 244, and it multiplies the size of the very first weight matrix by the same factor.</p>
+<p>With three billion parameters, it is difficult to get enough data to prevent the neural network from <a href="../../deep-learning/improving-deep-neural-networks/setting-up-your-machine-learning-application.html">overfitting</a>. The computational requirements and the memory requirements to train a network that size are also infeasible. But for computer vision applications you do not want to be stuck using only tiny little images. You want to use large images.</p>
+<p>To do that, you need the <strong>convolution operation</strong>, which is one of the fundamental building blocks of convolutional neural networks.</p>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. A 1000 by 1000 RGB image is fed into a fully connected layer with 1000 hidden units. How many parameters does the first weight matrix hold, and why is that a problem?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The input dimension is <span class="math inline">\(1000 \times 1000 \times 3 = 3{,}000{,}000\)</span>, so <span class="math inline">\(W^{[1]}\)</span> is <span class="math inline">\(1000 \times 3{,}000{,}000\)</span>, which is three billion parameters. With that many parameters it is difficult to collect enough data to keep the network from overfitting, and the computation and memory needed to train it are infeasible.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does the input dimension get multiplied by three for a color image?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because a color image has three color channels, red, green, and blue. Each pixel contributes three numbers rather than one, so a 64 by 64 color image has <span class="math inline">\(64 \times 64 \times 3 = 12{,}288\)</span> input features rather than 4,096.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="convolution-operation" class="level2">
+<h2 class="anchored" data-anchor-id="convolution-operation">Convolution Operation</h2>
+<p><a href="../../deep-learning/neural-networks-and-deep-learning/deep-l-layer-networks.html">Earlier</a> you saw that the early layers of a neural network might detect edges, some later layers might detect parts of objects, and even later layers may detect complete objects such as people’s faces. So a good place to start is with detecting edges in an image.</p>
+<p>Given a picture, for a computer to figure out what the objects in it are, the first thing you might do is detect vertical edges in the image. A photograph of a street has vertical lines where the buildings are, as well as vertical lines along the pedestrians, and those get picked out by a vertical edge detector. You might also want to detect horizontal edges. A railing running across the scene is a very strong horizontal line, and that gets detected too.</p>
+<div id="1f4f7d49" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="convolutions-and-edge-detection_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The whiskers, the vertical edges of the ears, and the sides of the face show up in the middle panel. The horizontal line of the eyes, the mouth, and the shadow under the chin show up in the right panel. The rest of this section explains how those two pictures were produced.</p>
+<section id="convolving-a-filter-over-an-image" class="level3">
+<h3 class="anchored" data-anchor-id="convolving-a-filter-over-an-image">Convolving a Filter Over an Image</h3>
+<p>Here is a 6 by 6 grayscale image. Because it is grayscale, it is just a 6 by 6 by 1 matrix rather than 6 by 6 by 3, since there are no separate RGB channels.</p>
+<p>In order to detect vertical edges in this image, you construct a 3 by 3 matrix. In the terminology of convolutional neural networks this is called a <strong>filter</strong>. The filter is</p>
+<p><span class="math display">\[
+\begin{bmatrix}
+1 &amp; 0 &amp; -1 \\
+1 &amp; 0 &amp; -1 \\
+1 &amp; 0 &amp; -1
+\end{bmatrix}
+\]</span></p>
+<p>Some research papers call this a <strong>kernel</strong> instead of a filter. This page uses the word filter throughout.</p>
+<p>What you do is take the 6 by 6 image and convolve it with the 3 by 3 filter. The convolution operation is denoted by an asterisk, <span class="math inline">\(*\)</span>. The output of this operation is a 4 by 4 matrix, which you can think of as a 4 by 4 image.</p>
+<p>The way you compute the 4 by 4 output is as follows. To compute the first element, the upper left element of the 4 by 4 matrix, you take the 3 by 3 filter and paste it on top of the upper left 3 by 3 region of the input image. Then you take the element-wise product of the two, and add up all nine resulting numbers.</p>
+<div id="5fc1b8bc" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="convolutions-and-edge-detection_files/figure-html/cell-4-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Going down the first column gives <span class="math inline">\(3 \times 1\)</span>, then <span class="math inline">\(1 \times 1\)</span>, then <span class="math inline">\(2 \times 1\)</span>. The middle column gives <span class="math inline">\(0 \times 0\)</span>, <span class="math inline">\(5 \times 0\)</span>, and <span class="math inline">\(7 \times 0\)</span>. The rightmost column gives <span class="math inline">\(1 \times (-1)\)</span>, <span class="math inline">\(8 \times (-1)\)</span>, and <span class="math inline">\(2 \times (-1)\)</span>. Adding up these nine numbers gives <span class="math inline">\(-5\)</span>, which is the first entry of the output. You can add the nine numbers in any order, of course.</p>
+<p>To figure out the second element, you shift the blue square one step to the right and do the same element-wise product and addition, which gives <span class="math inline">\(-4\)</span>. Shift right again and you get <span class="math inline">\(0\)</span>, and once more gives <span class="math inline">\(8\)</span>. That last one is worth checking, because the left column contributes <span class="math inline">\(2 + 9 + 5 = 16\)</span>, the middle column contributes zero, and the right column contributes <span class="math inline">\(4 + 1 + 3 = 8\)</span> with a minus sign, so <span class="math inline">\(16 - 8 = 8\)</span>.</p>
+<p>To get the first element of the next row you take the square and shift it one step down, then repeat the products and the addition, which gives <span class="math inline">\(-10\)</span>. Shifting right along that row gives <span class="math inline">\(-2\)</span>, then <span class="math inline">\(2\)</span>, then <span class="math inline">\(3\)</span>. Fill in the rest of the matrix the same way. The <span class="math inline">\(-16\)</span> in the bottom right corner comes from the lower right 3 by 3 region, shown with the dashed red outline.</p>
+<p>So a 6 by 6 matrix convolved with a 3 by 3 matrix gives you a 4 by 4 matrix. These images and filters are really just matrices of various dimensions. The matrix on the left is convenient to interpret as an image, the one in the middle is interpreted as a filter, and the one on the right can be interpreted as another image.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Asterisk Is Overloaded Notation
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>One slightly unfortunate thing about the notation is that in mathematics the asterisk is the standard symbol for convolution, but in Python the asterisk denotes multiplication, or element-wise multiplication. This page always means convolution when it writes <span class="math inline">\(*\)</span> between an image and a filter.</p>
+</div>
+</div>
+<p>In practice, most programming languages have a named function rather than an asterisk for this operation. The programming exercises in this course use a function called <code>conv_forward</code>. In TensorFlow there is <code>tf.nn.conv2d</code>, and in Keras there is a <code>Conv2D</code> layer that implements convolution. Every deep learning framework with good support for computer vision has some function for the convolution operator.</p>
+</section>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. You convolve a 6 by 6 image with a 3 by 3 filter. What are the dimensions of the output, and why?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The output is 4 by 4. The filter has to sit entirely inside the image, and there are only four horizontal positions and four vertical positions where a 3 by 3 square fits inside a 6 by 6 square.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What arithmetic produces a single entry of the output matrix?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>You paste the filter on top of the matching 3 by 3 region of the image, multiply each filter entry by the image value underneath it, and add up all nine products. That single number becomes one entry of the output. Sliding the filter to every valid position fills in the whole output matrix.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What is the difference between a filter and a kernel?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>There is no difference. They are two names for the same 3 by 3 matrix of numbers. Some research papers say kernel, and the course says filter.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="why-this-detects-vertical-edges" class="level2">
+<h2 class="anchored" data-anchor-id="why-this-detects-vertical-edges">Why This Detects Vertical Edges</h2>
+<p>To see why that filter is a vertical edge detector, use a simplified image. Here is a 6 by 6 image where the left half of the image is 10 and the right half is 0. Plotted as a picture, the 10s give brighter pixel intensity values and the 0s give darker pixel intensity values. In this image there is clearly a very strong vertical edge right down the middle, where it transitions from white to a darker color.</p>
+<p>The filter itself can be visualized the same way, with brighter pixels on the left, a mid tone of zeros in the middle, and darker pixels on the right.</p>
+<div id="490a5fd0" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="convolutions-and-edge-detection_files/figure-html/cell-5-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Check the arithmetic. The zero in the first output column comes from a window whose left column contributes <span class="math inline">\(10 + 10 + 10\)</span>, whose middle column contributes zeros, and whose right column contributes <span class="math inline">\(-10 - 10 - 10\)</span>, which cancels out to zero. The 30 next to it comes from a window whose left column still contributes <span class="math inline">\(10 + 10 + 10\)</span> but whose right column now sits over the dark half and contributes nothing, which is why you end up with 30.</p>
+<p>Plotted as an image, the output has a lighter region right in the middle, and that corresponds to having detected the vertical edge down the middle of the 6 by 6 image.</p>
+<p>In case the dimensions seem a little bit wrong, in that the detected edge looks really thick, that is only because this example uses very small images. If you use a 1000 by 1000 image rather than a 6 by 6 image, the same filter does a pretty good job of picking out the vertical edges, as the cat photograph earlier showed. Here the bright region in the middle is just the output image saying that there appears to be a strong vertical edge right down the middle.</p>
+<p>One intuition to take away is that a vertical edge is a 3 by 3 region, since the filter is 3 by 3, where there are bright pixels on the left, dark pixels on the right, and it does not matter much what is in the middle. The convolution operation gives you a convenient way to specify how to find these vertical edges in an image.</p>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. In the simplified example, why are the first and last columns of the output zero while the two middle columns are 30?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>For the outer positions, the filter sits entirely over one uniform half of the image. The left column of the window and the right column of the window contribute equal amounts with opposite signs, so they cancel and the result is zero. For the two middle positions, the left column of the window sits on the bright half and contributes <span class="math inline">\(10 + 10 + 10 = 30\)</span>, while the right column sits on the dark half and contributes nothing, so the result is 30.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The detected edge in the output looks two columns thick, which seems too wide. Is the filter working incorrectly?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>No.&nbsp;It is an artifact of using a 6 by 6 image, where a 4 by 4 output has nowhere to put a thin line. On a large image, say 1000 by 1000, the same filter marks the edge as a thin bright band relative to the size of the picture.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="positive-and-negative-edges" class="level2">
+<h2 class="anchored" data-anchor-id="positive-and-negative-edges">Positive and Negative Edges</h2>
+<p>There is a difference between positive and negative edges, that is, between light to dark and dark to light transitions.</p>
+<p>Take the same example and flip the colors, so that it is darker on the left and brighter on the right. The 10s are now on the right half of the image and the 0s are on the left. Convolving with the same edge detection filter gives <span class="math inline">\(-30\)</span> down the middle instead of <span class="math inline">\(30\)</span>.</p>
+<div id="9a23953e" class="cell" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="convolutions-and-edge-detection_files/figure-html/cell-6-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Because the shade of the transition is reversed, the sign of the output gets reversed as well. The negative 30s show that this is a dark to light transition rather than a light to dark transition. If you do not care which of the two cases it is, you can take the absolute value of the output matrix, which is what the cat photograph earlier did. But this particular filter does distinguish between light to dark and dark to light edges.</p>
+</section>
+<section id="horizontal-edge-detection" class="level2">
+<h2 class="anchored" data-anchor-id="horizontal-edge-detection">Horizontal Edge Detection</h2>
+<p>The 3 by 3 filter above detects vertical edges, so it should not surprise you too much that the filter</p>
+<p><span class="math display">\[
+\begin{bmatrix}
+1 &amp; 1 &amp; 1 \\
+0 &amp; 0 &amp; 0 \\
+-1 &amp; -1 &amp; -1
+\end{bmatrix}
+\]</span></p>
+<p>detects horizontal edges. As a reminder, a vertical edge according to the first filter is a 3 by 3 region where the pixels are relatively bright on the left part and relatively dark on the right part. Similarly, a horizontal edge is a 3 by 3 region where the pixels are relatively bright on the top row and relatively dark in the bottom row.</p>
+<p>Here is a more complex example, with 10s in the upper left and lower right hand corners. Drawn as an image, it is darker where the 0s are and lighter in the upper left and lower right hand corners.</p>
+<div id="17b49eda" class="cell" data-execution_count="6">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="convolutions-and-edge-detection_files/figure-html/cell-7-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Take a couple of examples from the output. The 30 on the left of the second row corresponds to a 3 by 3 region where there are indeed bright pixels on top and darker pixels on the bottom, so it finds a strong positive edge there. The <span class="math inline">\(-30\)</span> on the right of that row corresponds to a region that is brighter on the bottom and darker on top, which is a negative edge.</p>
+<p>The intermediate values, such as the <span class="math inline">\(10\)</span> and the <span class="math inline">\(-10\)</span>, are again an artifact of working with a small 6 by 6 image. That filter position captures part of the positive edge on the left and part of the negative edge on the right, and blending those together gives an intermediate value. If this were a very large image, say a thousand by a thousand image with this type of checkerboard pattern, you would not see these transition regions. The intermediate values would be quite small relative to the size of the image.</p>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. How do you turn a vertical edge detector into a horizontal edge detector?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Rotate it by 90 degrees. The vertical detector has a bright column, a zero column, and a dark column, and it responds to bright pixels on the left with dark pixels on the right. The horizontal detector has a bright row, a zero row, and a dark row, and it responds to bright pixels on top with dark pixels on the bottom.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In the checkerboard example, why do some output entries equal 10 or <span class="math inline">\(-10\)</span> instead of 30 or <span class="math inline">\(-30\)</span>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Those filter positions straddle the boundary between the two corners, so the window covers part of a positive edge and part of a negative edge at the same time. Blending the two gives a value between the extremes. On a large image these transition values are tiny relative to the picture, so they are not noticeable.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="learning-the-filter" class="level2">
+<h2 class="anchored" data-anchor-id="learning-the-filter">Learning the Filter</h2>
+<p>Different filters allow you to find vertical and horizontal edges. It turns out that the 3 by 3 vertical edge detection filter used so far is just one possible choice. Historically, in the computer vision literature, there was a fair amount of debate about what is the best set of numbers to use.</p>
+<p>Here is something else you could use.</p>
+<p><span class="math display">\[
+\begin{bmatrix}
+1 &amp; 0 &amp; -1 \\
+2 &amp; 0 &amp; -2 \\
+1 &amp; 0 &amp; -1
+\end{bmatrix}
+\]</span></p>
+<p>This is called a <strong>Sobel filter</strong>. Its advantage is that it puts a little bit more weight on the central row, on the central pixel, and this makes it maybe a little bit more robust.</p>
+<p>Computer vision researchers use other sets of numbers as well. Instead of 1, 2, 1 down the left column, it could be 3, 10, 3, with <span class="math inline">\(-3\)</span>, <span class="math inline">\(-10\)</span>, <span class="math inline">\(-3\)</span> on the right.</p>
+<p><span class="math display">\[
+\begin{bmatrix}
+3 &amp; 0 &amp; -3 \\
+10 &amp; 0 &amp; -10 \\
+3 &amp; 0 &amp; -3
+\end{bmatrix}
+\]</span></p>
+<p>This is called a <strong>Scharr filter</strong>, and it has yet other slightly different properties. Both of these are for vertical edge detection, and if you flip either of them 90 degrees you get horizontal edge detection.</p>
+<p>With the rise of deep learning, one of the things learned is that when you really want to detect edges in some complicated image, maybe you do not need computer vision researchers to handpick these nine numbers. Maybe you can just learn them, and treat the nine numbers of this matrix as parameters, which you can then learn using <a href="../../deep-learning/neural-networks-and-deep-learning/building-blocks-of-deep-neural-networks.html">back propagation</a>.</p>
+<p><span class="math display">\[
+\begin{bmatrix}
+w_1 &amp; w_2 &amp; w_3 \\
+w_4 &amp; w_5 &amp; w_6 \\
+w_7 &amp; w_8 &amp; w_9
+\end{bmatrix}
+\]</span></p>
+<p>The goal is to learn nine parameters so that when you take the 6 by 6 image and convolve it with your 3 by 3 filter, you get a good edge detector. By just treating these nine numbers as parameters, back propagation can choose to learn 1, 1, 1, 0, 0, 0, <span class="math inline">\(-1\)</span>, <span class="math inline">\(-1\)</span>, <span class="math inline">\(-1\)</span> if it wants, or to learn the Sobel filter, or the Scharr filter, or, more likely, to learn something else that is even better at capturing the statistics of your data than any of these hand coded filters.</p>
+<p>Rather than just vertical and horizontal edges, it can also learn to detect edges that are at 45 degrees, or 70 degrees, or 73 degrees, or at whatever orientation it chooses. By letting all of these numbers be parameters and learning them automatically from data, neural networks can learn low level features such as edges even more robustly than computer vision researchers are generally able to code up by hand.</p>
+<p>Underlying all of these computations is still the convolution operation, which allows back propagation to learn whatever 3 by 3 filter it wants and then to apply it throughout the entire image, at every position, in order to output whatever feature it is trying to detect. That could be vertical edges, horizontal edges, edges at some other angle, or even some other filter that we might not have a name for in English. The idea that you can treat these nine numbers as parameters to be learned has been one of the most powerful ideas in computer vision.</p>
+<section id="review-questions-4" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-4">Review Questions</h3>
+<p><strong>1. What distinguishes the Sobel filter from the simple 1, 1, 1 vertical edge detector?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The Sobel filter puts more weight on the central row, using 1, 2, 1 in the left column and <span class="math inline">\(-1\)</span>, <span class="math inline">\(-2\)</span>, <span class="math inline">\(-1\)</span> in the right column instead of 1, 1, 1 and <span class="math inline">\(-1\)</span>, <span class="math inline">\(-1\)</span>, <span class="math inline">\(-1\)</span>. Weighting the central pixel more heavily makes it maybe a little more robust.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why is treating the nine filter entries as learnable parameters better than hand coding them?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Back propagation can recover any of the hand coded filters if they happen to be the best choice, but it is free to learn something else that captures the statistics of your particular data better. It can also learn edges at 45 degrees, 70 degrees, or any other orientation, and features that have no name at all, none of which a fixed handpicked filter would find.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="padding" class="level2">
+<h2 class="anchored" data-anchor-id="padding">Padding</h2>
+<p>In order to build deep neural networks, one modification to the basic convolution operation that you need is <strong>padding</strong>.</p>
+<p>What you saw above is that a 6 by 6 image convolved with a 3 by 3 filter gives a 4 by 4 output, because there are only 4 by 4 possible positions for the 3 by 3 filter to fit inside the 6 by 6 matrix. In general, if you have an <span class="math inline">\(n \times n\)</span> image and convolve it with an <span class="math inline">\(f \times f\)</span> filter, the dimension of the output is</p>
+<p><span class="math display">\[
+(n - f + 1) \times (n - f + 1)
+\]</span></p>
+<p>In this example <span class="math inline">\(6 - 3 + 1 = 4\)</span>, which is why you wound up with a 4 by 4 output.</p>
+<p>There are two downsides to this. The first is that every time you apply a convolution operator, your image shrinks. Going from 6 by 6 down to 4 by 4 can only be done a few times before the image starts getting really small, maybe shrinking down to 1 by 1. If you have a hundred layer deep network, and it shrinks a bit on every layer, then after a hundred layers you end up with a very small image. You do not want your image to shrink every time you detect edges or other features.</p>
+<p>The second downside is that a pixel at a corner or at the edge of the image is used in only one of the outputs, because it is touched by only one 3 by 3 region. Whereas a pixel in the middle is overlapped by many 3 by 3 regions. So pixels on the corners or on the edges are used much less in the output, which means you are throwing away a lot of the information near the edge of the image.</p>
+<div id="1aba7be1" class="cell" data-execution_count="7">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="convolutions-and-edge-detection_files/figure-html/cell-8-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Without padding, the corner pixel enters exactly one output value while a central pixel enters nine of them. With a border of one pixel added, the corner pixel enters four output values instead of one, so its influence is no longer nearly discarded.</p>
+<section id="padding-the-image" class="level3">
+<h3 class="anchored" data-anchor-id="padding-the-image">Padding the Image</h3>
+<p>To fix both problems, you can pad the image before applying the convolution operation. In this case, pad the image with an additional border of one pixel all around the edges. Instead of a 6 by 6 image you now have an 8 by 8 image, and convolving an 8 by 8 image with a 3 by 3 filter gives you a 6 by 6 output, so you have preserved the original input size.</p>
+<p>By convention, when you pad, you pad with zeros.</p>
+<div id="1705b022" class="cell" data-execution_count="8">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="convolutions-and-edge-detection_files/figure-html/cell-9-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>If <span class="math inline">\(p\)</span> is the amount of padding, then in this case <span class="math inline">\(p = 1\)</span>, because the image is padded all around with an extra border of one pixel. The output dimension becomes</p>
+<p><span class="math display">\[
+(n + 2p - f + 1) \times (n + 2p - f + 1)
+\]</span></p>
+<p>So this becomes <span class="math inline">\(6 + 2 \times 1 - 3 + 1 = 6\)</span>, and you end up with a 6 by 6 output that preserves the size of the original image. The corner pixel now influences more of the output cells, so counting the information from the corner or the edge of the image less heavily is reduced.</p>
+<p>The figure above shows the effect of padding the border with just one pixel. If you want, you can also pad the border with two pixels, in which case you add on another border, and you can pad with even more pixels if you choose. Padding with two pixels would be <span class="math inline">\(p = 2\)</span>.</p>
+</section>
+<section id="valid-and-same-convolutions" class="level3">
+<h3 class="anchored" data-anchor-id="valid-and-same-convolutions">Valid and Same Convolutions</h3>
+<p>In terms of how much to pad, there are two common choices, called <strong>valid convolutions</strong> and <strong>same convolutions</strong>. These are not really great names, but they are the standard ones.</p>
+<p>A valid convolution basically means no padding. In this case an <span class="math inline">\(n \times n\)</span> image convolved with an <span class="math inline">\(f \times f\)</span> filter gives an</p>
+<p><span class="math display">\[
+(n - f + 1) \times (n - f + 1)
+\]</span></p>
+<p>output. This is the case from the earlier sections, where a 6 by 6 image convolved with a 3 by 3 filter gave a 4 by 4 output.</p>
+<p>The other common choice of padding is the same convolution, which means that you pad so that the output size is the same as the input size. Looking at the formula, when you pad by <span class="math inline">\(p\)</span> pixels it is as if <span class="math inline">\(n\)</span> goes to <span class="math inline">\(n + 2p\)</span>, and the output is <span class="math inline">\(n + 2p - f + 1\)</span> on a side. If you want the output size to equal the input size, set</p>
+<p><span class="math display">\[
+n + 2p - f + 1 = n
+\]</span></p>
+<p>The <span class="math inline">\(n\)</span> cancels out on both sides, and solving for <span class="math inline">\(p\)</span> gives</p>
+<p><span class="math display">\[
+p = \frac{f - 1}{2}
+\]</span></p>
+<p>So when <span class="math inline">\(f\)</span> is odd, choosing the padding this way makes sure that the output size is the same as the input size. For example, when the filter was 3 by 3, as in the previous figure, the padding that makes the output size the same as the input size is <span class="math inline">\((3 - 1) / 2 = 1\)</span>. As another example, if the filter were 5 by 5, so <span class="math inline">\(f = 5\)</span>, then plugging into the equation gives a padding of 2 to keep the output size the same as the input size.</p>
+</section>
+<section id="why-filters-have-odd-dimensions" class="level3">
+<h3 class="anchored" data-anchor-id="why-filters-have-odd-dimensions">Why Filters Have Odd Dimensions</h3>
+<p>By convention in computer vision, <span class="math inline">\(f\)</span> is usually odd. It is actually almost always odd, and you rarely see even numbered filters in computer vision. There are two reasons for that.</p>
+<p>First, if <span class="math inline">\(f\)</span> were even, then you would need some asymmetric padding. Only when <span class="math inline">\(f\)</span> is odd does the same convolution give a natural padding region with the same dimension all around, rather than padding more on the left and less on the right, or something similarly asymmetric.</p>
+<p>Second, when you have an odd dimension filter, such as 3 by 3 or 5 by 5, it has a central position. Sometimes in computer vision it is nice to have a distinguisher, a pixel you can call the central pixel, so that you can talk about the position of the filter.</p>
+<p>Maybe neither of these is a great reason for using <span class="math inline">\(f\)</span> that is pretty much always odd, but if you look at the convolutional literature you see 3 by 3 filters are very common. You see some 5 by 5 and some 7 by 7. There are also 1 by 1 filters, and why those make sense is covered later. Just by convention, the recommendation is to use odd numbered filters as well. You can probably get just fine performance even if you use an even number value for <span class="math inline">\(f\)</span>, but sticking to the common computer vision convention is the safer default.</p>
+<p>To specify the padding for your convolution operation, you can either give the value of <span class="math inline">\(p\)</span>, or say that this is a valid convolution, which means <span class="math inline">\(p = 0\)</span>, or say that this is a same convolution, which means pad as much as you need to make sure the output has the same dimension as the input.</p>
+</section>
+<section id="review-questions-5" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-5">Review Questions</h3>
+<p><strong>1. What are the two downsides of applying a convolution with no padding?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The image shrinks on every convolution, from <span class="math inline">\(n\)</span> down to <span class="math inline">\(n - f + 1\)</span>, so a deep network would reduce the image to almost nothing after many layers. And the pixels at the corners and edges are used in far fewer output values than the pixels in the middle, so information near the border of the image is largely thrown away.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You convolve a 32 by 32 image with a 5 by 5 filter using a valid convolution. What is the output size? What padding would make it a same convolution?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-14" class="callout-14-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The valid convolution gives <span class="math inline">\(32 - 5 + 1 = 28\)</span>, so a 28 by 28 output. For a same convolution you need <span class="math inline">\(p = (f - 1)/2 = (5 - 1)/2 = 2\)</span>, a border of two pixels all around, which gives <span class="math inline">\(32 + 4 - 5 + 1 = 32\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does the same convolution formula <span class="math inline">\(p = (f - 1)/2\)</span> require <span class="math inline">\(f\)</span> to be odd?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because if <span class="math inline">\(f\)</span> is even then <span class="math inline">\((f - 1)/2\)</span> is not a whole number, so there is no way to add the same number of pixels on both sides. You would have to pad asymmetrically, for example more on the left than on the right. An odd <span class="math inline">\(f\)</span> also gives the filter a central pixel, which is convenient when referring to the position of the filter.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What does the word “valid” mean in valid convolution?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-16-contents" aria-controls="callout-16" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-16" class="callout-16-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>It means no padding at all, so the filter only ever sits in positions where it fits entirely inside the original image. The name is not particularly descriptive, but it is the standard term.</p>
+</div>
+</div>
+</div>
+<p>That is padding. The next section covers how to implement strided convolutions, and these two together become important pieces of the convolutional building block of convolutional neural networks.</p>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 100%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">100% completed (62 of 62 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
