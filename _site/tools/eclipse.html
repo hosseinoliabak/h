@@ -405,6 +405,7 @@ ul.task-list li input[type="checkbox"] {
       <span id="ec-hwhen"></span>
       <span id="ec-hbest"></span>
     </div>
+    <button class="astro-btn astro-hero-go" id="ec-hgo" hidden="" title="Leave the live sky and put this eclipse on the map">Show this eclipse</button>
   </div>
 
   <aside class="app-panel app-panel-left app-card" id="app-left">
@@ -458,6 +459,18 @@ ul.task-list li input[type="checkbox"] {
             <option value="equirect">Equirectangular</option>
             <option value="globe">Globe</option>
           </select>
+        </div>
+        <div class="astro-field">
+          <label for="ec-theme">Base map</label>
+          <select id="ec-theme" title="Plain is the quiet grey wash the chart was drawn for. Streets colours the land and water, Terrain adds contours and hill shading, Satellite is aerial photography.">
+            <option value="plain" selected="">Plain</option>
+            <option value="streets">Streets</option>
+            <option value="terrain">Terrain</option>
+            <option value="satellite">Satellite</option>
+          </select>
+        </div>
+        <div class="astro-field-row">
+          <button class="astro-btn" id="ec-mlabels" title="Street and place names painted into the base map itself. They cost nothing extra, being simply another variant of the same free tiles. With them on, the page stops drawing its own place names so the two sets cannot collide.">Map labels</button>
         </div>
         <div class="astro-field-row">
           <button class="astro-btn" id="ec-now" title="Show the Sun and Moon at this moment">Now</button>
@@ -531,7 +544,9 @@ ul.task-list li input[type="checkbox"] {
         <button type="button" class="app-overlay-close" id="ec-help-close" title="Close">×</button>
       </div>
       <div class="app-overlay-body" id="ec-help-body">
-        <p>Scroll or double-click to zoom, drag to pan, pinch on a touch screen, click to drop a pin. The pin gets a bearing line to the Sun and another to the Moon, for lining up a photograph, and its table always includes the local date and time there. The <strong>Date and time</strong> box and the <strong>Now</strong> button work in every mode, and the <strong>−1 day</strong> and <strong>+1 day</strong> buttons step the date without opening the calendar. Setting any of them leaves the eclipse behind and shows the Sun and the Moon over the Earth at that moment instead. The date box reads in whichever clock <strong>Show times in</strong> is set to, so switching that menu to the pin puts the whole page on local time where you will be standing. Street map detail is always on and works in every projection, the globe included.</p>
+        <p>The page opens on the sky over you right now, and on your own location if the browser offers it. The countdown at the top belongs to the next solar eclipse; <strong>Show this eclipse</strong> puts it on the map, and the <strong>Show</strong> menu reaches every solar and lunar eclipse besides.</p>
+        <p>Scroll or double-click to zoom, drag to pan, pinch on a touch screen, click to drop a pin. The pin gets a bearing line to the Sun and another to the Moon, for lining up a photograph, and its label carries the local date and time where it stands. The <strong>Date and time</strong> box and the <strong>Now</strong> button work in every mode, and the <strong>−1 day</strong> and <strong>+1 day</strong> buttons step the date without opening the calendar. Setting any of them leaves the eclipse behind and shows the Sun and the Moon over the Earth at that moment instead. The date box reads in whichever clock <strong>Show times in</strong> is set to, so switching that menu to the pin puts the whole page on local time where you will be standing.</p>
+        <p><strong>Base map</strong> chooses what lies under the chart. <strong>Plain</strong> is the quiet grey wash the eclipse lines were drawn for, <strong>Streets</strong> colours the land and water and draws the roads, <strong>Terrain</strong> adds contour lines and hill shading, and <strong>Satellite</strong> is aerial photography. <strong>Map labels</strong> paints street and place names into the base map itself; with them on the page stops drawing its own names, so the two sets never collide. Every base map works in every projection, the globe included.</p>
         <p>The Moon mark on the map shows the real phase for the moment on the slider, lit limb facing the Sun mark. <strong>Tracks</strong> works like a satellite ground track. Each mark rides a line showing where it stands overhead through the surrounding day, solid behind it and dashed ahead. The thin wave is the Moon's overhead point day by day for half a month either side of now, one swing north and south per lunar month. The dotted parallels mark how far north and south each body ever stands overhead in the displayed year; between a body's pair of dotted lines lies every point on Earth where it can be overhead that year. The Sun's pair is the two tropics, and the Moon's pair drifts through an eighteen and a half year cycle that can carry it five degrees beyond them.</p>
       </div>
     </div>
@@ -583,20 +598,29 @@ ul.task-list li input[type="checkbox"] {
 
   var W = 2400, H = 1200;   // backing store; fitCanvas resizes it to the window
   var stageCssWidth = 1200; // stage width in CSS pixels, kept by fitCanvas
-  /* Bundled outlines run out of usable detail long before the upper limit.
-     Street tiles keep going, so the ceiling lifts when they are switched on.
 
-     The tile ceiling is set by where the imagery stops improving rather than
-     by taste. A full world spans W * zoom canvas pixels, and the deepest
-     level the tile code asks for is 19, which is 2^19 * 256 pixels around.
-     For the old fixed 2400 pixel store those were equal at a zoom of about
-     56000; below that every tile is still being drawn at or under its native
-     size and the map stays sharp. Past it the same pixels would only be
-     stretched. Both ceilings are really statements about ground resolution,
-     so they scale by 2400 / W now that the store tracks the window. */
-  var ZMIN = 1, ZMAX_TILES = 50000;
+  /* Canvas pixels per CSS pixel. Never below 1.5, so the chart's own lines
+     and text stay smooth on an ordinary display, and never above 2.5, past
+     which the extra pixels cost more than they show. */
+  function superSample() {
+    return Math.min(2.5, Math.max(window.devicePixelRatio || 1, 1.5));
+  }
+  /* Canvas pixels across a full world at zoom 1. The flat maps span the
+     canvas width; the globe wraps its circumference around a disc sized by
+     the height instead, a different number, which is why the ceiling below
+     has to ask rather than assume. Getting this wrong let the globe zoom
+     past what the tiles could serve, and the imagery went soft. */
+  function worldSpan() {
+    return isGlobe() ? 2 * Math.PI * (H / 2 - 14) : W;
+  }
+
+  /* The ceiling is where the deepest tiles a theme publishes are still drawn
+     at their own size; past it the same pixels would only be stretched. One
+     tile covers 256 CSS pixels, so superSample() of them on the canvas, and
+     the deepest level wraps 2^maxZoom tiles around the world. */
+  var ZMIN = 1;
   function zoomMax() {
-    return ZMAX_TILES * 2400 / W;
+    return Math.pow(2, X.tileMaxZoom(state.theme)) * 256 * superSample() / worldSpan();
   }
 
   var state = {
@@ -610,7 +634,9 @@ ul.task-list li input[type="checkbox"] {
     playing: false,
     tiles: true,
     tilesDrawn: false,
-    paths: true,
+    theme: 'plain',
+    mapLabels: false,
+    paths: false,
     raf: 0,
     // lon of null means the view follows the shadow instead of being pinned
     view: { zoom: 1, lon: null, lat: null }
@@ -1014,7 +1040,13 @@ ul.task-list li input[type="checkbox"] {
       var sh = currentShadow();
       return sh.axis || sh.subsolar;
     }
-    if (state.kind === 'free') return currentShadow().subsolar;
+    /* In the locator a dropped pin is the place the reader cares about, so
+       zooming closes in on it rather than chasing the Sun across the ocean.
+       Without a pin the sub-solar point is still the thing worth watching. */
+    if (state.kind === 'free') {
+      return state.site ? { lat: state.site.lat, lon: state.site.lon }
+        : currentShadow().subsolar;
+    }
     return subLunarNow();
   }
 
@@ -1421,7 +1453,7 @@ ul.task-list li input[type="checkbox"] {
     ctx.restore();
 
     legend(ctx, pal);
-    if (state.tilesDrawn) X.drawTileCredit(ctx, proj, pal);
+    if (state.tilesDrawn) X.drawTileCredit(ctx, proj, pal, tileOpts());
 
     elClock.textContent = stamp(state.t.date, true);
     if (state.kind === 'lunar') drawShadowDiagram(pal);
@@ -1646,6 +1678,24 @@ ul.task-list li input[type="checkbox"] {
      caller can drop the graticule and equator that would only clutter them.
      Finer outlines are requested as soon as the view is close enough to show
      the difference, and the map redraws itself once they arrive. */
+  /* What the tile layer is being asked for: theme, whether the dark variant
+     suits the palette, and whether the imagery carries its own names. */
+  function tileOpts(mode) {
+    return {
+      theme: state.theme,
+      dark: (mode || root.getAttribute('data-mode') || 'chart') !== 'chart',
+      labels: state.mapLabels,
+      pixelRatio: superSample()
+    };
+  }
+
+  /* Two sets of names on one map is one too many, so the page keeps its own
+     quiet unless the imagery has none of its own. */
+  function ownNames() {
+    if (!state.tilesDrawn) return true;
+    return !state.mapLabels && !X.tileBakedLabels(state.theme);
+  }
+
   function drawBase(ctx, proj, pal) {
     // The fine vector outlines only matter when they are the base map
     if (!state.tiles && state.view.zoom > 3 && !X.detailReady) {
@@ -1658,8 +1708,7 @@ ul.task-list li input[type="checkbox"] {
     }
     var mode = root.getAttribute('data-mode') || 'chart';
     state.tilesDrawn = state.tiles &&
-      X.drawTiles(ctx, proj, function () { scheduleRedraw(); },
-        mode === 'chart' ? 'light' : 'dark');
+      X.drawTiles(ctx, proj, function () { scheduleRedraw(); }, tileOpts(mode));
     /* The dark basemap carries its own blue-grey cast, which fights the pure
        monochrome palettes. A saturation blend strips the colour for night,
        and a colour blend re-hues the imagery red for the dark-adaptation
@@ -1704,7 +1753,11 @@ ul.task-list li input[type="checkbox"] {
   }
 
   /* Labels go on last so nothing is drawn over them, and the site pin is
-     reserved first so a city name never lands underneath it. */
+     reserved first so a city name never lands underneath it.
+
+     The tool's own readouts, the pin box and the coverage percentages, are
+     drawn whatever the base map is doing. Only the city names step aside for
+     imagery that carries names of its own, which is what ownNames decides. */
   function placeNames(ctx, proj, pal) {
     var placer = X.labelPlacer(ctx, proj, pal);
 
@@ -1727,7 +1780,7 @@ ul.task-list li input[type="checkbox"] {
     if (state.kind === 'solar' && state.rec && state.rec.obscLines) {
       labelContours(ctx, proj, pal, placer);
     }
-    X.drawPlaceLabels(ctx, proj, pal, { placer: placer });
+    if (ownNames()) X.drawPlaceLabels(ctx, proj, pal, { placer: placer });
   }
 
   /* Percentage labels sitting on the contour lines themselves. Several
@@ -1767,6 +1820,11 @@ ul.task-list li input[type="checkbox"] {
   function drawPinLabel(ctx, proj, pal, placer, p) {
     var s = state.site;
     var lines = [X.fmt.latlon(s.lat, s.lon)];
+
+    /* The wall clock where the pin stands, for the moment on the slider.
+       Somebody planning a photograph needs the local hour more than any
+       other single number, so it sits directly under the coordinates. */
+    lines.push(X.fmt.day(state.t.date) + '  ' + pinLocal(state.t.date) + ' local');
 
     if (state.kind === 'solar') {
       var lc = localSolar(s.lat, s.lon);
@@ -2271,6 +2329,31 @@ ul.task-list li input[type="checkbox"] {
   var elHCount = document.getElementById('ec-hcount');
   var elHWhen = document.getElementById('ec-hwhen');
   var elHBest = document.getElementById('ec-hbest');
+  var elHGo = document.getElementById('ec-hgo');
+
+  /* The next solar eclipse still to come, found directly rather than by
+     building a whole list, so the locator can advertise it from the moment
+     the page opens. */
+  var nextSolar = null;
+  function findNextSolar() {
+    try {
+      nextSolar = A.SearchGlobalSolarEclipse(A.MakeTime(new Date()));
+    } catch (err) { nextSolar = null; }
+  }
+
+  /* Leaves the live sky for that eclipse. Listing from the current year and
+     asking for the next one lands on exactly the advertised event. */
+  elHGo.addEventListener('click', function () {
+    state.kind = 'solar';
+    elKind.value = 'solar';
+    syncKindUI();
+    elYear.value = String(new Date().getUTCFullYear());
+    /* The locator may have been zoomed onto a street corner, which would
+       leave the whole eclipse off screen. The shadow crosses a hemisphere,
+       so the view goes back out to meet it. */
+    state.view = { zoom: 1, lon: null, lat: null };
+    rebuild(true);
+  });
 
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
     'August', 'September', 'October', 'November', 'December'];
@@ -2296,7 +2379,11 @@ ul.task-list li input[type="checkbox"] {
 
   function tickCountdown() {
     if (!state.rec) return;
-    var peak = state.kind === 'free' ? state.rec.when : state.rec.e.peak;
+    /* In the locator the countdown belongs to the eclipse being advertised,
+       not to the moment on the slider, which the reader is setting anyway. */
+    var peak = (state.kind === 'free')
+      ? (nextSolar && nextSolar.peak) : state.rec.e.peak;
+    if (!peak) { elHCount.textContent = ''; return; }
     var ms = peak.date.getTime() - Date.now();
     elHCount.textContent = gap(ms);
     elHCount.classList.toggle('is-past', ms < 0);
@@ -2305,13 +2392,23 @@ ul.task-list li input[type="checkbox"] {
   function updateHero() {
     if (!state.rec) return;
     if (state.kind === 'free') {
-      elHKind.textContent = 'Sun and Moon locator';
-      elHWhen.textContent = longDate(state.rec.when.date) + ' at ' +
-        X.fmt.hm(state.rec.when.date) + ' UT';
-      elHBest.textContent = 'Pick any date and time, then drop a pin for camera bearings';
+      if (nextSolar) {
+        elHKind.textContent = 'Next ' + nextSolar.kind + ' solar eclipse';
+        elHWhen.textContent = longDate(nextSolar.peak.date) + ' at ' +
+          X.fmt.hm(nextSolar.peak.date) + ' UT';
+        elHBest.textContent = '';
+        elHGo.hidden = false;
+      } else {
+        elHKind.textContent = 'Sun and Moon locator';
+        elHWhen.textContent = longDate(state.rec.when.date) + ' at ' +
+          X.fmt.hm(state.rec.when.date) + ' UT';
+        elHBest.textContent = 'Pick any date and time, then drop a pin for camera bearings';
+        elHGo.hidden = true;
+      }
       tickCountdown();
       return;
     }
+    elHGo.hidden = true;
     var e = state.rec.e;
     var future = e.peak.date.getTime() >= Date.now();
     var isNext = future && state.idx === nextIndex();
@@ -2399,6 +2496,9 @@ ul.task-list li input[type="checkbox"] {
     state.proj = elProj.value;
     // A view the reader has panned or zoomed to stays put across the switch;
     // only an untouched view keeps following the shadow automatically.
+    // The globe and the flat maps carry different tile ceilings, so a zoom
+    // that was legal under one may need pulling back under the other.
+    if (state.view.zoom > zoomMax()) state.view.zoom = zoomMax();
     clampView();
     afterView();
   });
@@ -2814,6 +2914,33 @@ ul.task-list li input[type="checkbox"] {
     afterView();
   }
 
+  var elTheme = document.getElementById('ec-theme');
+  var elMLabels = document.getElementById('ec-mlabels');
+
+  function syncLabelsButton() {
+    var baked = X.tileBakedLabels(state.theme);
+    elMLabels.classList.toggle('is-active', state.mapLabels || baked);
+    // Terrain paints its names into the imagery, so the switch has nothing
+    // left to do and says so rather than pretending to work
+    elMLabels.disabled = baked;
+    elMLabels.textContent = baked ? 'Map labels (always on)'
+      : (state.mapLabels ? 'Map labels on' : 'Map labels');
+  }
+
+  elTheme.addEventListener('change', function () {
+    state.theme = elTheme.value;
+    syncLabelsButton();
+    // Themes differ in how deep they go; pull an over-zoomed view back
+    if (state.view.zoom > zoomMax()) state.view.zoom = zoomMax();
+    afterView();
+  });
+
+  elMLabels.addEventListener('click', function () {
+    state.mapLabels = !state.mapLabels;
+    syncLabelsButton();
+    draw();
+  });
+
   var elPaths = document.getElementById('ec-paths');
   function syncPathsButton() {
     elPaths.classList.toggle('is-active', state.paths);
@@ -2840,7 +2967,7 @@ ul.task-list li input[type="checkbox"] {
   function fitCanvas() {
     var r = stage.getBoundingClientRect();
     if (r.width < 40 || r.height < 40) return;
-    var ss = Math.min(2.5, Math.max(window.devicePixelRatio || 1, 1.5));
+    var ss = superSample();
     var w = Math.round(r.width * ss), h = Math.round(r.height * ss);
     stageCssWidth = r.width;
     if (w === W && h === H) return;
@@ -2947,12 +3074,32 @@ ul.task-list li input[type="checkbox"] {
   X.ready.then(function () {
     fitCanvas();
     syncPathsButton();
-    syncKindUI();
-    // The current year, jumping forward to the next eclipse still to come.
-    // Earlier years remain one edit of the From year field away.
+    syncLabelsButton();
+    /* The page opens on the sky over the reader right now, which is the
+       question most visitors actually arrive with. The next eclipse is not
+       hidden by that: the hero advertises it with a button that jumps
+       straight to it, and the Show menu reaches the full catalogue. */
     elYear.value = String(new Date().getUTCFullYear());
-    rebuild(true);
+    state.kind = 'free';
+    elKind.value = 'free';
+    syncKindUI();
+    findNextSolar();
+    selectFree(new Date());
   });
+
+  /* The pin opens on the reader's own location when the browser allows it,
+     because local circumstances are the question most readers bring. A pin
+     placed by hand before the fix arrives wins, and a refusal simply leaves
+     the map unpinned, one click away, as before. */
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      if (state.site) return;
+      state.site = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+      syncWhen(true);
+      if (state.rec) { summarise(); draw(); }
+    }, function () { /* refused or unavailable; click the map instead */ },
+    { timeout: 8000, maximumAge: 3600000 });
+  }
 })();
 </script>
 <div class="app-help-source">
@@ -3013,7 +3160,9 @@ ul.task-list li input[type="checkbox"] {
 <p>The Earth is modelled as the WGS84 ellipsoid at sea level. Contact times for a given site will differ by a second or two from tables that account for local elevation and for the lunar limb profile, since mountains on the Moon’s edge shift second and third contact. For chasing the exact edge of the path, use the NASA eclipse bulletins.</p>
 <p>Place names come from GeoNames, coastlines, borders, lakes and rivers from Natural Earth. Every city above fifty thousand people ships with the page, plus every national capital, and zooming further in fetches a finer layer of towns down to five thousand people, so small places label themselves once you are close enough.</p>
 <p>The map ships with world-scale outlines so the page opens instantly, and they take over as the base map whenever tiles have not arrived yet.</p>
-<p>Beyond that, bundled data runs out. Street map detail comes from OpenStreetMap tiles served by CARTO, which is the one feature here that talks to the network. Tiles are published in Web Mercator, and under every other projection, the globe included, they are warped onto the view on the fly. Tile coverage stops at 85 degrees of latitude, so the polar caps keep the plain chart background. The view goes to fifty thousand times, deep enough to show individual buildings. That ceiling is where the deepest tiles the page requests are still being drawn at their own resolution, so magnifying further would only stretch the same pixels. Close in, the path of totality is drawn as its two limit lines rather than a solid band, because a filled band at that scale would cover everything underneath it.</p>
+<p>Beyond that, bundled data runs out and the base map takes over, which is the one feature here that talks to the network. Four are offered, all free to use and all asking only for attribution, which is why the credit line changes with the choice. <strong>Plain</strong> and <strong>Streets</strong> are OpenStreetMap data rendered by <a href="https://carto.com/basemaps">CARTO</a>, the second being their Voyager style. <strong>Terrain</strong> is <a href="https://opentopomap.org">OpenTopoMap</a>, OpenStreetMap drawn with contour lines over SRTM elevation. <strong>Satellite</strong> is Esri World Imagery, which carries photography from Maxar and Earthstar Geographics.</p>
+<p>Labels cost nothing extra. They are simply a different variant of the same tiles, so leaving them off was an editorial choice rather than a saving: the page had its own place names from GeoNames and two sets of names on one map is one too many. Turning them on switches that around, and the page keeps its own names quiet instead. Terrain is the exception, because OpenTopoMap paints its names into the imagery and they cannot be turned off.</p>
+<p>Tiles are published in Web Mercator, and under every other projection, the globe included, they are warped onto the view on the fly. Tile coverage stops at 85 degrees of latitude, so the polar caps keep the plain chart background. How far the view goes depends on how deep the chosen source publishes: to about fifty thousand times for Plain, Streets and Satellite, deep enough to show individual buildings, and a quarter of that for Terrain, whose deepest level is shallower. Each ceiling is where the deepest tiles available are still being drawn at their own resolution, so magnifying further would only stretch the same pixels. Close in, the path of totality is drawn as its two limit lines rather than a solid band, because a filled band at that scale would cover everything underneath it.</p>
 <p>Weather is not modelled, and in practice it decides more eclipse trips than geometry does.</p>
 </div>
 </div>
