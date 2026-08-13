@@ -1,0 +1,463 @@
+/* App mode: a full-viewport "app shell" for tool pages that behave like an
+   application (maps, boards) rather than an article. The canvas fills the
+   window, everything else floats over it in small cards, and the page never
+   scrolls. Modelled on the canvas-first layout of Google Maps and Windy.
+
+   Opting a page in:
+     1. Set `page-layout: custom` in the page front matter.
+     2. Link this stylesheet from the page body.
+     3. Put the whole tool inside <div class="app-shell"> and compose the
+        primitives below (app-pill, app-panel, app-dock, app-overlay).
+
+   This file provides layout and behaviour only, in site-neutral colors from
+   the Bootstrap body tokens. A tool with its own palette (the astro pages,
+   a chess board) re-skins `.app-card` and friends in its own stylesheet.
+
+   Because this file is only ever linked from app pages, it may restyle
+   html/body and hide the site chrome without a scoping class. */
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* The navbar, title block, footer, and comment thread all belong to the
+   article layout. In app mode the home pill replaces the navbar and the help
+   overlay replaces the prose, so the whole set goes. */
+#quarto-header,
+#quarto-footer,
+.nav-footer,
+#title-block-header,
+.quarto-title-block,
+#quarto-margin-sidebar,
+#quarto-sidebar,
+#quarto-comments,
+.giscus,
+#quarto-back-to-top {
+  display: none !important;
+}
+
+#quarto-content,
+main.content,
+.page-layout-custom {
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: none !important;
+}
+
+/* Markdown source blocks whose content a script relocates into the help
+   overlay. Hidden so they never flash below the shell before the move. */
+.app-help-source {
+  display: none;
+}
+
+/* Several primitives set their own display, which would silently defeat the
+   hidden attribute the scripts toggle. */
+.app-panel[hidden],
+.app-edge-tab[hidden],
+.app-pill-menu[hidden],
+.app-overlay[hidden] {
+  display: none !important;
+}
+
+/* ---- Shell and stage --------------------------------------------------- */
+
+.app-shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* The tool's canvas or board fills the whole shell; cards float above it. */
+.app-stage {
+  position: absolute;
+  inset: 0;
+}
+
+/* For app pages whose content is a flowing column rather than a canvas
+   stage: the pane fills the shell and scrolls internally under the pill,
+   while the page itself still never scrolls. Board or menu screens inside
+   size themselves against the viewport as they wish. */
+.app-pane {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 60px 16px 16px;
+}
+
+@media (max-width: 760px) {
+  .app-pane {
+    padding: 52px 8px 8px;
+  }
+}
+
+/* ---- Card primitive ---------------------------------------------------- */
+
+/* Neutral glass card. Tools with their own palette override the colors. */
+.app-card {
+  position: absolute;
+  z-index: 20;
+  background: color-mix(in srgb, var(--bs-body-bg, #ffffff) 88%, transparent);
+  color: var(--bs-body-color, #212529);
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 6px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+/* ---- Home pill (top left) ---------------------------------------------- */
+
+.app-pill {
+  /* Above the side panels, so its dropdown menu is never buried under them */
+  z-index: 30;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.app-pill-home {
+  font-weight: 700;
+  text-decoration: none;
+  color: inherit;
+}
+
+.app-pill-home:hover {
+  color: var(--site-accent);
+  text-decoration: none;
+}
+
+.app-pill-sep {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(128, 128, 128, 0.4);
+}
+
+.app-pill-page {
+  opacity: 0.75;
+}
+
+.app-pill button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.app-pill button:hover {
+  color: var(--site-accent);
+}
+
+.app-pill-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 11em;
+  padding: 6px 0;
+  background: inherit;
+  color: inherit;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 6px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+}
+
+.app-pill-menu a {
+  display: block;
+  padding: 7px 14px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.app-pill-menu a:hover {
+  color: var(--site-accent);
+  background: rgba(128, 128, 128, 0.12);
+}
+
+/* Round help button, sitting in the pill cluster. */
+.app-help-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50% !important;
+  border: 1px solid rgba(128, 128, 128, 0.5) !important;
+  font-size: 12px !important;
+  font-weight: 700;
+  text-align: center;
+  padding: 0 !important;
+}
+
+/* ---- Hero chip (top centre) -------------------------------------------- */
+
+.app-hero {
+  /* Under the panels in the stack: a status chip loses gracefully to the
+     interactive cards when a narrow window makes them overlap. */
+  z-index: 10;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(620px, calc(100vw - 380px));
+  padding: 9px 28px 11px;
+  text-align: center;
+}
+
+/* ---- Side panels -------------------------------------------------------- */
+
+.app-panel {
+  top: 64px;
+  width: 300px;
+  max-height: calc(100dvh - 160px);
+  display: flex;
+  flex-direction: column;
+  /* Quarto's margin-column layout gives bare aside elements z-index 998
+     (.page-columns aside:not(.footnotes):not(.sidebar)), which would hoist
+     the panels over the pill and its menu. Pinned back down to card level. */
+  z-index: 20 !important;
+}
+
+.app-panel-left {
+  left: 12px;
+}
+
+.app-panel-right {
+  right: 12px;
+}
+
+.app-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-panel-toggle {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0.7;
+}
+
+.app-panel-toggle:hover {
+  opacity: 1;
+}
+
+.app-panel-body {
+  padding: 12px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Thin vertical tab left on the screen edge by a collapsed panel. */
+.app-edge-tab {
+  position: absolute;
+  z-index: 20;
+  top: 50%;
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
+  padding: 14px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--bs-body-bg, #ffffff) 88%, transparent);
+  color: var(--bs-body-color, #212529);
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.app-edge-left {
+  left: 0;
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+}
+
+.app-edge-right {
+  right: 0;
+  border-right: 0;
+  border-radius: 6px 0 0 6px;
+  transform: translateY(-50%) rotate(180deg);
+}
+
+/* ---- Tabs inside a panel head ------------------------------------------ */
+
+.app-tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.app-tabs [role="tab"] {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 8px 6px;
+  cursor: pointer;
+  opacity: 0.55;
+  border-bottom: 2px solid transparent;
+}
+
+.app-tabs [role="tab"][aria-selected="true"] {
+  opacity: 1;
+  border-bottom-color: var(--site-accent);
+}
+
+/* ---- Bottom dock (time scrubber and similar) ---------------------------- */
+
+.app-dock {
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: clamp(320px, 52vw, 720px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+}
+
+.app-dock input[type="range"] {
+  flex: 1;
+  min-width: 80px;
+}
+
+/* Long clock readouts (the galaxy view counts in millions of years) wrap
+   inside the dock instead of running out of it. */
+.app-dock .astro-clock {
+  white-space: normal;
+  line-height: 1.25;
+  max-width: 40%;
+}
+
+/* ---- Help overlay -------------------------------------------------------- */
+
+.app-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.app-overlay[hidden] {
+  display: none;
+}
+
+.app-overlay-card {
+  position: relative;
+  width: min(760px, 100%);
+  max-height: min(46em, calc(100dvh - 48px));
+  display: flex;
+  flex-direction: column;
+}
+
+.app-overlay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.app-overlay-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 22px;
+  line-height: 1;
+  padding: 2px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0.7;
+}
+
+.app-overlay-close:hover {
+  opacity: 1;
+}
+
+.app-overlay-body {
+  padding: 14px 18px 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.app-overlay-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Small screens ------------------------------------------------------- */
+
+@media (max-width: 760px) {
+  .app-pill {
+    top: 8px;
+    left: 8px;
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+
+  /* The hero drops below the pill instead of competing with it for the top
+     edge, and spans the window. */
+  .app-hero {
+    top: 46px;
+    max-width: calc(100vw - 16px);
+    padding: 6px 12px 8px;
+  }
+
+  /* Panels become edge drawers, full height under the chrome. */
+  .app-panel {
+    top: 104px;
+    width: min(320px, 86vw);
+    max-height: calc(100dvh - 190px);
+  }
+
+  .app-panel-left {
+    left: 8px;
+  }
+
+  .app-panel-right {
+    right: 8px;
+  }
+
+  .app-dock {
+    left: 8px;
+    right: 8px;
+    bottom: 10px;
+    transform: none;
+    width: auto;
+    padding: 8px 10px;
+  }
+
+  .app-overlay {
+    padding: 10px;
+  }
+}

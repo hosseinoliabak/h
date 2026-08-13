@@ -99,7 +99,10 @@
       shade: v('--shade', 'rgba(0,0,0,0.10)'),
       band: v('--band', 'rgba(0,0,0,0.30)'),
       sun: v('--sun', '#e07b00'),
-      moon: v('--moon', '#76839a')
+      moon: v('--moon', '#76839a'),
+      // The phase disc: sunlit side and shadowed side of the Moon mark
+      moonLit: v('--moon-lit', '#f2c94c'),
+      moonDark: v('--moon-dark', '#8a94a4')
     };
   }
 
