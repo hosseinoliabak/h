@@ -1,0 +1,1640 @@
+/* Shared machinery for the Astronomy tools.
+   Depends on astronomy.browser.js being loaded first (window.Astronomy).
+
+   Provides:
+     Astro.ready            promise resolving once world outlines are loaded
+     Astro.palette(el)      reads the monochrome palette from CSS custom props
+     Astro.equirect / ortho map projections with a common interface
+     Astro.drawMap          land outlines, graticule, frame
+     Astro.contour          marching squares over a lon/lat window
+     Astro.shadow           Moon shadow cone geometry for solar eclipses
+     Astro.fmt              formatting helpers
+*/
+(function (global) {
+  'use strict';
+
+  var A = global.Astronomy;
+  var DEG = Math.PI / 180;
+  var RAD = 180 / Math.PI;
+
+  var EARTH_A = 6378.137;                       // equatorial radius, km
+  var FLAT = 1 - 1 / 298.257223563;             // polar / equatorial radius
+  var SUN_R = 695700;                           // km
+  var MOON_R = 1737.4;                          // km
+  var KM_AU = A.KM_PER_AU;
+
+  // ---------------------------------------------------------------- assets
+
+  var land = [], borders = [], cities = [], countries = [];
+
+  function grab(file, apply) {
+    return fetch('astro-assets/' + file)
+      .then(function (r) { return r.json(); })
+      .then(apply)
+      .catch(function () { /* a missing overlay must not break the tool */ });
+  }
+
+  var ready = Promise.all([
+    grab('land.json', function (d) { land = d; }),
+    grab('borders.json', function (d) { borders = d; }),
+    grab('cities.json', function (d) { cities = d; }),
+    grab('countries.json', function (d) { countries = d; })
+  ]);
+
+  /* Finer outlines, fetched only once the reader zooms far enough to see the
+     difference. The world view is served by the small 110m files so the page
+     paints immediately; the 2 MB of 50m data is never downloaded by someone
+     who only ever looks at the whole Earth. */
+  var detail = { loaded: false, loading: false, land: [], lakes: [], rivers: [], borders: [] };
+
+  function loadDetail(onDone) {
+    if (detail.loaded || detail.loading) return;
+    detail.loading = true;
+    Promise.all([
+      grab('land-50m.json', function (d) { detail.land = d; }),
+      grab('lakes-50m.json', function (d) { detail.lakes = d; }),
+      grab('rivers-50m.json', function (d) { detail.rivers = d; }),
+      grab('borders-50m.json', function (d) { detail.borders = d; })
+    ]).then(function () {
+      detail.loaded = true;
+      detail.loading = false;
+      if (onDone) onDone();
+    });
+  }
+
+  /* Finer place names, towns down to five thousand people, fetched with the
+     same lazy pattern once the reader is close enough for them to qualify.
+     The label loop stops early on its population-sorted list, and the bundled
+     file ends with small-population capitals, so a plain concatenation would
+     be cut off right at the seam; the merge re-sorts to restore the order the
+     early stop depends on. */
+  var places = { loaded: false, loading: false, merged: null };
+
+  function loadPlaces(onDone) {
+    if (places.loaded || places.loading) return;
+    places.loading = true;
+    grab('cities-5k.json', function (d) {
+      places.merged = cities.concat(d).sort(function (a, b) { return b[3] - a[3]; });
+    }).then(function () {
+      places.loaded = true;
+      places.loading = false;
+      if (onDone) onDone();
+    });
+  }
+
+  // --------------------------------------------------------------- palette
+
+  function palette(el) {
+    var cs = getComputedStyle(el);
+    function v(name, fallback) {
+      var s = cs.getPropertyValue(name);
+      return (s && s.trim()) || fallback;
+    }
+    return {
+      sky: v('--sky', '#ffffff'),
+      ink: v('--ink', '#000000'),
+      soft: v('--ink-soft', '#6b6b6b'),
+      faint: v('--ink-faint', '#c9c9c9'),
+      hair: v('--ink-hair', '#e6e6e6'),
+      shade: v('--shade', 'rgba(0,0,0,0.10)'),
+      band: v('--band', 'rgba(0,0,0,0.30)'),
+      sun: v('--sun', '#e07b00'),
+      moon: v('--moon', '#76839a')
+    };
+  }
+
+  // ----------------------------------------------------------- projections
+
+  /* Every projection exposes:
+       fwd(lon, lat) -> [x, y]        always returns a point
+       vis(lon, lat) -> boolean       whether the point faces the viewer
+       inv(x, y)     -> [lon, lat] | null
+       clipPath(ctx) -> void          restricts drawing to the globe
+  */
+
+  /* view is {zoom, lon, lat}: magnification, and the lon/lat held at the
+     centre of the canvas. Zoom of 1 shows the whole world. */
+  function equirect(w, h, view) {
+    view = view || {};
+    var k = view.zoom || 1;
+    var lonC = view.lon || 0, latC = view.lat || 0;
+    var sx = w / 360 * k, sy = h / 180 * k;
+    var worldW = w * k;
+    return {
+      kind: 'equirect', flat: true, repeats: true,
+      width: w,
+      height: h,
+      zoom: k,
+      worldWidth: worldW,
+      centre: [lonC, latC],
+      clampLat: function (lat) {
+        var lim = Math.max(0, 90 - 90 / k);
+        return Math.max(-lim, Math.min(lim, lat));
+      },
+      fwd: function (lon, lat) {
+        var dl = ((lon - lonC + 180) % 360 + 360) % 360 - 180;
+        return [w / 2 + dl * sx, h / 2 - (lat - latC) * sy];
+      },
+      fwdOffset: function (dl, lat) {
+        return [w / 2 + dl * sx, h / 2 - (lat - latC) * sy];
+      },
+      vis: function () { return true; },
+      inv: function (x, y) {
+        var lat = latC - (y - h / 2) / sy;
+        if (lat > 90 || lat < -90) return null;
+        return [wrapLon(lonC + (x - w / 2) / sx), lat];
+      },
+      clipPath: function (ctx) {
+        ctx.beginPath();
+        ctx.rect(0, 0, w, h);
+      }
+    };
+  }
+
+  /* Runs a drawing callback once per horizontally repeated copy of the world,
+     so that geography straddling the antimeridian is drawn on both edges
+     rather than being cut in half. Only the cylindrical projections tile;
+     Robinson has a curved boundary and is meant to end where it ends. */
+  function withRepeats(ctx, proj, fn) {
+    // Past the fully zoomed out view the visible span is under 360 degrees,
+    // so the neighbouring world copies cannot reach the screen and drawing
+    // them is pure waste.
+    if (!proj.repeats || proj.zoom > 1.05) { fn(); return; }
+    var offsets = [-proj.worldWidth, 0, proj.worldWidth];
+    for (var i = 0; i < offsets.length; i++) {
+      ctx.save();
+      ctx.translate(offsets[i], 0);
+      fn();
+      ctx.restore();
+    }
+  }
+
+  function rectClip(w, h) {
+    return function (ctx) { ctx.beginPath(); ctx.rect(0, 0, w, h); };
+  }
+
+  /* Mercator. Rhumb lines, the courses a ship or aircraft holds at a constant
+     compass bearing, are straight on this projection and on no other, which
+     is why it is the navigator's map. The cost is area: it cannot show the
+     poles at all and it inflates high latitudes badly. */
+  function mercator(w, h, view) {
+    view = view || {};
+    var k = view.zoom || 1;
+    var lonC = view.lon || 0, latC = view.lat || 0;
+    var LAT_MAX = 85.051129;
+    function my(lat) {
+      lat = Math.max(-LAT_MAX, Math.min(LAT_MAX, lat));
+      return Math.log(Math.tan(Math.PI / 4 + lat * DEG / 2));
+    }
+    var worldW = w * k;
+    var sx = worldW / 360;
+    var sy = worldW / (2 * Math.PI);
+    var yC = my(latC);
+    var yEdge = my(LAT_MAX);
+
+    return {
+      kind: 'mercator', flat: true, repeats: true,
+      width: w, height: h, zoom: k, worldWidth: worldW, centre: [lonC, latC],
+      fwd: function (lon, lat) {
+        var dl = ((lon - lonC + 180) % 360 + 360) % 360 - 180;
+        return [w / 2 + dl * sx, h / 2 - (my(lat) - yC) * sy];
+      },
+      fwdOffset: function (dl, lat) {
+        return [w / 2 + dl * sx, h / 2 - (my(lat) - yC) * sy];
+      },
+      vis: function () { return true; },
+      inv: function (x, y) {
+        var yy = yC - (y - h / 2) / sy;
+        if (Math.abs(yy) > yEdge) return null;
+        return [wrapLon(lonC + (x - w / 2) / sx),
+                (2 * Math.atan(Math.exp(yy)) - Math.PI / 2) * RAD];
+      },
+      /* Keeps the visible band inside the map rather than scrolling off the
+         top of the world into blank space. */
+      clampLat: function (lat) {
+        var half = (h / 2) / sy;
+        var limY = Math.max(0, yEdge - half);
+        var yy = Math.max(-limY, Math.min(limY, my(lat)));
+        return (2 * Math.atan(Math.exp(yy)) - Math.PI / 2) * RAD;
+      },
+      clipPath: rectClip(w, h)
+    };
+  }
+
+  /* Robinson. Neither equal area nor conformal, tuned by eye so that the whole
+     world simply looks right, which is why atlases reach for it. Latitudes are
+     straight lines but their spacing and length come from a lookup table. */
+  var ROB_X = [1.0000, 0.9986, 0.9954, 0.9900, 0.9822, 0.9730, 0.9600, 0.9427,
+               0.9216, 0.8962, 0.8679, 0.8350, 0.7986, 0.7597, 0.7186, 0.6732,
+               0.6213, 0.5722, 0.5322];
+  var ROB_Y = [0.0000, 0.0620, 0.1240, 0.1860, 0.2480, 0.3100, 0.3720, 0.4340,
+               0.4958, 0.5571, 0.6176, 0.6769, 0.7346, 0.7903, 0.8435, 0.8936,
+               0.9394, 0.9761, 1.0000];
+
+  function robLookup(tbl, latAbs) {
+    var t = Math.min(18, latAbs / 5), i = Math.floor(t);
+    if (i >= 18) return tbl[18];
+    return tbl[i] + (tbl[i + 1] - tbl[i]) * (t - i);
+  }
+
+  function robInvertY(yAbs) {
+    // ROB_Y rises monotonically, so a scan then a linear step is enough
+    for (var i = 0; i < 18; i++) {
+      if (yAbs <= ROB_Y[i + 1]) {
+        var span = ROB_Y[i + 1] - ROB_Y[i];
+        return (i + (span > 0 ? (yAbs - ROB_Y[i]) / span : 0)) * 5;
+      }
+    }
+    return 90;
+  }
+
+  function robinson(w, h, view) {
+    view = view || {};
+    var k = view.zoom || 1;
+    var lonC = view.lon || 0, latC = view.lat || 0;
+    var S = w * k / (2 * 0.8487 * Math.PI);
+    var kx = 0.8487 * S, ky = 1.3523 * S;
+
+    function ry(lat) {
+      return (lat < 0 ? -1 : 1) * robLookup(ROB_Y, Math.abs(lat)) * ky;
+    }
+    var yC = ry(latC);
+
+    /* Takes the longitude offset directly. The public fwd wraps offsets into
+       plus or minus 180, which would fold the two vertical edges of the map
+       onto each other and collapse the outline to a line. */
+    function project(dl, lat) {
+      return [w / 2 + kx * robLookup(ROB_X, Math.abs(lat)) * dl * DEG,
+              h / 2 - (ry(lat) - yC)];
+    }
+
+    function outline(ctx) {
+      ctx.beginPath();
+      var lat, p;
+      for (lat = -90; lat <= 90; lat += 2) {
+        p = project(180, lat);
+        if (lat === -90) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
+      }
+      for (lat = 90; lat >= -90; lat -= 2) {
+        p = project(-180, lat);
+        ctx.lineTo(p[0], p[1]);
+      }
+      ctx.closePath();
+    }
+
+    function fwd(lon, lat) {
+      return project(((lon - lonC + 180) % 360 + 360) % 360 - 180, lat);
+    }
+
+    return {
+      kind: 'robinson', flat: true, repeats: false,
+      width: w, height: h, zoom: k, worldWidth: w * k, centre: [lonC, latC],
+      fwd: fwd,
+      fwdOffset: project,
+      vis: function () { return true; },
+      inv: function (x, y) {
+        var yy = yC - (y - h / 2);
+        var latAbs = robInvertY(Math.min(1, Math.abs(yy) / ky));
+        var lat = (yy < 0 ? -1 : 1) * latAbs;
+        if (latAbs > 90) return null;
+        var xs = kx * robLookup(ROB_X, latAbs);
+        if (xs <= 0) return null;
+        var dl = ((x - w / 2) / xs) * RAD;
+        // Outside the rounded edge of the map there is no place to point at
+        if (Math.abs(dl) > 180) return null;
+        return [wrapLon(lonC + dl), lat];
+      },
+      clampLat: function (lat) {
+        var limY = Math.max(0, ky - h / 2);
+        var yy = Math.max(-limY, Math.min(limY, ry(lat)));
+        var la = robInvertY(Math.min(1, Math.abs(yy) / ky));
+        return (yy < 0 ? -1 : 1) * la;
+      },
+      clipPath: outline
+    };
+  }
+
+  function ortho(w, h, view, radius) {
+    view = view || {};
+    var lon0 = view.lon || 0, lat0 = view.lat || 0;
+    var k = view.zoom || 1;
+    var cx = w / 2, cy = h / 2;
+    var R = (radius || Math.min(w, h) / 2 - 2) * k;
+    var sinL0 = Math.sin(lat0 * DEG), cosL0 = Math.cos(lat0 * DEG);
+    var cosLo0 = Math.cos(lon0 * DEG), sinLo0 = Math.sin(lon0 * DEG);
+
+    // Orthonormal frame: view direction out of the screen, then screen east
+    // and screen north. Screen y is negated at draw time because canvas y
+    // grows downward.
+    var view3 = [cosL0 * cosLo0, cosL0 * sinLo0, sinL0];
+    var eastV = [-sinLo0, cosLo0, 0];
+    var northV = [-sinL0 * cosLo0, -sinL0 * sinLo0, cosL0];
+
+    function cosc(lon, lat) {
+      var la = lat * DEG, dl = (lon - lon0) * DEG;
+      return sinL0 * Math.sin(la) + cosL0 * Math.cos(la) * Math.cos(dl);
+    }
+
+    return {
+      view: view3,
+      east: eastV,
+      north: northV,
+      kind: 'ortho',
+      width: w,
+      height: h,
+      zoom: k,
+      radius: R,
+      center: [cx, cy],
+      centre: [lon0, lat0],
+      lon0: lon0,
+      lat0: lat0,
+      fwd: function (lon, lat) {
+        var la = lat * DEG, dl = (lon - lon0) * DEG;
+        var x = R * Math.cos(la) * Math.sin(dl);
+        var y = -R * (cosL0 * Math.sin(la) - sinL0 * Math.cos(la) * Math.cos(dl));
+        // Points on the far side fold back over the disc, which would draw
+        // mirrored geometry. Push them out to the limb instead so that
+        // polygons straddling the horizon still fill correctly under the clip.
+        if (cosc(lon, lat) < 0) {
+          var m = Math.hypot(x, y) || 1;
+          x = x / m * R; y = y / m * R;
+        }
+        return [cx + x, cy + y];
+      },
+      vis: function (lon, lat) { return cosc(lon, lat) >= 0; },
+      inv: function (x, y) {
+        var dx = x - cx, dy = y - cy;
+        var rho = Math.hypot(dx, dy);
+        if (rho > R) return null;
+        var c = Math.asin(Math.min(1, rho / R));
+        var sc = Math.sin(c), cc = Math.cos(c);
+        if (rho === 0) return [lon0, lat0];
+        var lat = Math.asin(cc * sinL0 + dy * -1 * sc * cosL0 / rho) * RAD;
+        var lon = lon0 + Math.atan2(dx * sc, rho * cosL0 * cc + dy * sinL0 * sc) * RAD;
+        return [wrapLon(lon), lat];
+      },
+      clipPath: function (ctx) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      }
+    };
+  }
+
+  function wrapLon(lon) {
+    lon = ((lon + 180) % 360 + 360) % 360 - 180;
+    return lon;
+  }
+
+  // -------------------------------------------------------------- map draw
+
+  /* Draws a lon/lat ring, splitting it wherever it wraps the antimeridian so
+     that equirectangular maps do not grow a horizontal streak across the
+     whole width. */
+  /* The wrap seam of a flat map sits opposite the view centre, not at the
+     prime meridian, and it moves as the reader pans. Splitting on the raw
+     longitude difference is therefore only correct for an unpanned map: two
+     neighbouring coastline vertices either side of the seam differ by a
+     fraction of a degree yet project to opposite edges of the canvas, and the
+     segment between them is drawn as a line straight across the world.
+     Comparing offsets from the view centre is what actually detects the jump. */
+  function ringPath(ctx, proj, ring) {
+    var started = false, prevDl = null;
+    var c0 = (proj.centre && proj.centre[0]) || 0;
+    for (var i = 0; i < ring.length; i++) {
+      var lon = ring[i][0], lat = ring[i][1];
+      var dl = proj.flat ? wrapLon(lon - c0) : 0;
+      if (proj.flat && prevDl !== null && Math.abs(dl - prevDl) > 180) {
+        started = false;
+      }
+      var p = proj.fwd(lon, lat);
+      if (!started) { ctx.moveTo(p[0], p[1]); started = true; }
+      else ctx.lineTo(p[0], p[1]);
+      prevDl = dl;
+    }
+  }
+
+  /* Bounding box per ring, computed once per data set and kept alive with the
+     array itself. A ring that straddles the antimeridian gets a box spanning
+     every longitude, which is conservative: it is never culled, only never
+     wrongly culled. */
+  var bboxCache = new WeakMap();
+
+  function ringBoxes(rings) {
+    var got = bboxCache.get(rings);
+    if (got) return got;
+    var out = new Float64Array(rings.length * 4);
+    for (var i = 0; i < rings.length; i++) {
+      var r = rings[i], lo = 180, hi = -180, la0 = 90, la1 = -90;
+      for (var j = 0; j < r.length; j++) {
+        var x = r[j][0], y = r[j][1];
+        if (x < lo) lo = x;
+        if (x > hi) hi = x;
+        if (y < la0) la0 = y;
+        if (y > la1) la1 = y;
+      }
+      out[i * 4] = lo; out[i * 4 + 1] = hi; out[i * 4 + 2] = la0; out[i * 4 + 3] = la1;
+    }
+    bboxCache.set(rings, out);
+    return out;
+  }
+
+  /* Latitude and longitude actually on screen, read back through the inverse
+     projection so it is right for all four of them. Cached against the
+     projection instance, which is rebuilt each frame. */
+  var windowCache = new WeakMap();
+
+  function viewWindow(proj) {
+    var got = windowCache.get(proj);
+    if (got !== undefined) return got;
+    var N = 8, c0 = (proj.centre && proj.centre[0]) || 0;
+    var latLo = 90, latHi = -90, dlLo = 180, dlHi = -180, any = false;
+    for (var i = 0; i <= N; i++) {
+      for (var j = 0; j <= N; j++) {
+        var ll = proj.inv(i / N * proj.width, j / N * proj.height);
+        if (!ll) continue;
+        any = true;
+        if (ll[1] < latLo) latLo = ll[1];
+        if (ll[1] > latHi) latHi = ll[1];
+        var dl = wrapLon(ll[0] - c0);
+        if (dl < dlLo) dlLo = dl;
+        if (dl > dlHi) dlHi = dl;
+      }
+    }
+    var win = any ? {
+      lat0: latLo - 1, lat1: latHi + 1,
+      lon0: c0 + dlLo - 1, lon1: c0 + dlHi + 1
+    } : null;
+    windowCache.set(proj, win);
+    return win;
+  }
+
+  function boxVisible(bb, i, win) {
+    if (bb[i * 4 + 3] < win.lat0 || bb[i * 4 + 2] > win.lat1) return false;
+    var lo = bb[i * 4], hi = bb[i * 4 + 1];
+    for (var s = -360; s <= 360; s += 360) {
+      if (lo + s <= win.lon1 && hi + s >= win.lon0) return true;
+    }
+    return false;
+  }
+
+  function strokeRings(ctx, proj, rings, style, width) {
+    var win = viewWindow(proj);
+    var bb = win ? ringBoxes(rings) : null;
+    ctx.save();
+    proj.clipPath(ctx);
+    ctx.clip();
+    withRepeats(ctx, proj, function () {
+      ctx.beginPath();
+      for (var i = 0; i < rings.length; i++) {
+        // Skip anything whose bounding box cannot reach the screen. Without
+        // this every coastline in the world is projected on every frame, no
+        // matter how far in the reader has zoomed.
+        if (bb && !boxVisible(bb, i, win)) continue;
+        ringPath(ctx, proj, rings[i]);
+      }
+      ctx.strokeStyle = style;
+      ctx.lineWidth = width;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  function drawLand(ctx, proj, pal, opts) {
+    opts = opts || {};
+    var rings = (detail.loaded && detail.land.length) ? detail.land : land;
+    strokeRings(ctx, proj, rings, opts.stroke || pal.soft, opts.lineWidth || 0.7);
+  }
+
+  /* Country outlines, drawn lighter than the coastline so the two read as
+     separate layers rather than one busy tangle. */
+  function drawBorders(ctx, proj, pal, opts) {
+    opts = opts || {};
+    var rings = (detail.loaded && detail.borders.length) ? detail.borders : borders;
+    strokeRings(ctx, proj, rings, opts.stroke || pal.hair, opts.lineWidth || 0.6);
+  }
+
+  /* Lakes and rivers, available only once the detail set has loaded. Rivers
+     are the single most useful layer for recognising where you are on the
+     ground, which is why they are worth the bytes. */
+  function drawWater(ctx, proj, pal, opts) {
+    if (!detail.loaded) return;
+    opts = opts || {};
+    if (detail.lakes.length) {
+      strokeRings(ctx, proj, detail.lakes, opts.stroke || pal.faint, opts.lineWidth || 0.8);
+    }
+    if (detail.rivers.length) {
+      strokeRings(ctx, proj, detail.rivers, opts.stroke || pal.faint, opts.lineWidth || 0.7);
+    }
+  }
+
+  /* Meridians and parallels every `step` degrees, restricted to the part of
+     the sphere actually on screen.
+
+     Walking the whole globe would be simpler, but it fixes the cost at
+     360/step lines whatever the view, which puts any sub-degree spacing out
+     of reach. Deeply zoomed in that is exactly the spacing wanted, and all
+     but a handful of those lines would fall outside the canvas anyway.
+     Clipping to the window first makes the count depend on the view rather
+     than on the step, so a tenth of a degree costs no more than thirty. */
+  function drawGraticule(ctx, proj, pal, step) {
+    step = step || 30;
+    var lat0 = -90, lat1 = 90, lon0 = -180, lon1 = 180;
+    // Parallels stop short of the poles, which are points rather than circles
+    var pLat0 = -60, pLat1 = 60;
+
+    if (step < 1) {
+      var win = viewWindow(proj);
+      if (!win) return;
+      /* viewWindow pads by a whole degree on behalf of the tile code, which
+         is wider than this entire window, so the pad is taken back off and
+         replaced with a proportional one. */
+      lat0 = win.lat0 + 1; lat1 = win.lat1 - 1;
+      lon0 = win.lon0 + 1; lon1 = win.lon1 - 1;
+      if (lat1 <= lat0 || lon1 <= lon0) return;
+      var padLat = (lat1 - lat0) * 0.05, padLon = (lon1 - lon0) * 0.05;
+      lat0 = Math.max(-90, lat0 - padLat); lat1 = Math.min(90, lat1 + padLat);
+      lon0 -= padLon; lon1 += padLon;
+      pLat0 = Math.max(-85, lat0); pLat1 = Math.min(85, lat1);
+    }
+
+    // Follow each line finely enough that a curved projection stays curved
+    var dLat = Math.min(2, (lat1 - lat0) / 48);
+    var dLon = Math.min(2, (lon1 - lon0) / 48);
+    var snap = function (v) { return Math.ceil(v / step) * step; };
+
+    ctx.save();
+    proj.clipPath(ctx);
+    ctx.clip();
+    withRepeats(ctx, proj, function () {
+      ctx.beginPath();
+      var lon, lat, first, p;
+      for (lon = snap(lon0); lon <= lon1; lon += step) {
+        first = true;
+        for (lat = lat0; lat <= lat1 + dLat / 2; lat += dLat) {
+          p = proj.fwd(lon, Math.min(lat1, lat));
+          if (first) { ctx.moveTo(p[0], p[1]); first = false; } else ctx.lineTo(p[0], p[1]);
+        }
+      }
+      /* The equator gets its own dashed line, so drawing it here too would
+         leave a solid and a dashed line a pixel apart. */
+      for (lat = snap(pLat0); lat <= pLat1; lat += step) {
+        if (Math.abs(lat) < step / 1000) continue;
+        first = true;
+        for (lon = lon0; lon <= lon1 + dLon / 2; lon += dLon) {
+          p = proj.fwd(Math.min(lon1, lon), lat);
+          if (first) { ctx.moveTo(p[0], p[1]); first = false; } else ctx.lineTo(p[0], p[1]);
+        }
+      }
+      ctx.strokeStyle = pal.hair;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  function drawEquator(ctx, proj, pal) {
+    ctx.save();
+    proj.clipPath(ctx);
+    ctx.clip();
+    withRepeats(ctx, proj, function () {
+      ctx.beginPath();
+      for (var lon = -180; lon <= 180; lon += 2) {
+        var p = proj.fwd(lon, 0);
+        if (lon === -180) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
+      }
+      ctx.strokeStyle = pal.faint;
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
+    ctx.restore();
+  }
+
+  // ------------------------------------------------------------ spherical caps
+
+  /* Boundary of a spherical cap as a single unwrapped polygon.
+
+     Filling a cap on an equirectangular map is the classic trap: a cap that
+     crosses the antimeridian, or that swallows a pole, is not a simple polygon
+     in lon/lat and naive filling produces wedges. Scanning by latitude avoids
+     that. For each row the set of longitudes inside the cap is one interval
+     about the centre meridian, in closed form, so the boundary comes out as a
+     left edge going up and a right edge coming back down. Rows that lie wholly
+     inside get the full 360 degrees, which closes the polygon over the pole.
+
+     Longitudes are left unwrapped, in [lon0-180, lon0+180]. Callers draw the
+     result three times at one map width apart to cover the wrap. */
+  function capPolygon(lat0, radiusDeg, step) {
+    step = step || 0.5;
+    var cr = Math.cos(radiusDeg * DEG);
+    var s0 = Math.sin(lat0 * DEG), c0 = Math.cos(lat0 * DEG);
+    var left = [], right = [], lat, d;
+    for (lat = -90; lat <= 90.0001; lat += step) {
+      if (lat > 90) lat = 90;
+      var sl = Math.sin(lat * DEG), cl = Math.cos(lat * DEG);
+      if (Math.abs(c0) < 1e-9) {
+        // Cap centred on a pole: membership depends on latitude alone.
+        d = (Math.abs(lat - lat0) <= radiusDeg) ? 180 : null;
+      } else if (Math.abs(cl) < 1e-9) {
+        d = (s0 * sl >= cr) ? 180 : null;
+      } else {
+        var K = (cr - s0 * sl) / (c0 * cl);
+        if (K <= -1) d = 180;
+        else if (K >= 1) d = null;
+        else d = Math.acos(K) * RAD;
+      }
+      if (d === null) continue;
+      left.push([-d, lat]);
+      right.push([d, lat]);
+      if (lat === 90) break;
+    }
+    if (!left.length) return [];
+    return left.concat(right.reverse());
+  }
+
+  function unitVec(lat, lon) {
+    var la = lat * DEG, lo = lon * DEG, c = Math.cos(la);
+    return [c * Math.cos(lo), c * Math.sin(lo), Math.sin(la)];
+  }
+  function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+
+  /* Boundary of a cap as unit vectors. */
+  function capRing3(centre, radiusDeg, n) {
+    var out = [];
+    // any vector not parallel to the centre gives a starting basis
+    var t = (Math.abs(centre[2]) < 0.9) ? [0, 0, 1] : [1, 0, 0];
+    var ax = [centre[1] * t[2] - centre[2] * t[1],
+              centre[2] * t[0] - centre[0] * t[2],
+              centre[0] * t[1] - centre[1] * t[0]];
+    var am = Math.hypot(ax[0], ax[1], ax[2]);
+    ax = [ax[0] / am, ax[1] / am, ax[2] / am];
+    var by = [centre[1] * ax[2] - centre[2] * ax[1],
+              centre[2] * ax[0] - centre[0] * ax[2],
+              centre[0] * ax[1] - centre[1] * ax[0]];
+    var cr = Math.cos(radiusDeg * DEG), sr = Math.sin(radiusDeg * DEG);
+    for (var i = 0; i < n; i++) {
+      var th = i / n * 2 * Math.PI, ct = Math.cos(th), st = Math.sin(th);
+      out.push([
+        cr * centre[0] + sr * (ct * ax[0] + st * by[0]),
+        cr * centre[1] + sr * (ct * ax[1] + st * by[1]),
+        cr * centre[2] + sr * (ct * ax[2] + st * by[2])
+      ]);
+    }
+    return out;
+  }
+
+  /* Fills a spherical cap correctly under either projection.
+
+     Equirectangular uses the scanline polygon above, drawn three times a map
+     width apart so the antimeridian wrap needs no special case.
+
+     Orthographic is harder, because the part of the cap on the far side of the
+     globe must be discarded rather than folded onto the near side. The cap
+     boundary is walked in three dimensions, the run of points facing the
+     viewer is kept, and the region is closed along the limb between the two
+     crossings. The cap and the visible hemisphere are both convex, so there is
+     exactly one such run and one limb arc to add. */
+  function fillCap(ctx, proj, lat0, lon0, radiusDeg, style) {
+    ctx.save();
+    proj.clipPath(ctx);
+    ctx.clip();
+    ctx.fillStyle = style;
+    if (proj.kind !== 'ortho') {
+      var pts = capPolygon(lat0, radiusDeg);
+      /* Offsets are measured from the cap centre and then shifted to the
+         projection centre, so a cap covering every longitude keeps running
+         past plus or minus 180 instead of being folded back on itself. */
+      var base = wrapLon(lon0 - proj.centre[0]);
+      var step2 = proj.fwdOffset ? proj.fwdOffset
+        : function (dl, lat) { return proj.fwd(proj.centre[0] + dl, lat); };
+      if (pts.length) {
+        withRepeats(ctx, proj, function () {
+          ctx.beginPath();
+          for (var i = 0; i < pts.length; i++) {
+            var p = step2(base + pts[i][0], pts[i][1]);
+            if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
+          }
+          ctx.closePath();
+          ctx.fill();
+        });
+      }
+    } else {
+      fillCapOrtho(ctx, proj, lat0, lon0, radiusDeg);
+    }
+    ctx.restore();
+  }
+
+  function fillCapOrtho(ctx, proj, lat0, lon0, radiusDeg) {
+    var N = 512;
+    var c = unitVec(lat0, lon0);
+    var cr = Math.cos(radiusDeg * DEG);
+    var v = proj.view, ex = proj.east, ey = proj.north;
+    var cx = proj.center[0], cy = proj.center[1], R = proj.radius;
+
+    function screen(p) {
+      return [cx + R * dot3(p, ex), cy - R * dot3(p, ey)];
+    }
+    function discPath() {
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+
+    var ring = capRing3(c, radiusDeg, N);
+    var vis = ring.map(function (p) { return dot3(p, v) >= 0; });
+    var nVis = vis.reduce(function (s, b) { return s + (b ? 1 : 0); }, 0);
+
+    if (nVis === 0) {
+      // Either the cap is wholly hidden, or it swallows the whole near side.
+      if (dot3(v, c) >= cr) discPath();
+      return;
+    }
+    if (nVis === N) {
+      ctx.beginPath();
+      ring.forEach(function (p, i) {
+        var s = screen(p);
+        if (i === 0) ctx.moveTo(s[0], s[1]); else ctx.lineTo(s[0], s[1]);
+      });
+      ctx.closePath();
+      ctx.fill();
+      return;
+    }
+
+    // Start of the single visible run
+    var start = -1, i2;
+    for (i2 = 0; i2 < N; i2++) {
+      if (vis[i2] && !vis[(i2 - 1 + N) % N]) { start = i2; break; }
+    }
+    if (start < 0) return;
+
+    var run = [];
+    for (i2 = 0; i2 < N; i2++) {
+      var idx = (start + i2) % N;
+      if (!vis[idx]) break;
+      run.push(ring[idx]);
+    }
+
+    // Screen angles where the boundary meets the limb, measured with y up
+    function limbAngle(p) {
+      var s = screen(p);
+      return Math.atan2(-(s[1] - cy), s[0] - cx);
+    }
+    var aEnter = limbAngle(run[0]);
+    var aExit = limbAngle(run[run.length - 1]);
+
+    // Pick the limb direction whose midpoint lies inside the cap
+    function limbPoint(a) {
+      return [Math.cos(a) * ex[0] + Math.sin(a) * ey[0],
+              Math.cos(a) * ex[1] + Math.sin(a) * ey[1],
+              Math.cos(a) * ex[2] + Math.sin(a) * ey[2]];
+    }
+    var span = aEnter - aExit;
+    while (span <= 0) span += 2 * Math.PI;
+    var mid = aExit + span / 2;
+    if (dot3(limbPoint(mid), c) < cr) span -= 2 * Math.PI;
+
+    ctx.beginPath();
+    run.forEach(function (p, i) {
+      var s = screen(p);
+      if (i === 0) ctx.moveTo(s[0], s[1]); else ctx.lineTo(s[0], s[1]);
+    });
+    var steps = Math.max(8, Math.ceil(Math.abs(span) / (2 * Math.PI) * 256));
+    for (var j = 1; j <= steps; j++) {
+      var a = aExit + span * (j / steps);
+      ctx.lineTo(cx + R * Math.cos(a), cy - R * Math.sin(a));
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // ------------------------------------------------------ marching squares
+
+  /* Extracts the zero contour of f over a lon/lat window and stitches the
+     resulting segments into closed or open polylines.
+     Returns an array of [lon, lat] arrays. */
+  function contour(f, lonMin, lonMax, latMin, latMax, nx, ny) {
+    var dx = (lonMax - lonMin) / nx;
+    var dy = (latMax - latMin) / ny;
+    var vals = new Float64Array((nx + 1) * (ny + 1));
+    var i, j;
+    for (j = 0; j <= ny; j++) {
+      for (i = 0; i <= nx; i++) {
+        vals[j * (nx + 1) + i] = f(lonMin + i * dx, latMin + j * dy);
+      }
+    }
+
+    var segs = [];
+    function interp(x1, y1, v1, x2, y2, v2) {
+      var t = v1 / (v1 - v2);
+      return [x1 + (x2 - x1) * t, y1 + (y2 - y1) * t];
+    }
+
+    for (j = 0; j < ny; j++) {
+      for (i = 0; i < nx; i++) {
+        var x0 = lonMin + i * dx, x1 = x0 + dx;
+        var y0 = latMin + j * dy, y1 = y0 + dy;
+        var v00 = vals[j * (nx + 1) + i];
+        var v10 = vals[j * (nx + 1) + i + 1];
+        var v11 = vals[(j + 1) * (nx + 1) + i + 1];
+        var v01 = vals[(j + 1) * (nx + 1) + i];
+        if (!isFinite(v00) || !isFinite(v10) || !isFinite(v11) || !isFinite(v01)) continue;
+        var idx = (v00 > 0 ? 1 : 0) | (v10 > 0 ? 2 : 0) | (v11 > 0 ? 4 : 0) | (v01 > 0 ? 8 : 0);
+        if (idx === 0 || idx === 15) continue;
+        var B = (v00 * v10 <= 0) ? interp(x0, y0, v00, x1, y0, v10) : null; // bottom
+        var R = (v10 * v11 <= 0) ? interp(x1, y0, v10, x1, y1, v11) : null; // right
+        var T = (v01 * v11 <= 0) ? interp(x0, y1, v01, x1, y1, v11) : null; // top
+        var L = (v00 * v01 <= 0) ? interp(x0, y0, v00, x0, y1, v01) : null; // left
+        var pairs;
+        switch (idx) {
+          case 1: case 14: pairs = [[L, B]]; break;
+          case 2: case 13: pairs = [[B, R]]; break;
+          case 3: case 12: pairs = [[L, R]]; break;
+          case 4: case 11: pairs = [[R, T]]; break;
+          case 6: case 9:  pairs = [[B, T]]; break;
+          case 7: case 8:  pairs = [[L, T]]; break;
+          case 5:          pairs = [[L, T], [B, R]]; break;
+          case 10:         pairs = [[L, B], [R, T]]; break;
+          default: pairs = [];
+        }
+        for (var k = 0; k < pairs.length; k++) {
+          if (pairs[k][0] && pairs[k][1]) segs.push(pairs[k]);
+        }
+      }
+    }
+    return stitch(segs, Math.min(dx, dy) * 0.5);
+  }
+
+  function stitch(segs, tol) {
+    var key = function (p) {
+      return Math.round(p[0] / tol) + ',' + Math.round(p[1] / tol);
+    };
+    var map = new Map();
+    segs.forEach(function (s, i) {
+      [key(s[0]), key(s[1])].forEach(function (k) {
+        if (!map.has(k)) map.set(k, []);
+        map.get(k).push(i);
+      });
+    });
+    var used = new Array(segs.length).fill(false);
+    var lines = [];
+    for (var i = 0; i < segs.length; i++) {
+      if (used[i]) continue;
+      used[i] = true;
+      var line = [segs[i][0], segs[i][1]];
+      // extend forward, then backward
+      for (var dir = 0; dir < 2; dir++) {
+        for (;;) {
+          var end = line[line.length - 1];
+          var cand = map.get(key(end)) || [];
+          var next = -1;
+          for (var c = 0; c < cand.length; c++) {
+            if (!used[cand[c]]) { next = cand[c]; break; }
+          }
+          if (next < 0) break;
+          used[next] = true;
+          var s = segs[next];
+          line.push(key(s[0]) === key(end) ? s[1] : s[0]);
+        }
+        line.reverse();
+      }
+      if (line.length > 2) lines.push(line);
+    }
+    return lines;
+  }
+
+  // ---------------------------------------------------------- solar shadow
+
+  /* Builds the Moon shadow geometry for one instant, in equator-of-date
+     kilometres. The z axis is dilated by the flattening ratio so that the
+     Earth becomes a sphere, which is what makes the axis intersection a
+     plain quadratic (Montenbruck and Pfleger, second edition, p 184).
+
+     Validated against Astronomy Engine's own SearchGlobalSolarEclipse to
+     sub-metre agreement on five consecutive central eclipses. */
+  function shadow(time) {
+    var S = A.GeoVector(A.Body.Sun, time, true);   // light-time and aberration
+    var M = A.GeoMoon(time);
+    var rot = A.Rotation_EQJ_EQD(time);
+
+    var vv = A.RotateVector(rot, new A.Vector(M.x - S.x, M.y - S.y, M.z - S.z, time));
+    var mm = A.RotateVector(rot, new A.Vector(M.x, M.y, M.z, time));
+    var ss = A.RotateVector(rot, new A.Vector(S.x, S.y, S.z, time));
+
+    // Sun to Moon vector and unit axis, in km
+    var vx = vv.x * KM_AU, vy = vv.y * KM_AU, vz = vv.z * KM_AU;
+    var dsm = Math.hypot(vx, vy, vz);
+    var ax = vx / dsm, ay = vy / dsm, az = vz / dsm;
+
+    var mx = mm.x * KM_AU, my = mm.y * KM_AU, mz = mm.z * KM_AU;
+    var sx = ss.x * KM_AU, sy = ss.y * KM_AU, sz = ss.z * KM_AU;
+
+    var tanUmbra = (SUN_R - MOON_R) / dsm;
+    var tanPen = (SUN_R + MOON_R) / dsm;
+
+    // Axis intersection with the geoid, in the dilated frame
+    var Vz = vz / FLAT, Ez = -mz / FLAT;           // lunacentric Earth = -Moon
+    var Ex = -mx, Ey = -my;
+    var qa = vx * vx + vy * vy + Vz * Vz;
+    var qb = -2 * (vx * Ex + vy * Ey + Vz * Ez);
+    var qc = Ex * Ex + Ey * Ey + Ez * Ez - EARTH_A * EARTH_A;
+    var radic = qb * qb - 4 * qa * qc;
+
+    var axis = null;
+    if (radic > 0) {
+      var u = (-qb - Math.sqrt(radic)) / (2 * qa);
+      var px = u * vx - Ex, py = u * vy - Ey, pz = (u * Vz - Ez) * FLAT;
+      var obs = A.VectorObserver(new A.Vector(px / KM_AU, py / KM_AU, pz / KM_AU, time), true);
+      axis = { lat: obs.latitude, lon: obs.longitude };
+    }
+
+    /* Signed shadow depth at a point on the Earth's surface, in km.
+         > 0  inside the umbra (or antumbra, when the cone has crossed its apex)
+
+       The result is the smaller of two distances, the margin inside the
+       shadow cone and the margin inside the sunlit hemisphere. Taking the
+       minimum means the zero contour is the shadow boundary clipped at the
+       terminator, and stays a single smooth closed curve, which is what lets
+       the region be filled rather than only stroked. A hard mask would leave
+       the contour open wherever the shadow runs off the day side. */
+    function depth(lat, lon, which) {
+      var o = A.ObserverVector(time, new A.Observer(lat, lon, 0), true);
+      var qx = o.x * KM_AU, qy = o.y * KM_AU, qz = o.z * KM_AU;
+
+      // Geodetic normal at the surface point
+      var nx = qx / (EARTH_A * EARTH_A);
+      var ny = qy / (EARTH_A * EARTH_A);
+      var nz = qz / (EARTH_A * FLAT * EARTH_A * FLAT);
+      var nm = Math.hypot(nx, ny, nz);
+
+      // Sun altitude as an arc distance from the terminator, in km
+      var ux = sx - qx, uy = sy - qy, uz = sz - qz;
+      var um = Math.hypot(ux, uy, uz);
+      var sinAlt = (ux * nx + uy * ny + uz * nz) / (nm * um);
+      var sunMargin = Math.asin(Math.max(-1, Math.min(1, sinAlt))) * EARTH_A;
+
+      var rx = qx - mx, ry = qy - my, rz = qz - mz;
+      var t = rx * ax + ry * ay + rz * az;
+      var perp = Math.hypot(rx - t * ax, ry - t * ay, rz - t * az);
+      var r = (which === 'penumbra')
+        ? MOON_R + t * tanPen
+        : Math.abs(MOON_R - t * tanUmbra);
+      return Math.min(r - perp, sunMargin);
+    }
+
+    /* Sub-solar point. The vector has to be scaled down to roughly the Earth's
+       radius first: VectorObserver inverts the geodetic latitude iteratively
+       and that iteration does not converge for a point an astronomical unit
+       away. Only the direction matters here, so the scale is free to change. */
+    var sm = Math.hypot(sx, sy, sz) / EARTH_A;
+    var sub = A.VectorObserver(
+      new A.Vector(sx / sm / KM_AU, sy / sm / KM_AU, sz / sm / KM_AU, time), true);
+
+    /* Does the penumbral cone touch the Earth at all? Compare the Earth's
+       centre distance from the shadow axis against the penumbral radius
+       there, plus the Earth's own radius. This is the cheap analytic test the
+       time-range search runs thousands of times, so it avoids any grid. */
+    var tc = -(mx * ax + my * ay + mz * az);
+    var cxp = mx + tc * ax, cyp = my + tc * ay, czp = mz + tc * az;
+    var axisDist = Math.hypot(cxp, cyp, czp);
+    var penAtEarth = MOON_R + tc * tanPen;
+    var reaches = tc > 0 && axisDist <= EARTH_A + penAtEarth;
+
+    return {
+      time: time,
+      axis: axis,
+      depth: depth,
+      reachesEarth: reaches,
+      subsolar: { lat: sub.latitude, lon: sub.longitude },
+      // umbral radius at the axis intersection, negative when annular
+      axisUmbraRadius: (function () {
+        if (!axis) return null;
+        var o = A.ObserverVector(time, new A.Observer(axis.lat, axis.lon, 0), true);
+        var t = (o.x * KM_AU - mx) * ax + (o.y * KM_AU - my) * ay + (o.z * KM_AU - mz) * az;
+        return MOON_R - t * tanUmbra;
+      })()
+    };
+  }
+
+  // ----------------------------------------------------------------- tiles
+
+  /* Optional street-level basemap from Web Mercator raster tiles.
+
+     This is the only part of the toolkit that talks to the network. Raster
+     tiles exist solely in Web Mercator, so under the Mercator projection they
+     are blitted straight to the canvas. Every other projection, the globe
+     included, gets the imagery warped on the fly: the visible tiles are
+     assembled into an offscreen Mercator mosaic, the screen is divided into
+     small cells, and each cell samples the mosaic under the affine map implied
+     by the projection's inverse at its corners. At cell size the warp is
+     indistinguishable from an exact reprojection.
+
+     The style is deliberately the grey, label-free CARTO basemap: it sits
+     quietly under a monochrome chart, and leaving the labels off means the
+     tool's own place names are the only ones on screen. */
+  var tileCache = new Map();
+  var TILE_CACHE_MAX = 600;
+  var LAT_MAX_MERC = 85.051129;
+
+  function mercV(lat) {
+    lat = Math.max(-LAT_MAX_MERC, Math.min(LAT_MAX_MERC, lat));
+    return 0.5 - Math.log(Math.tan(Math.PI / 4 + lat * DEG / 2)) / (2 * Math.PI);
+  }
+
+  function tileUrl(style, z, x, y) {
+    return 'https://' + 'abcd'[(x + y) % 4] +
+      '.basemaps.cartocdn.com/' + style + '_nolabels/' + z + '/' + x + '/' + y + '.png';
+  }
+
+  function getTile(style, z, x, y, onLoad) {
+    var key = style + ' ' + z + '/' + x + '/' + y;
+    var img = tileCache.get(key);
+    if (img === undefined) {
+      img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = onLoad;
+      img.onerror = function () { };
+      img.src = tileUrl(style, z, x, y);
+      tileCache.set(key, img);
+      if (tileCache.size > TILE_CACHE_MAX) {
+        var oldest = tileCache.keys().next().value;
+        tileCache.delete(oldest);
+      }
+    }
+    return (img.complete && img.naturalWidth) ? img : null;
+  }
+
+  /* style is 'light' (default) or 'dark', picking the CARTO variant that
+     sits under the current palette. */
+  function drawTiles(ctx, proj, onLoad, style) {
+    style = style === 'dark' ? 'dark' : 'light';
+    if (proj.kind === 'mercator') return drawTilesMerc(ctx, proj, onLoad, style);
+    return drawTilesWarp(ctx, proj, onLoad, style);
+  }
+
+  function drawTilesMerc(ctx, proj, onLoad, style) {
+    var worldW = proj.worldWidth;
+    var z = Math.max(0, Math.min(19, Math.round(Math.log2(worldW / 256))));
+    var n = Math.pow(2, z);
+    var size = worldW / n;
+
+    var uC = (proj.centre[0] + 180) / 360, vC = mercV(proj.centre[1]);
+    var W = proj.width, H = proj.height;
+    var ix0 = Math.floor((uC - (W / 2) / worldW) * n);
+    var ix1 = Math.floor((uC + (W / 2) / worldW) * n);
+    var iy0 = Math.max(0, Math.floor((vC - (H / 2) / worldW) * n));
+    var iy1 = Math.min(n - 1, Math.floor((vC + (H / 2) / worldW) * n));
+
+    var any = false;
+    ctx.save();
+    proj.clipPath(ctx);
+    ctx.clip();
+    for (var iy = iy0; iy <= iy1; iy++) {
+      for (var ix = ix0; ix <= ix1; ix++) {
+        var img = getTile(style, z, ((ix % n) + n) % n, iy, onLoad);
+        if (img) {
+          any = true;
+          // The extra pixel hides the hairline seams between neighbours
+          ctx.drawImage(img,
+            W / 2 + (ix / n - uC) * worldW,
+            H / 2 + (iy / n - vC) * worldW,
+            size + 1, size + 1);
+        }
+      }
+    }
+    ctx.restore();
+    // Nothing on screen yet (first load, or offline) leaves the caller free
+    // to draw the bundled outlines instead of a blank map
+    return any;
+  }
+
+  /* Offscreen mosaic of the tiles covering the visible window, in tile-pixel
+     coordinates: source x = (global mercator u * n - ix0) * 256. The canvas is
+     kept and only grown, so a steady view allocates nothing per frame. */
+  var mosaic = { canvas: null, ctx: null };
+
+  function tileMosaic(proj, onLoad, style) {
+    var win = viewWindow(proj);
+    if (!win) return null;
+
+    /* The coarse sampling grid behind viewWindow underestimates the globe:
+       the extreme longitudes and latitudes of a hemisphere sit exactly on the
+       limb, and a pole inside the disc swings the longitudes through the full
+       circle. Walking the limb, and testing the poles directly, closes both
+       gaps; only limb points actually on screen count, so a zoomed-in view
+       keeps its tight window. */
+    if (proj.kind === 'ortho') {
+      var c0v = proj.centre[0];
+      var dlLo = wrapLon(win.lon0 - c0v), dlHi = wrapLon(win.lon1 - c0v);
+      for (var q = 0; q < 64; q++) {
+        var th = q / 64 * 2 * Math.PI;
+        var lx = proj.center[0] + Math.cos(th) * (proj.radius - 0.5);
+        var ly = proj.center[1] + Math.sin(th) * (proj.radius - 0.5);
+        if (lx < 0 || lx > proj.width || ly < 0 || ly > proj.height) continue;
+        var lm = proj.inv(lx, ly);
+        if (!lm) continue;
+        if (lm[1] < win.lat0) win.lat0 = lm[1];
+        if (lm[1] > win.lat1) win.lat1 = lm[1];
+        var dq = wrapLon(lm[0] - c0v);
+        if (dq < dlLo) dlLo = dq;
+        if (dq > dlHi) dlHi = dq;
+      }
+      win.lon0 = c0v + dlLo - 1;
+      win.lon1 = c0v + dlHi + 1;
+      [90, -90].forEach(function (plat) {
+        if (!proj.vis(0, plat)) return;
+        var pp = proj.fwd(0, plat);
+        if (pp[0] < 0 || pp[0] > proj.width || pp[1] < 0 || pp[1] > proj.height) return;
+        if (plat > 0) win.lat1 = 90; else win.lat0 = -90;
+        win.lon0 = c0v - 181;
+        win.lon1 = c0v + 181;
+      });
+    }
+
+    var lat0 = Math.max(-LAT_MAX_MERC, win.lat0);
+    var lat1 = Math.min(LAT_MAX_MERC, win.lat1);
+    if (lat1 <= lat0) return null;
+
+    /* Tile zoom from the on-screen pixel size of a full world. The globe's
+       equivalent is its circumference in canvas pixels. The level backs off
+       until the visible window needs a sane number of tiles, which matters
+       when a whole hemisphere is on screen. */
+    var worldW = (proj.kind === 'ortho') ? proj.radius * 2 * Math.PI : proj.worldWidth;
+    var z = Math.max(0, Math.min(19, Math.round(Math.log2(worldW / 256))));
+    var n, ix0, ix1, iy0, iy1;
+    for (;;) {
+      n = Math.pow(2, z);
+      ix0 = Math.floor((win.lon0 + 180) / 360 * n);
+      ix1 = Math.floor((win.lon1 + 180) / 360 * n);
+      iy0 = Math.max(0, Math.floor(mercV(lat1) * n));
+      iy1 = Math.min(n - 1, Math.floor(mercV(lat0) * n));
+      if (z === 0 || (ix1 - ix0 + 1) * (iy1 - iy0 + 1) <= 96) break;
+      z--;
+    }
+    // One spare column each side so cells straddling the wrap seam still
+    // find their pixels
+    ix0--; ix1++;
+
+    var cw = (ix1 - ix0 + 1) * 256, ch = (iy1 - iy0 + 1) * 256;
+    if (!mosaic.canvas) {
+      mosaic.canvas = document.createElement('canvas');
+      mosaic.ctx = mosaic.canvas.getContext('2d');
+    }
+    if (mosaic.canvas.width < cw) mosaic.canvas.width = cw;
+    if (mosaic.canvas.height < ch) mosaic.canvas.height = ch;
+    mosaic.ctx.clearRect(0, 0, cw, ch);
+    var any = false;
+    for (var iy = iy0; iy <= iy1; iy++) {
+      for (var ix = ix0; ix <= ix1; ix++) {
+        var img = getTile(style, z, ((ix % n) + n) % n, iy, onLoad);
+        if (img) {
+          any = true;
+          mosaic.ctx.drawImage(img, (ix - ix0) * 256, (iy - iy0) * 256);
+        }
+      }
+    }
+    if (!any) return null;
+    return { canvas: mosaic.canvas, n: n, ix0: ix0, iy0: iy0, cw: cw, ch: ch };
+  }
+
+  /* Inverse projection with a fallback for points just off the mapped area,
+     found by stepping toward the canvas centre until the inverse works. Used
+     for mesh corners at the globe's limb and outside Robinson's boundary, so
+     the last row of cells still gets imagery; the overdraw lands outside the
+     projection's clip path and is never seen. */
+  function invNear(proj, x, y) {
+    var got = proj.inv(x, y);
+    if (got) return got;
+    var cx = proj.width / 2, cy = proj.height / 2;
+    for (var t = 0.02; t < 1; t += 0.07) {
+      got = proj.inv(x + (cx - x) * t, y + (cy - y) * t);
+      if (got) return got;
+    }
+    return null;
+  }
+
+  function drawTilesWarp(ctx, proj, onLoad, style) {
+    var m = tileMosaic(proj, onLoad, style);
+    if (!m) return false;
+    var Wp = proj.width, Hp = proj.height;
+    var c0 = (proj.centre && proj.centre[0]) || 0;
+    var CELL = 48;
+    var cols = Math.ceil(Wp / CELL), rows = Math.ceil(Hp / CELL);
+    var nxg = cols + 1;
+    var n256 = m.n * 256;
+
+    var grid = new Array(nxg * (rows + 1));
+    for (var j = 0; j <= rows; j++) {
+      for (var i = 0; i <= cols; i++) {
+        grid[j * nxg + i] = invNear(proj, Math.min(Wp, i * CELL), Math.min(Hp, j * CELL));
+      }
+    }
+
+    function srcOf(ll, lonBase, sx0) {
+      return [sx0 + wrapLon(ll[0] - lonBase) / 360 * n256,
+              (mercV(ll[1]) * m.n - m.iy0) * 256];
+    }
+
+    ctx.save();
+    proj.clipPath(ctx);
+    ctx.clip();
+    for (j = 0; j < rows; j++) {
+      for (i = 0; i < cols; i++) {
+        var x = i * CELL, y = j * CELL;
+        var xr = Math.min(Wp, x + CELL), yb = Math.min(Hp, y + CELL);
+        var w = xr - x, h = yb - y;
+        if (w <= 0 || h <= 0) continue;
+
+        // Cells that cannot touch the globe's disc are skipped outright
+        if (proj.kind === 'ortho') {
+          var qx = Math.max(x, Math.min(proj.center[0], xr)) - proj.center[0];
+          var qy = Math.max(y, Math.min(proj.center[1], yb)) - proj.center[1];
+          if (qx * qx + qy * qy > proj.radius * proj.radius) continue;
+        }
+
+        var ll00 = grid[j * nxg + i], ll10 = grid[j * nxg + i + 1];
+        var ll01 = grid[(j + 1) * nxg + i], ll11 = grid[(j + 1) * nxg + i + 1];
+        if (!ll00 || !ll10 || !ll01) continue;
+
+        // No tiles exist past 85 degrees; leave the chart background there
+        var latLo = Math.min(ll00[1], ll10[1], ll01[1]);
+        var latHi = Math.max(ll00[1], ll10[1], ll01[1]);
+        if (ll11) {
+          latLo = Math.min(latLo, ll11[1]);
+          latHi = Math.max(latHi, ll11[1]);
+        }
+        if (latLo > LAT_MAX_MERC || latHi < -LAT_MAX_MERC) continue;
+
+        /* Source coordinates in the mosaic. Longitudes unwrap relative to the
+           cell's own first corner, so a cell sitting on the antimeridian seam
+           stays contiguous instead of jumping a world width. */
+        var lonBase = c0 + wrapLon(ll00[0] - c0);
+        var sx0 = ((lonBase + 180) / 360 * m.n - m.ix0) * 256;
+        var s00 = srcOf(ll00, lonBase, sx0), s10 = srcOf(ll10, lonBase, sx0);
+        var s01 = srcOf(ll01, lonBase, sx0);
+        var s11 = ll11 ? srcOf(ll11, lonBase, sx0)
+          : [s10[0] + s01[0] - s00[0], s10[1] + s01[1] - s00[1]];
+
+        var ux = s10[0] - s00[0], uy = s10[1] - s00[1];
+        var vx = s01[0] - s00[0], vy = s01[1] - s00[1];
+        var det = ux * vy - uy * vx;
+        if (!det) continue;
+
+        // Affine taking mosaic coordinates to this screen cell
+        var a = w * vy / det, b = -h * uy / det;
+        var c2 = -w * vx / det, d = h * ux / det;
+        var e = x - (a * s00[0] + c2 * s00[1]);
+        var f = y - (b * s00[0] + d * s00[1]);
+
+        /* The corners bound the sources only approximately: a nudged boundary
+           corner sits short of where the cell's affine actually reaches, so
+           the padding scales with the cell's own source span rather than
+           being a fixed sliver. */
+        var pad = 8 + Math.max(Math.abs(ux), Math.abs(uy), Math.abs(vx), Math.abs(vy));
+        var bx0 = Math.max(0, Math.min(s00[0], s10[0], s01[0], s11[0]) - pad);
+        var by0 = Math.max(0, Math.min(s00[1], s10[1], s01[1], s11[1]) - pad);
+        var bx1 = Math.min(m.cw, Math.max(s00[0], s10[0], s01[0], s11[0]) + pad);
+        var by1 = Math.min(m.ch, Math.max(s00[1], s10[1], s01[1], s11[1]) + pad);
+        if (bx1 <= bx0 || by1 <= by0) continue;
+
+        ctx.save();
+        ctx.beginPath();
+        // Half a pixel of overlap hides the hairline seams between cells
+        ctx.rect(x - 0.5, y - 0.5, w + 1, h + 1);
+        ctx.clip();
+        ctx.setTransform(a, b, c2, d, e, f);
+        ctx.drawImage(m.canvas, bx0, by0, bx1 - bx0, by1 - by0,
+          bx0, by0, bx1 - bx0, by1 - by0);
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+    return true;
+  }
+
+  function drawTileCredit(ctx, proj, pal) {
+    var text = '© OpenStreetMap contributors, © CARTO';
+    ctx.save();
+    ctx.font = '20px system-ui, -apple-system, sans-serif';
+    var w = ctx.measureText(text).width;
+    // Sits above the zoom control, which occupies the very corner
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = pal.sky;
+    ctx.fillRect(proj.width - w - 20, proj.height - 130, w + 16, 26);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = pal.soft;
+    ctx.textBaseline = 'top';
+    ctx.fillText(text, proj.width - w - 12, proj.height - 126);
+    ctx.restore();
+  }
+
+  // ---------------------------------------------------------------- labels
+
+  /* Place names, thinned by zoom and by collision.
+
+     Two rules keep the map readable. What qualifies for a label depends on
+     zoom, so a world view shows only the largest cities and a close view fills
+     in smaller ones. What actually gets drawn depends on whether its box
+     overlaps something already placed, tested against a list of occupied
+     rectangles. Candidates are sorted by importance first, so when two labels
+     collide the more significant one wins. */
+  function labelPlacer(ctx, proj, pal) {
+    var taken = [];
+    var W = proj.width, H = proj.height;
+
+    function free(x, y, w, h) {
+      if (x < 2 || y < 2 || x + w > W - 2 || y + h > H - 2) return false;
+      for (var i = 0; i < taken.length; i++) {
+        var t = taken[i];
+        if (x < t[2] && x + w > t[0] && y < t[3] && y + h > t[1]) return false;
+      }
+      return true;
+    }
+
+    return {
+      /* Reserves a box without drawing, so existing marks push labels aside. */
+      block: function (x, y, w, h) { taken.push([x, y, x + w, y + h]); },
+
+      text: function (lon, lat, str, opts) {
+        opts = opts || {};
+        if (!proj.vis(lon, lat)) return false;
+        var p = proj.fwd(lon, lat);
+        ctx.font = opts.font || '22px system-ui, -apple-system, sans-serif';
+        var m = ctx.measureText(str);
+        var tw = m.width, th = opts.size || 22;
+        var dx = opts.dot ? 12 : -tw / 2;
+        var x = p[0] + dx, y = p[1] - th / 2 + (opts.dy || 0);
+        if (!free(x - 3, y - 2, tw + 6, th + 4)) return false;
+        taken.push([x - 3, y - 2, x + tw + 3, y + th + 2]);
+
+        if (opts.dot) {
+          ctx.beginPath();
+          ctx.arc(p[0], p[1], opts.dotSize || 3.2, 0, 2 * Math.PI);
+          ctx.fillStyle = opts.color || pal.ink;
+          ctx.fill();
+        }
+        // Halo so names stay legible over coastlines and shading
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = pal.sky;
+        ctx.textBaseline = 'top';
+        ctx.strokeText(str, x, y);
+        ctx.fillStyle = opts.color || pal.ink;
+        ctx.fillText(str, x, y);
+        return true;
+      }
+    };
+  }
+
+  /* Draws country names then city names, biggest first. Thresholds are tuned
+     so the count stays roughly constant as you zoom rather than exploding. */
+  function drawPlaceLabels(ctx, proj, pal, opts) {
+    opts = opts || {};
+    var k = proj.zoom || 1;
+    var placer = opts.placer || labelPlacer(ctx, proj, pal);
+    var i, drawn = 0;
+
+    ctx.save();
+    proj.clipPath(ctx);
+    ctx.clip();
+
+    if (opts.countries !== false) {
+      var areaMin = 260 / (k * k);
+      for (i = 0; i < countries.length && drawn < 40; i++) {
+        var c = countries[i];
+        if (c[3] < areaMin) break;               // sorted by area, so stop
+        if (placer.text(c[2], c[1], c[0].toUpperCase(), {
+          font: '20px system-ui, -apple-system, sans-serif',
+          size: 20, color: pal.soft
+        })) drawn++;
+      }
+    }
+
+    if (opts.cities !== false) {
+      // The floor falls away once the detail towns are in, so any place in
+      // the data can eventually earn a label.
+      var popMin = Math.max(places.merged ? 300 : 40000, 9e6 / Math.pow(k, 1.75));
+      var placed = 0, cap = opts.maxCities || 110;
+      var list = places.merged || cities;
+      // Zoomed in, the population floor bottoms out and the loop would walk
+      // every place in the data measuring text for each. Rejecting the ones
+      // that are not on screen first turns that into a handful.
+      var win = viewWindow(proj);
+      for (i = 0; i < list.length && placed < cap; i++) {
+        var ct = list[i];
+        if (ct[3] < popMin && !ct[4]) continue;
+        if (ct[3] < popMin * 0.15) break;        // sorted by population
+        if (win && (ct[1] < win.lat0 || ct[1] > win.lat1 ||
+            !boxVisible([ct[2], ct[2], ct[1], ct[1]], 0, win))) continue;
+        if (placer.text(ct[2], ct[1], ct[0], {
+          dot: true, size: 22,
+          dotSize: ct[4] ? 4.2 : 3.2,
+          color: pal.ink
+        })) placed++;
+      }
+    }
+    ctx.restore();
+    return placer;
+  }
+
+  // ------------------------------------------------------------- time zones
+
+  /* Civil local time at a place, using the tz-lookup table when it is loaded.
+     Falls back to local mean time from the longitude, which is what an
+     eclipse observer actually experiences even where no zone is defined. */
+  function zoneAt(lat, lon) {
+    if (typeof global.tzlookup === 'function') {
+      try { return global.tzlookup(lat, lon); } catch (e) { /* fall through */ }
+    }
+    return null;
+  }
+
+  function formatInZone(date, zone) {
+    try {
+      var f = new Intl.DateTimeFormat('en-GB', {
+        timeZone: zone, hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false, timeZoneName: 'short'
+      });
+      return f.format(date);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /* Minutes to add to UTC to get the wall clock in a named zone at a given
+     instant. Read back out of Intl rather than from a table, so daylight
+     saving and historical rule changes are accounted for without shipping
+     any of those rules. */
+  /* Building a DateTimeFormat is the expensive half of the offset lookup, and
+     the scrub asks for the same zone every frame, so the formatters are kept. */
+  var offsetFmt = new Map();
+
+  function zoneOffset(date, zone) {
+    try {
+      var f = offsetFmt.get(zone);
+      if (!f) {
+        f = new Intl.DateTimeFormat('en-GB', {
+          timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+        });
+        offsetFmt.set(zone, f);
+      }
+      var p = {};
+      f.formatToParts(date).forEach(function (q) { p[q.type] = q.value; });
+      var asUTC = Date.UTC(+p.year, +p.month - 1, +p.day,
+        +p.hour, +p.minute, +p.second);
+      return Math.round((asUTC - date.getTime()) / 60000);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /* Local mean time, the Sun's own clock: noon when the Sun crosses the
+     meridian. Used when no named zone applies. */
+  function lmt(date, lon) {
+    var ms = date.getTime() + lon / 15 * 3600 * 1000;
+    var d = new Date(ms);
+    return pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' +
+      pad(d.getUTCSeconds()) + ' LMT';
+  }
+
+  // --------------------------------------------------------- obscuration
+
+  /* Fraction of the Sun's disc hidden by the Moon, from the angular radii of
+     the two discs and the angle between their centres. This is area overlap,
+     not the more commonly quoted magnitude, which measures how far across the
+     Sun's diameter the Moon has travelled. The two differ a lot: at 50 per
+     cent magnitude only about 39 per cent of the light is gone. */
+  function discOverlap(d, rs, rm) {
+    if (d >= rs + rm) return 0;
+    if (d <= rm - rs) return 1;                       // total
+    if (d <= rs - rm) return (rm * rm) / (rs * rs);   // annular
+    var a = (d * d + rs * rs - rm * rm) / (2 * d * rs);
+    var b = (d * d + rm * rm - rs * rs) / (2 * d * rm);
+    a = Math.max(-1, Math.min(1, a));
+    b = Math.max(-1, Math.min(1, b));
+    var t = (-d + rs + rm) * (d + rs - rm) * (d - rs + rm) * (d + rs + rm);
+    var area = rs * rs * Math.acos(a) + rm * rm * Math.acos(b)
+      - 0.5 * Math.sqrt(Math.max(0, t));
+    return area / (Math.PI * rs * rs);
+  }
+
+  /* Sun and Moon in the Earth-fixed frame for one instant, so that a fixed
+     grid of surface points can be reused across many time steps without
+     converting each point every time. */
+  function eclipseField(time) {
+    var S = A.GeoVector(A.Body.Sun, time, true);
+    var M = A.GeoMoon(time);
+    var rot = A.Rotation_EQJ_EQD(time);
+    var s = A.RotateVector(rot, S), m = A.RotateVector(rot, M);
+    var g = A.SiderealTime(time) * 15 * DEG;
+    var cg = Math.cos(g), sg = Math.sin(g);
+    function toEcef(v) {
+      var x = v.x * KM_AU, y = v.y * KM_AU, z = v.z * KM_AU;
+      return [x * cg + y * sg, -x * sg + y * cg, z];
+    }
+    var sun = toEcef(s), moon = toEcef(m);
+    var bb = EARTH_A * FLAT;
+
+    return {
+      sun: sun,
+      moon: moon,
+      obsc: function (px, py, pz) {
+        var ux = sun[0] - px, uy = sun[1] - py, uz = sun[2] - pz;
+        var um = Math.hypot(ux, uy, uz);
+        var nx = px / (EARTH_A * EARTH_A), ny = py / (EARTH_A * EARTH_A), nz = pz / (bb * bb);
+        var nm = Math.hypot(nx, ny, nz);
+        if ((ux * nx + uy * ny + uz * nz) / (nm * um) <= 0) return 0;
+        var vx = moon[0] - px, vy = moon[1] - py, vz = moon[2] - pz;
+        var vm = Math.hypot(vx, vy, vz);
+        var cosd = (ux * vx + uy * vy + uz * vz) / (um * vm);
+        var d = Math.acos(Math.max(-1, Math.min(1, cosd)));
+        return discOverlap(d, Math.asin(SUN_R / um), Math.asin(MOON_R / vm));
+      }
+    };
+  }
+
+  /* Geodetic surface point in the Earth-fixed frame, in km. */
+  function surfacePoint(latDeg, lonDeg) {
+    var lat = latDeg * DEG, lon = lonDeg * DEG;
+    var e2 = 1 - FLAT * FLAT;
+    var N = EARTH_A / Math.sqrt(1 - e2 * Math.sin(lat) * Math.sin(lat));
+    var cl = Math.cos(lat);
+    return [N * cl * Math.cos(lon), N * cl * Math.sin(lon),
+            N * (1 - e2) * Math.sin(lat)];
+  }
+
+  // ------------------------------------------------------------ formatting
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  var fmt = {
+    utc: function (date) {
+      return date.getUTCFullYear() + '-' + pad(date.getUTCMonth() + 1) + '-' +
+        pad(date.getUTCDate()) + ' ' + pad(date.getUTCHours()) + ':' +
+        pad(date.getUTCMinutes()) + ':' + pad(date.getUTCSeconds()) + ' UT';
+    },
+    hm: function (date) {
+      return pad(date.getUTCHours()) + ':' + pad(date.getUTCMinutes()) + ':' +
+        pad(date.getUTCSeconds());
+    },
+    day: function (date) {
+      return date.getUTCFullYear() + '-' + pad(date.getUTCMonth() + 1) + '-' +
+        pad(date.getUTCDate());
+    },
+    /* Duration in seconds as m:ss, or h:mm:ss past an hour. */
+    dur: function (sec) {
+      sec = Math.round(sec);
+      var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+      if (h > 0) return h + 'h ' + pad(m) + 'm ' + pad(s) + 's';
+      if (m > 0) return m + 'm ' + pad(s) + 's';
+      return s + 's';
+    },
+    latlon: function (lat, lon) {
+      return Math.abs(lat).toFixed(2) + (lat >= 0 ? ' N' : ' S') + ', ' +
+        Math.abs(lon).toFixed(2) + (lon >= 0 ? ' E' : ' W');
+    }
+  };
+
+  global.Astro = {
+    ready: ready,
+    get land() { return land; },
+    get cities() { return cities; },
+    get countries() { return countries; },
+    palette: palette,
+    equirect: equirect,
+    mercator: mercator,
+    robinson: robinson,
+    ortho: ortho,
+    withRepeats: withRepeats,
+    wrapLon: wrapLon,
+    drawLand: drawLand,
+    drawBorders: drawBorders,
+    drawWater: drawWater,
+    loadDetail: loadDetail,
+    get detailReady() { return detail.loaded; },
+    loadPlaces: loadPlaces,
+    get placesReady() { return places.loaded; },
+    drawTiles: drawTiles,
+    drawTileCredit: drawTileCredit,
+    drawGraticule: drawGraticule,
+    drawEquator: drawEquator,
+    labelPlacer: labelPlacer,
+    drawPlaceLabels: drawPlaceLabels,
+    zoneAt: zoneAt,
+    formatInZone: formatInZone,
+    zoneOffset: zoneOffset,
+    lmt: lmt,
+    capPolygon: capPolygon,
+    fillCap: fillCap,
+    contour: contour,
+    eclipseField: eclipseField,
+    surfacePoint: surfacePoint,
+    discOverlap: discOverlap,
+    shadow: shadow,
+    fmt: fmt,
+    EARTH_A: EARTH_A,
+    DEG: DEG,
+    RAD: RAD
+  };
+})(window);
