@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-13">
+<meta name="description" content="How a stride changes the output size of a convolution, why deep learning skips the filter flip, and how filters extend to RGB volumes and to many filters at once.">
+
+<title>Strided Convolutions and Convolutions Over Volume – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../deep-learning/convolutional-neural-networks/one-layer-of-a-convolutional-network.html" rel="next">
+<link href="../../deep-learning/convolutional-neural-networks/convolutions-and-edge-detection.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-87fe4da730787eeec4a7ec728bf0e0b5.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="Strided Convolutions and Convolutions Over Volume – H’s Notes">
+<meta property="og:description" content="How a stride changes the output size of a convolution, why deep learning skips the filter flip, and how filters extend to RGB volumes and to many filters at once.">
+<meta property="og:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Strided Convolutions and Convolutions Over Volume – H’s Notes">
+<meta name="twitter:description" content="How a stride changes the output size of a convolution, why deep learning skips the filter flip, and how filters extend to RGB volumes and to many filters at once.">
+<meta name="twitter:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../networking/archive.html">
+ <span class="dropdown-text">Archive</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/asn-converter.html">
+ <span class="dropdown-text">ASN Converter</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text Generator</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/graph.html">
+ <span class="dropdown-text">Function Grapher</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/eclipse.html">
+ <span class="dropdown-text">Eclipse Explorer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-viewer.html">
+ <span class="dropdown-text">SVG Viewer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/color-palette.html">
+ <span class="dropdown-text">Color Palette Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/typography.html">
+ <span class="dropdown-text">Typography Designer</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes.html">Strided Convolutions and Convolutions Over Volume</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutional Neural Networks</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/convolutions-and-edge-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutions and Edge Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Strided Convolutions and Convolutions Over Volume</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/one-layer-of-a-convolutional-network.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One Layer of a Convolutional Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/pooling-layers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pooling Layers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/full-convnet-example-and-why-convolutions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Full ConvNet Example and Why Convolutions</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#strided-convolutions" id="toc-strided-convolutions" class="nav-link active" data-scroll-target="#strided-convolutions">Strided Convolutions</a>
+  <ul class="collapse">
+  <li><a href="#output-dimension-formula" id="toc-output-dimension-formula" class="nav-link" data-scroll-target="#output-dimension-formula">Output Dimension Formula</a></li>
+  <li><a href="#rounding-down" id="toc-rounding-down" class="nav-link" data-scroll-target="#rounding-down">Rounding Down</a></li>
+  <li><a href="#summary-of-dimensions" id="toc-summary-of-dimensions" class="nav-link" data-scroll-target="#summary-of-dimensions">Summary of Dimensions</a></li>
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#cross-correlation-and-convolution" id="toc-cross-correlation-and-convolution" class="nav-link" data-scroll-target="#cross-correlation-and-convolution">Cross-Correlation and Convolution</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#convolutions-over-volume" id="toc-convolutions-over-volume" class="nav-link" data-scroll-target="#convolutions-over-volume">Convolutions Over Volume</a>
+  <ul class="collapse">
+  <li><a href="#computing-the-output" id="toc-computing-the-output" class="nav-link" data-scroll-target="#computing-the-output">Computing the Output</a></li>
+  <li><a href="#choosing-what-the-filter-detects" id="toc-choosing-what-the-filter-detects" class="nav-link" data-scroll-target="#choosing-what-the-filter-detects">Choosing What the Filter Detects</a></li>
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#multiple-filters" id="toc-multiple-filters" class="nav-link" data-scroll-target="#multiple-filters">Multiple Filters</a>
+  <ul class="collapse">
+  <li><a href="#summary-of-dimensions-1" id="toc-summary-of-dimensions-1" class="nav-link" data-scroll-target="#summary-of-dimensions-1">Summary of Dimensions</a></li>
+  <li><a href="#note-on-terminology" id="toc-note-on-terminology" class="nav-link" data-scroll-target="#note-on-terminology">Note on Terminology</a></li>
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../nav-columns.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Strided Convolutions and Convolutions Over Volume</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">convolutional-neural-networks</div>
+    <div class="quarto-category">computer-vision</div>
+    <div class="quarto-category">convolution</div>
+    <div class="quarto-category">stride</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    How a stride changes the output size of a convolution, why deep learning skips the filter flip, and how filters extend to RGB volumes and to many filters at once.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 13, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~51 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,400 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p>Strided convolutions are another piece of the basic building block of convolutions as used in convolutional neural networks. Together with <a href="../../deep-learning/convolutional-neural-networks/convolutions-and-edge-detection.html#padding">padding</a>, the stride is one of the two numbers that decide how big the output of a convolution is. After that, this page moves from convolutions over flat matrices to convolutions over volumes, which is what makes the operation powerful enough to work on real color images.</p>
+<section id="strided-convolutions" class="level2">
+<h2 class="anchored" data-anchor-id="strided-convolutions">Strided Convolutions</h2>
+<p>Suppose you want to convolve a 7 by 7 image with a 3 by 3 filter, except that instead of doing it the usual way, you do it with a stride of 2.</p>
+<p>What that means is that you take the element-wise product as usual in the upper left 3 by 3 region, then multiply and add, and that gives 91. But then, instead of stepping the window over by one step, you step it over by two steps. The window hops over two positions, skipping one position on the way. Then you do the usual element-wise product and summing, which gives 100. Do that once more, hopping over another two steps, and you get 83.</p>
+<p>When you go to the next row, you again take two steps instead of one step, so the window moves down two rows rather than one. That gives 69, then 91, then 127. For the final row you get 44, 72, and 74.</p>
+<div id="d1dacfb7" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="strided-convolutions-and-volumes_files/figure-html/cell-2-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Each colored box on the left is one position of the window, and the box of the same color on the right is the output cell it produces. The blue and orange boxes show the horizontal hop of two, and the purple dashed box shows the same hop applied downward when the window moves to the next row.</p>
+<p>In this example a 7 by 7 matrix convolved with a 3 by 3 matrix gives a 3 by 3 output.</p>
+<section id="output-dimension-formula" class="level3">
+<h3 class="anchored" data-anchor-id="output-dimension-formula">Output Dimension Formula</h3>
+<p>The input and output dimensions turn out to be governed by a single formula. If you have an <span class="math inline">\(n \times n\)</span> image convolved with an <span class="math inline">\(f \times f\)</span> filter, using padding <span class="math inline">\(p\)</span> and stride <span class="math inline">\(s\)</span>, then the output is</p>
+<p><span class="math display">\[
+\left\lfloor \frac{n + 2p - f}{s} + 1 \right\rfloor \times \left\lfloor \frac{n + 2p - f}{s} + 1 \right\rfloor
+\]</span></p>
+<p>The numerator <span class="math inline">\(n + 2p - f\)</span> is the same quantity as before. What is new is that you divide it by <span class="math inline">\(s\)</span>, because you are stepping <span class="math inline">\(s\)</span> steps at a time rather than one step at a time.</p>
+<p>In this example <span class="math inline">\(n = 7\)</span>, <span class="math inline">\(f = 3\)</span>, <span class="math inline">\(p = 0\)</span>, and <span class="math inline">\(s = 2\)</span>, so</p>
+<p><span class="math display">\[
+\frac{7 + 0 - 3}{2} + 1 = \frac{4}{2} + 1 = 3
+\]</span></p>
+<p>which is why you wind up with a 3 by 3 output.</p>
+</section>
+<section id="rounding-down" class="level3">
+<h3 class="anchored" data-anchor-id="rounding-down">Rounding Down</h3>
+<p>One last detail is what happens when that fraction is not an integer. In that case you round down. The notation <span class="math inline">\(\lfloor z \rfloor\)</span> is called the <strong>floor</strong> of <span class="math inline">\(z\)</span>, and it means taking <span class="math inline">\(z\)</span> and rounding down to the nearest integer.</p>
+<p>The reason for rounding down comes from how the operation is implemented. You take the window multiplication only if the window is fully contained inside the image, or inside the image plus the padding. If any part of the window hangs outside, you simply do not do that computation. That convention, that the filter must lie entirely within the image or the padded image before a corresponding output value is generated, is what makes rounding down the right thing to do when <span class="math inline">\((n + 2p - f)/s\)</span> is not an integer.</p>
+</section>
+<section id="summary-of-dimensions" class="level3">
+<h3 class="anchored" data-anchor-id="summary-of-dimensions">Summary of Dimensions</h3>
+<p>To summarize, if you have an <span class="math inline">\(n \times n\)</span> image convolved with an <span class="math inline">\(f \times f\)</span> filter, with padding <span class="math inline">\(p\)</span> and stride <span class="math inline">\(s\)</span>, then the output has dimension</p>
+<p><span class="math display">\[
+\left\lfloor \frac{n + 2p - f}{s} + 1 \right\rfloor \times \left\lfloor \frac{n + 2p - f}{s} + 1 \right\rfloor
+\]</span></p>
+<p>It is nice when you can choose all of these numbers so that the fraction works out to an integer, although you do not have to do that, and rounding down is just fine as well. It is worth working through a few values of <span class="math inline">\(n\)</span>, <span class="math inline">\(f\)</span>, <span class="math inline">\(p\)</span>, and <span class="math inline">\(s\)</span> yourself to convince yourself that this formula gives the right output size.</p>
+</section>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. What does a stride of 2 change compared with the default convolution?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The window moves two positions at a time instead of one, both horizontally and vertically. It skips over intermediate positions, so the output is roughly half as tall and half as wide as it would be with a stride of 1.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You convolve a 63 by 63 image with a 7 by 7 filter, using a padding of 0 and a stride of 3. What is the output size?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Plug into the formula.</p>
+<p><span class="math display">\[
+\left\lfloor \frac{63 + 0 - 7}{3} + 1 \right\rfloor = \left\lfloor \frac{56}{3} + 1 \right\rfloor = \lfloor 18.67 + 1 \rfloor = 19
+\]</span></p>
+<p>So the output is 19 by 19.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does the formula round down rather than up?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because a window position only counts when the filter fits entirely inside the image or inside the padded image. A position where part of the filter hangs off the edge produces no output value, so the count of valid positions is the rounded-down value.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. A convolution has <span class="math inline">\(n = 10\)</span>, <span class="math inline">\(f = 3\)</span>, <span class="math inline">\(p = 1\)</span>, and <span class="math inline">\(s = 2\)</span>. What is the output size?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math display">\[
+\left\lfloor \frac{10 + 2 - 3}{2} + 1 \right\rfloor = \left\lfloor 4.5 + 1 \right\rfloor = 5
+\]</span></p>
+<p>The output is 5 by 5.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="cross-correlation-and-convolution" class="level2">
+<h2 class="anchored" data-anchor-id="cross-correlation-and-convolution">Cross-Correlation and Convolution</h2>
+<p>Before moving on, there is a technical comment worth making about cross-correlation versus convolution. It will not affect anything you have to do to implement convolutional neural networks, but depending on which math textbook or signal processing textbook you read, there is one more possible inconsistency in the notation.</p>
+<p>If you look at a typical math textbook, the way convolution is defined, there is an extra step before the element-wise product and summing. To convolve a matrix with a filter, you first take the filter and flip it on the horizontal as well as the vertical axis.</p>
+<div id="e3ac812d" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="strided-convolutions-and-volumes_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The 3 that was in the upper left ends up in the lower right, the 7 that was in the lower right ends up in the upper left, and so on for every entry. It is the filter mirrored on both the vertical and the horizontal axis. In the textbook definition it is this flipped matrix that you then slide over the image, and the element-wise products are formed against it.</p>
+<p>The way the convolution operation has been defined on these pages skips the mirroring step. Technically, the operation used here is what is sometimes called <strong>cross-correlation</strong> rather than convolution. In the deep learning literature, by convention, everyone just calls it the convolution operation.</p>
+<p>To summarize, by convention in machine learning we do not bother with the flipping operation. Technically the operation is maybe better called cross-correlation, but most of the deep learning literature calls it the convolution operator, and that is the convention used here as well. If you read a lot of the machine learning literature, you will find that most people call this the convolution operator without bothering with the flips.</p>
+<p>It turns out that in signal processing, and in certain branches of mathematics, doing the flip in the definition of convolution gives the operator this property.</p>
+<p><span class="math display">\[
+(A * B) * C = A * (B * C)
+\]</span></p>
+<p>This is called <strong>associativity</strong>, and it is nice for some signal processing applications. But for deep neural networks it really does not matter, so omitting the double mirroring just simplifies the code and the neural network works just as well. This should not affect anything you implement, and it should not affect your ability to read and understand the deep learning literature.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. What is the one extra step in the mathematical definition of convolution that deep learning skips?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Flipping the filter on both the horizontal and the vertical axis before taking the element-wise product and summing. Skipping it means the operation is technically cross-correlation, but the deep learning literature still calls it convolution.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Does skipping the flip hurt the neural network?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>No.&nbsp;The filter entries are learned, so whatever pattern the network needs, it can learn directly in the unflipped orientation. The flip only matters for the associativity property that some signal processing applications rely on.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="convolutions-over-volume" class="level2">
+<h2 class="anchored" data-anchor-id="convolutions-over-volume">Convolutions Over Volume</h2>
+<p>So far every convolution here has been over a flat matrix, such as a 6 by 6 matrix. Now let us see how to convolve not just over 2D images, but over three dimensional volumes.</p>
+<p>Suppose you want to detect features not in a grayscale image, but in an RGB image. Instead of a 6 by 6 image, it is now 6 by 6 by 3, where the 3 corresponds to the three color channels. You can think of this as a stack of three 6 by 6 images, one for red, one for green, and one for blue.</p>
+<p>In order to detect edges or some other feature in this image, you convolve it not with a 3 by 3 filter as before, but with a 3D filter that is 3 by 3 by 3. The filter itself also has three layers, corresponding to the red, green, and blue channels.</p>
+<p>To give these things names, the first 6 is the <strong>height</strong> of the image, the second 6 is the <strong>width</strong>, and the 3 is the number of <strong>channels</strong>. The filter similarly has a height, a width, and a number of channels. The number of channels in your image must match the number of channels in your filter, so those two numbers have to be equal.</p>
+<p>The output of this convolution is a 4 by 4 image. Notice that it is 4 by 4 by 1. There is no longer a 3 at the end.</p>
+<div id="61cc1667" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="strided-convolutions-and-volumes_files/figure-html/cell-4-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The orange cube drawn in the corner of the image is the filter in its first position. Drawing the filter as a stack of three matrices gets cluttered, so from here on it is drawn as a single three dimensional cube.</p>
+<section id="computing-the-output" class="level3">
+<h3 class="anchored" data-anchor-id="computing-the-output">Computing the Output</h3>
+<p>To compute the output, you take the 3 by 3 by 3 filter and first place it in the upper left most position. That filter has 27 numbers in it, which is 3 cubed, so 27 parameters.</p>
+<p>What you do is take each of those 27 numbers and multiply them with the corresponding numbers from the red, green, and blue channels of the image. Take the first nine numbers from the red channel, then the nine beneath them from the green channel, then the nine beneath those from the blue channel, and multiply each with the corresponding one of the 27 numbers covered by the cube. Then add up all those numbers, and that gives you the first number in the output.</p>
+<p>To compute the next output, you take the cube and slide it over by one. Again you do 27 multiplications, add up the 27 numbers, and that gives the next output. Do it for the next position over, and the next, and so on down each row, until at the very end you reach the position that gives the final output value.</p>
+</section>
+<section id="choosing-what-the-filter-detects" class="level3">
+<h3 class="anchored" data-anchor-id="choosing-what-the-filter-detects">Choosing What the Filter Detects</h3>
+<p>Here is what this lets you do. Suppose you want to detect edges in the red channel of the image only. Then the first layer of the filter could be the usual vertical edge detector, with 1, 1, 1 in the first column, 0, 0, 0 in the middle, and -1, -1, -1 in the last column, while the green layer is all zeros and the blue layer is all zeros. Stacking those three together forms a 3 by 3 by 3 filter that detects vertical edges, but only in the red channel.</p>
+<p>Alternatively, if you do not care what color the vertical edge is, then you can use a filter that has 1, 1, 1 and -1, -1, -1 in all three channels. Setting the parameters that second way gives you a 3 by 3 by 3 edge detector that detects edges in any color.</p>
+<div id="d7a3085d" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="strided-convolutions-and-volumes_files/figure-html/cell-5-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>With different choices of these parameters you get different feature detectors out of this one 3 by 3 by 3 filter. By convention in computer vision, when you have an input with a certain height, a certain width, and a certain number of channels, your filter has a possibly different height and a possibly different width, but the same number of channels.</p>
+<p>In theory it is possible to have a filter that only looks at the red channel, or one that looks at only the green channel and the blue channel. And once again, notice that convolving a volume, a 6 by 6 by 3 convolved with a 3 by 3 by 3, gives a 4 by 4 output, which is 2D.</p>
+</section>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. Why must the number of channels in the filter equal the number of channels in the input?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because every number in the filter is multiplied with a corresponding number in the input under it. If the filter had fewer or more channels than the input, some entries would have no partner to multiply with. A 3 by 3 by 3 filter covers 27 input values, one per filter entry.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. A 6 by 6 by 3 image is convolved with a 3 by 3 by 3 filter, with no padding and a stride of 1. Why is the output 4 by 4 rather than 4 by 4 by 3?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because all 27 products are added into a single number for each window position. The channel dimension is summed away, so one filter produces one flat 2D output no matter how many channels the input has.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. How would you build a filter that detects vertical edges only in the blue channel?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Put the vertical edge detector, with the column of 1s and the column of -1s, in the blue layer of the filter, and set the red and green layers to all zeros. The zero layers contribute nothing to the sum, so only the blue channel affects the output.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="multiple-filters" class="level2">
+<h2 class="anchored" data-anchor-id="multiple-filters">Multiple Filters</h2>
+<p>Now that you know how to convolve over volumes, there is one last idea that is crucial for building convolutional neural networks. What if you do not just want to detect vertical edges? What if you want to detect vertical edges and horizontal edges, and maybe 45 degree edges and 70 degree edges as well? In other words, what if you want to use multiple filters at the same time?</p>
+<p>Take the 6 by 6 by 3 image convolved with a 3 by 3 by 3 filter, which gives a 4 by 4 output, and say that filter is a vertical edge detector. Now add a second filter, drawn here in a different color, which could be a horizontal edge detector. Convolving with the first filter gives you one 4 by 4 output, and convolving with the second filter gives you a different 4 by 4 output.</p>
+<p>What you do then is take these two 4 by 4 outputs, put the first one at the front and the second one behind it, and stack them together. You end up with a 4 by 4 by 2 output volume, where the 2 comes from the fact that you used two different filters.</p>
+<div id="ff1a4431" class="cell" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="strided-convolutions-and-volumes_files/figure-html/cell-6-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<section id="summary-of-dimensions-1" class="level3">
+<h3 class="anchored" data-anchor-id="summary-of-dimensions-1">Summary of Dimensions</h3>
+<p>To summarize the dimensions, if you have an <span class="math inline">\(n \times n \times n_c\)</span> input image, where <span class="math inline">\(n_c\)</span> is the number of channels, and you convolve it with an <span class="math inline">\(f \times f \times n_c\)</span> filter, where by convention this <span class="math inline">\(n_c\)</span> has to be the same number, then what you get is</p>
+<p><span class="math display">\[
+(n - f + 1) \times (n - f + 1) \times n_c'
+\]</span></p>
+<p>where <span class="math inline">\(n_c'\)</span> is the number of filters you used. It is really the number of channels of the next layer. In the example above this would be 4 by 4 by 2. This assumes a stride of 1 and no padding. If you use a different stride or padding, then the <span class="math inline">\(n - f + 1\)</span> part changes in the usual way from the formula earlier on this page.</p>
+<p>This idea of convolution over volumes turns out to be really powerful. Only a small part of it is that you can now operate directly on RGB images with three channels. Even more important is that you can now detect two features, such as vertical and horizontal edges, or ten features, or 128, or several hundred different features. The output then has a number of channels equal to the number of features you are detecting.</p>
+</section>
+<section id="note-on-terminology" class="level3">
+<h3 class="anchored" data-anchor-id="note-on-terminology">Note on Terminology</h3>
+<p>The last dimension has been called the number of channels here. In the literature people will also often call it the <strong>depth</strong> of the 3D volume, and both notations, channels or depth, are commonly used. Depth is a little more confusing, because you usually talk about the depth of the neural network as well, so these pages use the term channels to refer to the size of that third dimension.</p>
+</section>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. You convolve a 6 by 6 by 3 image with ten 3 by 3 by 3 filters, using a stride of 1 and no padding. What is the shape of the output?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Each filter gives a 4 by 4 output, since <span class="math inline">\(6 - 3 + 1 = 4\)</span>, and stacking the ten of them gives a 4 by 4 by 10 volume. The number of filters becomes the number of channels of the output.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What decides the number of channels in the output volume of a convolution?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The number of filters used in that convolution. The number of channels of the input does not appear in the output shape at all, because each filter sums across all input channels.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What do the words channels and depth mean when describing a volume, and why is depth avoided here?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>They both refer to the size of the third dimension of a volume, such as the 3 in 6 by 6 by 3. Depth is avoided because it is easy to confuse with the depth of the neural network, meaning how many layers it has.</p>
+</div>
+</div>
+</div>
+<p>Now that you know how to implement convolutions over volumes, you are ready to see how one layer of a convolutional neural network is built.</p>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 52%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">52% completed (124 of 237 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../deep-learning/convolutional-neural-networks/convolutions-and-edge-detection.html" class="pagination-link" aria-label="Convolutions and Edge Detection">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Convolutions and Edge Detection</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../deep-learning/convolutional-neural-networks/one-layer-of-a-convolutional-network.html" class="pagination-link" aria-label="One Layer of a Convolutional Network">
+        <span class="nav-page-text">One Layer of a Convolutional Network</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

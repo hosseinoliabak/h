@@ -446,6 +446,10 @@
      projection instance, which is rebuilt each frame. */
   var windowCache = new WeakMap();
 
+  function gridPad(span) {
+    return Math.min(1, Math.max(Math.abs(span) * 0.06, 1e-7));
+  }
+
   function viewWindow(proj) {
     var got = windowCache.get(proj);
     if (got !== undefined) return got;
@@ -463,9 +467,14 @@
         if (dl > dlHi) dlHi = dl;
       }
     }
+    /* Margin for what the coarse sampling grid above may have missed between
+       its samples. That error scales with the window, so the margin has to
+       as well: a flat degree is right at world scale and absurd at street
+       scale, where the whole view is a thousandth of one and the padding
+       would then decide the tile zoom all by itself. */
     var win = any ? {
-      lat0: latLo - 1, lat1: latHi + 1,
-      lon0: c0 + dlLo - 1, lon1: c0 + dlHi + 1
+      lat0: latLo - gridPad(latHi - latLo), lat1: latHi + gridPad(latHi - latLo),
+      lon0: c0 + dlLo - gridPad(dlHi - dlLo), lon1: c0 + dlHi + gridPad(dlHi - dlLo)
     } : null;
     windowCache.set(proj, win);
     return win;
@@ -1045,20 +1054,117 @@
     return 0.5 - Math.log(Math.tan(Math.PI / 4 + lat * DEG / 2)) / (2 * Math.PI);
   }
 
-  function tileUrl(style, z, x, y) {
-    return 'https://' + 'abcd'[(x + y) % 4] +
-      '.basemaps.cartocdn.com/' + style + '_nolabels/' + z + '/' + x + '/' + y + '.png';
+  /* Base map themes. Every source below is free to use and sends
+     Access-Control-Allow-Origin, which the canvas needs to draw the tiles
+     without tainting itself. Labels cost nothing extra: they are simply a
+     different variant of the same tile set, so the choice is editorial
+     rather than commercial. Each theme carries the attribution its licence
+     requires, and its own deepest useful zoom. */
+  function cartoUrl(variant, hi, z, x, y) {
+    return 'https://' + 'abcd'[(x + y) % 4] + '.basemaps.cartocdn.com/' +
+      variant + '/' + z + '/' + x + '/' + y + (hi ? '@2x' : '') + '.png';
   }
 
-  function getTile(style, z, x, y, onLoad) {
-    var key = style + ' ' + z + '/' + x + '/' + y;
+  var TILE_THEMES = {
+    // Quiet grey wash, the one that disappears under a monochrome chart
+    plain: {
+      label: 'Plain',
+      maxZoom: 19,
+      retina: true,
+      credit: '© OpenStreetMap contributors, © CARTO',
+      tiles: function (dark, labels, hi, z, x, y) {
+        return cartoUrl((dark ? 'dark' : 'light') + (labels ? '_all' : '_nolabels'),
+          hi, z, x, y);
+      }
+    },
+    // CARTO Voyager: coloured land, blue water, green parks, drawn roads
+    streets: {
+      label: 'Streets',
+      maxZoom: 19,
+      retina: true,
+      credit: '© OpenStreetMap contributors, © CARTO',
+      tiles: function (dark, labels, hi, z, x, y) {
+        return cartoUrl('rastertiles/voyager' + (labels ? '' : '_nolabels'), hi, z, x, y);
+      }
+    },
+    /* OpenTopoMap: contour lines and hill shading. Its labels are painted
+       into the imagery, so the labels switch cannot remove them; the page
+       keeps its own names off instead, which is the same result. */
+    terrain: {
+      label: 'Terrain',
+      maxZoom: 17,
+      bakedLabels: true,
+      credit: '© OpenStreetMap contributors, SRTM | © OpenTopoMap (CC-BY-SA)',
+      tiles: function (dark, labels, hi, z, x, y) {
+        return 'https://' + 'abc'[(x + y) % 3] + '.tile.opentopomap.org/' +
+          z + '/' + x + '/' + y + '.png';
+      }
+    },
+    /* Esri World Imagery, aerial and satellite photography. Its labels come
+       as a separate transparent layer drawn over the top, which is why this
+       theme is the one with an overlay. */
+    satellite: {
+      label: 'Satellite',
+      maxZoom: 19,
+      credit: 'Imagery © Esri, Maxar, Earthstar Geographics',
+      tiles: function (dark, labels, hi, z, x, y) {
+        return 'https://server.arcgisonline.com/ArcGIS/rest/services/' +
+          'World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
+      },
+      overlay: function (hi, z, x, y) {
+        return 'https://server.arcgisonline.com/ArcGIS/rest/services/' +
+          'Reference/World_Boundaries_and_Places/MapServer/tile/' + z + '/' + y + '/' + x;
+      }
+    }
+  };
+
+  /* Resolves the caller's request into the layers to draw, deepest zoom, and
+     credit line. A bare 'light' or 'dark' string still works, so callers
+     that predate themes need no change. */
+  /* pixelRatio is how many canvas pixels the caller packs into one CSS pixel.
+     It matters because tile artwork is drawn for CSS pixels: type, road
+     widths and symbols are all sized for a 256 pixel tile shown at 256 CSS
+     pixels. Choosing the zoom level from raw canvas pixels instead would
+     shrink every label by that same ratio, which is what makes a
+     supersampled map look like it is wearing the wrong glasses. So a tile
+     always occupies 256 CSS pixels, and where the provider serves retina
+     artwork the doubled image fills those pixels at full sharpness. */
+  function tileSpec(opts) {
+    if (typeof opts === 'string') opts = { dark: opts === 'dark' };
+    opts = opts || {};
+    var th = TILE_THEMES[opts.theme] || TILE_THEMES.plain;
+    var dark = !!opts.dark, labels = !!opts.labels;
+    var ratio = Math.max(1, Math.min(3, opts.pixelRatio || 1));
+    var hi = ratio >= 1.3 && !!th.retina;
+    var layers = [function (z, x, y) { return th.tiles(dark, labels, hi, z, x, y); }];
+    if (labels && th.overlay) {
+      layers.push(function (z, x, y) { return th.overlay(hi, z, x, y); });
+    }
+    return {
+      layers: layers,
+      maxZoom: th.maxZoom,
+      credit: th.credit,
+      // Canvas pixels one tile covers, so its artwork lands at its own size
+      tilePx: 256 * ratio,
+      // Whether the imagery carries names of its own no matter the switch
+      bakedLabels: !!th.bakedLabels
+    };
+  }
+
+  function tileMaxZoom(theme) {
+    var th = TILE_THEMES[theme] || TILE_THEMES.plain;
+    return th.maxZoom;
+  }
+
+  function getTile(urlFn, z, x, y, onLoad) {
+    var key = urlFn(z, x, y);
     var img = tileCache.get(key);
     if (img === undefined) {
       img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = onLoad;
       img.onerror = function () { };
-      img.src = tileUrl(style, z, x, y);
+      img.src = key;
       tileCache.set(key, img);
       if (tileCache.size > TILE_CACHE_MAX) {
         var oldest = tileCache.keys().next().value;
@@ -1068,17 +1174,17 @@
     return (img.complete && img.naturalWidth) ? img : null;
   }
 
-  /* style is 'light' (default) or 'dark', picking the CARTO variant that
-     sits under the current palette. */
-  function drawTiles(ctx, proj, onLoad, style) {
-    style = style === 'dark' ? 'dark' : 'light';
-    if (proj.kind === 'mercator') return drawTilesMerc(ctx, proj, onLoad, style);
-    return drawTilesWarp(ctx, proj, onLoad, style);
+  /* opts is {theme, dark, labels}, or the legacy 'light' / 'dark' string. */
+  function drawTiles(ctx, proj, onLoad, opts) {
+    var spec = tileSpec(opts);
+    if (proj.kind === 'mercator') return drawTilesMerc(ctx, proj, onLoad, spec);
+    return drawTilesWarp(ctx, proj, onLoad, spec);
   }
 
-  function drawTilesMerc(ctx, proj, onLoad, style) {
+  function drawTilesMerc(ctx, proj, onLoad, spec) {
     var worldW = proj.worldWidth;
-    var z = Math.max(0, Math.min(19, Math.round(Math.log2(worldW / 256))));
+    var z = Math.max(0, Math.min(spec.maxZoom,
+      Math.round(Math.log2(worldW / spec.tilePx))));
     var n = Math.pow(2, z);
     var size = worldW / n;
 
@@ -1095,9 +1201,10 @@
     ctx.clip();
     for (var iy = iy0; iy <= iy1; iy++) {
       for (var ix = ix0; ix <= ix1; ix++) {
-        var img = getTile(style, z, ((ix % n) + n) % n, iy, onLoad);
-        if (img) {
-          any = true;
+        for (var L = 0; L < spec.layers.length; L++) {
+          var img = getTile(spec.layers[L], z, ((ix % n) + n) % n, iy, onLoad);
+          if (!img) continue;
+          if (L === 0) any = true;
           // The extra pixel hides the hairline seams between neighbours
           ctx.drawImage(img,
             W / 2 + (ix / n - uC) * worldW,
@@ -1117,7 +1224,7 @@
      kept and only grown, so a steady view allocates nothing per frame. */
   var mosaic = { canvas: null, ctx: null };
 
-  function tileMosaic(proj, onLoad, style) {
+  function tileMosaic(proj, onLoad, spec) {
     var win = viewWindow(proj);
     if (!win) return null;
 
@@ -1143,8 +1250,8 @@
         if (dq < dlLo) dlLo = dq;
         if (dq > dlHi) dlHi = dq;
       }
-      win.lon0 = c0v + dlLo - 1;
-      win.lon1 = c0v + dlHi + 1;
+      win.lon0 = c0v + dlLo - gridPad(dlHi - dlLo);
+      win.lon1 = c0v + dlHi + gridPad(dlHi - dlLo);
       [90, -90].forEach(function (plat) {
         if (!proj.vis(0, plat)) return;
         var pp = proj.fwd(0, plat);
@@ -1164,7 +1271,8 @@
        until the visible window needs a sane number of tiles, which matters
        when a whole hemisphere is on screen. */
     var worldW = (proj.kind === 'ortho') ? proj.radius * 2 * Math.PI : proj.worldWidth;
-    var z = Math.max(0, Math.min(19, Math.round(Math.log2(worldW / 256))));
+    var z = Math.max(0, Math.min(spec.maxZoom,
+      Math.round(Math.log2(worldW / spec.tilePx))));
     var n, ix0, ix1, iy0, iy1;
     for (;;) {
       n = Math.pow(2, z);
@@ -1179,7 +1287,10 @@
     // find their pixels
     ix0--; ix1++;
 
-    var cw = (ix1 - ix0 + 1) * 256, ch = (iy1 - iy0 + 1) * 256;
+    /* The mosaic keeps whatever resolution the artwork arrived at, so a
+       retina tile is not thrown away before the warp samples it. */
+    var cell = Math.round(spec.tilePx);
+    var cw = (ix1 - ix0 + 1) * cell, ch = (iy1 - iy0 + 1) * cell;
     if (!mosaic.canvas) {
       mosaic.canvas = document.createElement('canvas');
       mosaic.ctx = mosaic.canvas.getContext('2d');
@@ -1190,15 +1301,17 @@
     var any = false;
     for (var iy = iy0; iy <= iy1; iy++) {
       for (var ix = ix0; ix <= ix1; ix++) {
-        var img = getTile(style, z, ((ix % n) + n) % n, iy, onLoad);
-        if (img) {
-          any = true;
-          mosaic.ctx.drawImage(img, (ix - ix0) * 256, (iy - iy0) * 256);
+        for (var L = 0; L < spec.layers.length; L++) {
+          var img = getTile(spec.layers[L], z, ((ix % n) + n) % n, iy, onLoad);
+          if (!img) continue;
+          if (L === 0) any = true;
+          mosaic.ctx.drawImage(img, (ix - ix0) * cell, (iy - iy0) * cell, cell, cell);
         }
       }
     }
     if (!any) return null;
-    return { canvas: mosaic.canvas, n: n, ix0: ix0, iy0: iy0, cw: cw, ch: ch };
+    return { canvas: mosaic.canvas, n: n, ix0: ix0, iy0: iy0,
+             cw: cw, ch: ch, cell: cell };
   }
 
   /* Inverse projection with a fallback for points just off the mapped area,
@@ -1217,15 +1330,15 @@
     return null;
   }
 
-  function drawTilesWarp(ctx, proj, onLoad, style) {
-    var m = tileMosaic(proj, onLoad, style);
+  function drawTilesWarp(ctx, proj, onLoad, spec) {
+    var m = tileMosaic(proj, onLoad, spec);
     if (!m) return false;
     var Wp = proj.width, Hp = proj.height;
     var c0 = (proj.centre && proj.centre[0]) || 0;
     var CELL = 48;
     var cols = Math.ceil(Wp / CELL), rows = Math.ceil(Hp / CELL);
     var nxg = cols + 1;
-    var n256 = m.n * 256;
+    var n256 = m.n * m.cell;
 
     var grid = new Array(nxg * (rows + 1));
     for (var j = 0; j <= rows; j++) {
@@ -1236,7 +1349,7 @@
 
     function srcOf(ll, lonBase, sx0) {
       return [sx0 + wrapLon(ll[0] - lonBase) / 360 * n256,
-              (mercV(ll[1]) * m.n - m.iy0) * 256];
+              (mercV(ll[1]) * m.n - m.iy0) * m.cell];
     }
 
     ctx.save();
@@ -1273,7 +1386,7 @@
            cell's own first corner, so a cell sitting on the antimeridian seam
            stays contiguous instead of jumping a world width. */
         var lonBase = c0 + wrapLon(ll00[0] - c0);
-        var sx0 = ((lonBase + 180) / 360 * m.n - m.ix0) * 256;
+        var sx0 = ((lonBase + 180) / 360 * m.n - m.ix0) * m.cell;
         var s00 = srcOf(ll00, lonBase, sx0), s10 = srcOf(ll10, lonBase, sx0);
         var s01 = srcOf(ll01, lonBase, sx0);
         var s11 = ll11 ? srcOf(ll11, lonBase, sx0)
@@ -1316,8 +1429,10 @@
     return true;
   }
 
-  function drawTileCredit(ctx, proj, pal) {
-    var text = '© OpenStreetMap contributors, © CARTO';
+  /* Attribution for whichever theme is on screen, since each source asks for
+     its own wording. */
+  function drawTileCredit(ctx, proj, pal, opts) {
+    var text = tileSpec(opts).credit;
     ctx.save();
     ctx.font = '20px system-ui, -apple-system, sans-serif';
     var w = ctx.measureText(text).width;
@@ -1620,6 +1735,11 @@
     get placesReady() { return places.loaded; },
     drawTiles: drawTiles,
     drawTileCredit: drawTileCredit,
+    tileThemes: TILE_THEMES,
+    tileMaxZoom: tileMaxZoom,
+    tileBakedLabels: function (theme) {
+      return !!(TILE_THEMES[theme] || TILE_THEMES.plain).bakedLabels;
+    },
     drawGraticule: drawGraticule,
     drawEquator: drawEquator,
     labelPlacer: labelPlacer,

@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-13">
+<meta name="description" content="How filters, a bias, and a non-linearity form one convolutional layer, why the parameter count does not depend on image size, and the notation for a deep ConvNet.">
+
+<title>One Layer of a Convolutional Network – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../deep-learning/convolutional-neural-networks/pooling-layers.html" rel="next">
+<link href="../../deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-87fe4da730787eeec4a7ec728bf0e0b5.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="One Layer of a Convolutional Network – H’s Notes">
+<meta property="og:description" content="How filters, a bias, and a non-linearity form one convolutional layer, why the parameter count does not depend on image size, and the notation for a deep ConvNet.">
+<meta property="og:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/one-layer-of-a-convolutional-network_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="One Layer of a Convolutional Network – H’s Notes">
+<meta name="twitter:description" content="How filters, a bias, and a non-linearity form one convolutional layer, why the parameter count does not depend on image size, and the notation for a deep ConvNet.">
+<meta name="twitter:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/one-layer-of-a-convolutional-network_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../networking/archive.html">
+ <span class="dropdown-text">Archive</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/asn-converter.html">
+ <span class="dropdown-text">ASN Converter</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text Generator</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/graph.html">
+ <span class="dropdown-text">Function Grapher</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/eclipse.html">
+ <span class="dropdown-text">Eclipse Explorer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-viewer.html">
+ <span class="dropdown-text">SVG Viewer</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/color-palette.html">
+ <span class="dropdown-text">Color Palette Generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/typography.html">
+ <span class="dropdown-text">Typography Designer</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../deep-learning/convolutional-neural-networks/one-layer-of-a-convolutional-network.html">One Layer of a Convolutional Network</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutional Neural Networks</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/convolutions-and-edge-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutions and Edge Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Strided Convolutions and Convolutions Over Volume</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/one-layer-of-a-convolutional-network.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">One Layer of a Convolutional Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/pooling-layers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pooling Layers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/full-convnet-example-and-why-convolutions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Full ConvNet Example and Why Convolutions</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#from-convolution-to-a-layer" id="toc-from-convolution-to-a-layer" class="nav-link active" data-scroll-target="#from-convolution-to-a-layer">From Convolution to a Layer</a>
+  <ul class="collapse">
+  <li><a href="#comparison-with-a-standard-layer" id="toc-comparison-with-a-standard-layer" class="nav-link" data-scroll-target="#comparison-with-a-standard-layer">Comparison With a Standard Layer</a></li>
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#number-of-parameters-in-a-layer" id="toc-number-of-parameters-in-a-layer" class="nav-link" data-scroll-target="#number-of-parameters-in-a-layer">Number of Parameters in a Layer</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#notation-for-a-convolutional-layer" id="toc-notation-for-a-convolutional-layer" class="nav-link" data-scroll-target="#notation-for-a-convolutional-layer">Notation for a Convolutional Layer</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#simple-convolutional-network-example" id="toc-simple-convolutional-network-example" class="nav-link" data-scroll-target="#simple-convolutional-network-example">Simple Convolutional Network Example</a>
+  <ul class="collapse">
+  <li><a href="#trends-as-you-go-deeper" id="toc-trends-as-you-go-deeper" class="nav-link" data-scroll-target="#trends-as-you-go-deeper">Trends as You Go Deeper</a></li>
+  <li><a href="#three-types-of-layers" id="toc-three-types-of-layers" class="nav-link" data-scroll-target="#three-types-of-layers">Three Types of Layers</a></li>
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../nav-columns.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">One Layer of a Convolutional Network</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">convolutional-neural-networks</div>
+    <div class="quarto-category">computer-vision</div>
+    <div class="quarto-category">convolution</div>
+    <div class="quarto-category">notation</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    How filters, a bias, and a non-linearity form one convolutional layer, why the parameter count does not depend on image size, and the notation for a deep ConvNet.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 13, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~48 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,000 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p>You have seen how to take a 3D volume and convolve it with several different filters. Now it is time to build one layer of a convolutional neural network out of that, and then to stack a few such layers into a small but complete network.</p>
+<section id="from-convolution-to-a-layer" class="level2">
+<h2 class="anchored" data-anchor-id="from-convolution-to-a-layer">From Convolution to a Layer</h2>
+<p>Take the example from the <a href="../../deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes.html#multiple-filters">previous page</a>. Convolving a 6 by 6 by 3 input with a first filter gives one 4 by 4 output, and convolving it with a second filter gives a different 4 by 4 output.</p>
+<p>The final thing that turns this into a convolutional neural net layer is that for each of these you add a <strong>bias</strong>. The bias is a single real number, and thanks to Python broadcasting you add that same number to every one of the 16 elements of the 4 by 4 output. Then you apply a non-linearity, which for this illustration is a ReLU, and that gives you a 4 by 4 output after the bias and the non-linearity.</p>
+<p>The bottom output gets its own different bias, again a single real number added to all 16 numbers, followed by the same non-linearity, which gives a different 4 by 4 output. Stacking the two results as before, you end up with a 4 by 4 by 2 volume.</p>
+<div id="147a6540" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="one-layer-of-a-convolutional-network_files/figure-html/cell-2-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Going from a 6 by 6 by 3 volume to a 4 by 4 by 2 volume in this way is one layer of a convolutional neural network.</p>
+<section id="comparison-with-a-standard-layer" class="level3">
+<h3 class="anchored" data-anchor-id="comparison-with-a-standard-layer">Comparison With a Standard Layer</h3>
+<p>To map this back to one layer of forward propagation in a standard, non-convolutional neural network, remember that one step of forward propagation looked like this.</p>
+<p><span class="math display">\[
+z^{[1]} = W^{[1]} a^{[0]} + b^{[1]}, \qquad a^{[1]} = g(z^{[1]})
+\]</span></p>
+<p>where <span class="math inline">\(a^{[0]}\)</span> was also equal to <span class="math inline">\(x\)</span>. In the convolutional analogy, the input volume plays the role of <span class="math inline">\(a^{[0]}\)</span>, which is <span class="math inline">\(x\)</span>. The filters play a role similar to <span class="math inline">\(W^{[1]}\)</span>.</p>
+<p>During the convolution operation you took those 27 numbers per filter, really 27 times 2 because there are two filters, and multiplied them out against the input. So you are really computing a linear function to get each 4 by 4 matrix. The output of the convolution operation plays the role of <span class="math inline">\(W^{[1]} a^{[0]}\)</span>. Then you add the bias, and the result before applying the non-linearity plays the role of <span class="math inline">\(z^{[1]}\)</span>. Finally, applying the non-linearity gives the output, which becomes the activation of the next layer, <span class="math inline">\(a^{[1]}\)</span>.</p>
+<p>So the convolution is really applying a linear operation, then you have the biases, then the ReLU. That is how you go from <span class="math inline">\(a^{[0]}\)</span> to <span class="math inline">\(a^{[1]}\)</span>, from a 6 by 6 by 3 dimensional volume, through one layer of a neural network, to a 4 by 4 by 2 dimensional volume.</p>
+<p>In this example there were two filters, so two features if you will, which is why the output was 4 by 4 by 2. If instead you had 10 filters, you would wind up with a 4 by 4 by 10 dimensional output volume, because you would be taking 10 of these maps rather than two and stacking them up.</p>
+</section>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. What two things are added to a convolution to turn it into one layer of a neural network?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>A bias, which is one real number per filter added to every element of that filter’s output, and a non-linearity such as ReLU applied elementwise afterwards. Without them the layer would only be a linear operation.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In the convolutional layer, what plays the role of <span class="math inline">\(W^{[1]}\)</span> from a standard network layer?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The filters. Their entries are the learned weights, and sliding them over the input computes the same kind of linear function that <span class="math inline">\(W^{[1]} a^{[0]}\)</span> computes in a standard layer.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="number-of-parameters-in-a-layer" class="level2">
+<h2 class="anchored" data-anchor-id="number-of-parameters-in-a-layer">Number of Parameters in a Layer</h2>
+<p>Here is an exercise to make sure the picture is clear. Suppose you have 10 filters, rather than two, and each is 3 by 3 by 3, in one layer of a neural network. How many parameters does this layer have?</p>
+<p>Each filter is a 3 by 3 by 3 volume, so each filter has 27 numbers to be learned, plus the bias, which is the <span class="math inline">\(b\)</span> parameter. That gives 28 parameters per filter. With 10 filters altogether you have</p>
+<p><span class="math display">\[
+28 \times 10 = 280
+\]</span></p>
+<p>parameters.</p>
+<p>Notice one nice thing about this. No matter how big the input image is, the number of parameters stays fixed at 280. The input image could be 1000 by 1000 or 5000 by 5000, and you could still use these ten filters to detect features, vertical edges, horizontal edges, or other features, anywhere in a very large image, with the same very small number of parameters.</p>
+<p>This is really one property of a convolutional neural network that makes it less prone to overfitting than the alternative. Once you have learned 10 feature detectors that work, you can apply them even to large images, and the number of parameters is still fixed and relatively small.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. A convolutional layer uses 20 filters, each 5 by 5 by 3. How many parameters does the layer have?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Each filter has <span class="math inline">\(5 \times 5 \times 3 = 75\)</span> weights plus one bias, so 76 parameters. With 20 filters that is <span class="math inline">\(76 \times 20 = 1520\)</span> parameters.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does the input image size not appear in the parameter count?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the same filter is slid over every position of the image, so a bigger image means more window positions, not more parameters. The parameters live in the filters and their biases only.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="notation-for-a-convolutional-layer" class="level2">
+<h2 class="anchored" data-anchor-id="notation-for-a-convolutional-layer">Notation for a Convolutional Layer</h2>
+<p>Here is the notation used to describe a convolutional layer <span class="math inline">\(l\)</span> in a convolutional neural network.</p>
+<p>If layer <span class="math inline">\(l\)</span> is a convolution layer, then <span class="math inline">\(f^{[l]}\)</span> denotes the filter size, so the filters in that layer are <span class="math inline">\(f^{[l]}\)</span> by <span class="math inline">\(f^{[l]}\)</span>. The superscript square bracket <span class="math inline">\(l\)</span> is the usual way of referring to a particular layer. Similarly, <span class="math inline">\(p^{[l]}\)</span> denotes the amount of padding, and <span class="math inline">\(s^{[l]}\)</span> denotes the stride.</p>
+<p>The amount of padding can also be specified by saying that you want a valid convolution, which means no padding, or a same convolution, which means you choose the padding so that the output has the same height and width as the input.</p>
+<p>The input to this layer is whatever the previous layer produced, so it has dimension</p>
+<p><span class="math display">\[
+n_H^{[l-1]} \times n_W^{[l-1]} \times n_c^{[l-1]}
+\]</span></p>
+<p>Up to now the examples used images with equal height and width, but in general they can differ, which is why the height and the width get their own subscripts. This layer then outputs a volume of size</p>
+<p><span class="math display">\[
+n_H^{[l]} \times n_W^{[l]} \times n_c^{[l]}
+\]</span></p>
+<p>The height and the width of the output come from the formula seen earlier, applied with this layer’s padding, filter size, and stride.</p>
+<p><span class="math display">\[
+n_H^{[l]} = \left\lfloor \frac{n_H^{[l-1]} + 2p^{[l]} - f^{[l]}}{s^{[l]}} + 1 \right\rfloor
+\]</span></p>
+<p>The same formula with <span class="math inline">\(W\)</span> in place of <span class="math inline">\(H\)</span> gives the width.</p>
+<p><span class="math display">\[
+n_W^{[l]} = \left\lfloor \frac{n_W^{[l-1]} + 2p^{[l]} - f^{[l]}}{s^{[l]}} + 1 \right\rfloor
+\]</span></p>
+<p>The number of channels of the output, <span class="math inline">\(n_c^{[l]}\)</span>, is just the number of filters used in this layer. With two filters the output volume was 4 by 4 by 2, and with 10 filters it would be 4 by 4 by 10.</p>
+<p>Each filter is <span class="math inline">\(f^{[l]} \times f^{[l]} \times n_c^{[l-1]}\)</span>, because the number of channels in the filter must match the number of channels in its input. The output of the layer, after the biases and the non-linearity, is the activation <span class="math inline">\(a^{[l]}\)</span>, a 3D volume of size <span class="math inline">\(n_H^{[l]} \times n_W^{[l]} \times n_c^{[l]}\)</span>.</p>
+<p>When you use a vectorized implementation, with batch gradient descent or mini-batch gradient descent, you output <span class="math inline">\(A^{[l]}\)</span>, a set of <span class="math inline">\(m\)</span> activations for <span class="math inline">\(m\)</span> examples, which is <span class="math inline">\(m \times n_H^{[l]} \times n_W^{[l]} \times n_c^{[l]}\)</span>. The index over training examples comes first, then the three volume dimensions.</p>
+<p>The weights of the layer are all of the filters put together, so they have the dimension of one filter times the total number of filters. The bias has one real number per filter, so it is a vector of <span class="math inline">\(n_c^{[l]}\)</span> numbers, although in code it is more convenient to represent it as a <span class="math inline">\(1 \times 1 \times 1 \times n_c^{[l]}\)</span> four dimensional tensor.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Quantity</th>
+<th>Notation</th>
+<th>Dimension</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Filter size</td>
+<td><span class="math inline">\(f^{[l]}\)</span></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Padding</td>
+<td><span class="math inline">\(p^{[l]}\)</span></td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>Stride</td>
+<td><span class="math inline">\(s^{[l]}\)</span></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Number of filters</td>
+<td><span class="math inline">\(n_c^{[l]}\)</span></td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>Input</td>
+<td><span class="math inline">\(a^{[l-1]}\)</span></td>
+<td><span class="math inline">\(n_H^{[l-1]} \times n_W^{[l-1]} \times n_c^{[l-1]}\)</span></td>
+</tr>
+<tr class="even">
+<td>Each filter</td>
+<td></td>
+<td><span class="math inline">\(f^{[l]} \times f^{[l]} \times n_c^{[l-1]}\)</span></td>
+</tr>
+<tr class="odd">
+<td>Weights</td>
+<td><span class="math inline">\(W^{[l]}\)</span></td>
+<td><span class="math inline">\(f^{[l]} \times f^{[l]} \times n_c^{[l-1]} \times n_c^{[l]}\)</span></td>
+</tr>
+<tr class="even">
+<td>Bias</td>
+<td><span class="math inline">\(b^{[l]}\)</span></td>
+<td><span class="math inline">\(n_c^{[l]}\)</span>, coded as <span class="math inline">\(1 \times 1 \times 1 \times n_c^{[l]}\)</span></td>
+</tr>
+<tr class="odd">
+<td>Output</td>
+<td><span class="math inline">\(a^{[l]}\)</span></td>
+<td><span class="math inline">\(n_H^{[l]} \times n_W^{[l]} \times n_c^{[l]}\)</span></td>
+</tr>
+<tr class="even">
+<td>Batch of outputs</td>
+<td><span class="math inline">\(A^{[l]}\)</span></td>
+<td><span class="math inline">\(m \times n_H^{[l]} \times n_W^{[l]} \times n_c^{[l]}\)</span></td>
+</tr>
+</tbody>
+</table>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Ordering of the Dimensions
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>There is no completely universal standard convention about the ordering of height, width, and channel. If you look at source code on GitHub, or at open source implementations, you will find that some authors put the channel first instead, and you sometimes see that ordering of the variables. Several common frameworks even have a parameter for whether to list the number of channels first or last when indexing into these volumes. Both conventions work fine as long as you are consistent. These pages list height and width first, and the number of channels last.</p>
+</div>
+</div>
+<p>That is a lot of notation, and there is no need to memorize all of it. Working through the examples is what makes it familiar. The key point is how one layer of a convolutional neural network works, and what the computation is that takes the activations of one layer and maps them to the activations of the next layer.</p>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. Layer <span class="math inline">\(l\)</span> has <span class="math inline">\(n_H^{[l-1]} = n_W^{[l-1]} = 28\)</span>, <span class="math inline">\(n_c^{[l-1]} = 6\)</span>, <span class="math inline">\(f^{[l]} = 5\)</span>, <span class="math inline">\(s^{[l]} = 1\)</span>, <span class="math inline">\(p^{[l]} = 0\)</span>, and 16 filters. What is the shape of <span class="math inline">\(a^{[l]}\)</span>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The height and width are <span class="math inline">\(\lfloor (28 + 0 - 5)/1 + 1 \rfloor = 24\)</span>, and the number of channels is the number of filters, so <span class="math inline">\(a^{[l]}\)</span> is 24 by 24 by 16.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. For that same layer, what is the shape of <span class="math inline">\(W^{[l]}\)</span> and of <span class="math inline">\(b^{[l]}\)</span>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(W^{[l]}\)</span> is <span class="math inline">\(5 \times 5 \times 6 \times 16\)</span>, which is one filter of shape <span class="math inline">\(5 \times 5 \times 6\)</span> for each of the 16 filters. And <span class="math inline">\(b^{[l]}\)</span> has 16 numbers, one per filter, usually stored with shape <span class="math inline">\(1 \times 1 \times 1 \times 16\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does <span class="math inline">\(A^{[l]}\)</span> have four dimensions while <span class="math inline">\(a^{[l]}\)</span> has three?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because <span class="math inline">\(A^{[l]}\)</span> holds a whole mini-batch of <span class="math inline">\(m\)</span> examples, so it adds the example index as a leading dimension in front of the height, width, and channel dimensions of one example.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="simple-convolutional-network-example" class="level2">
+<h2 class="anchored" data-anchor-id="simple-convolutional-network-example">Simple Convolutional Network Example</h2>
+<p>Now that you know how one layer works, let us stack a few of them together and go through a concrete example of a deep convolutional neural network.</p>
+<p>Suppose you have an image and you want to do image classification, or image recognition. You want to take an image <span class="math inline">\(x\)</span> as input, and decide whether it is a cat or not, 0 or 1, so it is a classification problem.</p>
+<p>For the sake of this example the image is fairly small, 39 by 39 by 3. This choice just makes some of the numbers work out a bit better. So <span class="math inline">\(n_H^{[0]} = n_W^{[0]} = 39\)</span>, and <span class="math inline">\(n_c^{[0]} = 3\)</span>.</p>
+<p>Say the first layer uses a set of 3 by 3 filters to detect features, so <span class="math inline">\(f^{[1]} = 3\)</span>, with a stride of 1 and no padding, which is a valid convolution, and say you use 10 filters. Then the activations of this next layer are 37 by 37 by 10, where the 10 comes from the fact that you used 10 filters, and the 37 comes from the formula.</p>
+<p><span class="math display">\[
+\frac{39 + 0 - 3}{1} + 1 = 37
+\]</span></p>
+<p>So <span class="math inline">\(n_H^{[1]} = n_W^{[1]} = 37\)</span> and <span class="math inline">\(n_c^{[1]} = 10\)</span>, and this becomes the dimension of the activation at the first layer.</p>
+<p>Now say you have another convolutional layer, and this time you use 5 by 5 filters, so <span class="math inline">\(f^{[2]} = 5\)</span>, with a stride of 2, no padding, and 20 filters. The output of this is another volume, this time 17 by 17 by 20. Notice that because you are now using a stride of 2, the dimension has shrunk much faster. The 37 by 37 has gone down in size by slightly more than a factor of two, to 17 by 17. And because you are using 20 filters, the number of channels is now 20. So <span class="math inline">\(n_H^{[2]} = n_W^{[2]} = 17\)</span> and <span class="math inline">\(n_c^{[2]} = 20\)</span>.</p>
+<p>Apply one last convolutional layer, with a 5 by 5 filter again, a stride of 2 again, no padding, and 40 filters. Working through the same arithmetic, you end up with 7 by 7 by 40.</p>
+<div id="f4efea02" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="one-layer-of-a-convolutional-network_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>So what you have done is take a 39 by 39 by 3 input image and compute 7 by 7 by 40 features for that image.</p>
+<p>Finally, what is commonly done is to take that 7 by 7 by 40 volume, and since <span class="math inline">\(7 \times 7 \times 40 = 1960\)</span>, flatten it or unroll it into 1960 units. Just flatten it out into one long vector, and then feed that vector to a logistic regression unit or a softmax unit, depending on whether you are trying to recognize cat or no cat, or trying to recognize any one of several different objects. That gives the final predicted output of the neural network.</p>
+<p>To be clear, this last step is just taking all 1960 numbers and unrolling them into a very long vector, so that you have one long vector you can feed into a softmax or a logistic regression in order to make the prediction for the final output.</p>
+<section id="trends-as-you-go-deeper" class="level3">
+<h3 class="anchored" data-anchor-id="trends-as-you-go-deeper">Trends as You Go Deeper</h3>
+<p>This would be a pretty typical example of a ConvNet. A lot of the work in designing a convolutional neural net is selecting hyperparameters such as these. What is the filter size? What is the stride? What is the padding, and how many filters are used? Later sections give some suggestions and some guidelines on how to make these choices.</p>
+<p>For now, one thing to take away is that as you go deeper in a neural network, you typically start off with larger images, such as 39 by 39. The height and the width stay the same for a while and gradually trend down as you go deeper. Here it has gone from 39 to 37 to 17 to 7. Meanwhile the number of channels generally increases. Here it has gone from 3 to 10 to 20 to 40, and you see this general trend in a lot of other convolutional neural networks as well.</p>
+</section>
+<section id="three-types-of-layers" class="level3">
+<h3 class="anchored" data-anchor-id="three-types-of-layers">Three Types of Layers</h3>
+<p>It turns out that in a typical ConvNet there are usually three types of layers. One is the <strong>convolutional layer</strong>, often denoted a Conv layer, and that is what this network has been using. The two other common types are the <strong>pooling layer</strong>, often called Pool, and the <strong>fully connected layer</strong>, called FC.</p>
+<p>Although it is possible to design a pretty good neural network using just convolutional layers, most neural network architectures also have a few pooling layers and a few fully connected layers. Fortunately, pooling layers and fully connected layers are a bit simpler to define than convolutional layers, and they come up in the following sections.</p>
+</section>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. The second layer of the example takes a 37 by 37 by 10 input, with <span class="math inline">\(f = 5\)</span>, <span class="math inline">\(s = 2\)</span>, and <span class="math inline">\(p = 0\)</span>. Show why the output is 17 by 17.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math display">\[
+\left\lfloor \frac{37 + 0 - 5}{2} + 1 \right\rfloor = \left\lfloor \frac{32}{2} + 1 \right\rfloor = 17
+\]</span></p>
+<p>The number of channels becomes 20, since that layer uses 20 filters.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why is the final volume flattened before the output unit?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because a logistic regression unit or a softmax unit expects a plain vector of numbers, not a 3D volume. Unrolling the 7 by 7 by 40 volume gives one vector of 1960 numbers that can be fed straight into that unit.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What are the two general trends in the volume shapes as you go deeper into a ConvNet?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The height and width tend to decrease, from 39 to 37 to 17 to 7 in this example, while the number of channels tends to increase, from 3 to 10 to 20 to 40.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What are the three types of layer found in a typical ConvNet?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Convolutional layers (Conv), pooling layers (Pool), and fully connected layers (FC).</p>
+</div>
+</div>
+</div>
+<p>That is your first full example of a convolutional neural network, built out of convolutional layers only. The next section covers pooling layers, which are simpler than convolutional layers and appear in almost every architecture.</p>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 72%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">72% completed (172 of 237 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes.html" class="pagination-link" aria-label="Strided Convolutions and Convolutions Over Volume">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Strided Convolutions and Convolutions Over Volume</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../deep-learning/convolutional-neural-networks/pooling-layers.html" class="pagination-link" aria-label="Pooling Layers">
+        <span class="nav-page-text">Pooling Layers</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
