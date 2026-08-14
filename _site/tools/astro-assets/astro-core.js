@@ -106,6 +106,332 @@
     };
   }
 
+  // ----------------------------------------------------------- sky graphics
+
+  /* One place on the site where a planet decides what it looks like. Both the
+     planetarium and the eclipse atlas draw the same bodies, and a Mars that
+     is rust on one page and green on the other is two tools rather than one,
+     so the colours, the sizes and the glyphs all live here.
+
+     Colour is identification, the one meaning a monochrome chart cannot
+     carry, so these are hardcoded rather than themed. Red mode is the
+     exception and overrides the lot, because preserving dark adaptation is
+     that mode's entire point and no hue survives it. */
+  var BODY_TINT = {
+    Sun: '#d69a1e', Moon: '#8f93a8', Mercury: '#8a7d6d', Venus: '#bb8f2d',
+    Earth: '#3a7abf', Mars: '#c1440e', Jupiter: '#a8732c', Saturn: '#b19238',
+    Uranus: '#2b9d9d', Neptune: '#4560cc', Pluto: '#8d6e63'
+  };
+
+  /* open is the star atlas name for what this file calls a cluster; both
+     spellings resolve, so a page keeps whichever word it already used. */
+  var DSO_TINT = {
+    galaxy: '#9550c8', irregular: '#9550c8', nebula: '#c34a4a',
+    cluster: '#2f6fc4', open: '#2f6fc4', glob: '#b57f1f'
+  };
+
+  // Lowercase index, so a caller keying its own list by 'mars' still lands
+  var BODY_TINT_LC = {};
+  Object.keys(BODY_TINT).forEach(function (k) {
+    BODY_TINT_LC[k.toLowerCase()] = BODY_TINT[k];
+  });
+
+  /* Equatorial radii in kilometres, for working out how large each body
+     actually appears. */
+  var BODY_RADIUS_KM = {
+    Sun: 695700, Moon: 1737.4, Mercury: 2439.7, Venus: 6051.8, Mars: 3396.2,
+    Jupiter: 71492, Saturn: 60268, Uranus: 25559, Neptune: 24764, Pluto: 1188.3
+  };
+
+  function bodyTint(name, pal, mode) {
+    if (mode === 'red') return pal.ink;
+    return BODY_TINT[name] || BODY_TINT_LC[String(name).toLowerCase()] || pal.ink;
+  }
+
+  function dsoTint(kind, pal, mode) {
+    if (mode === 'red') return pal.ink;
+    return DSO_TINT[kind] || pal.ink;
+  }
+
+  /* Mixes a hex colour toward black or white, for the shadowed half of a
+     phase and for the darker belts on a banded planet. */
+  function shade(hex, f) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+    if (!m) return hex;
+    var n = parseInt(m[1], 16);
+    var to = f < 0 ? 0 : 255, a = Math.abs(f);
+    function mix(c) { return Math.round(c + (to - c) * a); }
+    return 'rgb(' + mix((n >> 16) & 255) + ',' + mix((n >> 8) & 255) + ',' +
+      mix(n & 255) + ')';
+  }
+
+  /* Apparent diameter in arcseconds, as seen from the Earth right now. */
+  function apparentDiam(body, t) {
+    var r = BODY_RADIUS_KM[body];
+    if (!r) return 0;
+    var v = (body === 'Moon') ? A.GeoMoon(t) : A.GeoVector(A.Body[body], t, false);
+    var d = Math.hypot(v.x, v.y, v.z) * KM_AU;
+    return d > 0 ? 2 * Math.atan(r / d) * RAD * 3600 : 0;
+  }
+
+  /* Pixels for a body's disc. Real diameters run from half a degree for the
+     Sun and the Moon down to two arcseconds for Neptune, a range of eight
+     hundred to one, and drawn to scale everything but the Sun and the Moon
+     would vanish. The scale is logarithmic instead, so the ranking a
+     telescope would show survives while the smallest disc stays findable. */
+  function markRadius(diamArcsec, k) {
+    return (6.2 + 3.1 * Math.log10(Math.max(1, diamArcsec))) * (k || 1);
+  }
+
+  /* Fraction of the disc that is lit, as the signed half-width of the
+     terminator ellipse. Positive is a crescent, negative a gibbous, and the
+     sign convention follows the Moon's elongation so that new is +1 and full
+     is -1. Every other body reaches the same number through its phase angle,
+     which runs the opposite way. */
+  function phaseFactor(body, t) {
+    if (body === 'Moon') return Math.cos(A.MoonPhase(t) * DEG);
+    try {
+      return -Math.cos(A.Illumination(A.Body[body], t).phase_angle * DEG);
+    } catch (err) {
+      return -1;
+    }
+  }
+
+  /* How wide open Saturn's rings stand, in radians, from the angle between
+     its pole and the line of sight. Near zero they are edge on and draw as a
+     line through the disc, which is what they really did in 2025. */
+  function ringOpening(t) {
+    try {
+      var n = A.RotationAxis(A.Body.Saturn, t).north;
+      var v = A.GeoVector(A.Body.Saturn, t, false);
+      var d = Math.hypot(v.x, v.y, v.z);
+      if (!d) return 0.4;
+      return Math.asin(Math.min(1, Math.abs(
+        (n.x * v.x + n.y * v.y + n.z * v.z) / d)));
+    } catch (err) {
+      return 0.4;
+    }
+  }
+
+  /* One body, drawn as itself. opts carries:
+       name    body name, which picks the colour and the markings
+       r       disc radius in canvas pixels
+       pal     palette, for the halo and the shadowed side
+       mode    chart mode, so red can flatten the colours
+       phase   terminator half-width, or null for a body drawn full
+       sunAng  screen direction of the Sun, which the lit limb faces
+       time    needed only by Saturn, for the ring opening */
+  function drawBody(ctx, x, y, opts) {
+    var o = opts || {};
+    var pal = o.pal, r = o.r || 10, name = o.name;
+    var col = bodyTint(name, pal, o.mode);
+    var lit = (name === 'Moon') ? pal.moonLit : shade(col, 0.35);
+    var dark = (name === 'Moon') ? pal.moonDark : shade(col, -0.55);
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    // The Sun keeps the corona that has always marked it on these charts
+    if (name === 'Sun') {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, 2 * Math.PI);
+      ctx.fillStyle = col;
+      ctx.fill();
+      ctx.strokeStyle = pal.sky;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = r * 0.22;
+      for (var i = 0; i < 8; i++) {
+        var a = i * Math.PI / 4;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * r * 1.45, Math.sin(a) * r * 1.45);
+        ctx.lineTo(Math.cos(a) * r * 2.2, Math.sin(a) * r * 2.2);
+        ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+
+    // Rings go behind the globe first, then in front of it, so the planet
+    // sits inside them the way it does in any photograph
+    var ring = null;
+    if (name === 'Saturn') {
+      ring = { rx: r * 2.15, ry: Math.max(r * 0.06, r * 2.15 * Math.sin(ringOpening(o.time))) };
+      ctx.save();
+      ctx.rotate(-0.35);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, ring.rx, ring.ry, 0, Math.PI, 2 * Math.PI);
+      ctx.strokeStyle = shade(col, 0.25);
+      ctx.lineWidth = Math.max(1.6, r * 0.22);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Halo, so a disc keeps its edge over coastlines and imagery
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, 2 * Math.PI);
+    ctx.strokeStyle = pal.sky;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = (o.phase === null || o.phase === undefined) ? col : dark;
+    ctx.fill();
+
+    if (o.phase !== null && o.phase !== undefined) {
+      /* The classic terminator: the semicircle facing the Sun, closed by an
+         ellipse whose half-width is the phase. Sweeping it toward the Sun
+         carves a crescent, away from it a gibbous. */
+      ctx.save();
+      ctx.rotate(o.sunAng || 0);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2, false);
+      ctx.ellipse(0, 0, Math.max(0.01, Math.abs(o.phase) * r), r, 0,
+                  Math.PI / 2, -Math.PI / 2, o.phase > 0);
+      ctx.fillStyle = lit;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Belts on the two banded giants, clipped to the disc
+    if (name === 'Jupiter' || name === 'Saturn') {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, 2 * Math.PI);
+      ctx.clip();
+      ctx.fillStyle = shade(col, -0.3);
+      var bands = (name === 'Jupiter') ? [-0.45, 0.1] : [-0.2];
+      bands.forEach(function (b) {
+        ctx.fillRect(-r, b * r, 2 * r, r * 0.32);
+      });
+      ctx.restore();
+    }
+
+    if (ring) {
+      ctx.save();
+      ctx.rotate(-0.35);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, ring.rx, ring.ry, 0, 0, Math.PI);
+      ctx.strokeStyle = shade(col, 0.25);
+      ctx.lineWidth = Math.max(1.6, r * 0.22);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, 2 * Math.PI);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /* Deep sky objects drawn as the thing rather than as a symbol. A galaxy is
+     a tilted ellipse with a bright core, a nebula a soft lobed cloud, a
+     cluster a scatter of stars, and an irregular galaxy a lopsided version of
+     the first. Each shape is a caricature of the real object, enough that the
+     reader recognises which one they are looking at. */
+  var CLUSTER_STARS = [[0, -0.75], [-0.62, -0.3], [0.58, -0.38], [-0.3, 0.28],
+                       [0.36, 0.3], [0, 0.72], [-0.78, 0.62], [0.75, 0.68]];
+
+  // Radii around the circle, giving the cloud its uneven edge
+  var CLOUD_R = [1.0, 0.78, 1.06, 0.84, 0.96, 1.12, 0.8, 1.02, 0.86, 1.08];
+
+  /* Closed lumpy outline, smoothed by running the curve through the midpoints
+     between neighbouring radii so there are no corners. */
+  function cloudPath(ctx, r) {
+    var n = CLOUD_R.length, pts = [];
+    for (var i = 0; i < n; i++) {
+      var a = i / n * 2 * Math.PI;
+      pts.push([Math.cos(a) * CLOUD_R[i] * r, Math.sin(a) * CLOUD_R[i] * r]);
+    }
+    ctx.beginPath();
+    var mid = function (p, q) { return [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]; };
+    var start = mid(pts[n - 1], pts[0]);
+    ctx.moveTo(start[0], start[1]);
+    for (i = 0; i < n; i++) {
+      var m = mid(pts[i], pts[(i + 1) % n]);
+      ctx.quadraticCurveTo(pts[i][0], pts[i][1], m[0], m[1]);
+    }
+    ctx.closePath();
+  }
+
+  function drawDeepSky(ctx, x, y, opts) {
+    var o = opts || {};
+    var pal = o.pal, r = o.r || 13;
+    var col = dsoTint(o.kind, pal, o.mode);
+    var tilt = o.tilt || 0;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(tilt);
+
+    if (o.kind === 'galaxy' || o.kind === 'irregular') {
+      var ax = o.kind === 'galaxy' ? 1.6 : 1.25;
+      var ay = o.kind === 'galaxy' ? 0.55 : 0.85;
+      // Halo first, so the shape reads over a busy base map
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r * ax, r * ay, 0, 0, 2 * Math.PI);
+      ctx.strokeStyle = pal.sky;
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = col;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+      // Core
+      ctx.beginPath();
+      ctx.ellipse(o.kind === 'galaxy' ? 0 : -r * 0.2, 0,
+                  r * 0.42, r * 0.34, 0, 0, 2 * Math.PI);
+      ctx.fillStyle = col;
+      ctx.fill();
+    } else if (o.kind === 'cluster') {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, 2 * Math.PI);
+      ctx.strokeStyle = pal.sky;
+      ctx.lineWidth = 3.5;
+      ctx.setLineDash([4, 5]);
+      ctx.stroke();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = col;
+      CLUSTER_STARS.forEach(function (s, i) {
+        ctx.beginPath();
+        ctx.arc(s[0] * r * 0.78, s[1] * r * 0.78, i < 3 ? r * 0.17 : r * 0.12,
+                0, 2 * Math.PI);
+        ctx.fill();
+      });
+    } else {
+      /* One lumpy closed outline rather than a ring of circles, so the edge
+         reads as nebulosity instead of as overlapping bubbles. The radii are
+         a fixed pattern, not random, so the same object keeps the same shape
+         from frame to frame. */
+      cloudPath(ctx, r);
+      ctx.strokeStyle = pal.sky;
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = col;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1.7;
+      ctx.stroke();
+      // A brighter heart, which is what actually shows in a photograph
+      ctx.globalAlpha = 0.45;
+      cloudPath(ctx, r * 0.45);
+      ctx.fillStyle = col;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+
   // ----------------------------------------------------------- projections
 
   /* Every projection exposes:
@@ -1046,7 +1372,11 @@
      quietly under a monochrome chart, and leaving the labels off means the
      tool's own place names are the only ones on screen. */
   var tileCache = new Map();
-  var TILE_CACHE_MAX = 600;
+  /* Raster tiles are decoded images, not just their small network payloads.
+     Keeping 200 balances smooth local panning with a bounded memory footprint
+     on ordinary laptops; revisiting an older area simply asks the provider for
+     its tiles again. */
+  var TILE_CACHE_MAX = 200;
   var LAT_MAX_MERC = 85.051129;
 
   function mercV(lat) {
@@ -1135,7 +1465,16 @@
     var th = TILE_THEMES[opts.theme] || TILE_THEMES.plain;
     var dark = !!opts.dark, labels = !!opts.labels;
     var ratio = Math.max(1, Math.min(3, opts.pixelRatio || 1));
-    var hi = ratio >= 1.3 && !!th.retina;
+    /* Retina artwork costs four times the pixels to hold in memory, and it
+       is worth that only on a display able to resolve it. The deciding
+       number is the screen's own pixel ratio, not the canvas supersampling:
+       the chart supersamples at one and a half whatever the display, so
+       reading the ratio off the canvas asked every ordinary monitor to carry
+       doubled tiles it then threw away on the way to the screen. A caller
+       that does not say gets the old behaviour, which is to follow the
+       canvas. */
+    var screen = Math.max(1, Math.min(3, opts.screenRatio || ratio));
+    var hi = screen >= 1.5 && !!th.retina;
     var layers = [function (z, x, y) { return th.tiles(dark, labels, hi, z, x, y); }];
     if (labels && th.overlay) {
       layers.push(function (z, x, y) { return th.overlay(hi, z, x, y); });
@@ -1147,7 +1486,13 @@
       // Canvas pixels one tile covers, so its artwork lands at its own size
       tilePx: 256 * ratio,
       // Whether the imagery carries names of its own no matter the switch
-      bakedLabels: !!th.bakedLabels
+      bakedLabels: !!th.bakedLabels,
+      // Draw from what is already held, request nothing new
+      noFetch: !!opts.noFetch,
+      /* Everything about the request that decides which artwork comes back,
+         so the mosaic below can tell one theme's tiles from another's. */
+      id: (opts.theme || 'plain') + (dark ? '/d' : '/l') + (labels ? '+n' : '') +
+        (hi ? '@2' : '') + '/' + Math.round(256 * ratio)
     };
   }
 
@@ -1156,13 +1501,25 @@
     return th.maxZoom;
   }
 
-  function getTile(urlFn, z, x, y, onLoad) {
+  /* Counts tiles that have arrived. The mosaic below keeps its pixels between
+     frames, and a tile landing is the one thing that can change them without
+     the view having moved, so it stamps this and rebuilds when the stamp
+     moves on. */
+  var tilesArrived = 0;
+
+  function getTile(urlFn, z, x, y, onLoad, noFetch) {
     var key = urlFn(z, x, y);
     var img = tileCache.get(key);
     if (img === undefined) {
+      /* A zoom in flight asks for nothing. Every level the animation sweeps
+         through would otherwise pull a full screen of tiles that is on
+         display for a few frames and then never wanted again, which was the
+         largest single source of wasted fetching on the page. The levels
+         already in hand cover the view meanwhile, through coarseTile below. */
+      if (noFetch) return null;
       img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = onLoad;
+      img.onload = function () { tilesArrived++; onLoad(); };
       img.onerror = function () { };
       img.src = key;
       tileCache.set(key, img);
@@ -1172,6 +1529,42 @@
       }
     }
     return (img.complete && img.naturalWidth) ? img : null;
+  }
+
+  /* The same ground from a shallower level, for a tile that has not arrived.
+     One tile at zoom z sits inside one tile at z-1, a quarter of it, and so
+     on up, so any ancestor already in the cache can stand in by drawing the
+     matching quarter of a quarter stretched to fill. Slightly soft, and far
+     better than the hole it replaces: without this a zoom drops the whole
+     base map back to bundled outlines until the new level lands. Five levels
+     up is a thirty-two fold stretch, past which the substitute says nothing.
+
+     Returns the source rectangle to lift out of the ancestor, in that
+     image's own pixels. */
+  function coarseTile(urlFn, z, x, y) {
+    for (var dz = 1; dz <= 5 && z - dz >= 0; dz++) {
+      var span = 1 << dz;
+      var img = tileCache.get(urlFn(z - dz, Math.floor(x / span), Math.floor(y / span)));
+      if (!img || !img.complete || !img.naturalWidth) continue;
+      var part = img.naturalWidth / span;
+      return { img: img, sx: (x % span) * part, sy: (y % span) * part, s: part };
+    }
+    return null;
+  }
+
+  /* Draws a tile, or the best stand-in for it, into a destination square.
+     Reports whether anything was painted so the caller can tell an empty map
+     from a soft one. */
+  function paintTile(ctx, urlFn, z, x, y, onLoad, noFetch, dx, dy, dw, dh) {
+    var img = getTile(urlFn, z, x, y, onLoad, noFetch);
+    if (img) {
+      ctx.drawImage(img, dx, dy, dw, dh);
+      return true;
+    }
+    var c = coarseTile(urlFn, z, x, y);
+    if (!c) return false;
+    ctx.drawImage(c.img, c.sx, c.sy, c.s, c.s, dx, dy, dw, dh);
+    return true;
   }
 
   /* opts is {theme, dark, labels}, or the legacy 'light' / 'dark' string. */
@@ -1202,14 +1595,13 @@
     for (var iy = iy0; iy <= iy1; iy++) {
       for (var ix = ix0; ix <= ix1; ix++) {
         for (var L = 0; L < spec.layers.length; L++) {
-          var img = getTile(spec.layers[L], z, ((ix % n) + n) % n, iy, onLoad);
-          if (!img) continue;
-          if (L === 0) any = true;
           // The extra pixel hides the hairline seams between neighbours
-          ctx.drawImage(img,
+          var drew = paintTile(ctx, spec.layers[L], z, ((ix % n) + n) % n, iy,
+            onLoad, spec.noFetch,
             W / 2 + (ix / n - uC) * worldW,
             H / 2 + (iy / n - vC) * worldW,
             size + 1, size + 1);
+          if (drew && L === 0) any = true;
         }
       }
     }
@@ -1220,9 +1612,17 @@
   }
 
   /* Offscreen mosaic of the tiles covering the visible window, in tile-pixel
-     coordinates: source x = (global mercator u * n - ix0) * 256. The canvas is
-     kept and only grown, so a steady view allocates nothing per frame. */
-  var mosaic = { canvas: null, ctx: null };
+     coordinates: source x = (global mercator u * n - ix0) * 256.
+
+     The canvas and its contents both survive between frames. What the mosaic
+     holds depends on nothing but the tile theme, the zoom level and the block
+     of tile indices covering the window, so those make its key, and a frame
+     that asks for the same key again is handed the same pixels back. That is
+     the difference between a running animation and a stalled one: the shadow
+     moves every frame while the map underneath it does not, and rebuilding a
+     mosaic nobody changed was costing more than everything else the warp does
+     put together. */
+  var mosaic = { canvas: null, ctx: null, key: '', arrived: -1, out: null };
 
   function tileMosaic(proj, onLoad, spec) {
     var win = viewWindow(proj);
@@ -1291,27 +1691,50 @@
        retina tile is not thrown away before the warp samples it. */
     var cell = Math.round(spec.tilePx);
     var cw = (ix1 - ix0 + 1) * cell, ch = (iy1 - iy0 + 1) * cell;
+
+    /* Nothing about this frame differs from the last one that built the
+       mosaic, so the pixels already on the canvas are the answer. */
+    /* A mosaic built while requests were held back must not satisfy a later
+       frame that is allowed to fetch, or the zoom would settle on the soft
+       stand-in and never ask for the sharp tiles. */
+    var key = spec.id + '/' + z + '/' + ix0 + ',' + ix1 + ',' + iy0 + ',' + iy1 +
+      (spec.noFetch ? '/held' : '');
+    if (mosaic.out && mosaic.key === key && mosaic.arrived === tilesArrived) {
+      return mosaic.out;
+    }
+    mosaic.key = key;
+    mosaic.arrived = tilesArrived;
+    mosaic.out = null;
+
     if (!mosaic.canvas) {
       mosaic.canvas = document.createElement('canvas');
       mosaic.ctx = mosaic.canvas.getContext('2d');
     }
-    if (mosaic.canvas.width < cw) mosaic.canvas.width = cw;
-    if (mosaic.canvas.height < ch) mosaic.canvas.height = ch;
-    mosaic.ctx.clearRect(0, 0, cw, ch);
+    /* Sized to the window rather than to the largest window ever seen, so a
+       session that opened on the whole globe does not carry its canvas around
+       for the rest of the afternoon. Resizing clears the canvas by itself;
+       only a rebuild that happens to want the same dimensions has to ask. */
+    if (mosaic.canvas.width !== cw || mosaic.canvas.height !== ch) {
+      mosaic.canvas.width = cw;
+      mosaic.canvas.height = ch;
+    } else {
+      mosaic.ctx.clearRect(0, 0, cw, ch);
+    }
     var any = false;
     for (var iy = iy0; iy <= iy1; iy++) {
       for (var ix = ix0; ix <= ix1; ix++) {
         for (var L = 0; L < spec.layers.length; L++) {
-          var img = getTile(spec.layers[L], z, ((ix % n) + n) % n, iy, onLoad);
-          if (!img) continue;
-          if (L === 0) any = true;
-          mosaic.ctx.drawImage(img, (ix - ix0) * cell, (iy - iy0) * cell, cell, cell);
+          var drew = paintTile(mosaic.ctx, spec.layers[L], z, ((ix % n) + n) % n, iy,
+            onLoad, spec.noFetch,
+            (ix - ix0) * cell, (iy - iy0) * cell, cell, cell);
+          if (drew && L === 0) any = true;
         }
       }
     }
     if (!any) return null;
-    return { canvas: mosaic.canvas, n: n, ix0: ix0, iy0: iy0,
-             cw: cw, ch: ch, cell: cell };
+    mosaic.out = { canvas: mosaic.canvas, n: n, ix0: ix0, iy0: iy0,
+                   cw: cw, ch: ch, cell: cell };
+    return mosaic.out;
   }
 
   /* Inverse projection with a fallback for points just off the mapped area,
@@ -1733,6 +2156,17 @@
     get detailReady() { return detail.loaded; },
     loadPlaces: loadPlaces,
     get placesReady() { return places.loaded; },
+    bodyTint: bodyTint,
+    dsoTint: dsoTint,
+    bodyTints: BODY_TINT,
+    dsoTints: DSO_TINT,
+    shade: shade,
+    apparentDiam: apparentDiam,
+    markRadius: markRadius,
+    phaseFactor: phaseFactor,
+    ringOpening: ringOpening,
+    drawBody: drawBody,
+    drawDeepSky: drawDeepSky,
     drawTiles: drawTiles,
     drawTileCredit: drawTileCredit,
     tileThemes: TILE_THEMES,
