@@ -333,6 +333,7 @@ ul.task-list li input[type="checkbox"] {
 <!-- margin-sidebar -->
 <!-- main -->
 <script src="../theme-toggle.js"></script>
+<script src="../auth.js"></script>
 <script src="../resume-reading.js"></script>
 <script src="../search-scope.js"></script>
 <script src="../review-numbering.js"></script>
@@ -1270,16 +1271,22 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 <script>
 /* same Firebase project as the Pastebin tool; the chess page only touches /chess/ */
 try {
-  firebase.initializeApp({
-    apiKey: "AIzaSyDpRFBtX8LUmZmEX7VcIeMxQKQOtLVdf-A",
-    authDomain: "oliabak-paste.firebaseapp.com",
-    databaseURL: "https://oliabak-paste-default-rtdb.firebaseio.com",
-    projectId: "oliabak-paste",
-    storageBucket: "oliabak-paste.firebasestorage.app",
-    messagingSenderId: "968986695208",
-    appId: "1:968986695208:web:fc5f3d37911810b2e0471d"
-  });
-  firebase.appCheck().activate('6LdhmdosAAAAAGh4ojYqXCU0JOeVo3X-R1qmMaZq', true);
+  /* auth.js shares this project and may have created the app already. A second
+     initializeApp throws, and the catch below would then blank out the database
+     handle, silently killing cloud sync for exactly the signed-in readers who
+     need it. Reuse the existing app when there is one. */
+  try { firebase.app(); } catch (e) {
+    firebase.initializeApp({
+      apiKey: "AIzaSyDpRFBtX8LUmZmEX7VcIeMxQKQOtLVdf-A",
+      authDomain: "oliabak-paste.firebaseapp.com",
+      databaseURL: "https://oliabak-paste-default-rtdb.firebaseio.com",
+      projectId: "oliabak-paste",
+      storageBucket: "oliabak-paste.firebasestorage.app",
+      messagingSenderId: "968986695208",
+      appId: "1:968986695208:web:fc5f3d37911810b2e0471d"
+    });
+    firebase.appCheck().activate('6LdhmdosAAAAAGh4ojYqXCU0JOeVo3X-R1qmMaZq', true);
+  }
   window.__chessFdb = firebase.database();
   /* anonymous sign-in: gives every browser a stable auth.uid so the database rules
      can allow only one leaderboard registration per browser */
@@ -1941,6 +1948,46 @@ function genPlayerKey() {
 }
 const fmtCode = k => k.replace(/(.{4})(.{4})(.{4})/, '$1-$2-$3');
 
+/* The player key doubles as the restore code, so it is a secret and never
+   leaves this browser except as a lookup under chess/players. The leaderboard
+   is therefore keyed by a separate public id, held in chess/lb, which carries
+   nothing worth stealing. ensurePub mints that id once and stores it beside
+   the code, so an older profile picks one up the next time it syncs. */
+function ensurePub() {
+  if (!cloudProfile) return null;
+  if (!cloudProfile.pub) {
+    cloudProfile.pub = genPlayerKey();
+    lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
+    if (fdb) fdb.ref('chess/players/' + cloudProfile.key + '/pub').set(cloudProfile.pub).catch(() => {});
+  }
+  return cloudProfile.pub;
+}
+
+/* chess/lb writes are allowed only for the player this browser is bound to, so
+   the binding has to be refreshed whenever the browser adopts a code. */
+async function bindDevice(key) {
+  if (!fdb) return;
+  try {
+    const uid = await authP;
+    if (uid) await fdb.ref('chess/devices/' + uid).set(key);
+  } catch (e) {}
+}
+
+/* Publish the public row. Nothing here is secret, and the private profile
+   under chess/players is what the game actually reads back. */
+function syncLeaderboardRow(stats) {
+  const pub = ensurePub();
+  if (!pub || !fdb || !cloudProfile) return;
+  const row = { name: cloudProfile.name, updatedAt: Date.now() };
+  if (stats) {
+    if (typeof stats.level === 'number') row.level = stats.level;
+    ['games', 'wins', 'draws', 'losses'].forEach(f => {
+      if (typeof stats[f] === 'number') row[f] = stats[f];
+    });
+  }
+  fdb.ref('chess/lb/' + pub).update(row).catch(() => {});
+}
+
 function renderCloudBox() {
   const on = !!(cloudProfile && fdb);
   $('cloudJoin').style.display = on ? 'none' : 'flex';
@@ -1982,6 +2029,7 @@ $('editNameSave').onclick = async () => {
     await fbTimeout(fdb.ref('chess/players/' + cloudProfile.key).update({ name: nm, nameChangedAt: Date.now(), updatedAt: Date.now() }), 8000);
     cloudProfile.name = nm;
     lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
+    syncLeaderboardRow(null);
     renderCloudBox();
     loadLeaderboard();
   } catch (e) {
@@ -2073,15 +2121,16 @@ $('joinBtn').onclick = async () => {
        (renames go through "change name", which enforces the 7-day limit) */
     let v = null;
     try { v = (await fdb.ref('chess/players/' + key).once('value')).val(); } catch (e) {}
-    cloudProfile = { key, name: (v && sanitizeName(v.name)) || nm };
+    cloudProfile = { key, name: (v && sanitizeName(v.name)) || nm, pub: (v && v.pub) || null };
     lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
     if (v) mergeCloudData(v);
   } else {
-    cloudProfile = { key, name: nm };
+    cloudProfile = { key, name: nm, pub: genPlayerKey() };
     lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
-    fdb.ref('chess/players/' + key).update({ name: nm, updatedAt: Date.now() }).catch(() => {});
+    fdb.ref('chess/players/' + key).update({ name: nm, updatedAt: Date.now(), pub: cloudProfile.pub }).catch(() => {});
   }
   renderCloudBox();
+  syncLeaderboardRow(null);
   loadLeaderboard();
 };
 $('restoreBtn').onclick = () => {
@@ -2090,8 +2139,10 @@ $('restoreBtn').onclick = () => {
   fdb.ref('chess/players/' + code).once('value').then(snap => {
     const v = snap.val();
     if (!v || !v.name) { $('codeInput').style.borderColor = '#e74c3c'; $('codeInput').value = ''; $('codeInput').placeholder = 'code not found'; return; }
-    cloudProfile = { key: code, name: sanitizeName(v.name) || 'Player' };
+    cloudProfile = { key: code, name: sanitizeName(v.name) || 'Player', pub: v.pub || null };
     lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
+    // point this browser at the restored player before touching its public row
+    bindDevice(code).then(() => syncLeaderboardRow(v));
     mergeCloudData(v);   // bring the cloud games and blunder deck into this browser
     renderCloudBox();
   }).catch(() => { $('codeInput').style.borderColor = '#e74c3c'; });
@@ -2106,6 +2157,10 @@ $('signOut').onclick = () => {
   cloudProfile = null; renderCloudBox();
 };
 renderCloudBox();
+/* Profiles created before the leaderboard split have no public id and may have
+   lost their device binding. Refreshing it here lets the next sync publish a
+   row instead of failing quietly. */
+if (cloudProfile) bindDevice(cloudProfile.key);
 
 /* push the finished game to the cloud: keeps only the last 10, with PGN */
 function cloudSync(rec) {
@@ -2133,13 +2188,18 @@ function cloudSync(rec) {
       rep: cur.rep || null,
       memStage: cur.memStage || null,
       nameChangedAt: cur.nameChangedAt || null,   // keeps the 7-day rename limit honest
+      pub: cur.pub || (cloudProfile && cloudProfile.pub) || null,   // the leaderboard row this profile owns
     };
-  }).then(() => loadLeaderboard()).catch(() => {});
+  }).then(res => {
+    if (res && res.snapshot) syncLeaderboardRow(res.snapshot.val());
+    loadLeaderboard();
+  }).catch(() => {});
 }
 
 function loadLeaderboard() {
   if (!fdb) return;
-  fdb.ref('chess/players').orderByChild('level').limitToLast(20).once('value').then(snap => {
+  // chess/lb, never chess/players: listing the profiles would hand out restore codes
+  fdb.ref('chess/lb').orderByChild('level').limitToLast(20).once('value').then(snap => {
     const rows = [];
     snap.forEach(ch => {
       const v = ch.val();
@@ -2151,7 +2211,7 @@ function loadLeaderboard() {
     list.innerHTML = '';
     rows.forEach((v, i) => {
       const div = document.createElement('div');
-      div.className = 'prog-row' + (cloudProfile && v._key === cloudProfile.key ? ' lb-me' : '');
+      div.className = 'prog-row' + (cloudProfile && v._key === cloudProfile.pub ? ' lb-me' : '');
       const mk = (cls, txt) => { const s = document.createElement('span'); s.className = cls; s.textContent = txt; return s; };
       div.append(mk('pr-date', '#' + (i + 1)),
                  mk('pr-vs', String(v.name).slice(0, 20)),          // textContent: user names stay inert

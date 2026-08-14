@@ -356,6 +356,7 @@ ul.task-list li input[type="checkbox"] {
 <!-- main -->
 <main class="content" id="quarto-document-content">
 <script src="../theme-toggle.js"></script>
+<script src="../auth.js"></script>
 <script src="../resume-reading.js"></script>
 <script src="../search-scope.js"></script>
 <script src="../review-numbering.js"></script>
@@ -877,13 +878,14 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 }
 </style>
 
-<p>Enter a room name then press <strong>Enter</strong> (or <strong>Return</strong>) to create or join a shared clipboard. Anyone using the same room name will see the same content in real time.</p>
+<p>A private room with a random, hard-to-guess name opens as soon as this page loads. Share the link or the QR code to bring another device into it. Signing in (top right) lets you type a name of your own instead. Anyone using the same room name will see the same content in real time.</p>
 <p style="font-size:0.85em; color:#555;"><strong>Room name rules:</strong> 1–32 characters. Letters (case sensitive), numbers, dashes, and underscores only. No spaces or special characters.</p>
 
-<p><strong>Note:</strong> This pastebin is ephemeral. Once all sessions are closed, the content is automatically erased. Nothing is stored permanently. You can also paste screenshots (Ctrl+V / Cmd+V) to share images, and upload text-based files (up to 7 MB). For privacy, use a hard-to-guess room name. Anyone who knows the room name can see and edit the content. This tool is provided as-is with no guarantees. Use at your own risk. Do not share sensitive information such as passwords or personal data.</p>
+<p><strong>Note:</strong> This pastebin is ephemeral. Once all sessions are closed, the content is automatically erased. Nothing is stored permanently. You can also paste screenshots (Ctrl+V / Cmd+V) to share images, and upload text-based files (up to 7 MB). For privacy, keep the generated room name, or replace it with one that is genuinely hard to guess. Anyone who knows the room name can see and edit the content. This tool is provided as-is with no guarantees. Use at your own risk. Do not share sensitive information such as passwords or personal data.</p>
 
 <input type="text" id="room-input" placeholder="Enter room name..." maxlength="32">
 <div id="room-error" style="color:#e74c3c; font-size:12px; margin-top:4px; display:none;"></div>
+<div id="room-lock-note" style="font-size:12px; margin-top:4px; opacity:0.75; display:none;">Sign in (top right) to choose your own room name. The generated name works without signing in.</div>
 
 <div id="devices-panel">
   <h3 class="anchored">📡 Connected Devices (<span id="device-count">0</span>)</h3>
@@ -975,11 +977,13 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     appId: "1:968986695208:web:fc5f3d37911810b2e0471d"
   };
 
-  firebase.initializeApp(firebaseConfig);
-
-  // App Check with reCAPTCHA v3
-  const appCheck = firebase.appCheck();
-  appCheck.activate('6LdhmdosAAAAAGh4ojYqXCU0JOeVo3X-R1qmMaZq', true);
+  // auth.js shares this Firebase project, so the app may already exist. Calling
+  // initializeApp twice throws, which would take the whole tool down with it.
+  try { firebase.app(); } catch (e) {
+    firebase.initializeApp(firebaseConfig);
+    // App Check with reCAPTCHA v3
+    firebase.appCheck().activate('6LdhmdosAAAAAGh4ojYqXCU0JOeVo3X-R1qmMaZq', true);
+  }
 
   const db = firebase.database();
 
@@ -1010,6 +1014,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   let currentRef = null;
   let historyRef = null;
   let memberRef = null;
+  let presenceTimer = null;
   let roomRef = null;
   let imageRef = null;
   let filesRef = null;
@@ -1239,6 +1244,29 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     return name.replace(/[^a-zA-Z0-9_-]/g, '').trim();
   }
 
+  /* A room name is the only thing protecting a room, so the default one is
+     generated rather than guessed at by the visitor. Sixteen characters drawn
+     from a 32-symbol alphabet carry 80 bits of entropy, which puts the room
+     far out of reach of anyone enumerating names. Look-alike characters
+     (l, o, 0, 1) are left out so the name survives being read off a screen. */
+  function genRoomName() {
+    var alphabet = 'abcdefghijkmnpqrstuvwxyz23456789';
+    var bytes = new Uint8Array(16);
+    var crypto = window.crypto || window.msCrypto;
+    if (crypto && crypto.getRandomValues) {
+      crypto.getRandomValues(bytes);
+    } else {
+      for (var b = 0; b < 16; b++) bytes[b] = Math.floor(Math.random() * 256);
+    }
+    var out = '';
+    for (var i = 0; i < 16; i++) {
+      // 256 is an exact multiple of 32, so masking stays uniform
+      out += alphabet.charAt(bytes[i] & 31);
+      if (i % 4 === 3 && i < 15) out += '-';
+    }
+    return out;
+  }
+
   var lastRoomConnect = 0;
   var rapidSwitchCount = 0;
   var lastRapidReset = Date.now();
@@ -1287,6 +1315,10 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     if (filesRef) {
       filesRef.off();
       filesRef = null;
+    }
+    if (presenceTimer) {
+      clearInterval(presenceTimer);
+      presenceTimer = null;
     }
     if (memberRef) {
       memberRef.onDisconnect().cancel();
@@ -1390,6 +1422,14 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
       if (snap.val() === true && memberRef) {
         // Register this session with device name
         memberRef.set({ name: getDeviceName(), joinedAt: firebase.database.ServerValue.TIMESTAMP });
+        /* Refresh joinedAt on a timer. The hourly cleanup job ignores members
+           that have gone quiet, which is what stops a forged member entry from
+           pinning a room open forever, so a genuinely open tab has to keep
+           saying so. */
+        if (presenceTimer) clearInterval(presenceTimer);
+        presenceTimer = setInterval(function () {
+          if (memberRef) memberRef.child('joinedAt').set(firebase.database.ServerValue.TIMESTAMP);
+        }, 5 * 60 * 1000);
         // When this client disconnects, remove its member entry
         memberRef.onDisconnect().remove();
         // When this client disconnects, set a cleanup timestamp
@@ -2091,12 +2131,27 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     fileInput.value = '';
   });
 
-  // Auto-connect from URL hash on page load
-  var hashRoom = window.location.hash.replace('#', '').trim();
-  if (hashRoom) {
-    roomInput.value = hashRoom;
-    connectToRoom(hashRoom);
+  /* A short room name is guessable, so only signed-in readers may choose one.
+     Everyone else uses the generated name, which is far out of reach of anyone
+     enumerating rooms. The database rules apply the same rule, refusing short
+     room names to unauthenticated clients, so this is not merely a disabled
+     input that could be bypassed from the console. */
+  var roomLockNote = document.getElementById('room-lock-note');
+  function applyRoomLock(user) {
+    roomInput.disabled = !user;
+    roomInput.title = user ? '' : 'Sign in to choose your own room name.';
+    roomLockNote.style.display = user ? 'none' : 'block';
   }
+  if (window.siteAuth) window.siteAuth.onChange(applyRoomLock);
+  else applyRoomLock(null);
+
+  /* Join the room named in the URL hash, otherwise open a fresh private one.
+     connectToRoom writes the hash and redraws the page QR code, so a shared
+     link and a scanned code both land in the same room. */
+  var hashRoom = sanitizeRoomName(window.location.hash.replace('#', '').trim());
+  var openingRoom = hashRoom || genRoomName();
+  roomInput.value = openingRoom;
+  connectToRoom(openingRoom);
 
   // Best-effort cleanup on page close
   window.addEventListener('beforeunload', function() {
