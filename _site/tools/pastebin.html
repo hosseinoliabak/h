@@ -879,14 +879,14 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 }
 </style>
 
-<p>A private room with a random, hard-to-guess name opens as soon as this page loads, and it works fully whether or not you are signed in. Share the link or the QR code to bring in another device, or another person. Anyone who opens that link sees the same content in real time and can edit it. Signing in (top right) additionally lets you replace the generated name with a short one of your own, which is then readable only by people who are also signed in.</p>
+<p>A private room with a random, hard-to-guess name opens as soon as this page loads, and it works fully whether or not you are signed in. Share the link or the QR code to bring in another device, or another person, and everyone sees the same content in real time. You may also type any room name to open it and read along. Editing a room you did not generate needs you signed in (top right).</p>
 <p style="font-size:0.85em; color:#555;"><strong>Room name rules:</strong> 1–32 characters. Letters (case sensitive), numbers, dashes, and underscores only. No spaces or special characters.</p>
 
 <p><strong>Note:</strong> This pastebin is ephemeral. Once all sessions are closed, the content is automatically erased. Nothing is stored permanently. You can also paste screenshots (Ctrl+V / Cmd+V) to share images, and upload text-based files (up to 7 MB). For privacy, keep the generated room name, or replace it with one that is genuinely hard to guess. Anyone who knows the room name can see and edit the content. This tool is provided as-is with no guarantees. Use at your own risk. Do not share sensitive information such as passwords or personal data.</p>
 
 <input type="text" id="room-input" placeholder="Enter room name..." maxlength="32">
 <div id="room-error" style="color:#e74c3c; font-size:12px; margin-top:4px; display:none;"></div>
-<div id="room-lock-note" style="font-size:12px; margin-top:4px; opacity:0.75; display:none;">Your room above is ready to use, and its name is random enough to keep it private. Sign in (top right) if you would rather pick a short name of your own.</div>
+<div id="room-lock-note" style="font-size:12px; margin-top:4px; opacity:0.75; display:none;">The room above is yours to use, and its generated name keeps it private. You may open any other room to read it, but editing one you did not generate needs you signed in (top right).</div>
 
 <div id="devices-panel">
   <h3 class="anchored">📡 Connected Devices (<span id="device-count">0</span>)</h3>
@@ -914,7 +914,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   <textarea id="paste-editor" placeholder="Start typing here... Press Enter to send." disabled=""></textarea>
 </div>
 <div id="editor-hint">Press <strong>Ctrl+Enter</strong> (or <strong>⌘+Enter</strong> on Mac) to send. Or click the Send button.</div>
-<div id="read-only-note" style="display:none; font-size:13px; margin-top:6px; padding:8px 12px; border-left:3px solid var(--site-accent); background:var(--site-surface); border-radius:4px;">This room has a short name, so without signing in you can read it, copy from it, and download its files, but not change it. Sign in at the top of the page to edit.</div>
+<div id="read-only-note" style="display:none; font-size:13px; margin-top:6px; padding:8px 12px; border-left:3px solid var(--site-accent); background:var(--site-surface); border-radius:4px;">You are reading this room, not editing it. Anyone may open any room, but only a signed-in reader can change one they did not generate. Sign in at the top of the page to edit.</div>
 <div id="char-counter" style="font-size:12px; color:#888; text-align:right; margin-top:4px; display:none;">1,000,000 characters remaining</div>
 
 <div id="history-panel">
@@ -1261,8 +1261,14 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
      A short name is guessable, so it takes a real account. */
   function canWrite() {
     if (!currentRef) return false;
-    if (signedIn) return true;
-    return !!currentRoomName && currentRoomName.length >= MIN_ANON_ROOM;
+    return signedIn || isGeneratedName(currentRoomName);
+  }
+
+  /* Exactly the shape genRoomName() produces, and exactly the pattern the
+     database rule matches. A room with this name is publicly editable: nobody
+     can guess it, so holding it is proof enough. */
+  function isGeneratedName(name) {
+    return /^[a-kmnp-z2-9]{4}-[a-kmnp-z2-9]{4}-[a-kmnp-z2-9]{4}-[a-kmnp-z2-9]{4}$/.test(name || '');
   }
   var lastFiles = null;
   var readOnlyNote = document.getElementById('read-only-note');
@@ -1272,7 +1278,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     if (/permission|denied/i.test(s)) {
       return signedIn
         ? 'The server refused that change. Your sign-in may have expired, so please reload.'
-        : 'This room can only be changed by someone signed in, because its name is short enough to guess.';
+        : 'This room is read-only for you. Sign in to edit it, or use a room whose name this site generated.';
     }
     return 'Content limit reached. Unable to save further changes.';
   }
@@ -1442,15 +1448,6 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
     const sanitized = sanitizeRoomName(roomName);
     if (!sanitized) return;
-
-    /* Same test the database applies, made in advance so the reason is a
-       sentence rather than a permission error halfway through typing. */
-    if (!signedIn && sanitized.length < MIN_ANON_ROOM) {
-      roomError.textContent = 'This room name is short enough to guess, so it can only be opened by '
-        + 'someone signed in. Sign in at the top of the page to view it.';
-      roomError.style.display = 'block';
-      return;
-    }
 
     currentRoomName = sanitized;
     roomRef = db.ref('rooms/' + sanitized);
@@ -2215,9 +2212,9 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   var roomLockNote = document.getElementById('room-lock-note');
   function applyRoomLock(user) {
     signedIn = !!user;
-    // Choosing a room is a write, so it belongs to signed-in readers only.
-    roomInput.disabled = !signedIn;
-    roomInput.title = signedIn ? '' : 'Sign in to create or choose a room.';
+    // Anyone may open any room. Signing in is what allows changing one.
+    roomInput.disabled = false;
+    roomInput.title = '';
     roomLockNote.style.display = signedIn ? 'none' : 'block';
     if (currentRef) applyWriteMode();
   }
