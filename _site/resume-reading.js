@@ -77,22 +77,32 @@
     return window.siteAuth.ref('reading/resume');
   }
 
+  function writeCloud() {
+    var d = loadProgress();
+    var ref = cloudRef();
+    if (!d || !d.path || !ref) return;
+    // Shape and limits mirror the database rules exactly.
+    ref.set({
+      path: String(d.path).slice(0, 300),
+      title: String(d.title || '').slice(0, 200),
+      scrollPercent: Math.max(0, Math.min(100, Math.round(d.scrollPercent || 0))),
+      scrollY: Math.max(0, Math.round(d.scrollY || 0)),
+      timestamp: d.timestamp || Date.now()
+    })['catch'](function () {});
+  }
+
   function queueCloudSave() {
     if (!cloudRef()) return;
     clearTimeout(cloudTimer);
-    cloudTimer = setTimeout(function () {
-      var d = loadProgress();
-      var ref = cloudRef();
-      if (!d || !d.path || !ref) return;
-      // Shape and limits mirror the database rules exactly.
-      ref.set({
-        path: String(d.path).slice(0, 300),
-        title: String(d.title || '').slice(0, 200),
-        scrollPercent: Math.max(0, Math.min(100, Math.round(d.scrollPercent || 0))),
-        scrollY: Math.max(0, Math.round(d.scrollY || 0)),
-        timestamp: d.timestamp || Date.now()
-      })['catch'](function () {});
-    }, CLOUD_DEBOUNCE_MS);
+    cloudTimer = setTimeout(writeCloud, CLOUD_DEBOUNCE_MS);
+  }
+
+  /* Send immediately instead of waiting out the debounce, for the moment the
+     page is being hidden or torn down. */
+  function flushCloudSave() {
+    if (!cloudRef()) return;
+    clearTimeout(cloudTimer);
+    writeCloud();
   }
 
   /* Newest wins. If this browser holds the fresher record it is pushed up
@@ -230,8 +240,21 @@
     // Track scroll on content pages
     if (shouldTrack()) {
       window.addEventListener('scroll', debounce(saveProgress, SCROLL_DEBOUNCE_MS));
-      // Also save on page unload
-      window.addEventListener('beforeunload', saveProgress);
+
+      /* Save when the page goes away. beforeunload is unreliable on mobile
+         Safari, which frequently never fires it (a backgrounded tab is often
+         killed outright), and browsers discourage it generally. visibilitychange
+         plus pagehide is the supported pair and covers tab switches too.
+         The cloud write is flushed rather than left on its debounce, otherwise
+         scrolling and leaving within a few seconds would never sync. */
+      var leave = function () {
+        saveProgress();
+        flushCloudSave();
+      };
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden') leave();
+      });
+      window.addEventListener('pagehide', leave);
     }
 
     /* Sign-in settles after this point, if at all. Nothing above waits for it. */
