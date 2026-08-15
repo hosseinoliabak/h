@@ -879,14 +879,14 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 }
 </style>
 
-<p>A private room with a random, hard-to-guess name opens as soon as this page loads. Share the link or the QR code to bring another device into it. Signing in (top right) lets you type a name of your own instead. Anyone using the same room name will see the same content in real time.</p>
+<p>A private room with a random, hard-to-guess name opens as soon as this page loads, and it works fully whether or not you are signed in. Share the link or the QR code to bring in another device, or another person. Anyone who opens that link sees the same content in real time and can edit it. Signing in (top right) additionally lets you replace the generated name with a short one of your own, which is then readable only by people who are also signed in.</p>
 <p style="font-size:0.85em; color:#555;"><strong>Room name rules:</strong> 1–32 characters. Letters (case sensitive), numbers, dashes, and underscores only. No spaces or special characters.</p>
 
 <p><strong>Note:</strong> This pastebin is ephemeral. Once all sessions are closed, the content is automatically erased. Nothing is stored permanently. You can also paste screenshots (Ctrl+V / Cmd+V) to share images, and upload text-based files (up to 7 MB). For privacy, keep the generated room name, or replace it with one that is genuinely hard to guess. Anyone who knows the room name can see and edit the content. This tool is provided as-is with no guarantees. Use at your own risk. Do not share sensitive information such as passwords or personal data.</p>
 
 <input type="text" id="room-input" placeholder="Enter room name..." maxlength="32">
 <div id="room-error" style="color:#e74c3c; font-size:12px; margin-top:4px; display:none;"></div>
-<div id="room-lock-note" style="font-size:12px; margin-top:4px; opacity:0.75; display:none;">Sign in (top right) to choose your own room name. The generated name works without signing in.</div>
+<div id="room-lock-note" style="font-size:12px; margin-top:4px; opacity:0.75; display:none;">Your room above is ready to use, and its name is random enough to keep it private. Sign in (top right) if you would rather pick a short name of your own.</div>
 
 <div id="devices-panel">
   <h3 class="anchored">📡 Connected Devices (<span id="device-count">0</span>)</h3>
@@ -914,6 +914,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   <textarea id="paste-editor" placeholder="Start typing here... Press Enter to send." disabled=""></textarea>
 </div>
 <div id="editor-hint">Press <strong>Ctrl+Enter</strong> (or <strong>⌘+Enter</strong> on Mac) to send. Or click the Send button.</div>
+<div id="read-only-note" style="display:none; font-size:13px; margin-top:6px; padding:8px 12px; border-left:3px solid var(--site-accent); background:var(--site-surface); border-radius:4px;">This room has a short name, so without signing in you can read it, copy from it, and download its files, but not change it. Sign in at the top of the page to edit.</div>
 <div id="char-counter" style="font-size:12px; color:#888; text-align:right; margin-top:4px; display:none;">1,000,000 characters remaining</div>
 
 <div id="history-panel">
@@ -1021,7 +1022,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   let filesRef = null;
   let isRemoteUpdate = false;
   let debounceTimer = null;
-  let historyEntries = []; // {id, text, timestamp}
+  let historyEntries = []; // {id, text, timestamp, sender}
 
   const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
 
@@ -1095,7 +1096,9 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
         var meta = document.createElement('span');
         meta.className = 'history-chars';
-        meta.textContent = timeAgo(entry.timestamp) + ' · ' + entry.text.length.toLocaleString() + ' chars';
+        // textContent throughout: a handle is user-supplied and stays inert
+        meta.textContent = (entry.sender ? entry.sender + ' · ' : '')
+          + timeAgo(entry.timestamp) + ' · ' + entry.text.length.toLocaleString() + ' chars';
 
         header.appendChild(numSpan);
         header.appendChild(toggle);
@@ -1162,7 +1165,8 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     roomRef.child('history/' + msgId).set({
       text: text,
       timestamp: firebase.database.ServerValue.TIMESTAMP,
-      sender: sessionId
+      // Only signed-in readers can send, so a handle is always available.
+      sender: (window.siteAuth && window.siteAuth.handle()) || getDeviceName()
     });
     pasteEditor.value = '';
     pasteArea.value = '';
@@ -1243,6 +1247,34 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
   function sanitizeRoomName(name) {
     return name.replace(/[^a-zA-Z0-9_-]/g, '').trim();
+  }
+
+  /* Mirrors the database rule exactly: a room name of at least this many
+     characters is unguessable enough to stand alone, anything shorter needs a
+     signed-in reader. */
+  var MIN_ANON_ROOM = 16;
+  var signedIn = false;
+
+  /* The single source of truth for "may this client change the room", and a
+     mirror of the database rule. A long room name is unguessable, so holding
+     it is itself the proof that you opened the room or were given the link.
+     A short name is guessable, so it takes a real account. */
+  function canWrite() {
+    if (!currentRef) return false;
+    if (signedIn) return true;
+    return !!currentRoomName && currentRoomName.length >= MIN_ANON_ROOM;
+  }
+  var lastFiles = null;
+  var readOnlyNote = document.getElementById('read-only-note');
+
+  function describeWriteFailure(err) {
+    var s = String((err && (err.code || err.message)) || '');
+    if (/permission|denied/i.test(s)) {
+      return signedIn
+        ? 'The server refused that change. Your sign-in may have expired, so please reload.'
+        : 'This room can only be changed by someone signed in, because its name is short enough to guess.';
+    }
+    return 'Content limit reached. Unable to save further changes.';
   }
 
   /* A room name is the only thing protecting a room, so the default one is
@@ -1411,16 +1443,27 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     const sanitized = sanitizeRoomName(roomName);
     if (!sanitized) return;
 
+    /* Same test the database applies, made in advance so the reason is a
+       sentence rather than a permission error halfway through typing. */
+    if (!signedIn && sanitized.length < MIN_ANON_ROOM) {
+      roomError.textContent = 'This room name is short enough to guess, so it can only be opened by '
+        + 'someone signed in. Sign in at the top of the page to view it.';
+      roomError.style.display = 'block';
+      return;
+    }
+
     currentRoomName = sanitized;
     roomRef = db.ref('rooms/' + sanitized);
     currentRef = roomRef.child('content');
     var membersRef = roomRef.child('members');
     memberRef = membersRef.child(sessionId);
 
-    // Use Firebase .info/connected to ensure presence works reliably
+    /* Presence is a write, so a signed-out viewer cannot register and would
+       only generate refused writes. They read the room without appearing in
+       Connected Devices, which is accurate: they are not holding it open. */
     var connectedRef = db.ref('.info/connected');
     connectedRef.on('value', function(snap) {
-      if (snap.val() === true && memberRef) {
+      if (snap.val() === true && memberRef && canWrite()) {
         // Register this session with device name
         memberRef.set({ name: getDeviceName(), joinedAt: firebase.database.ServerValue.TIMESTAMP });
         /* Refresh joinedAt on a timer. The hourly cleanup job ignores members
@@ -1438,18 +1481,14 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
       }
     });
 
-    pasteArea.disabled = false;
     pasteArea.value = '';  // Clear textarea before listening to new room
-    pasteEditor.disabled = false;
     pasteEditor.value = '';
-    editorWrapper.classList.remove('disabled');
-    editorHint.style.display = 'block';
     updateLineNumbers();
     devicesPanel.style.display = 'block';
     filePanel.style.display = 'block';
     status.textContent = 'Connected to room: ' + sanitized;
     status.className = 'connected';
-    updateActionButtons();
+    applyWriteMode();      // sets the editor, buttons, and file controls
     updateCharCounter();
 
     // Update URL hash for sharing
@@ -1567,7 +1606,8 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     limitWarning.style.display = 'none';
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(function() {
-      currentRef.set(pasteEditor.value).catch(function() {
+      currentRef.set(pasteEditor.value).catch(function(err) {
+        limitWarning.textContent = describeWriteFailure(err);
         limitWarning.style.display = 'block';
       });
     }, 150);
@@ -1586,7 +1626,8 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     limitWarning.style.display = 'none';
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(function() {
-      currentRef.set(pasteEditor.value).catch(function() {
+      currentRef.set(pasteEditor.value).catch(function(err) {
+        limitWarning.textContent = describeWriteFailure(err);
         limitWarning.style.display = 'block';
       });
     }, 150);
@@ -1613,7 +1654,8 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
           historyEntries.push({
             id: key,
             text: val[key].text || '',
-            timestamp: val[key].timestamp || 0
+            timestamp: val[key].timestamp || 0,
+            sender: val[key].sender || ''
           });
         });
         historyEntries.sort(function(a, b) { return a.timestamp - b.timestamp; });
@@ -1628,11 +1670,37 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   var pasteBtn = document.getElementById('paste-btn');
   var sendBtn = document.getElementById('send-btn');
 
+  /* Two states, not one. Being in a room means you can read it; only a signed-in
+     reader can change it. Copy and download stay available to everybody, since
+     they only consume what is already on screen. */
   function updateActionButtons() {
     var connected = !!currentRef;
+    var writable = canWrite();
     copyBtn.disabled = !connected;
-    pasteBtn.disabled = !connected;
-    sendBtn.disabled = !connected;
+    pasteBtn.disabled = !writable;
+    sendBtn.disabled = !writable;
+  }
+
+  /* Mirrors the database rule, which refuses every write from a signed-out
+     client. Without this the controls would look alive and fail on use. */
+  function applyWriteMode() {
+    var connected = !!currentRef;
+    var writable = canWrite();
+
+    pasteEditor.disabled = !writable;
+    pasteArea.disabled = !writable;
+    editorWrapper.classList.toggle('disabled', !writable);
+    editorHint.style.display = writable ? 'block' : 'none';
+
+    if (fileInput) fileInput.disabled = !writable;
+    if (fileDropZone) fileDropZone.style.display = writable ? '' : 'none';
+    if (clearImageBtn) clearImageBtn.style.display = writable ? '' : 'none';
+
+    if (readOnlyNote) {
+      readOnlyNote.style.display = (connected && !writable) ? 'block' : 'none';
+    }
+    updateActionButtons();
+    renderFileList(lastFiles);   // redraw so the remove buttons follow the mode
   }
 
   var charCounter = document.getElementById('char-counter');
@@ -1819,7 +1887,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
   // Listen for paste events with images
   document.addEventListener('paste', function(e) {
-    if (!roomRef) return;
+    if (!roomRef || !canWrite()) return;   // pasting an image is a write
     var items = e.clipboardData && e.clipboardData.items;
     if (!items) return;
 
@@ -1967,6 +2035,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   }
 
   function renderFileList(files) {
+    lastFiles = files || null;      // kept so the list can be redrawn on a mode change
     fileList.innerHTML = '';
     if (!files) return;
     Object.keys(files).forEach(function(fileId) {
@@ -1998,6 +2067,9 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
       });
       li.appendChild(dlBtn);
 
+      // Downloads stay available to everyone; deleting is a write.
+      if (!canWrite()) { fileList.appendChild(li); return; }
+
       var rmBtn = document.createElement('button');
       rmBtn.className = 'file-remove';
       rmBtn.textContent = '✕';
@@ -2012,6 +2084,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   }
 
   function uploadFile(file) {
+    if (!canWrite()) return;   // the database refuses this, so do not pretend otherwise
     if (!roomRef || !currentRoomName) return;
 
     if (file.size > MAX_FILE_SIZE) {
@@ -2057,7 +2130,9 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
         fileProgressFill.style.width = '100%';
       }).catch(function(error) {
         fileProgressBar.style.display = 'none';
-        fileWarning.textContent = 'Upload failed: ' + (error.message || 'File may be too large for sync.');
+        fileWarning.textContent = /permission|denied/i.test(String((error && (error.code || error.message)) || ''))
+          ? describeWriteFailure(error)
+          : 'Upload failed: ' + (error.message || 'File may be too large for sync.');
         fileWarning.style.display = 'block';
       });
     };
@@ -2139,20 +2214,48 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
      input that could be bypassed from the console. */
   var roomLockNote = document.getElementById('room-lock-note');
   function applyRoomLock(user) {
-    roomInput.disabled = !user;
-    roomInput.title = user ? '' : 'Sign in to choose your own room name.';
-    roomLockNote.style.display = user ? 'none' : 'block';
+    signedIn = !!user;
+    // Choosing a room is a write, so it belongs to signed-in readers only.
+    roomInput.disabled = !signedIn;
+    roomInput.title = signedIn ? '' : 'Sign in to create or choose a room.';
+    roomLockNote.style.display = signedIn ? 'none' : 'block';
+    if (currentRef) applyWriteMode();
   }
   if (window.siteAuth) window.siteAuth.onChange(applyRoomLock);
   else applyRoomLock(null);
 
+  /* Firebase restores a session asynchronously and this page never calls
+     firebase.auth() itself, so the very first connect used to run before the
+     reader was authenticated. Every write to a chosen room name was refused,
+     and the listeners were cancelled with it. Wait for auth to settle, with a
+     timeout so a blocked or signed-out visitor is never left staring at
+     nothing. */
+  function whenAuthSettled() {
+    return new Promise(function (resolve) {
+      if (!window.firebase || !firebase.auth) { resolve(null); return; }
+      var done = false;
+      function finish(u) { if (!done) { done = true; resolve(u || null); } }
+      try {
+        var stop = firebase.auth().onAuthStateChanged(function (u) { stop(); finish(u); });
+      } catch (e) { finish(null); }
+      setTimeout(function () { finish(null); }, 5000);
+    });
+  }
+
   /* Join the room named in the URL hash, otherwise open a fresh private one.
      connectToRoom writes the hash and redraws the page QR code, so a shared
      link and a scanned code both land in the same room. */
-  var hashRoom = sanitizeRoomName(window.location.hash.replace('#', '').trim());
-  var openingRoom = hashRoom || genRoomName();
-  roomInput.value = openingRoom;
-  connectToRoom(openingRoom);
+  whenAuthSettled().then(function (user) {
+    applyRoomLock(user && !user.isAnonymous ? user : null);
+    var hashRoom = sanitizeRoomName(window.location.hash.replace('#', '').trim());
+
+    /* Everybody gets a room. Signed out it is the generated one, whose name is
+       unguessable and therefore usable in full. Choosing a name is what needs
+       an account, not using the tool. */
+    var openingRoom = hashRoom || genRoomName();
+    roomInput.value = openingRoom;
+    connectToRoom(openingRoom);
+  });
 
   // Best-effort cleanup on page close
   window.addEventListener('beforeunload', function() {
