@@ -32,6 +32,7 @@
   var SDK = 'https://www.gstatic.com/firebasejs/10.12.0/';
   var SEEN_KEY = 'site-auth-seen';           // "this browser has signed in before"
   var HANDLE_KEY = 'site-auth-handle';       // cached so the navbar can render before the SDK loads
+  var ASKED_KEY = 'site-auth-asked';         // session-scoped, so "Not now" is respected
   var RECAPTCHA = '6LdhmdosAAAAAGh4ojYqXCU0JOeVo3X-R1qmMaZq';
 
   var CONFIG = {
@@ -149,12 +150,65 @@
     return String(s || '').replace(/[^A-Za-z0-9 -]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20);
   }
 
+  /* Saving fails for two very different reasons, and telling them apart is the
+     difference between "fix your typing" and "the rules are not published yet". */
+  function describeError(e) {
+    var s = String((e && (e.code || e.message)) || '').toUpperCase();
+    if (s.indexOf('LOCKED') > -1) {
+      return 'You have already changed your name recently. The next change unlocks in '
+        + (e.days || 90) + ' day' + ((e.days === 1) ? '' : 's') + '.';
+    }
+    if (s.indexOf('PERMISSION') > -1) {
+      return 'The database refused this write. The security rules may not be published yet.';
+    }
+    if (s.indexOf('SIGNED OUT') > -1) return 'You are signed out. Sign in and try again.';
+    return 'Could not save right now. Please try again.';
+  }
+
+  /* Renaming is limited so the chess leaderboard stays recognisable. The first
+     48 hours allow three changes, because that is when a new reader notices a
+     typo or settles on something better. After that it is one change per 90
+     days. The database enforces this; the checks here exist only so the reason
+     can be explained before a write is refused. */
+  var GRACE_MS = 48 * 60 * 60 * 1000;
+  var COOLDOWN_MS = 90 * 24 * 60 * 60 * 1000;
+  var GRACE_CHANGES = 3;
+
+  function renameStatus() {
+    if (!db || !currentUser) return Promise.resolve({ allowed: false, reason: 'signed out' });
+    return db.ref('users/' + currentUser.uid + '/meta').once('value').then(function (snap) {
+      var m = snap.val() || {};
+      if (!m.handle) return { allowed: true, first: true, changes: m.handleChanges || 0 };
+      var inGrace = m.createdAt && Date.now() < m.createdAt + GRACE_MS;
+      var used = m.handleChanges || 0;
+      if (inGrace && used < GRACE_CHANGES) {
+        return { allowed: true, changes: used, left: GRACE_CHANGES - used, grace: true };
+      }
+      var since = Date.now() - (m.handleChangedAt || 0);
+      if (!m.handleChangedAt || since >= COOLDOWN_MS) return { allowed: true, changes: used };
+      return {
+        allowed: false,
+        changes: used,
+        days: Math.max(1, Math.ceil((COOLDOWN_MS - since) / 86400000))
+      };
+    });
+  }
+
   function setHandle(name) {
     var clean = cleanHandle(name);
-    if (clean.length < 2) return Promise.reject(new Error('too short'));
+    if (clean.length < 1) return Promise.reject(new Error('empty'));
     if (!db || !currentUser) return Promise.reject(new Error('signed out'));
-    return db.ref('users/' + currentUser.uid + '/meta').update({
-      handle: clean, handleChangedAt: Date.now()
+    if (clean === currentHandle) return Promise.resolve(clean);
+    return renameStatus().then(function (st) {
+      if (!st.allowed) {
+        var e = new Error('locked');
+        e.days = st.days;
+        throw e;
+      }
+      var patch = { handle: clean, handleChangedAt: Date.now() };
+      // Counter is append-only in the rules, so send the next value, never a reset.
+      if (!st.first) patch.handleChanges = (st.changes || 0) + 1;
+      return db.ref('users/' + currentUser.uid + '/meta').update(patch);
     }).then(function () {
       currentHandle = clean;
       lsSet(HANDLE_KEY, clean);
@@ -202,6 +256,7 @@
       var p = document.createElement('p');
       p.textContent = 'This is the only name stored, and the one shown on the chess leaderboard. '
         + 'Your real name and email address are never saved. Letters, numbers, spaces, and dashes, up to 20 characters.';
+      // Same rule the leaderboard enforces, so a name that saves here always displays.
 
       var input = document.createElement('input');
       input.type = 'text';
@@ -211,6 +266,25 @@
 
       var err = document.createElement('div');
       err.className = 'site-auth-err';
+
+      /* Say up front what the reader is spending, so the limit is never a
+         surprise discovered by being refused. */
+      var quota = document.createElement('p');
+      quota.style.cssText = 'margin:8px 0 0;font-size:0.78rem;';
+      box.appendChild(quota);
+      renameStatus().then(function (st) {
+        if (st.first) {
+          quota.textContent = 'You can change this 3 times in your first 48 hours, then once every 90 days.';
+        } else if (st.grace) {
+          quota.textContent = 'Changes left in your first 48 hours: ' + st.left
+            + '. After that, once every 90 days.';
+        } else if (st.allowed) {
+          quota.textContent = 'Changing this now locks it for 90 days.';
+        } else {
+          quota.textContent = 'Locked for another ' + st.days + ' day' + (st.days === 1 ? '' : 's') + '.';
+          save.disabled = true;
+        }
+      })['catch'](function () {});
 
       var row = document.createElement('div');
       row.className = 'site-auth-row';
@@ -223,11 +297,18 @@
 
       function close(v) { back.remove(); resolve(v); }
       save.onclick = function () {
-        setHandle(input.value).then(close).catch(function () {
-          err.textContent = 'Use at least 2 characters (letters, numbers, spaces, dashes).';
+        if (cleanHandle(input.value).length < 1) {
+          err.textContent = 'Enter at least one letter or number.';
+          return;
+        }
+        save.disabled = true;
+        err.textContent = '';
+        setHandle(input.value).then(close).catch(function (e) {
+          save.disabled = false;
+          err.textContent = describeError(e);
         });
       };
-      cancel.onclick = function () { close(null); };
+      cancel.onclick = function () { sessionStorage.setItem(ASKED_KEY, '1'); close(null); };
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter') save.click(); });
       back.addEventListener('click', function (e) { if (e.target === back) close(null); });
 
@@ -268,19 +349,28 @@
     btn.className = 'site-auth-btn';
     btn.textContent = 'Sign in';
     btn.title = 'Sign in to keep your progress across devices';
-    btn.onclick = function () { openMenu(host, btn); };
+    btn.onclick = function () { openMenu(btn); };
     host.appendChild(btn);
   }
 
+  /* Prompt at most once per browser session. Re-opening the modal on every
+     page load would be unbearable for someone who chose "Not now". */
   var asked = false;
   function askHandleOnce() {
     if (asked) return;
+    try { if (sessionStorage.getItem(ASKED_KEY) === '1') return; } catch (e) {}
     asked = true;
+    try { sessionStorage.setItem(ASKED_KEY, '1'); } catch (e) {}
     askHandle();
   }
 
-  function openMenu(host, anchor) {
-    var existing = host.querySelector('.site-auth-menu');
+  /* The popover is attached to the body rather than to the navbar item. Inside
+     the navbar it inherited the bar's own foreground and background colours
+     (which is why it rendered dark on a light page) and was liable to be
+     clipped by the bar's bounds. Anchored to the body it picks up ordinary page
+     colours, and a fixed position keeps it beside the button. */
+  function openMenu(anchor) {
+    var existing = document.querySelector('.site-auth-menu');
     if (existing) { existing.remove(); return; }
 
     var menu = document.createElement('div');
@@ -307,11 +397,30 @@
       menu.appendChild(b);
     });
 
-    host.appendChild(menu);
+    document.body.appendChild(menu);
+
+    function place() {
+      var r = anchor.getBoundingClientRect();
+      var w = menu.offsetWidth;
+      var left = Math.min(r.right - w, window.innerWidth - w - 8);
+      menu.style.top = (r.bottom + 8) + 'px';
+      menu.style.left = Math.max(8, left) + 'px';
+    }
+    place();
+
+    function dismiss() {
+      menu.remove();
+      document.removeEventListener('click', away, true);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', dismiss, true);
+    }
+    function away(e) {
+      if (!menu.contains(e.target) && e.target !== anchor) dismiss();
+    }
     setTimeout(function () {
-      document.addEventListener('click', function away(e) {
-        if (!host.contains(e.target)) { menu.remove(); document.removeEventListener('click', away); }
-      });
+      document.addEventListener('click', away, true);
+      window.addEventListener('resize', place);
+      window.addEventListener('scroll', dismiss, true);
     }, 0);
   }
 
@@ -319,13 +428,26 @@
     if (document.getElementById('site-auth')) return;
     var host = document.createElement('div');
     host.id = 'site-auth';
-    var tools = document.querySelector('.quarto-navbar-tools');
-    if (tools) {
-      tools.insertBefore(host, tools.firstChild);
+
+    /* The right-hand nav list is empty and built for exactly this. The
+       .quarto-navbar-tools strip is not: Quarto injects search into it and
+       resume-reading.js injects a wide pill, so a third control overflows the
+       navbar. Fall back to that strip only if the list is missing. */
+    var list = document.querySelector('.navbar-nav.ms-auto');
+    if (list) {
+      var li = document.createElement('li');
+      li.className = 'nav-item';
+      li.appendChild(host);
+      list.appendChild(li);
     } else {
-      var nav = document.querySelector('.navbar-container');
-      if (!nav) return;
-      nav.appendChild(host);
+      var tools = document.querySelector('.quarto-navbar-tools');
+      if (tools) {
+        tools.appendChild(host);
+      } else {
+        var nav = document.querySelector('.navbar-container');
+        if (!nav) return;
+        nav.appendChild(host);
+      }
     }
     render();
   }

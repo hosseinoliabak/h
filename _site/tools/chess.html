@@ -334,6 +334,7 @@ ul.task-list li input[type="checkbox"] {
 <!-- main -->
 <script src="../theme-toggle.js"></script>
 <script src="../auth.js"></script>
+<script src="../giscus-note.js"></script>
 <script src="../resume-reading.js"></script>
 <script src="../search-scope.js"></script>
 <script src="../review-numbering.js"></script>
@@ -466,7 +467,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   padding:7px 11px; border:1.5px solid #e0e0e0; border-radius:8px; font:inherit; font-size:13.5px; width:170px;
 }
 .cloud-box input:focus { outline:none; border-color:var(--site-accent); }
-#joinBtn, #restoreBtn, #editNameSave {
+#signInGithub, #signInGoogle {
   border:none; background:var(--site-accent); color:var(--site-accent-contrast); border-radius:7px; padding:7px 14px; cursor:pointer; font:inherit; font-size:13px; font-weight:700;
 }
 .cloud-link { border:none; background:transparent; color:var(--site-accent); cursor:pointer; font:inherit; font-size:12.5px; text-decoration:underline; padding:0; }
@@ -878,32 +879,15 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 
     <div class="cloud-box" id="cloudBox">
       <div id="cloudJoin">
-        <span class="cloud-lead">🏆 Join the online leaderboard:</span>
-        <input type="text" id="nameInput" maxlength="20" placeholder="Your name" autocomplete="off">
-        <button id="joinBtn">Join</button>
-        <button class="cloud-link" id="showRestore">restore with a code</button>
-        <span class="cloud-note" id="joinNote">Optional. Saves your name, last 10 games (with PGN), and your blunder deck online. Skip it to stay fully local.</span>
-      </div>
-      <div id="cloudRestore" style="display:none;">
-        <span class="cloud-lead">Enter your player code:</span>
-        <input type="text" id="codeInput" maxlength="14" placeholder="XXXX-XXXX-XXXX" autocomplete="off">
-        <button id="restoreBtn">Restore</button>
-        <button class="cloud-link" id="hideRestore">back</button>
+        <span class="cloud-lead">🏆 Sign in to save your progress:</span>
+        <button id="signInGithub">GitHub</button>
+        <button id="signInGoogle">Google</button>
+        <span class="cloud-note" id="joinNote">Optional. Saves your last 10 games (with PGN), blunder deck, and repertoire to your account, so they follow you to another device. Skip it to stay fully local. No email or personal details are stored.</span>
       </div>
       <div id="cloudOn" style="display:none;">
         <span class="cloud-lead">Playing online as <b id="cloudName"></b></span>
-        <span class="cloud-code">code <b id="cloudCode"></b></span>
-        <button class="cloud-link" id="copyCode">copy code</button>
         <button class="cloud-link" id="editName">change name</button>
-        <button class="cloud-link" id="signOut">sign out</button>
-        <span class="cloud-note">Keep the code somewhere safe. Enter it on another device to bring your record with you.</span>
-      </div>
-      <div id="cloudEdit" style="display:none;">
-        <span class="cloud-lead">New display name:</span>
-        <input type="text" id="editNameInput" maxlength="20" autocomplete="off">
-        <button id="editNameSave">Save</button>
-        <button class="cloud-link" id="editNameCancel">back</button>
-        <span class="cloud-note" id="editNameNote">Name changes are limited to one every 7 days.</span>
+        <span class="cloud-note">Your progress is tied to your account. Sign in on another device to bring it with you. Sign out from the menu at the top of the page.</span>
       </div>
     </div>
 
@@ -1151,6 +1135,11 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
               <option value="maia-1900" data-label="a 1900 human" data-human="1" data-bot="kira" selected="">Human 1900</option>
             </select>
             <select id="themeSelAna" class="theme-sel" title="Board theme" style="font-size:12.5px;"></select>
+            <select id="powerSel" class="theme-sel" data-power="" title="How hard the engine works, which is what decides how warm the phone gets. Saver searches to depth 14 and shows two engine lines, balanced searches to depth 18 and shows three, and max adds a second pass to depth 30 that burns roughly thirty times the battery of balanced while barely moving the evaluation. Saver and balanced both analyse well above grandmaster strength." style="font-size:12.5px;">
+              <option value="saver">Engine: saver</option>
+              <option value="balanced">Engine: balanced</option>
+              <option value="max">Engine: max</option>
+            </select>
           </div>
           <div class="ana-fen"><input id="anaFenIn" placeholder="paste a FEN or a PGN / move list" spellcheck="false"><button class="hint-btn" id="anaFenBtn" style="padding:4px 9px;">Load</button></div>
           <div class="ana-row" id="fairRow" style="align-items:center;">
@@ -1215,6 +1204,11 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
           <button id="flipBtn">Flip board</button>
           <button id="newBtn">New game</button>
           <select id="themeSelGame" class="theme-sel" title="Board theme" style="flex:1;min-width:96px;"></select>
+          <select id="powerSelGame" class="theme-sel" data-power="" title="How hard the engine works, which is what decides how warm the phone gets. Saver searches to depth 14 and shows two engine lines, balanced searches to depth 18 and shows three, and max adds a second pass to depth 30 that burns roughly thirty times the battery of balanced while barely moving the evaluation. Saver and balanced both analyse well above grandmaster strength." style="flex:1;min-width:96px;">
+            <option value="saver">Engine: saver</option>
+            <option value="balanced">Engine: balanced</option>
+            <option value="max">Engine: max</option>
+          </select>
         </div>
       </div>
 
@@ -1288,12 +1282,22 @@ try {
     firebase.appCheck().activate('6LdhmdosAAAAAGh4ojYqXCU0JOeVo3X-R1qmMaZq', true);
   }
   window.__chessFdb = firebase.database();
-  /* anonymous sign-in: gives every browser a stable auth.uid so the database rules
-     can allow only one leaderboard registration per browser */
+  /* Anonymous sign-in is a fallback for readers who are NOT signed in, so they
+     still get an auth.uid and can contribute to the shared position cache.
+     It must never run when a real session exists: signInAnonymously replaces
+     the current user, which would silently sign a Google or GitHub reader out.
+     Waiting for the first auth state settles that before deciding. */
   try {
-    window.__chessAuthP = firebase.auth().signInAnonymously()
-      .then(c => (c && c.user && c.user.uid) || null)
-      .catch(e => { window.__chessAuthErr = (e && e.code) || 'unknown'; return null; });
+    window.__chessAuthP = new Promise(resolve => {
+      const auth = firebase.auth();
+      const stop = auth.onAuthStateChanged(u => {
+        stop();
+        if (u) { resolve(u.uid); return; }
+        auth.signInAnonymously()
+          .then(c => resolve((c && c.user && c.user.uid) || null))
+          .catch(e => { window.__chessAuthErr = (e && e.code) || 'unknown'; resolve(null); });
+      });
+    });
   } catch (e) { window.__chessAuthP = null; window.__chessAuthErr = 'script-blocked'; }
 } catch (e) { window.__chessFdb = null; }
 </script>
@@ -1567,6 +1571,35 @@ function avatarSVG(b) {
   return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label="${b.name}">${p.join('')}</svg>`;
 }
 
+/* ============================== engine power ============================== */
+/* Every search pins one CPU core at 100% until it returns, and on a phone that
+   is what warms the case. The knob that matters is how long the engine searches,
+   not how strongly it is told to play. Stockfish's own strength limiter still
+   burns the whole time slice and only then picks a worse move, so it saves
+   nothing, and it forces four lines instead of one, so it costs more.
+   Search cost grows exponentially with depth, so the analysis board's second
+   pass was almost the whole bill. Measured on one middlegame position, three
+   lines, single thread: depth 14 costs 0.45M nodes, depth 18 costs 1.7M, and
+   depth 30 costs 69M. Dropping that one pass is where nearly all of the battery
+   goes, and the evaluation it produced barely moved.
+   Saver and balanced both still analyse far above any grandmaster. Max is the
+   original behaviour, kept for when the position deserves it.
+   `lines` is MultiPV, the other real lever. Measured across three positions, the
+   expensive step is the jump from one line to two (2.5x to 4x the nodes), while
+   the third line adds anything from 7 to 57 percent depending on how many root
+   moves stay plausible. Saver takes the average third off by asking for two
+   lines, which is also two blue arrows instead of three on a phone-sized board.
+   Above saver the third line stays, because it is where a genuinely different
+   plan turns up when the first two are transpositions of one idea. */
+const POWER = {
+  saver:    { ana:14, anaDeep:0,  turn:14, threat:0,   assist:40, botFull:900,  lines:2 },
+  balanced: { ana:18, anaDeep:0,  turn:18, threat:600, assist:55, botFull:2500, lines:3 },
+  max:      { ana:18, anaDeep:30, turn:22, threat:900, assist:55, botFull:2500, lines:3 },
+};
+/* the saved preference is applied further down, once lsGet exists */
+let powerKey = 'balanced';
+const pw = () => POWER[powerKey];
+
 /* ============================== engine ============================== */
 class Engine {
   constructor(url) {
@@ -1646,7 +1679,8 @@ class Engine {
   analyse(fen, onInfo) {
     return this.run({
       kind:'analysis',
-      cmds:[...this.fullStrengthCmds(), 'setoption name MultiPV value 3', `position fen ${fen}`, 'go depth 22'],
+      cmds:[...this.fullStrengthCmds(), `setoption name MultiPV value ${pw().lines}`,
+            `position fen ${fen}`, `go depth ${pw().turn}`],
       onLine:l => { const i = Engine.parseInfo(l); if (i) onInfo(i); },
       done:l => l.startsWith('bestmove'),
     });
@@ -1655,7 +1689,8 @@ class Engine {
   analyseMulti(fen, onInfo, depth = 30) {
     return this.run({
       kind:'analysis',
-      cmds:[...this.fullStrengthCmds(), 'setoption name MultiPV value 3', `position fen ${fen}`, `go depth ${depth}`],
+      cmds:[...this.fullStrengthCmds(), `setoption name MultiPV value ${pw().lines}`,
+            `position fen ${fen}`, `go depth ${depth}`],
       onLine:l => { const i = Engine.parseInfo(l); if (i) onInfo(i); },
       done:l => l.startsWith('bestmove'),
     });
@@ -1674,7 +1709,10 @@ class Engine {
                 `setoption name Skill Level value ${bot.skill}`,
                 `position fen ${fen}`, `go depth ${bot.depth}`);
     } else {
-      cmds.push(...this.fullStrengthCmds(), `position fen ${fen}`, `go movetime ${bot.movetime}`);
+      /* full-strength opponents get one bounded search per move rather than a
+         standing one, so only the saver tier trims them */
+      cmds.push(...this.fullStrengthCmds(), `position fen ${fen}`,
+                `go movetime ${Math.min(bot.movetime, pw().botFull)}`);
     }
     const infos = {};
     return this.run({
@@ -1932,112 +1970,121 @@ function renderProgress() {
 /* ---------- online identity + leaderboard (optional, Firebase) ---------- */
 const fdb = window.__chessFdb || null;
 const authP = window.__chessAuthP || Promise.resolve(null);
-const CLOUD_KEY = 'chess-coach-cloud-v1';
-const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-let cloudProfile = null;
-try { cloudProfile = JSON.parse(lsGet(CLOUD_KEY)); } catch (e) {}
-if (cloudProfile && (!cloudProfile.key || !cloudProfile.name)) cloudProfile = null;
+const CLOUD_KEY = 'chess-coach-cloud-v1';        // legacy profile, read once to migrate
+const MIGRATED_KEY = 'chess-coach-migrated-v1';
 
-function sanitizeName(s) {
-  return String(s || '').replace(/[^A-Za-z0-9 -]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20);
-}
-function genPlayerKey() {
-  const buf = new Uint8Array(12);
-  (window.crypto || {}).getRandomValues ? crypto.getRandomValues(buf) : buf.forEach((_, i) => buf[i] = Math.floor(Math.random() * 256));
-  return Array.from(buf, b => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
-}
-const fmtCode = k => k.replace(/(.{4})(.{4})(.{4})/, '$1-$2-$3');
+/* Identity is the site-wide sign-in (Google or GitHub). The private profile
+   lives under users/<uid>/chess, readable and writable only by its owner, and
+   the public row under chess/lb/<uid> carries just the chosen handle and match
+   record. The old 12-character player code is gone: it was a bearer credential
+   that had to be published in order to draw the leaderboard, so anyone could
+   read the list and take over an account. A uid cannot be used that way,
+   because auth.uid comes from a verified token rather than from the client. */
+let cloudProfile = null;   // { uid, name } while signed in, otherwise null
 
-/* The player key doubles as the restore code, so it is a secret and never
-   leaves this browser except as a lookup under chess/players. The leaderboard
-   is therefore keyed by a separate public id, held in chess/lb, which carries
-   nothing worth stealing. ensurePub mints that id once and stores it beside
-   the code, so an older profile picks one up the next time it syncs. */
-function ensurePub() {
-  if (!cloudProfile) return null;
-  if (!cloudProfile.pub) {
-    cloudProfile.pub = genPlayerKey();
-    lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
-    if (fdb) fdb.ref('chess/players/' + cloudProfile.key + '/pub').set(cloudProfile.pub).catch(() => {});
-  }
-  return cloudProfile.pub;
+/* Every read and write of this player's own data goes through here. */
+function meRef(sub) {
+  if (!cloudProfile || !fdb) return null;
+  return fdb.ref('users/' + cloudProfile.uid + '/chess' + (sub ? '/' + sub : ''));
 }
 
-/* chess/lb writes are allowed only for the player this browser is bound to, so
-   the binding has to be refreshed whenever the browser adopts a code. */
-async function bindDevice(key) {
-  if (!fdb) return;
-  try {
-    const uid = await authP;
-    if (uid) await fdb.ref('chess/devices/' + uid).set(key);
-  } catch (e) {}
-}
-
-/* Publish the public row. Nothing here is secret, and the private profile
-   under chess/players is what the game actually reads back. */
+/* Publish the public row. Nothing in it is secret, and users/<uid>/chess stays
+   the copy the game actually reads back. */
 function syncLeaderboardRow(stats) {
-  const pub = ensurePub();
-  if (!pub || !fdb || !cloudProfile) return;
-  const row = { name: cloudProfile.name, updatedAt: Date.now() };
+  if (!cloudProfile || !fdb) return;
+  /* The public row may only mirror users/<uid>/meta/handle, so there is nothing
+     to publish until the reader has actually chosen one. */
+  const handle = window.siteAuth && window.siteAuth.handle();
+  if (!handle) return;
+  const row = { handle: handle, updatedAt: Date.now() };
   if (stats) {
     if (typeof stats.level === 'number') row.level = stats.level;
     ['games', 'wins', 'draws', 'losses'].forEach(f => {
       if (typeof stats[f] === 'number') row[f] = stats[f];
     });
   }
-  fdb.ref('chess/lb/' + pub).update(row).catch(() => {});
+  fdb.ref('chess/lb/' + cloudProfile.uid).update(row).catch(() => {});
+}
+
+/* One-time lift of a code-era profile onto the signed-in account. It runs
+   entirely in the browser, needs no server migration, and refuses to run when
+   the account already holds data, so signing in on a second device that still
+   has the old code in local storage cannot clobber newer progress. */
+async function migrateLegacy(uid) {
+  if (lsGet(MIGRATED_KEY) === '1' || !fdb) return;
+  let legacy = null;
+  try { legacy = JSON.parse(lsGet(CLOUD_KEY)); } catch (e) {}
+  if (!legacy || !legacy.key) { lsSet(MIGRATED_KEY, '1'); return; }
+  try {
+    const already = await fdb.ref('users/' + uid + '/chess/updatedAt').once('value');
+    if (already.exists()) { lsSet(MIGRATED_KEY, '1'); return; }
+    const v = (await fdb.ref('chess/players/' + legacy.key).once('value')).val();
+    if (!v) { lsSet(MIGRATED_KEY, '1'); return; }
+    const payload = { updatedAt: Date.now() };
+    ['memStage', 'level', 'games', 'wins', 'draws', 'losses', 'bestWin',
+     'recent', 'deck', 'rep', 'daily', 'course'].forEach(f => {
+      if (v[f] !== undefined && v[f] !== null) payload[f] = v[f];
+    });
+    await fdb.ref('users/' + uid + '/chess').update(payload);
+    lsSet(MIGRATED_KEY, '1');
+    mergeCloudData(v);
+    syncLeaderboardRow(payload);
+  } catch (e) {
+    /* leave the flag unset so the next visit tries again */
+  }
+}
+
+function pullCloud() {
+  const r = meRef();
+  if (!r) return;
+  r.once('value').then(s => { const v = s.val(); if (v) mergeCloudData(v); }).catch(() => {});
+}
+
+/* The navbar owns sign-in, so this page only reacts to it. onChange fires once
+   immediately and again when the handle arrives, hence the uid guard. */
+let wiredUid = null;
+function onIdentity(user) {
+  cloudProfile = user
+    ? { uid: user.uid, name: (window.siteAuth && window.siteAuth.handle()) || 'Player' }
+    : null;
+  renderCloudBox();
+  if (cloudProfile && wiredUid !== cloudProfile.uid) {
+    wiredUid = cloudProfile.uid;
+    migrateLegacy(cloudProfile.uid).then(() => { pullCloud(); loadLeaderboard(); });
+  } else {
+    loadLeaderboard();
+  }
 }
 
 function renderCloudBox() {
   const on = !!(cloudProfile && fdb);
   $('cloudJoin').style.display = on ? 'none' : 'flex';
-  $('cloudRestore').style.display = 'none';
-  $('cloudEdit').style.display = 'none';
   $('cloudOn').style.display = on ? 'flex' : 'none';
-  if (on) {
-    $('cloudName').textContent = cloudProfile.name;   // textContent only: never HTML
-    $('cloudCode').textContent = fmtCode(cloudProfile.key);
-  }
+  if (on) $('cloudName').textContent = cloudProfile.name;   // textContent only: never HTML
   if (!fdb) $('cloudBox').style.display = 'none';
 }
 
-/* ---------- display-name change, rate-limited to one per 7 days ---------- */
+/* Sign-in and the display name both belong to the site-wide module now, so
+   these buttons just hand off to it rather than keeping a second copy of the
+   rules about what a name may contain. */
+['github.com', 'google.com'].forEach(id => {
+  const btn = $(id === 'github.com' ? 'signInGithub' : 'signInGoogle');
+  if (btn) btn.onclick = () => {
+    if (!window.siteAuth) return;
+    btn.disabled = true;
+    window.siteAuth.signIn(id).catch(() => { btn.disabled = false; });
+  };
+});
 $('editName').onclick = () => {
-  if (!cloudProfile) return;
-  $('cloudOn').style.display = 'none';
-  $('cloudEdit').style.display = 'flex';
-  $('editNameInput').value = cloudProfile.name;
-  $('editNameInput').style.borderColor = '';
-  $('editNameNote').textContent = 'Name changes are limited to one every 7 days.';
-};
-$('editNameCancel').onclick = renderCloudBox;
-const fbTimeout = (p, ms) => Promise.race([p, new Promise((res, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
-$('editNameSave').onclick = async () => {
-  const nm = sanitizeName($('editNameInput').value);
-  if (nm.length < 2) { $('editNameInput').style.borderColor = '#e74c3c'; return; }
-  if (!cloudProfile || !fdb) return;
-  if (nm === cloudProfile.name) { renderCloudBox(); return; }
-  $('editNameNote').textContent = 'Saving…';
-  try {
-    const snap = await fbTimeout(fdb.ref('chess/players/' + cloudProfile.key + '/nameChangedAt').once('value'), 8000);
-    const last = snap.val();
-    if (typeof last === 'number' && Date.now() - last < 7 * 86400000) {
-      const days = Math.max(1, Math.ceil((last + 7 * 86400000 - Date.now()) / 86400000));
-      $('editNameNote').textContent = `You changed your name recently. The next change unlocks in ${days} day${days === 1 ? '' : 's'}.`;
-      return;
-    }
-    await fbTimeout(fdb.ref('chess/players/' + cloudProfile.key).update({ name: nm, nameChangedAt: Date.now(), updatedAt: Date.now() }), 8000);
-    cloudProfile.name = nm;
-    lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
-    syncLeaderboardRow(null);
+  if (!window.siteAuth) return;
+  window.siteAuth.askHandle().then(h => {
+    if (!h) return;
+    if (cloudProfile) cloudProfile.name = h;
     renderCloudBox();
+    syncLeaderboardRow(null);
     loadLeaderboard();
-  } catch (e) {
-    $('editNameNote').textContent = 'The server declined the change (7-day limit or connection trouble). Try again later.';
-  }
+  });
 };
-$('showRestore').onclick = () => { $('cloudJoin').style.display = 'none'; $('cloudRestore').style.display = 'flex'; };
-$('hideRestore').onclick = () => { $('cloudJoin').style.display = 'flex'; $('cloudRestore').style.display = 'none'; };
 /* pull a cloud player record's games and blunder deck into this browser */
 function mergeCloudData(v) {
   if (Array.isArray(v.recent)) {
@@ -2080,94 +2127,21 @@ function mergeCloudData(v) {
   }
 }
 
-/* One leaderboard registration per browser: each browser signs in anonymously and
-   chess/devices/{uid} maps it to a single player key, enforced by database rules.
-   Joining again from the same browser reopens the existing player instead. */
-$('joinBtn').onclick = async () => {
-  const nm = sanitizeName($('nameInput').value);
-  if (nm.length < 2) { $('nameInput').style.borderColor = '#e74c3c'; return; }
-  if (!fdb) return;
-  const uid = await authP;
-  if (!uid) {
-    const ec = window.__chessAuthErr || '';
-    $('joinNote').textContent =
-      ec === 'auth/operation-not-allowed' || ec === 'auth/configuration-not-found'
-        ? 'Sign-in is switched off on the server (Firebase: Authentication is not set up or the Anonymous provider is not enabled). Nobody can join until it is.'
-        : ec === 'auth/unauthorized-domain'
-          ? 'This site address is not on the sign-in allow list (Firebase Authentication, Authorized domains).'
-          : ec === 'auth/network-request-failed'
-            ? 'Could not reach the sign-in service. A content blocker, private-browsing restriction, or connection issue is the likely cause.'
-            : `Could not sign this browser in${ec ? ' (' + ec + ')' : ''}. An ad or privacy blocker may be the cause.`;
-    return;
-  }
-  const devRef = fdb.ref('chess/devices/' + uid);
-  let key = genPlayerKey(), reused = false;
-  try {
-    await devRef.set(key);
-  } catch (e) {
-    /* rules rejected it: this browser registered before, so reuse that player */
-    try {
-      const snap = await devRef.once('value');
-      if (!snap.val()) throw e;
-      key = String(snap.val());
-      reused = true;
-    } catch (e2) {
-      $('joinNote').textContent = 'Could not join right now. Please try again in a moment.';
-      return;
-    }
-  }
-  if (reused) {
-    /* this browser already has a player: sign back into it under its existing name
-       (renames go through "change name", which enforces the 7-day limit) */
-    let v = null;
-    try { v = (await fdb.ref('chess/players/' + key).once('value')).val(); } catch (e) {}
-    cloudProfile = { key, name: (v && sanitizeName(v.name)) || nm, pub: (v && v.pub) || null };
-    lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
-    if (v) mergeCloudData(v);
-  } else {
-    cloudProfile = { key, name: nm, pub: genPlayerKey() };
-    lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
-    fdb.ref('chess/players/' + key).update({ name: nm, updatedAt: Date.now(), pub: cloudProfile.pub }).catch(() => {});
-  }
-  renderCloudBox();
-  syncLeaderboardRow(null);
-  loadLeaderboard();
-};
-$('restoreBtn').onclick = () => {
-  const code = String($('codeInput').value || '').toUpperCase().replace(/[^A-Z2-9]/g, '');
-  if (code.length !== 12 || !fdb) { $('codeInput').style.borderColor = '#e74c3c'; return; }
-  fdb.ref('chess/players/' + code).once('value').then(snap => {
-    const v = snap.val();
-    if (!v || !v.name) { $('codeInput').style.borderColor = '#e74c3c'; $('codeInput').value = ''; $('codeInput').placeholder = 'code not found'; return; }
-    cloudProfile = { key: code, name: sanitizeName(v.name) || 'Player', pub: v.pub || null };
-    lsSet(CLOUD_KEY, JSON.stringify(cloudProfile));
-    // point this browser at the restored player before touching its public row
-    bindDevice(code).then(() => syncLeaderboardRow(v));
-    mergeCloudData(v);   // bring the cloud games and blunder deck into this browser
-    renderCloudBox();
-  }).catch(() => { $('codeInput').style.borderColor = '#e74c3c'; });
-};
-$('copyCode').onclick = () => {
-  navigator.clipboard.writeText(fmtCode(cloudProfile.key)).then(() => {
-    $('copyCode').textContent = 'copied!'; setTimeout(() => { $('copyCode').textContent = 'copy code'; }, 1400);
-  });
-};
-$('signOut').onclick = () => {
-  try { localStorage.removeItem(CLOUD_KEY); } catch (e) {}
-  cloudProfile = null; renderCloudBox();
-};
+/* Signing in, signing out, and choosing a handle all live in the navbar module.
+   This page simply follows whatever it reports. */
 renderCloudBox();
-/* Profiles created before the leaderboard split have no public id and may have
-   lost their device binding. Refreshing it here lets the next sync publish a
-   row instead of failing quietly. */
-if (cloudProfile) bindDevice(cloudProfile.key);
-
+if (window.siteAuth) {
+  window.siteAuth.onChange(onIdentity);
+} else {
+  loadLeaderboard();
+}
 /* push the finished game to the cloud: keeps only the last 10, with PGN */
 function cloudSync(rec) {
-  if (!cloudProfile || !fdb) return;
+  const ref = meRef();
+  if (!ref) return;
   const slim = { t: rec.t, bot: rec.bot, color: rec.color, result: rec.result, tc: rec.tc,
                  perf: rec.perf || null, moves: rec.moves, pgn: (rec.pgn || '').slice(0, 7500) };
-  fdb.ref('chess/players/' + cloudProfile.key).transaction(cur => {
+  ref.transaction(cur => {
     cur = cur || {};
     const recent = [slim].concat(cur.recent || []).slice(0, 10);
     const perfs = recent.filter(g => g && g.perf).map(g => g.perf.elo);
@@ -2176,8 +2150,11 @@ function cloudSync(rec) {
     const bo = BOTS.find(b => b.id === slim.bot);
     let bestWin = cur.bestWin || null;
     if (won && bo) { const prev = BOTS.find(b => b.id === bestWin); if (!prev || bo.elo > prev.elo) bestWin = bo.id; }
+    /* A transaction's return value REPLACES the node, so every sibling that is
+       not named here is deleted. daily and course are written by the other two
+       chess pages and have to be carried through, or finishing a game would
+       silently wipe the daily-puzzle streak and course progress. */
     return {
-      name: cloudProfile.name,
       games: (cur.games || 0) + 1,
       wins: (cur.wins || 0) + (won ? 1 : 0),
       draws: (cur.draws || 0) + (draw ? 1 : 0),
@@ -2187,8 +2164,8 @@ function cloudSync(rec) {
       deck: cur.deck || null,      // the blunder deck, repertoire, and memory progress live beside the games; keep them
       rep: cur.rep || null,
       memStage: cur.memStage || null,
-      nameChangedAt: cur.nameChangedAt || null,   // keeps the 7-day rename limit honest
-      pub: cur.pub || (cloudProfile && cloudProfile.pub) || null,   // the leaderboard row this profile owns
+      daily: cur.daily || null,    // daily puzzles page
+      course: cur.course || null,  // Reassess Your Chess page
     };
   }).then(res => {
     if (res && res.snapshot) syncLeaderboardRow(res.snapshot.val());
@@ -2198,12 +2175,13 @@ function cloudSync(rec) {
 
 function loadLeaderboard() {
   if (!fdb) return;
-  // chess/lb, never chess/players: listing the profiles would hand out restore codes
+  /* chess/lb holds only public rows keyed by uid. The private profiles under
+     users/<uid> are never listed, and a uid is not a credential. */
   fdb.ref('chess/lb').orderByChild('level').limitToLast(20).once('value').then(snap => {
     const rows = [];
     snap.forEach(ch => {
       const v = ch.val();
-      if (v && typeof v.level === 'number' && v.name) rows.push({ ...v, _key: ch.key });
+      if (v && typeof v.level === 'number' && v.handle) rows.push({ ...v, _key: ch.key });
     });
     if (!rows.length) { $('leaderBox').style.display = 'none'; return; }
     rows.sort((a, b) => b.level - a.level);
@@ -2211,10 +2189,10 @@ function loadLeaderboard() {
     list.innerHTML = '';
     rows.forEach((v, i) => {
       const div = document.createElement('div');
-      div.className = 'prog-row' + (cloudProfile && v._key === cloudProfile.pub ? ' lb-me' : '');
+      div.className = 'prog-row' + (cloudProfile && v._key === cloudProfile.uid ? ' lb-me' : '');
       const mk = (cls, txt) => { const s = document.createElement('span'); s.className = cls; s.textContent = txt; return s; };
       div.append(mk('pr-date', '#' + (i + 1)),
-                 mk('pr-vs', String(v.name).slice(0, 20)),          // textContent: user names stay inert
+                 mk('pr-vs', String(v.handle).slice(0, 20)),        // textContent: handles stay inert
                  mk('pr-res', '~' + v.level),
                  mk('pr-perf', `${v.wins || 0}W ${v.draws || 0}D ${v.losses || 0}L · ${v.games || 0} games`));
       list.appendChild(div);
@@ -2222,7 +2200,6 @@ function loadLeaderboard() {
     $('leaderBox').style.display = 'block';
   }).catch(() => { $('leaderBox').style.display = 'none'; });
 }
-loadLeaderboard();
 
 let clearArmed = false;
 $('clearHist').onclick = () => {
@@ -2521,7 +2498,7 @@ async function runAssist(sq) {
   for (const uci of probes) {
     if (mySeq !== assistSeq || phase !== 'player' || game.fen() !== fen) break;
     try {
-      scores[uci.slice(2, 4)] = await evalAfterMove(fen, uci, 55);   // mover's perspective, mate-safe
+      scores[uci.slice(2, 4)] = await evalAfterMove(fen, uci, pw().assist);   // mover's perspective, mate-safe
     } catch (e) {}
   }
   assistRunning--;
@@ -3808,7 +3785,7 @@ function cloudDeckSync(deck) {
     loss: Math.round(it.loss || 0), t: it.t || 0, due: it.due || 0, ivl: it.ivl || 0, reps: it.reps || 0,
     lapses: it.lapses || 0, bot: String(it.bot || '').slice(0, 20), motif: String(it.motif || '').slice(0, 24),
   };
-  fdb.ref('chess/players/' + cloudProfile.key + '/deck').set(obj).catch(() => {});
+  const r = meRef('deck'); if (r) r.set(obj).catch(() => {});
 }
 /* best-effort tactical-theme classification of the missed move */
 function classifyMotif(fen, bestUci, loss, num) {
@@ -4624,7 +4601,8 @@ function anaThreatSearch(fen, seq, live) {
   let probe;
   try { probe = new Chess(ffen); } catch (e) { return; }   // flipping is illegal here
   if (probe.isGameOver()) return;
-  return engine.evalPosition(ffen, null, 900, 'ana-threat').then(r => {
+  if (!pw().threat) return;                                // saver drops the probe entirely
+  return engine.evalPosition(ffen, null, pw().threat, 'ana-threat').then(r => {
     if (!live() || !r.bestUci || r.bestUci === '(none)') return;
     anaThreat = { uci: r.bestUci, cpW: scoreToWhite(r.score, flipped[1]), san: uciToSan(ffen, r.bestUci) };
     scheduleAnaDraw();
@@ -4660,7 +4638,7 @@ function anaAnalyse() {
   if (mode !== 'analysis' || anaSetup) return;
   const fen = game.fen();
   const seq = ++anaSeq;
-  anaLines = [null, null, null];
+  anaLines = Array(pw().lines).fill(null);   // the row list and the arrows both size off this
   anaThreat = null;
   anaMaia = null;
   anaLinesDraw();
@@ -4674,6 +4652,7 @@ function anaAnalyse() {
   const take = info => {
     if (!live()) return;
     const slot = (info.multipv || 1) - 1;
+    if (slot >= anaLines.length) return;   // a late line from the previous, wider setting
     const prev = anaLines[slot];
     if (prev && prev.depth > info.depth) return;   // the deep pass restarts shallow: keep the better line
     anaLines[slot] = info;
@@ -4687,9 +4666,9 @@ function anaAnalyse() {
   };
   const inCheck = game.inCheck();
   anaMaiaProbe(fen, live);   // separate runtime from the engine worker, so it runs alongside
-  engine.analyseMulti(fen, take, 18)
+  engine.analyseMulti(fen, take, pw().ana)
     .then(() => { if (live() && !inCheck) return anaThreatSearch(fen, seq, live); })
-    .then(() => { if (live()) return engine.analyseMulti(fen, take, 30); })
+    .then(() => { if (live() && pw().anaDeep) return engine.analyseMulti(fen, take, pw().anaDeep); })
     .catch(() => {});
 }
 let anaDrawPending = false;
@@ -6263,6 +6242,39 @@ $('anaMaiaSel').onchange = () => {
   anaLinesDraw();
   anaMaiaProbe(fen, () => seq === anaSeq && mode === 'analysis' && !anaSetup && game.fen() === fen);
 };
+/* ============================== engine power control ============================== */
+/* One preference, two places to reach it (the analysis board and the game action
+   row), so it can be turned down without leaving whatever is on screen. */
+{
+  const saved = lsGet('chess-engine-power');
+  if (POWER[saved]) powerKey = saved;
+  for (const sel of document.querySelectorAll('[data-power]')) {
+    sel.value = powerKey;
+    sel.onchange = () => {
+      powerKey = sel.value;
+      lsSet('chess-engine-power', powerKey);
+      for (const other of document.querySelectorAll('[data-power]')) other.value = powerKey;
+      /* re-search the position under the new setting rather than waiting for the
+         next move, so the change is visible immediately */
+      if (mode === 'analysis' && !anaSetup) anaAnalyse();
+      else if (mode === 'game' && phase === 'player') {
+        engine.stopIf('analysis');   // grading probes are a different kind and survive
+        startTurnAnalysis();
+      }
+    };
+  }
+}
+/* A hidden tab keeps its workers running, so switching apps mid-analysis used to
+   leave a core searching in the background. Drop the search on the way out and
+   pick the position back up on return. */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    anaSeq++;                      // abandon the analysis chain so nothing restarts behind us
+    anaStopSearches();
+    engine.stopIf('analysis');
+  } else if (mode === 'analysis' && !anaSetup) anaAnalyse();
+  else if (mode === 'game' && phase === 'player') startTurnAnalysis();
+});
 $('anaPassBtn').onclick = () => {
   if (mode !== 'analysis' || anaSetup) return;
   if (game.inCheck()) { coachMsg.textContent = 'Cannot pass the turn while the side to move is in check.'; return; }
@@ -6397,7 +6409,7 @@ function cloudRepSync(rep) {
     moves: l.moves.join(' ').slice(0, 300),
     t: l.t || 0, due: l.due || 0, ivl: l.ivl || 0, reps: l.reps || 0, lapses: l.lapses || 0,
   };
-  fdb.ref('chess/players/' + cloudProfile.key + '/rep').set(obj).catch(() => {});
+  const r = meRef('rep'); if (r) r.set(obj).catch(() => {});
 }
 function renderRepBox() {
   const rep = loadRep();
@@ -6749,7 +6761,7 @@ function loadMem() {
 }
 function saveMem(stage) {
   lsSet(MEM_KEY, JSON.stringify({ stage }));
-  if (cloudProfile && fdb) fdb.ref('chess/players/' + cloudProfile.key + '/memStage').set(stage).catch(() => {});
+  const rMem = meRef('memStage'); if (rMem) rMem.set(stage).catch(() => {});
   renderMemBox();
 }
 function memParams(s) {
