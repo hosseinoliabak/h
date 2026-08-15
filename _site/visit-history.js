@@ -49,6 +49,49 @@
     });
     list.unshift({ path: path, title: getPageTitle(), timestamp: Date.now() });
     save(list.slice(0, MAX_ENTRIES));
+    cloudSave();
+  }
+
+  /* ---------------------------- cloud mirror ----------------------------
+     Local storage stays the primary copy. When a reader is signed in the same
+     short list is mirrored under their own account, so "Continue Where You
+     Left Off" follows them between devices. */
+
+  var signedIn = false;
+
+  function cloudRef() {
+    if (!signedIn || !window.siteAuth || !window.siteAuth.ref) return null;
+    return window.siteAuth.ref('reading/history');
+  }
+
+  function cloudSave() {
+    var ref = cloudRef();
+    if (!ref) return;
+    // Shape and limits mirror the database rules exactly.
+    var rows = load().slice(0, MAX_ENTRIES).map(function (e) {
+      return {
+        path: String(e.path).slice(0, 300),
+        title: String(e.title || '').slice(0, 200),
+        timestamp: e.timestamp || Date.now()
+      };
+    });
+    ref.set(rows)['catch'](function () {});
+  }
+
+  /* Union of both copies, newest entry per path, capped at MAX_ENTRIES.
+     Merging rather than overwriting means reading on a phone and a laptop
+     produces one combined list instead of whichever device synced last. */
+  function mergeLists(a, b) {
+    var byPath = {};
+    a.concat(b).forEach(function (e) {
+      if (!e || !e.path) return;
+      var cur = byPath[e.path];
+      if (!cur || (e.timestamp || 0) > (cur.timestamp || 0)) byPath[e.path] = e;
+    });
+    return Object.keys(byPath)
+      .map(function (k) { return byPath[k]; })
+      .sort(function (x, y) { return (y.timestamp || 0) - (x.timestamp || 0); })
+      .slice(0, MAX_ENTRIES);
   }
 
   function timeAgo(ts) {
@@ -93,5 +136,22 @@
   document.addEventListener("DOMContentLoaded", function () {
     recordVisit();
     if (isHome(window.location.pathname)) renderOnHome();
+
+    /* Sign-in settles after this point, if at all. Nothing above waits for it. */
+    if (window.siteAuth) {
+      window.siteAuth.onChange(function (user) {
+        signedIn = !!user;
+        var ref = cloudRef();
+        if (!ref) return;
+        ref.once("value").then(function (snap) {
+          var remote = snap.val();
+          if (!Array.isArray(remote)) remote = remote ? Object.keys(remote).map(function (k) { return remote[k]; }) : [];
+          var merged = mergeLists(load(), remote);
+          save(merged);
+          cloudSave();
+          if (isHome(window.location.pathname)) renderOnHome();
+        })["catch"](function () {});
+      });
+    }
   });
 })();
