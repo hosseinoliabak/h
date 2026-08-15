@@ -357,6 +357,15 @@
   function render() {
     var host = document.getElementById('site-auth');
     if (!host) return;
+
+    /* The popover lives on document.body, so clearing the navbar host does not
+       touch it. Anything built for the other sign-in state is stale now, which
+       also covers signing in or out from a second tab. */
+    var open = document.querySelector('.site-auth-menu');
+    if (open && open.dataset.authState !== (currentUser ? 'in' : 'out')) {
+      if (open.__dismiss) open.__dismiss(); else open.remove();
+    }
+
     host.textContent = '';
 
     /* One control at every moment. Signed in it carries the reader's name, and
@@ -395,7 +404,9 @@
           primary: true,
           onClick: function (ctx) {
             ctx.button.disabled = true;
-            signIn(p.id)['catch'](function (e) {
+            signIn(p.id).then(function () {
+              ctx.close();          // signed in, so the provider list is spent
+            })['catch'](function (e) {
               ctx.button.disabled = false;
               ctx.setError((e && e.message) || 'Sign-in failed. Please try again.');
             });
@@ -428,6 +439,7 @@
 
     var menu = document.createElement('div');
     menu.className = 'site-auth-menu';
+    menu.dataset.authState = currentUser ? 'in' : 'out';
 
     if (intro) {
       var lead = document.createElement('p');
@@ -474,6 +486,8 @@
     function away(e) {
       if (!menu.contains(e.target) && e.target !== anchor) dismiss();
     }
+    // exposed so render() can tear this down properly, listeners and all
+    menu.__dismiss = dismiss;
     setTimeout(function () {
       document.addEventListener('click', away, true);
       window.addEventListener('resize', place);
