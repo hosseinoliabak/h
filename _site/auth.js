@@ -359,20 +359,21 @@
     if (!host) return;
     host.textContent = '';
 
+    /* One control at every moment. Signed in it carries the reader's name, and
+       everything else lives behind it, so the navbar strip stays narrow. */
     if (currentUser) {
       var name = currentHandle || lsGet(HANDLE_KEY) || 'Set name';
       var who = document.createElement('button');
       who.className = 'site-auth-btn site-auth-btn-quiet';
       who.textContent = name;
-      who.title = 'Change your display name';
-      who.onclick = function () { askHandle(); };
-
-      var out = document.createElement('button');
-      out.className = 'site-auth-btn site-auth-btn-quiet';
-      out.textContent = 'Sign out';
-      out.onclick = function () { signOut(); };
-
-      host.append(who, out);
+      who.title = 'Account options';
+      who.onclick = function () {
+        openMenu(who, [
+          { label: 'Change name', onClick: function (ctx) { ctx.close(); askHandle(); } },
+          { label: 'Sign out', onClick: function (ctx) { ctx.close(); signOut(); } }
+        ]);
+      };
+      host.appendChild(who);
       /* Only once the read has come back is the absence of a name real. The
          chooser used to open on every page load, because at first paint the
          handle had not arrived yet and looked missing. */
@@ -384,7 +385,24 @@
     btn.className = 'site-auth-btn';
     btn.textContent = 'Sign in';
     btn.title = 'Sign in to keep your progress across devices';
-    btn.onclick = function () { openMenu(btn); };
+    btn.onclick = function () {
+      /* Warm the SDK on open, so the provider click lands on the synchronous
+         path and the popup stays inside the user gesture (Safari requires it). */
+      loadSDK();
+      openMenu(btn, PROVIDERS.map(function (p) {
+        return {
+          label: p.note ? p.label + ' (' + p.note + ')' : p.label,
+          primary: true,
+          onClick: function (ctx) {
+            ctx.button.disabled = true;
+            signIn(p.id)['catch'](function (e) {
+              ctx.button.disabled = false;
+              ctx.setError((e && e.message) || 'Sign-in failed. Please try again.');
+            });
+          }
+        };
+      }), 'Keeps your reading position and chess progress across devices. No email or personal details are stored.');
+    };
     host.appendChild(btn);
   }
 
@@ -404,37 +422,37 @@
      (which is why it rendered dark on a light page) and was liable to be
      clipped by the bar's bounds. Anchored to the body it picks up ordinary page
      colours, and a fixed position keeps it beside the button. */
-  function openMenu(anchor) {
+  function openMenu(anchor, items, intro) {
     var existing = document.querySelector('.site-auth-menu');
-    if (existing) { existing.remove(); return; }
-
-    /* Warm the SDK the moment the menu opens, so the provider click lands on
-       the synchronous path and the popup stays inside the user gesture. */
-    loadSDK();
+    if (existing) { existing.remove(); return; }   // second click closes it
 
     var menu = document.createElement('div');
     menu.className = 'site-auth-menu';
 
-    var intro = document.createElement('p');
-    intro.textContent = 'Keeps your reading position and chess progress across devices. No email or personal details are stored.';
-    menu.appendChild(intro);
+    if (intro) {
+      var lead = document.createElement('p');
+      lead.textContent = intro;
+      menu.appendChild(lead);
+    }
 
-    PROVIDERS.forEach(function (p) {
+    var err = document.createElement('div');
+    err.className = 'site-auth-err';
+    err.style.display = 'none';
+
+    items.forEach(function (item) {
       var b = document.createElement('button');
-      b.className = 'site-auth-btn';
-      b.textContent = p.note ? p.label + ' (' + p.note + ')' : p.label;
+      b.className = 'site-auth-btn' + (item.primary ? '' : ' site-auth-btn-quiet');
+      b.textContent = item.label;
       b.onclick = function () {
-        b.disabled = true;
-        signIn(p.id).catch(function (e) {
-          b.disabled = false;
-          var msg = menu.querySelector('.site-auth-err') || document.createElement('div');
-          msg.className = 'site-auth-err';
-          msg.textContent = (e && e.message) || 'Sign-in failed. Please try again.';
-          menu.appendChild(msg);
+        item.onClick({
+          button: b,
+          close: dismiss,
+          setError: function (msg) { err.textContent = msg; err.style.display = 'block'; }
         });
       };
       menu.appendChild(b);
     });
+    menu.appendChild(err);
 
     document.body.appendChild(menu);
 
