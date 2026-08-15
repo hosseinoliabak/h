@@ -1135,7 +1135,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
               <option value="maia-1900" data-label="a 1900 human" data-human="1" data-bot="kira" selected="">Human 1900</option>
             </select>
             <select id="themeSelAna" class="theme-sel" title="Board theme" style="font-size:12.5px;"></select>
-            <select id="powerSel" class="theme-sel" data-power="" title="How hard the engine works, which is what decides how warm the phone gets. Saver searches to depth 14 and shows two engine lines, balanced searches to depth 18 and shows three, and max adds a second pass to depth 30 that burns roughly thirty times the battery of balanced while barely moving the evaluation. Saver and balanced both analyse well above grandmaster strength." style="font-size:12.5px;">
+            <select id="powerSel" class="theme-sel" data-power="" title="How hard the engine works, which is what decides how warm the phone gets. Saver searches to depth 14 and balanced to depth 18, both showing two engine lines. Max shows a third line and adds a second pass to depth 30 that burns roughly thirty times the battery of balanced while barely moving the evaluation. Saver and balanced both analyse well above grandmaster strength." style="font-size:12.5px;">
               <option value="saver">Engine: saver</option>
               <option value="balanced">Engine: balanced</option>
               <option value="max">Engine: max</option>
@@ -1204,7 +1204,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
           <button id="flipBtn">Flip board</button>
           <button id="newBtn">New game</button>
           <select id="themeSelGame" class="theme-sel" title="Board theme" style="flex:1;min-width:96px;"></select>
-          <select id="powerSelGame" class="theme-sel" data-power="" title="How hard the engine works, which is what decides how warm the phone gets. Saver searches to depth 14 and shows two engine lines, balanced searches to depth 18 and shows three, and max adds a second pass to depth 30 that burns roughly thirty times the battery of balanced while barely moving the evaluation. Saver and balanced both analyse well above grandmaster strength." style="flex:1;min-width:96px;">
+          <select id="powerSelGame" class="theme-sel" data-power="" title="How hard the engine works, which is what decides how warm the phone gets. Saver searches to depth 14 and balanced to depth 18, both showing two engine lines. Max shows a third line and adds a second pass to depth 30 that burns roughly thirty times the battery of balanced while barely moving the evaluation. Saver and balanced both analyse well above grandmaster strength." style="flex:1;min-width:96px;">
             <option value="saver">Engine: saver</option>
             <option value="balanced">Engine: balanced</option>
             <option value="max">Engine: max</option>
@@ -1587,13 +1587,14 @@ function avatarSVG(b) {
    `lines` is MultiPV, the other real lever. Measured across three positions, the
    expensive step is the jump from one line to two (2.5x to 4x the nodes), while
    the third line adds anything from 7 to 57 percent depending on how many root
-   moves stay plausible. Saver takes the average third off by asking for two
-   lines, which is also two blue arrows instead of three on a phone-sized board.
-   Above saver the third line stays, because it is where a genuinely different
-   plan turns up when the first two are transpositions of one idea. */
+   moves stay plausible. Two lines is the default less for the battery than for
+   the board. Three blue arrows next to the amber human arrow and the red threat
+   arrow is five arrows on a phone-sized square, and the third line is usually a
+   transposition of the first two anyway. Max keeps it, for the positions where
+   the third line really is a different plan. */
 const POWER = {
   saver:    { ana:14, anaDeep:0,  turn:14, threat:0,   assist:40, botFull:900,  lines:2 },
-  balanced: { ana:18, anaDeep:0,  turn:18, threat:600, assist:55, botFull:2500, lines:3 },
+  balanced: { ana:18, anaDeep:0,  turn:18, threat:600, assist:55, botFull:2500, lines:2 },
   max:      { ana:18, anaDeep:30, turn:22, threat:900, assist:55, botFull:2500, lines:3 },
 };
 /* the saved preference is applied further down, once lsGet exists */
@@ -4703,7 +4704,10 @@ function anaLinesDraw() {
   if (anaMaiaWait)
     html += `<div class="al-row" style="color:#bbb;">loading the net for ${anaMaiaWait}…</div>`;
   else if (anaMaia) {
-    const agrees = anaMaia.uci === (anaLines[0] && anaLines[0].pv && anaLines[0].pv[0]);
+    /* which engine line the net landed on, so the row says the same thing the
+       amber core on the arrow is already showing */
+    const rank = anaLines.findIndex(l => l && l.pv && l.pv[0] === anaMaia.uci);
+    const agrees = rank === 0, alsoLine = rank > 0 ? rank + 1 : 0;
     const pct = Math.round(anaMaia.prob * 100);
     /* a Maia percentage is how often that rating plays the move; Leela's is a policy
        prior from one look at the position, with no search behind it */
@@ -4712,12 +4716,13 @@ function anaLinesDraw() {
     const full = (anaMaia.human
       ? `${anaMaia.label.replace(/^a/, 'A')} plays ${anaMaia.san || anaMaia.uci} ${pct}% of the time`
       : `${anaMaia.label} likes ${anaMaia.san || anaMaia.uci} on instinct, a policy prior of ${pct}% with no search behind it`) +
-      (agrees ? ', and it is the engine’s top choice too' : '');
+      (agrees ? ', and it is the engine’s top choice too'
+              : alsoLine ? `, and the engine has it as line ${alsoLine}` : '');
     html += `<div class="al-row" style="color:#b57a1a;" title="${full}">♟ ` +
             (anaMaia.human
               ? `${anaMaia.label.replace(/^a/, 'A')} plays <b>${anaMaia.san || anaMaia.uci}</b> (${pct}%)`
               : `${anaMaia.label} likes <b>${anaMaia.san || anaMaia.uci}</b> (policy ${pct}%)`) +
-            `${agrees ? ', engine agrees' : ''}</div>`;
+            `${agrees ? ', engine agrees' : alsoLine ? `, engine line ${alsoLine}` : ''}</div>`;
   }
   else if (netOn) html += `<div class="al-row" style="color:#bbb;">second opinion…</div>`;
   if (anaThreat)
@@ -4732,10 +4737,13 @@ function anaLinesDraw() {
 /* One blue per engine line, ranked by weight and alpha rather than by hue, so the
    board encodes "how good" in one channel and leaves color free to mean "whose
    idea": blue is Stockfish, amber is the human net, red is the opponent's threat. */
+/* core is the amber stripe painted inside the blue when the human net picks that
+   same line. It fades with the rank exactly as the blue does, so agreement on
+   line three does not shout louder than the top line. */
 const ANA_RANK = [
-  { color:'rgba(44,123,229,.85)', scale:1   },
-  { color:'rgba(44,123,229,.50)', scale:.78 },
-  { color:'rgba(44,123,229,.32)', scale:.60 },
+  { color:'rgba(44,123,229,.85)', scale:1,   core:'rgba(224,150,26,.95)' },
+  { color:'rgba(44,123,229,.50)', scale:.78, core:'rgba(224,150,26,.72)' },
+  { color:'rgba(44,123,229,.32)', scale:.60, core:'rgba(224,150,26,.55)' },
 ];
 const ANA_MAIA_COLOR = 'rgba(224,150,26,.78)';
 function anaDrawArrows() {
@@ -4745,13 +4753,19 @@ function anaDrawArrows() {
     const uci = l && l.pv && l.pv[0];
     if (uci && !picks.some(p => p.uci === uci)) picks.push({ uci, ...ANA_RANK[i] });
   });
+  const human = (anaMaia && anaMaia.uci) || null;
+  const agreed = human ? picks.find(p => p.uci === human) : null;
   let svg = '';
   /* the human arrow goes down first and the lines paint back to front, so the
      best move stays on top wherever two arrows cross */
-  if (anaMaia && anaMaia.uci && !picks.some(p => p.uci === anaMaia.uci))
-    svg += arrowSVG(anaMaia.uci.slice(0, 2), anaMaia.uci.slice(2, 4), ANA_MAIA_COLOR, .82);
+  if (human && !agreed)
+    svg += arrowSVG(human.slice(0, 2), human.slice(2, 4), ANA_MAIA_COLOR, .82);
   for (let i = picks.length - 1; i >= 0; i--)
     svg += arrowSVG(picks[i].uci.slice(0, 2), picks[i].uci.slice(2, 4), picks[i].color, picks[i].scale);
+  /* Agreement is one arrow with two things to say, so the amber rides inside the
+     blue as a narrower core rather than replacing it or vanishing under it. */
+  if (agreed)
+    svg += arrowSVG(human.slice(0, 2), human.slice(2, 4), agreed.core, agreed.scale * .42);
   if (anaThreat && anaThreat.uci)
     svg += arrowSVG(anaThreat.uci.slice(0, 2), anaThreat.uci.slice(2, 4), 'rgba(231,76,60,.5)');
   arrowLayer.innerHTML = svg;

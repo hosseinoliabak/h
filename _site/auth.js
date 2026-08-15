@@ -52,7 +52,11 @@
 
   var listeners = [];
   var currentUser = null;
-  var currentHandle = null;
+  /* Seeded from the cache so a known name is available on the very first paint,
+     before the database read returns. Without this the navbar flashes "Set
+     name" and the chooser opens on a reader who already has one. */
+  var currentHandle = lsGet(HANDLE_KEY) || null;
+  var handleLoaded = false;
   var db = null;
   var loading = null;
 
@@ -118,6 +122,7 @@
         pullHandle();
       } else {
         currentHandle = null;
+        handleLoaded = false;
         lsDel(HANDLE_KEY);
       }
       emit();
@@ -141,9 +146,10 @@
     if (!db || !currentUser) return;
     db.ref('users/' + currentUser.uid + '/meta/handle').once('value').then(function (snap) {
       currentHandle = snap.val() || null;
+      handleLoaded = true;          // now, and only now, is "no handle" a fact
       if (currentHandle) lsSet(HANDLE_KEY, currentHandle); else lsDel(HANDLE_KEY);
       emit();
-    }).catch(function () {});
+    }).catch(function () { emit(); });   // read failed: stay quiet rather than prompt
   }
 
   function cleanHandle(s) {
@@ -341,7 +347,10 @@
       out.onclick = function () { signOut(); };
 
       host.append(who, out);
-      if (!currentHandle) askHandleOnce();
+      /* Only once the read has come back is the absence of a name real. The
+         chooser used to open on every page load, because at first paint the
+         handle had not arrived yet and looked missing. */
+      if (handleLoaded && !currentHandle) askHandleOnce();
       return;
     }
 
@@ -429,25 +438,18 @@
     var host = document.createElement('div');
     host.id = 'site-auth';
 
-    /* The right-hand nav list is empty and built for exactly this. The
-       .quarto-navbar-tools strip is not: Quarto injects search into it and
-       resume-reading.js injects a wide pill, so a third control overflows the
-       navbar. Fall back to that strip only if the list is missing. */
-    var list = document.querySelector('.navbar-nav.ms-auto');
-    if (list) {
-      var li = document.createElement('li');
-      li.className = 'nav-item';
-      li.appendChild(host);
-      list.appendChild(li);
+    /* The tools strip, appended last so it sits at the far right: after the
+       resume pill and the search icon. The right-hand nav list looks tidier on
+       a wide screen but lives inside the collapsible section, so below the
+       navbar breakpoint it drops onto its own row under the pill. The tools
+       strip stays visible at every width. */
+    var tools = document.querySelector('.quarto-navbar-tools');
+    if (tools) {
+      tools.appendChild(host);
     } else {
-      var tools = document.querySelector('.quarto-navbar-tools');
-      if (tools) {
-        tools.appendChild(host);
-      } else {
-        var nav = document.querySelector('.navbar-container');
-        if (!nav) return;
-        nav.appendChild(host);
-      }
+      var nav = document.querySelector('.navbar-container');
+      if (!nav) return;
+      nav.appendChild(host);
     }
     render();
   }
