@@ -16,75 +16,98 @@ jobs:
         run: |
           pip install --quiet google-auth requests
 
-          python3 -c "
+          python3 <<'PY'
           import json, os, time, requests
           from google.oauth2 import service_account
           from google.auth.transport.requests import Request
 
-          # Authenticate with service account
           sa_info = json.loads(os.environ['FIREBASE_SERVICE_ACCOUNT'])
           credentials = service_account.Credentials.from_service_account_info(
               sa_info,
-              scopes=['https://www.googleapis.com/auth/firebase.database', 'https://www.googleapis.com/auth/userinfo.email']
+              scopes=['https://www.googleapis.com/auth/firebase.database',
+                      'https://www.googleapis.com/auth/userinfo.email']
           )
           credentials.refresh(Request())
-          token = credentials.token
 
-          db_url = os.environ['FIREBASE_DB_URL']
-          headers = {'Authorization': f'Bearer {token}'}
+          DB = os.environ['FIREBASE_DB_URL']
+          session = requests.Session()
+          session.headers.update({'Authorization': 'Bearer ' + credentials.token})
 
-          # Clean up pastebin rooms
-          resp = requests.get(f'{db_url}/rooms.json', headers=headers)
-          data = resp.json()
+          NOW = int(time.time() * 1000)
+          IDLE_MS = 60 * 60 * 1000              # grace period for a room with nobody in it
+          STALE_MEMBER_MS = 12 * 60 * 60 * 1000  # a member that stopped checking in is not real
+          MAX_ROOMS = 5000                       # backstop so one run cannot be made to hang
 
-          now_ms = int(time.time() * 1000)
-          one_hour_ms = 60 * 60 * 1000
-          deleted = 0
+          def get(path, **params):
+              r = session.get(DB + '/' + path + '.json', params=params, timeout=30)
+              r.raise_for_status()
+              return r.json()
 
-          if data:
-              for room_name, room_data in data.items():
-                  if not isinstance(room_data, dict):
+          def delete(path):
+              r = session.delete(DB + '/' + path + '.json', timeout=30)
+              r.raise_for_status()
+
+          def live_members(root, name):
+              """Count members that have checked in recently.
+
+              Presence is refreshed by the page on a timer, so a member entry that
+              has gone quiet for STALE_MEMBER_MS is either a crashed tab or a forged
+              entry written to keep a room from being collected. Either way it does
+              not count as somebody using the room.
+              """
+              members = get(root + '/' + name + '/members')
+              if not isinstance(members, dict):
+                  return 0
+              live = 0
+              for member in members.values():
+                  if not isinstance(member, dict):
                       continue
+                  joined = member.get('joinedAt')
+                  if isinstance(joined, (int, float)) and (NOW - joined) <= STALE_MEMBER_MS:
+                      live += 1
+              return live
 
-                  members = room_data.get('members')
-                  member_count = len(members) if isinstance(members, dict) else 0
-                  last_disconnect = room_data.get('lastDisconnect', 0)
+          def sweep(root):
+              # A shallow read returns room names only. A full read would pull every
+              # paste, image, and uploaded file through this job on every run.
+              names = get(root, shallow='true')
+              names = list(names) if isinstance(names, dict) else []
+              total = len(names)
+              capped = total > MAX_ROOMS
+              if capped:
+                  names = names[:MAX_ROOMS]
 
-                  if member_count == 0:
-                      if last_disconnect and (now_ms - last_disconnect) > one_hour_ms:
-                          requests.delete(f'{db_url}/rooms/{room_name}.json', headers=headers)
-                          print(f'Deleted stale pastebin room: {room_name} (idle {(now_ms - last_disconnect) // 60000} min)')
+              # Room names are never printed. A name is the only thing standing
+              # between a stranger and a room's contents, and this repository is
+              # public, so its Actions logs are world-readable and kept for
+              # months. The position in the run is enough to follow what
+              # happened without handing out a key to a room somebody recreates
+              # under the same name tomorrow.
+              deleted = 0
+              for i, name in enumerate(names, 1):
+                  try:
+                      if live_members(root, name):
+                          continue
+                      last = get(root + '/' + name + '/lastDisconnect')
+                      if isinstance(last, (int, float)) and last > 0:
+                          idle = NOW - last
+                          if idle > IDLE_MS:
+                              delete(root + '/' + name)
+                              deleted += 1
+                              print('deleted %s #%d (idle %d min)' % (root, i, idle // 60000))
+                      else:
+                          delete(root + '/' + name)
                           deleted += 1
-                      elif not last_disconnect:
-                          requests.delete(f'{db_url}/rooms/{room_name}.json', headers=headers)
-                          print(f'Deleted orphaned pastebin room: {room_name}')
-                          deleted += 1
+                          print('deleted %s #%d (no live members, no disconnect stamp)' % (root, i))
+                  except Exception as err:
+                      print('skipped %s #%d: %s' % (root, i, err))
 
-          # Clean up clipboard-sync rooms
-          resp2 = requests.get(f'{db_url}/clipboard-rooms.json', headers=headers)
-          data2 = resp2.json()
+              if capped:
+                  print('WARNING: %s holds %d rooms, only the first %d were checked this run.'
+                        % (root, total, MAX_ROOMS))
+              print('%s: %d of %d room(s) removed.' % (root, deleted, total))
+              return deleted
 
-          if data2:
-              for room_name, room_data in data2.items():
-                  if not isinstance(room_data, dict):
-                      continue
-
-                  members = room_data.get('members')
-                  member_count = len(members) if isinstance(members, dict) else 0
-                  last_disconnect = room_data.get('lastDisconnect', 0)
-
-                  if member_count == 0:
-                      if last_disconnect and (now_ms - last_disconnect) > one_hour_ms:
-                          requests.delete(f'{db_url}/clipboard-rooms/{room_name}.json', headers=headers)
-                          print(f'Deleted stale clipboard room: {room_name} (idle {(now_ms - last_disconnect) // 60000} min)')
-                          deleted += 1
-                      elif not last_disconnect:
-                          requests.delete(f'{db_url}/clipboard-rooms/{room_name}.json', headers=headers)
-                          print(f'Deleted orphaned clipboard room: {room_name}')
-                          deleted += 1
-
-          if deleted == 0:
-              print('No stale rooms found.')
-          else:
-              print(f'Cleaned up {deleted} room(s).')
-          "
+          removed = sweep('rooms') + sweep('clipboard-rooms')
+          print('No stale rooms found.' if removed == 0 else 'Cleaned up %d room(s).' % removed)
+          PY

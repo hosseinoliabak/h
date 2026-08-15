@@ -1,0 +1,138 @@
+name: Account Retention
+
+# Deletes accounts that have been inactive for 24 months, after a warning at 23.
+#
+# Safety: this job is a DRY RUN unless the repository variable RETENTION_APPLY
+# is set to the string "true" (Settings, Secrets and variables, Actions,
+# Variables). Leave it unset until a few scheduled runs have been read and the
+# reported counts look right. Nothing on this site can be 23 months idle for a
+# long while yet, so a dry run should report zero of everything.
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # daily, 03:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  retention:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Warn and delete inactive accounts
+        env:
+          FIREBASE_DB_URL: https://oliabak-paste-default-rtdb.firebaseio.com
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RETENTION_APPLY: ${{ vars.RETENTION_APPLY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+        run: |
+          pip install --quiet firebase-admin
+
+          python3 <<'PY'
+          import json, os, smtplib, time
+          from email.message import EmailMessage
+
+          import firebase_admin
+          from firebase_admin import credentials, auth, db
+
+          APPLY = os.environ.get('RETENTION_APPLY', '').strip().lower() == 'true'
+          DB_URL = os.environ['FIREBASE_DB_URL']
+
+          MONTH = 30 * 24 * 60 * 60 * 1000
+          WARN_AFTER = 23 * MONTH
+          DELETE_AFTER = 24 * MONTH
+          NOW = int(time.time() * 1000)
+
+          cred = credentials.Certificate(json.loads(os.environ['FIREBASE_SERVICE_ACCOUNT']))
+          firebase_admin.initialize_app(cred, {'databaseURL': DB_URL})
+
+          def send_warning(address, days):
+              """The address is read from Firebase Auth at send time and is never
+              written to the database. It exists only inside this function."""
+              host = os.environ.get('SMTP_HOST')
+              if not host or not address:
+                  return False
+              msg = EmailMessage()
+              msg['Subject'] = "Your H's Notes account is about to be deleted"
+              msg['From'] = os.environ.get('MAIL_FROM', 'noreply@h.oliabak.com')
+              msg['To'] = address
+              msg.set_content(
+                  "Your account on H's Notes has been inactive for about 23 months.\n\n"
+                  "It will be deleted in %d days, along with your reading position and\n"
+                  "chess progress. Nothing else is stored.\n\n"
+                  "To keep it, just sign in once: https://h.oliabak.com\n\n"
+                  "If you would rather it went away, no action is needed.\n" % days
+              )
+              with smtplib.SMTP(host, int(os.environ.get('SMTP_PORT', '587'))) as s:
+                  s.starttls()
+                  user = os.environ.get('SMTP_USER')
+                  if user:
+                      s.login(user, os.environ.get('SMTP_PASS', ''))
+                  s.send_message(msg)
+              return True
+
+          def last_seen(user):
+              """Prefer the stamp the site writes on every sign-in. Fall back to
+              Firebase's own metadata for accounts that predate it."""
+              try:
+                  v = db.reference('users/%s/meta/lastSeenAt' % user.uid).get()
+                  if isinstance(v, (int, float)) and v > 0:
+                      return int(v)
+              except Exception as err:
+                  print('  could not read lastSeenAt for one account: %s' % err)
+                  return None
+              meta = user.user_metadata
+              fallback = int(meta.last_refresh_timestamp or meta.creation_timestamp or 0)
+              # A zero here would read as "idle since 1970" and delete the account
+              # on sight. Treat a missing timestamp as unknown, never as ancient.
+              return fallback if fallback > 0 else None
+
+          # No uid is ever printed. chess/lb is world-readable and maps uids to
+          # handles, and this repository is public, so a uid in an Actions log
+          # would publish "this handle has been idle for two years". The
+          # position in the run is enough to follow a report.
+          warned = deleted = skipped = anon = seen_n = 0
+          page = auth.list_users()
+          while page:
+              for user in page.users:
+                  seen_n += 1
+                  # Anonymous sessions hold no progress and own no account record.
+                  if not user.provider_data and not user.email:
+                      anon += 1
+                      continue
+
+                  seen = last_seen(user)
+                  if seen is None:          # read failed: never guess, try again tomorrow
+                      skipped += 1
+                      continue
+                  idle = NOW - seen
+
+                  if idle >= DELETE_AFTER:
+                      print('DELETE account #%d (idle %d days)' % (seen_n, idle // 86400000))
+                      if APPLY:
+                          # Both sides, or the leftovers become orphans.
+                          db.reference('users/%s' % user.uid).delete()
+                          db.reference('chess/lb/%s' % user.uid).delete()
+                          auth.delete_user(user.uid)
+                      deleted += 1
+
+                  elif idle >= WARN_AFTER:
+                      already = db.reference('users/%s/meta/warnedAt' % user.uid).get()
+                      if isinstance(already, (int, float)) and already > seen:
+                          continue          # warned since their last visit already
+                      days = max(1, (DELETE_AFTER - idle) // 86400000)
+                      print('WARN   account #%d (idle %d days, %d until deletion)'
+                            % (seen_n, idle // 86400000, days))
+                      if APPLY:
+                          if send_warning(user.email, days):
+                              db.reference('users/%s/meta/warnedAt' % user.uid).set(NOW)
+                      warned += 1
+
+              page = page.get_next_page()
+
+          mode = 'APPLIED' if APPLY else 'DRY RUN (set the RETENTION_APPLY variable to "true" to act)'
+          print('\n%s: %d warned, %d deleted, %d skipped, %d anonymous sessions ignored.'
+                % (mode, warned, deleted, skipped, anon))
+          PY
