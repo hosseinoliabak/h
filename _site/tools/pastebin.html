@@ -442,7 +442,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
 #editor-wrapper.disabled {
   background-color: var(--site-surface);
-  cursor: not-allowed;
+  cursor: text;
 }
 
 #line-numbers {
@@ -474,9 +474,9 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   overflow-y: auto;
 }
 
-#paste-editor:disabled {
+#paste-editor[readonly] {
   background-color: var(--site-surface);
-  cursor: not-allowed;
+  cursor: text;
 }
 
 #editor-hint {
@@ -913,7 +913,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   <div id="line-numbers">1</div>
   <textarea id="paste-editor" placeholder="Start typing here... Press Enter to send." disabled=""></textarea>
 </div>
-<div id="editor-hint">Press <strong>Ctrl+Enter</strong> (or <strong>⌘+Enter</strong> on Mac) to send. Or click the Send button.</div>
+<div id="editor-hint">Press <strong>Shift+Enter</strong> (or <strong>Ctrl+Enter</strong>, <strong>⌘+Enter</strong>) to send. Plain <strong>Enter</strong> starts a new line.</div>
 <div id="read-only-note" style="display:none; font-size:13px; margin-top:6px; padding:8px 12px; border-left:3px solid var(--site-accent); background:var(--site-surface); border-radius:4px;">You are reading this room, not editing it. Anyone may open any room, but only a signed-in reader can change one they did not generate. Sign in at the top of the page to edit.</div>
 <div id="char-counter" style="font-size:12px; color:#888; text-align:right; margin-top:4px; display:none;">1,000,000 characters remaining</div>
 
@@ -1104,6 +1104,8 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
         // textContent throughout: a handle is user-supplied and stays inert
         meta.textContent = (entry.sender ? entry.sender + ' · ' : '')
           + timeAgo(entry.timestamp) + ' · ' + entry.text.length.toLocaleString() + ' chars';
+        // "2m ago" is the readable form; the exact stamp is one hover away
+        if (entry.timestamp) meta.title = new Date(entry.timestamp).toLocaleString();
 
         header.appendChild(numSpan);
         header.appendChild(toggle);
@@ -1635,9 +1637,9 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     }, 150);
   });
 
-  // Enter = newline (default), Ctrl/Cmd+Enter = send
+  // Enter = newline (default). Shift+Enter or Ctrl/Cmd+Enter sends.
   pasteEditor.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    if (e.key === 'Enter' && (e.shiftKey || e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       sendMessage();
     }
@@ -1689,8 +1691,14 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     var connected = !!currentRef;
     var writable = canWrite();
 
-    pasteEditor.disabled = !writable;
-    pasteArea.disabled = !writable;
+    /* readOnly, never disabled. A disabled textarea cannot be selected or
+       copied from in most browsers, which is the opposite of what a reader
+       following along needs. readOnly blocks editing and keeps the text and
+       the ordinary I-beam cursor. */
+    pasteEditor.readOnly = !writable;
+    pasteEditor.disabled = false;
+    pasteArea.readOnly = !writable;
+    pasteArea.disabled = false;
     editorWrapper.classList.toggle('disabled', !writable);
     editorHint.style.display = writable ? 'block' : 'none';
 
