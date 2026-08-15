@@ -223,21 +223,43 @@
     });
   }
 
+  function sdkReady() {
+    return !!(window.firebase && window.firebase.auth && db);
+  }
+
+  function popupSignIn(providerId) {
+    var auth = window.firebase.auth();
+    var provider = providerId === 'github.com'
+      ? new window.firebase.auth.GithubAuthProvider()
+      : new window.firebase.auth.GoogleAuthProvider();
+    // No extra scopes are requested: the default profile is never stored.
+    return auth.signInWithPopup(provider).catch(function (err) {
+      var code = (err && err.code) || '';
+      /* signInWithRedirect is NOT a usable fallback here. Firebase routes it
+         through an iframe on the firebaseapp.com auth domain, which Safari
+         16.1+, Chrome 115+, and Firefox 109+ block as third-party storage.
+         The documented fixes all require serving the auth handler from this
+         domain, which GitHub Pages cannot do. So the popup is the only route,
+         and a blocked popup has to be reported rather than worked around. */
+      if (code === 'auth/popup-blocked') {
+        throw new Error('Your browser blocked the sign-in window. Allow pop-ups for this site and try again.');
+      }
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        throw new Error('Sign-in was cancelled.');
+      }
+      throw err;
+    });
+  }
+
   function signIn(providerId) {
+    /* Called straight from the click when the SDK is already in memory. Going
+       through a promise first would put the popup outside the user gesture,
+       which Safari refuses to open. preloadSDK (on menu open) is what makes
+       this the normal path. */
+    if (sdkReady()) return popupSignIn(providerId);
     return loadSDK().then(function (ok) {
       if (!ok) throw new Error('Firebase could not load. A content blocker is the usual cause.');
-      var auth = window.firebase.auth();
-      var provider = providerId === 'github.com'
-        ? new window.firebase.auth.GithubAuthProvider()
-        : new window.firebase.auth.GoogleAuthProvider();
-      // No extra scopes are requested: the default profile is never stored.
-      return auth.signInWithPopup(provider).catch(function (err) {
-        var code = (err && err.code) || '';
-        if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
-          return auth.signInWithRedirect(provider);
-        }
-        throw err;
-      });
+      return popupSignIn(providerId);
     });
   }
 
@@ -314,7 +336,11 @@
           err.textContent = describeError(e);
         });
       };
-      cancel.onclick = function () { sessionStorage.setItem(ASKED_KEY, '1'); close(null); };
+      cancel.onclick = function () {
+        // Safari private browsing throws on setItem, which would trap the modal open.
+        try { sessionStorage.setItem(ASKED_KEY, '1'); } catch (e) {}
+        close(null);
+      };
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter') save.click(); });
       back.addEventListener('click', function (e) { if (e.target === back) close(null); });
 
@@ -381,6 +407,10 @@
   function openMenu(anchor) {
     var existing = document.querySelector('.site-auth-menu');
     if (existing) { existing.remove(); return; }
+
+    /* Warm the SDK the moment the menu opens, so the provider click lands on
+       the synchronous path and the popup stays inside the user gesture. */
+    loadSDK();
 
     var menu = document.createElement('div');
     menu.className = 'site-auth-menu';
