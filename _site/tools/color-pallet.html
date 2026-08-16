@@ -513,6 +513,34 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   white-space: pre-line;
 }
 
+/* Shown only after a screen pick comes back empty on a Mac, because no API
+   reports whether the browser holds the screen recording permission. */
+.pal-perm {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1.5px solid var(--site-accent);
+  border-radius: 10px;
+  background: var(--site-surface);
+  font-size: 14px;
+}
+
+.pal-perm p {
+  margin: 0 0 8px;
+}
+
+.pal-perm ol {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.pal-perm li {
+  margin-bottom: 4px;
+}
+
+.pal-perm[hidden] {
+  display: none;
+}
+
 .pal-row {
   display: flex;
   flex-wrap: wrap;
@@ -630,6 +658,17 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   </div>
   </div>
 </div>
+</div>
+
+<div id="pal-perm" class="pal-perm" role="status" hidden="">
+  <p><strong>Nothing got picked.</strong> On macOS a browser can only read pixels from the screen once you allow it, and macOS asks again for that permission about once a month, so a picker that worked before can quietly stop.</p>
+  <ol>
+    <li>Open System Settings, then Privacy and Security, then Screen and System Audio Recording</li>
+    <li>Find this browser in the list. If it is not there, click the eyedropper once so macOS adds it</li>
+    <li>If its switch is already on, turn it off and on again, because a lapsed permission still looks enabled</li>
+    <li>Quit the browser completely, then open it again</li>
+  </ol>
+  <button type="button" id="pal-perm-ok" class="pal-btn">Got it</button>
 </div>
 
 <p id="pal-note" class="pal-note"></p>
@@ -1128,7 +1167,35 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
      and drags the whole window compositor down with it. Three things close a
      session here: a second click, leaving the page, and a watchdog. */
   if (window.EyeDropper) {
-    var dropper = null, dropperTimer = 0;
+    var dropper = null, dropperTimer = 0, dropperOpened = 0;
+
+    /* Nothing in the platform reports whether the browser holds the macOS
+       screen recording permission, and without it the sampler opens but reads
+       no pixels anywhere, so every click falls through. The one signal
+       available is a session that ran for a while and produced no color. */
+    var permNote = document.getElementById('pal-perm');
+    var permOk = document.getElementById('pal-perm-ok');
+    var PERM_KEY = 'pal-eyedropper-hint';
+
+    function onMac() {
+      var ua = navigator.userAgentData;
+      if (ua && ua.platform) return ua.platform === 'macOS';
+      return /Mac/i.test(navigator.platform || navigator.userAgent || '');
+    }
+
+    function offerPermissionHelp(openedFor) {
+      /* A deliberate cancel is usually quick, so leave those alone */
+      if (!onMac() || openedFor < 1500) return;
+      try {
+        if (localStorage.getItem(PERM_KEY) === 'dismissed') return;
+      } catch (e) { /* private mode, just show it */ }
+      permNote.hidden = false;
+    }
+
+    permOk.addEventListener('click', function() {
+      permNote.hidden = true;
+      try { localStorage.setItem(PERM_KEY, 'dismissed'); } catch (e) {}
+    });
 
     /* Session is over on its own: drop the timer and the button state, but do
        not call abort() on a controller whose promise has already settled. */
@@ -1149,7 +1216,10 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
     eyeBtn.addEventListener('click', function() {
       if (dropper) return closeDropper();       // a second click cancels
+      var picked = false;
       dropper = new AbortController();
+      dropperOpened = performance.now();
+      permNote.hidden = true;
       eyeBtn.setAttribute('aria-pressed', 'true');
       eyeBtn.title = 'Cancel the screen picker';
       /* Nobody spends two minutes choosing one pixel. If the promise has not
@@ -1158,12 +1228,16 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
       dropperTimer = setTimeout(closeDropper, 120000);
       new EyeDropper().open({ signal: dropper.signal }).then(function(res) {
         if (/^#[0-9a-fA-F]{6}$/.test(res.sRGBHex)) {
+          picked = true;
           setSeed(res.sRGBHex);
           generate();
         }
       })['catch'](function() {
         /* Escape, a click that selects nothing, and our own abort land here */
-      })['finally'](forgetDropper);
+      })['finally'](function() {
+        forgetDropper();
+        if (!picked) offerPermissionHelp(performance.now() - dropperOpened);
+      });
     });
 
     /* Closing the tab or navigating away must not strand a session */
