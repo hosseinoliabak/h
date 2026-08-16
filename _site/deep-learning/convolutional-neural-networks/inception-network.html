@@ -562,7 +562,7 @@ document.addEventListener("DOMContentLoaded", function () {
     meta.appendChild(div);
     var lenDiv = document.createElement("div");
     lenDiv.style.order = "1";
-    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~2,400 words</p></div>';
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~2,500 words</p></div>';
     meta.appendChild(lenDiv);
     var diffDiv = document.createElement("div");
     diffDiv.style.order = "4";
@@ -588,9 +588,10 @@ document.addEventListener("DOMContentLoaded", function () {
 <section id="inception-module" class="level2">
 <h2 class="anchored" data-anchor-id="inception-module">Inception Module</h2>
 <p>Say you have a 28 by 28 by 192 input volume. Instead of committing to one filter size, or even to whether you want a convolutional layer or a pooling layer, an inception layer does all of them.</p>
+<p>This first version intentionally sends the input directly into the 3 by 3 and 5 by 5 convolutions. It is the expensive design used to motivate the bottleneck layers introduced later. The completed module under <a href="#building-the-full-network">Building the Full Network</a> adds one by one reductions before those costly branches.</p>
 <p>You could use a 1 by 1 convolution and get 28 by 28 by 64 out. Maybe you also want to try a 3 by 3, giving 28 by 28 by 128. You then stack that second volume next to the first. To make the dimensions line up, the 3 by 3 is a same convolution, so its output height and width stay at 28 by 28. Perhaps a 5 by 5 filter works better, so do that too and have it output 28 by 28 by 32, again as a same convolution.</p>
-<p>Finally, maybe you do not want a convolutional layer at all. Apply pooling, which gives some other output, and stack that up as well. Here pooling outputs 28 by 28 by 32.</p>
-<div id="515cd65f" class="cell" data-execution_count="1">
+<p>Finally, maybe you do not want a convolutional layer at all. Apply pooling with same padding and a stride of one, then use a one by one convolution to project that branch down to 32 channels. That gives a fourth 28 by 28 by 32 output to stack with the others.</p>
+<div id="7d5901d0" class="cell" data-execution_count="1">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -599,7 +600,7 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 </div>
 </div>
-<p>One detail about the pooling branch is unusual and easy to miss. To make all the dimensions match you have to use <strong>padding for the max pooling</strong>, which is not how pooling normally works. If you want the input to be 28 by 28 and the output to be 28 by 28 as well, you need same padding together with a <strong>stride of one</strong> for the pooling. That looks odd at first, but it is what lets the pooling output stack alongside the others.</p>
+<p>One detail about the pooling branch is unusual and easy to miss. To keep its height and width at 28 by 28, it uses same padding together with a <strong>stride of one</strong>. Pooling alone would still have 192 channels, because pooling works independently on every input channel. The following one by one convolution is what projects the pooled volume down to 32 channels, allowing it to concatenate with the other branches.</p>
 <p>With an inception module like this you input one volume and output another. Adding up the branches, <span class="math inline">\(64 + 128 + 32 + 32 = 256\)</span>, so the module takes 28 by 28 by 192 in and gives 28 by 28 by 256 out.</p>
 <p>That is the heart of the inception network, due to Christian Szegedy, Wei Liu, Yangqing Jia, Pierre Sermanet, Scott Reed, Dragomir Anguelov, Dumitru Erhan, Vincent Vanhoucke, and Andrew Rabinovich, published as <a href="https://doi.org/10.1109/CVPR.2015.7298594">Szegedy et al.&nbsp;(2015)</a>. The basic idea is that instead of picking one filter size or pooling and committing to it, you do them all, concatenate the outputs, and let the network learn whichever combination of filter sizes it wants to use.</p>
 </section>
@@ -608,7 +609,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <p>There is a problem with the inception module as described, namely computational cost. It is worth working out the cost of just the 5 by 5 branch.</p>
 <p>That branch takes the 28 by 28 by 192 input and applies a 5 by 5 same convolution with 32 filters, producing 28 by 28 by 32. There are 32 filters because the output has 32 channels, and each filter is 5 by 5 by 192.</p>
 <p>The total number of multiplications is the number of output values times the number of multiplications needed for each one. There are <span class="math inline">\(28 \times 28 \times 32\)</span> output values, and each one costs <span class="math inline">\(5 \times 5 \times 192\)</span> multiplications.</p>
-<div id="a08a8138" class="cell" data-execution_count="2">
+<div id="e9534281" class="cell" data-execution_count="2">
 <div class="cell-output cell-output-stdout">
 <pre><code>output values      28 x 28 x 32     =     25,088
 cost per value     5 x 5 x 192      =      4,800
@@ -621,7 +622,7 @@ total multiplications               = 120,422,400   (120 million)</code></pre>
 <h2 class="anchored" data-anchor-id="bottleneck-layer">Bottleneck Layer</h2>
 <p>Using the <a href="../../deep-learning/convolutional-neural-networks/one-by-one-convolutions.html">one by one convolution</a>, the cost can be cut by roughly a factor of ten.</p>
 <p>Here is the alternative. Take the same 28 by 28 by 192 input, use a one by one convolution to reduce it to 16 channels instead of 192, and then run the 5 by 5 convolution on that much smaller volume to get the final output. The input and output dimensions are unchanged, still 28 by 28 by 192 in and 28 by 28 by 32 out. What has changed is that the huge volume on the left has been shrunk to a much smaller intermediate volume with 16 channels instead of 192.</p>
-<div id="7fc72a77" class="cell" data-execution_count="3">
+<div id="dc24a48c" class="cell" data-execution_count="3">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -632,7 +633,7 @@ total multiplications               = 120,422,400   (120 million)</code></pre>
 </div>
 <p>This intermediate volume is sometimes called a <strong>bottleneck layer</strong>, because a bottleneck is the smallest part of something. If you picture a glass bottle, the bottleneck is where it narrows. In the same way this is the narrowest part of the network, where the representation is shrunk before being expanded again.</p>
 <p>Now the cost. The one by one convolution has 16 filters, each of dimension 1 by 1 by 192, where that 192 matches the input channel count. Then the 5 by 5 convolution runs on the 16 channel volume.</p>
-<div id="468206ec" class="cell" data-execution_count="4">
+<div id="eaf583f5" class="cell" data-execution_count="4">
 <div class="cell-output cell-output-stdout">
 <pre><code>1x1 step   28x28x16 outputs, 192 each     =    2,408,448   (2.4M)
 5x5 step   28x28x32 outputs, 5x5x16 each  =   10,035,200   (10.0M)
@@ -704,11 +705,11 @@ ratio                                     = 0.103, about one tenth</code></pre>
 <section id="building-the-full-network" class="level2">
 <h2 class="anchored" data-anchor-id="building-the-full-network">Building the Full Network</h2>
 <p>With the bottleneck idea in hand, the complete inception module can be assembled. The module takes as input the activation from some previous layer, again 28 by 28 by 192.</p>
-<p>The example worked through above was the 1 by 1 followed by the 5 by 5, where the 1 by 1 has 16 channels and the 5 by 5 outputs 28 by 28 by 32. To save computation on the 3 by 3 convolution you do the same thing there, putting a 1 by 1 in front of it, and the 3 by 3 outputs 28 by 28 by 128.</p>
-<p>The 1 by 1 branch needs no reduction, because there is no point putting a 1 by 1 convolution in front of another 1 by 1 convolution, so it is a single step outputting 28 by 28 by 64.</p>
+<p>The example worked through above was the 1 by 1 followed by the 5 by 5, where the 1 by 1 has 16 channels and the 5 by 5 outputs 28 by 28 by 32. To save computation on the 3 by 3 convolution you do the same thing there, putting a 1 by 1 reduction in front of it. In the concrete GoogLeNet inception(3a) configuration shown below, that reduction uses 96 filters and the following 3 by 3 convolution uses 128 filters.</p>
+<p>The standalone 1 by 1 branch needs no bottleneck reduction. Its convolution is already inexpensive, so it directly produces the 28 by 28 by 64 branch output. A second 1 by 1 layer could add another learned transformation, but it would not serve the cost-saving purpose of reducing channels before a larger spatial filter.</p>
 <p>Finally the pooling layer. To be able to concatenate everything, the pooling uses same padding so the output stays 28 by 28. But notice that max pooling, even with same padding and a 3 by 3 filter at stride 1, gives 28 by 28 by <strong>192</strong>. Pooling acts on each channel independently, so it has the same depth as its input, which is a lot of channels. So you add one more 1 by 1 convolutional layer after the pooling to shrink the number of channels, taking it down to 28 by 28 by 32 using 32 filters of dimension 1 by 1 by 192. Without that step the pooling branch would dominate the channels of the final output.</p>
 <p>Then you take all of these blocks and do channel concatenation, giving <span class="math inline">\(64 + 128 + 32 + 32 = 256\)</span>, so 28 by 28 by 256.</p>
-<div id="516befdf" class="cell" data-execution_count="5">
+<div id="3ee7909f" class="cell" data-execution_count="5">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -743,7 +744,7 @@ ratio                                     = 0.103, about one tenth</code></pre>
 </div>
 <div id="callout-4" class="callout-4-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>Pooling has no filters and cannot change the channel count, so its output has the same depth as its input, 192 channels. Putting a 1 by 1 in front would be pointless, since the pooling would just pass whatever depth it received straight through. The reduction has to come afterwards, taking 192 down to 32, otherwise the pooling branch alone would contribute 192 of the concatenated channels and swamp the other three.</p>
+<p>Pooling has no learned filters and operates independently on each channel, so its output has the same depth as its input, 192 channels. In this branch the goal is to preserve pooled features first, then learn a 32-channel projection, so the 1 by 1 convolution comes after pooling. Moving it before pooling would define a different computation rather than an equivalent rearrangement. Without the projection, the pooling branch alone would contribute 192 channels and dominate the concatenated output.</p>
 </div>
 </div>
 </div>
@@ -761,7 +762,7 @@ ratio                                     = 0.103, about one tenth</code></pre>
 </div>
 <div id="callout-5" class="callout-5-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>It would accomplish nothing. Two 1 by 1 convolutions in sequence do the same kind of work as one, so the branch is a single step. The reductions exist to make an expensive 3 by 3 or 5 by 5 filter look through fewer channels, and a 1 by 1 filter is already the cheapest possible.</p>
+<p>It is not needed as a bottleneck. The reductions exist to make an expensive 3 by 3 or 5 by 5 filter process fewer channels, while a 1 by 1 filter is already inexpensive. Two 1 by 1 layers with a non-linearity between them could learn a richer transformation, but that is a different design goal from the computational reduction used in the other two convolution branches.</p>
 </div>
 </div>
 </div>
@@ -815,7 +816,7 @@ ratio                                     = 0.103, about one tenth</code></pre>
   <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
     <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 95%; border-radius: 6px;"></div>
   </div>
-  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">95% completed (686 of 721 min)</p>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">95% completed (690 of 725 min)</p>
 </div>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
