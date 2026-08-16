@@ -586,7 +586,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 }
 </style>
 
-<p>Pick how many colors you want, optionally give a starting color, and get a palette built with color science. The generator works in the OKLCH color space, so the colors are spaced by how different they look to the human eye, and every swatch keeps a consistent perceived lightness and vividness. Drag on the color wheel to set the starting color; the large ring marks the seed and the small rings show where each generated color sits on the classic wheel. The eyedropper button can grab a color from anywhere on your screen in browsers that support it, such as Chrome and Edge. Click any swatch to copy its hex code. Everything runs in your browser, nothing is sent to a server.</p>
+<p>Pick how many colors you want, optionally give a starting color, and get a palette built with color science. The generator works in the OKLCH color space, so the colors are spaced by how different they look to the human eye, and every swatch keeps a consistent perceived lightness and vividness. Drag on the color wheel to set the starting color; the large ring marks the seed and the small rings show where each generated color sits on the classic wheel. The eyedropper button can grab a color from anywhere on your screen in browsers that support it, such as Chrome and Edge. Click it a second time, or press Escape, to cancel without picking. Click any swatch to copy its hex code. Everything runs in your browser, nothing is sent to a server.</p>
 
 <div class="pal-container">
 
@@ -597,10 +597,10 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   <div class="pal-field">
     <label for="pal-seed-hex">Starting Color</label>
     <div class="pal-seed-row">
-      <input type="color" id="pal-seed-color" aria-label="Starting color picker">
+      <input type="color" id="pal-seed-color" value="#22176f" aria-label="Starting color picker">
       <input type="text" id="pal-seed-hex" maxlength="7" spellcheck="false" aria-label="Starting color hex code">
-      <button id="pal-roll" class="pal-btn" title="Pick a random starting color">🎲</button>
-      <button id="pal-eyedrop" class="pal-btn" title="Pick a color from the screen" aria-label="Pick a color from the screen"><svg viewbox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l9.92-9.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12a1 1 0 0 0 .01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92z"></path></svg></button>
+      <button type="button" id="pal-roll" class="pal-btn" title="Pick a random starting color">🎲</button>
+      <button type="button" id="pal-eyedrop" class="pal-btn" title="Pick a color from the screen" aria-label="Pick a color from the screen"><svg viewbox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l9.92-9.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12a1 1 0 0 0 .01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92z"></path></svg></button>
     </div>
   </div>
   <div class="pal-field">
@@ -639,7 +639,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 <div class="pal-export">
   <div class="pal-export-head">
     <span>CSS Variables</span>
-    <button id="pal-copy-css" class="pal-btn">Copy CSS</button>
+    <button type="button" id="pal-copy-css" class="pal-btn">Copy CSS</button>
   </div>
   <pre id="pal-css"></pre>
 </div>
@@ -1048,10 +1048,16 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
   /* ---- events ---- */
 
-  seedColor.addEventListener('input', function() {
+  function syncFromColorPicker() {
     seedHex.value = seedColor.value.toUpperCase();
     generate();
-  });
+  }
+
+  /* Browsers differ here: most emit input while the native picker is open,
+     while some only emit change once it closes.  Listen for both so the
+     swatches and wheel always follow the selected native color. */
+  seedColor.addEventListener('input', syncFromColorPicker);
+  seedColor.addEventListener('change', syncFromColorPicker);
 
   seedHex.addEventListener('input', function() {
     var m = seedHex.value.trim().match(/^#?([0-9a-fA-F]{6})$/);
@@ -1070,7 +1076,30 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   schemeSelect.addEventListener('change', generate);
   engineSelect.addEventListener('change', generate);
 
-  var wheelDragging = false;
+  /* A pointer reports several moves per displayed frame, and every pick redraws
+     the wheel and rebuilds the palette, the contrast table and the CSS export.
+     Keep only the latest position and spend that work once per frame, which is
+     as often as the screen can show it anyway. */
+  var wheelDragging = false, pendingPoint = null, pendingFrame = 0;
+
+  function pickPending() {
+    pendingFrame = 0;
+    var p = pendingPoint;
+    pendingPoint = null;
+    if (p) pickFromEvent(p);
+  }
+
+  function queuePick(e) {
+    pendingPoint = { clientX: e.clientX, clientY: e.clientY };
+    if (!pendingFrame) pendingFrame = requestAnimationFrame(pickPending);
+  }
+
+  function endDrag() {
+    wheelDragging = false;
+    if (pendingFrame) { cancelAnimationFrame(pendingFrame); pendingFrame = 0; }
+    if (pendingPoint) pickPending();      // never drop the final position
+  }
+
   wheel.addEventListener('pointerdown', function(e) {
     e.preventDefault();
     wheelDragging = true;
@@ -1078,10 +1107,10 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     pickFromEvent(e);
   });
   wheel.addEventListener('pointermove', function(e) {
-    if (wheelDragging) pickFromEvent(e);
+    if (wheelDragging) queuePick(e);
   });
-  wheel.addEventListener('pointerup', function() { wheelDragging = false; });
-  wheel.addEventListener('pointercancel', function() { wheelDragging = false; });
+  wheel.addEventListener('pointerup', endDrag);
+  wheel.addEventListener('pointercancel', endDrag);
 
   rollBtn.addEventListener('click', function() {
     setSeed(randomSeedHex());
@@ -1089,16 +1118,56 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   });
 
   /* Screen eyedropper (EyeDropper API, Chromium browsers). The button is
-     hidden where the API does not exist, such as Firefox and Safari. */
+     hidden where the API does not exist, such as Firefox and Safari.
+
+     open() takes an AbortSignal, and that signal is the only way to end a
+     sampling session from script. Without one, a session the reader starts and
+     then walks away from stays live for as long as the tab does, and while it
+     is live the browser keeps a screen sampler running. On macOS that is the
+     system ColorSampler process, which reads back screen pixels continuously
+     and drags the whole window compositor down with it. Three things close a
+     session here: a second click, leaving the page, and a watchdog. */
   if (window.EyeDropper) {
+    var dropper = null, dropperTimer = 0;
+
+    /* Session is over on its own: drop the timer and the button state, but do
+       not call abort() on a controller whose promise has already settled. */
+    function forgetDropper() {
+      if (dropperTimer) { clearTimeout(dropperTimer); dropperTimer = 0; }
+      dropper = null;
+      eyeBtn.setAttribute('aria-pressed', 'false');
+      eyeBtn.title = 'Pick a color from the screen';
+    }
+
+    /* Session is still live and has to be told to stop. */
+    function closeDropper() {
+      if (dropper) dropper.abort();
+      forgetDropper();
+    }
+
+    eyeBtn.setAttribute('aria-pressed', 'false');
+
     eyeBtn.addEventListener('click', function() {
-      new EyeDropper().open().then(function(res) {
+      if (dropper) return closeDropper();       // a second click cancels
+      dropper = new AbortController();
+      eyeBtn.setAttribute('aria-pressed', 'true');
+      eyeBtn.title = 'Cancel the screen picker';
+      /* Nobody spends two minutes choosing one pixel. If the promise has not
+         settled by then the session was abandoned, so end it rather than leave
+         a sampler running behind a forgotten tab. */
+      dropperTimer = setTimeout(closeDropper, 120000);
+      new EyeDropper().open({ signal: dropper.signal }).then(function(res) {
         if (/^#[0-9a-fA-F]{6}$/.test(res.sRGBHex)) {
           setSeed(res.sRGBHex);
           generate();
         }
-      }).catch(function() {});
+      })['catch'](function() {
+        /* Escape, a click that selects nothing, and our own abort land here */
+      })['finally'](forgetDropper);
     });
+
+    /* Closing the tab or navigating away must not strand a session */
+    window.addEventListener('pagehide', closeDropper);
   } else {
     eyeBtn.style.display = 'none';
   }
