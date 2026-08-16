@@ -4,8 +4,32 @@
 // (e.g. Overview) span all columns. Below the lg breakpoint the menu falls
 // back to Bootstrap's normal list.
 (function () {
+  function addClientInfoLink(menu) {
+    var toggle = menu.parentElement && menu.parentElement.querySelector(".dropdown-toggle");
+    if (!toggle || toggle.textContent.trim() !== "Tools") return;
+    if (menu.querySelector('a[href$="/tools/client-info.html"], a[href="tools/client-info.html"], a[href="../tools/client-info.html"]')) return;
+
+    var networkingHeader = Array.from(menu.querySelectorAll(".dropdown-header")).find(function (header) {
+      return header.textContent.trim() === "Networking";
+    });
+    if (!networkingHeader) return;
+
+    var item = document.createElement("li");
+    var link = document.createElement("a");
+    var text = document.createElement("span");
+    item.className = "nav-item";
+    link.className = "dropdown-item";
+    link.href = "/tools/client-info.html";
+    text.className = "dropdown-text";
+    text.textContent = "Client Info";
+    link.appendChild(text);
+    item.appendChild(link);
+    networkingHeader.insertAdjacentElement("afterend", item);
+  }
+
   function apply() {
     document.querySelectorAll(".navbar .dropdown-menu").forEach(function (menu) {
+      addClientInfoLink(menu);
       if (menu.classList.contains("dropdown-multicol")) return;
       if (menu.querySelectorAll(".dropdown-header").length < 2) return;
 
