@@ -1653,6 +1653,70 @@ ul.task-list li input[type="checkbox"] {
   color: var(--site-accent);
 }
 
+.tee-share-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px 16px;
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--site-surface-border);
+  border-left: 4px solid var(--site-accent);
+  border-radius: 12px;
+  background: var(--site-accent-soft);
+  color: inherit;
+  font-size: 0.76rem;
+}
+
+.tee-share-notice[hidden] { display: none; }
+
+.tee-share-notice strong {
+  flex: 0 0 auto;
+  color: var(--site-accent);
+}
+
+.tee-share-card {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--site-surface-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--site-surface) 90%, var(--site-accent-soft));
+}
+
+.tee-share-card > p {
+  margin: 0 0 10px;
+  font-size: 0.7rem;
+  line-height: 1.48;
+  opacity: 0.72;
+}
+
+.tee-share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.tee-share-link {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-top: 9px;
+  padding: 8px 9px;
+  border: 1px solid var(--site-surface-border);
+  border-radius: 9px;
+  background: var(--bs-body-bg, var(--site-surface));
+  color: inherit;
+  font: 600 0.66rem/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.tee-share-status {
+  min-height: 1.2em;
+  margin: 8px 1px 0;
+  color: var(--site-accent);
+  font-size: 0.67rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
 .tee-logo-meta {
   display: block;
   margin-top: 4px;
@@ -2248,6 +2312,11 @@ ul.task-list li input[type="checkbox"] {
     <a class="app-pill-home" href="../tools/">All tools</a>
   </nav>
 
+  <div class="tee-share-notice" id="tee-share-notice" role="status" hidden="">
+    <strong id="tee-share-notice-title">Editing a shared copy</strong>
+    <span id="tee-share-notice-copy">Changes stay in this browser until you create a new link. The original link never changes.</span>
+  </div>
+
   <div class="tee-workspace">
     <div class="tee-rail tee-rail-left" aria-label="Garment, theme, and composition workflow">
       <details class="tee-panel tee-accordion" id="tee-step-fit" open="">
@@ -2443,6 +2512,13 @@ ul.task-list li input[type="checkbox"] {
               <div class="tee-preflight-actions"><button type="button" class="tee-btn tee-btn-small" id="tee-copy-brief">Copy print brief</button></div>
             </div>
             <div class="tee-science-links">Checks are advisory until your exact printer and garment template are selected. Evidence: <a href="https://www.printful.com/creating-dtg-file" target="_blank" rel="noopener noreferrer">DTG files</a> · <a href="https://www.printful.com/transparency-in-dtg-files" target="_blank" rel="noopener noreferrer">transparency</a> · <a href="https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum" target="_blank" rel="noopener noreferrer">luminance contrast</a> · <a href="https://helpx.adobe.com/uk/fonts/using/font-licensing.html" target="_blank" rel="noopener noreferrer">font licensing</a>.</div>
+            <section class="tee-share-card" aria-labelledby="tee-share-title">
+              <div class="tee-production-title"><strong id="tee-share-title">Share this design</strong><span>Expires after 10 days</span></div>
+              <p>Anyone with the link can open an editable copy. They cannot overwrite this snapshot. Their edited version needs a new link. Artwork files are included only when you create a link.</p>
+              <div class="tee-share-actions"><button type="button" class="tee-btn tee-btn-primary tee-btn-small" id="tee-share-create">Create 10-day link</button><button type="button" class="tee-btn tee-btn-small" id="tee-share-copy" hidden="">Copy link</button><button type="button" class="tee-btn tee-btn-small" id="tee-share-revoke" hidden="">Revoke link</button></div>
+              <label class="visually-hidden" for="tee-share-link">Shared design link</label><input class="tee-share-link" id="tee-share-link" type="text" readonly="" hidden="">
+              <p class="tee-share-status" id="tee-share-status" aria-live="polite">Nothing has been shared.</p>
+            </section>
           </div>
           <div class="tee-step-next"><button type="button" class="tee-btn tee-btn-primary" id="tee-finish">Review &amp; export →</button></div>
         </div>
@@ -2831,6 +2907,14 @@ ul.task-list li input[type="checkbox"] {
   var exportInkModeInput = document.getElementById('tee-export-ink-mode');
   var resetDialog = document.getElementById('tee-reset-dialog');
   var resetTrigger = document.getElementById('tee-restore-defaults');
+  var shareNotice = document.getElementById('tee-share-notice');
+  var shareNoticeTitle = document.getElementById('tee-share-notice-title');
+  var shareNoticeCopy = document.getElementById('tee-share-notice-copy');
+  var shareCreateButton = document.getElementById('tee-share-create');
+  var shareCopyButton = document.getElementById('tee-share-copy');
+  var shareRevokeButton = document.getElementById('tee-share-revoke');
+  var shareLinkInput = document.getElementById('tee-share-link');
+  var shareStatus = document.getElementById('tee-share-status');
   var PREVIEW_ZOOM_MIN = 1;
   var PREVIEW_ZOOM_MAX = 5;
   var POSITION_HISTORY_LIMIT = 20;
@@ -2845,6 +2929,33 @@ ul.task-list li input[type="checkbox"] {
   var artworkCatalogController = null;
   var artworkAssetController = null;
   var artworkRequestSerial = 0;
+  var SHARE_SCHEMA_VERSION = 1;
+  var MAX_SHARE_JSON_BYTES = 20 * 1024 * 1024;
+  var MAX_SHARED_ARTWORKS = 12;
+  var SHARE_BASE_URL = 'https://h.oliabak.com/tools/tshirt-design.html';
+  var SHARE_ID_PATTERN = /^s_[A-Za-z0-9_-]{22}$/;
+  var SHARE_REVOCATION_KEY = 'tshirt-share-revocations-v1';
+  var SHARE_FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.12.0/';
+  var SHARE_RECAPTCHA_KEY = '6LdhmdosAAAAAGh4ojYqXCU0JOeVo3X-R1qmMaZq';
+  var SHARE_FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyDpRFBtX8LUmZmEX7VcIeMxQKQOtLVdf-A',
+    authDomain: 'oliabak-paste.firebaseapp.com',
+    databaseURL: 'https://oliabak-paste-default-rtdb.firebaseio.com',
+    projectId: 'oliabak-paste',
+    storageBucket: 'oliabak-paste.firebasestorage.app',
+    messagingSenderId: '968986695208',
+    appId: '1:968986695208:web:fc5f3d37911810b2e0471d'
+  };
+  var shareRequestSerial = 0;
+  var shareStateVersion = 0;
+  var shareApplying = false;
+  var shareBusy = false;
+  var shareMessage = '';
+  var shareFirebasePromise = null;
+  var currentShare = null;
+  var shareDirty = false;
+  var revokeArmedUntil = 0;
+  var shareNoticeMode = '';
 
   function byId(list, id) {
     return list.filter(function (item) { return item.id === id; })[0];
@@ -3016,7 +3127,7 @@ ul.task-list li input[type="checkbox"] {
     if (fontMetricRefreshFrame) return;
     fontMetricRefreshFrame = requestAnimationFrame(function () {
       fontMetricRefreshFrame = 0;
-      renderPreview();
+      renderPreview({ preserveShareState: true });
     });
   }
 
@@ -5029,8 +5140,13 @@ ul.task-list li input[type="checkbox"] {
     applyPreviewView();
   }
 
-  function renderPreview() {
+  function renderPreview(options) {
     invalidatePendingPng();
+    if (!shareApplying && !(options && options.preserveShareState === true)) {
+      shareStateVersion += 1;
+      if (currentShare) shareDirty = true;
+      shareMessage = '';
+    }
     var design = getDesign();
     selectedFontKeys(design).forEach(ensureWebFont);
     accentInput.disabled = oneColorInput.checked;
@@ -5088,6 +5204,7 @@ ul.task-list li input[type="checkbox"] {
     snapObjectsInput.checked = state.snapToObjects;
     updateSelectionUI();
     renderPreflight(design);
+    updateShareUi();
   }
 
   function updateLogoMeta(design) {
@@ -5282,7 +5399,622 @@ ul.task-list li input[type="checkbox"] {
     exportPreview.replaceChildren(image);
   }
 
+
+  function cleanSharedText(value, label, maximum) {
+    if (typeof value !== 'string' || value.length > maximum) throw new Error(label + ' is invalid');
+    var clean = Array.from(value, function (character) {
+      var code = character.codePointAt(0);
+      return code === 0x09 || code === 0x0A || code === 0x0D || code >= 0x20 ? character : '';
+    }).join('');
+    return clean.normalize('NFC');
+  }
+
+  function sharedNumber(value, label, minimum, maximum) {
+    if (typeof value !== 'number' || !isFinite(value) || value < minimum || value > maximum) throw new Error(label + ' is invalid');
+    return value;
+  }
+
+  function sharedBoolean(value, label) {
+    if (typeof value !== 'boolean') throw new Error(label + ' is invalid');
+    return value;
+  }
+
+  function sharedColor(value, label) {
+    if (typeof value !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(value)) throw new Error(label + ' is invalid');
+    return value.toUpperCase();
+  }
+
+  function sharedEnum(value, allowed, label) {
+    if (typeof value !== 'string' || allowed.indexOf(value) === -1) throw new Error(label + ' is invalid');
+    return value;
+  }
+
+  function sharedOffset(value, label) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(label + ' is invalid');
+    return {
+      x: sharedNumber(value.x, label, -12000, 12000),
+      y: sharedNumber(value.y, label, -12000, 12000)
+    };
+  }
+
+  function svgSourceFromSharedData(value) {
+    var match = String(value).match(/^data:image\/svg\+xml(?:;charset=utf-8)?(;base64)?,([\s\S]*)$/i);
+    if (!match) throw new Error('Shared SVG data is invalid');
+    if (match[1]) {
+      var payload = match[2].replace(/\s/g, '');
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(payload) || payload.length > Math.ceil(MAX_LOGO_BYTES / 3) * 4 + 4) throw new Error('Shared SVG data is invalid');
+      var decoded = atob(payload);
+      if (decoded.length > MAX_LOGO_BYTES) throw new Error('Shared SVG data is too large');
+      var bytes = new Uint8Array(decoded.length);
+      for (var index = 0; index < decoded.length; index++) bytes[index] = decoded.charCodeAt(index);
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    }
+    var source = decodeURIComponent(match[2]);
+    if (new TextEncoder().encode(source).length > MAX_LOGO_BYTES) throw new Error('Shared SVG data is too large');
+    return source;
+  }
+
+  function normalizeSharedArtwork(item, index) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Shared artwork is invalid');
+    var id = cleanSharedText(item.id, 'Artwork ID', 32);
+    if (!/^artwork-[1-9][0-9]{0,5}$/.test(id)) throw new Error('Shared artwork ID is invalid');
+    var type = sharedEnum(item.type, ['image/svg+xml', 'image/png', 'image/jpeg', 'image/webp'], 'Artwork type');
+    var builtIn = sharedBoolean(item.builtIn, 'Artwork source');
+    var data = item.data;
+    var width;
+    var height;
+    var source = '';
+    if (type === 'image/svg+xml') {
+      var sanitized = sanitizeSvgLogo(svgSourceFromSharedData(data));
+      data = sanitized.data;
+      source = sanitized.source;
+      width = sanitized.width;
+      height = sanitized.height;
+    } else {
+      var raster = rasterDataUrlInfo(data);
+      if (!raster || raster.type !== type) throw new Error('Shared raster artwork is invalid');
+      width = raster.width;
+      height = raster.height;
+    }
+    var catalogId = builtIn ? cleanSharedText(item.catalogId, 'Artwork catalog ID', 100) : '';
+    if (catalogId && !/^[a-z0-9-]+$/.test(catalogId)) throw new Error('Shared artwork catalog ID is invalid');
+    var licenseFile = builtIn ? cleanSharedText(item.licenseFile || '', 'Artwork license', 300) : '';
+    if (licenseFile && (!/^\/media\/tshirt-design\/artwork\/[A-Za-z0-9_./-]+$/.test(licenseFile) || licenseFile.indexOf('..') !== -1)) throw new Error('Shared artwork license is invalid');
+    var sourceUrl = builtIn ? cleanSharedText(item.sourceUrl || '', 'Artwork source', 300) : '';
+    if (sourceUrl) {
+      var parsedSource = new URL(sourceUrl);
+      if (parsedSource.protocol !== 'https:' || parsedSource.hostname !== 'github.com' || parsedSource.username || parsedSource.password || parsedSource.port) throw new Error('Shared artwork source is invalid');
+      sourceUrl = parsedSource.href;
+    }
+    var recolorable = builtIn && sharedBoolean(item.recolorable, 'Artwork color mode') && /#(?:5B5BD6|24243A|C7C9FF)/i.test(source);
+    return {
+      id: id,
+      data: data,
+      source: source,
+      name: cleanSharedText(item.name, 'Artwork name', 100),
+      type: type,
+      width: width,
+      height: height,
+      vector: type === 'image/svg+xml',
+      hybrid: type === 'image/svg+xml' ? sharedBoolean(item.hybrid, 'Artwork hybrid mode') : false,
+      hasTransparency: sharedBoolean(item.hasTransparency, 'Artwork transparency'),
+      semiTransparent: sharedBoolean(item.semiTransparent, 'Artwork partial transparency'),
+      builtIn: builtIn,
+      recolorable: recolorable,
+      catalogId: catalogId,
+      creator: builtIn ? cleanSharedText(item.creator, 'Artwork creator', 100) : '',
+      licenseName: builtIn ? cleanSharedText(item.licenseName, 'Artwork license', 100) : '',
+      licenseFile: licenseFile,
+      sourceUrl: sourceUrl,
+      size: sharedNumber(item.size, 'Artwork size', 3, 100),
+      opacity: sharedNumber(item.opacity, 'Artwork opacity', 0.05, 1),
+      position: sharedEnum(item.position, ['top', 'bottom', 'left', 'right', 'center'], 'Artwork placement'),
+      layer: sharedEnum(item.layer, ['front', 'behind'], 'Artwork layer'),
+      color: sharedColor(item.color, 'Artwork color'),
+      offset: sharedOffset(item.offset, 'Artwork offset')
+    };
+  }
+
+  function buildShareSnapshot() {
+    var snapshot = {
+      schemaVersion: SHARE_SCHEMA_VERSION,
+      design: {
+        theme: state.theme,
+        layout: state.layout,
+        fit: state.fit,
+        quote: cleanSharedText(quoteInput.value.trim(), 'Text', 360),
+        author: cleanSharedText(authorInput.value.trim(), 'Attribution', 80),
+        letterCase: caseInput.value,
+        shirt: shirtInput.value.toUpperCase(),
+        ink: inkInput.value.toUpperCase(),
+        signature: signatureInput.value.toUpperCase(),
+        accent: accentInput.value.toUpperCase(),
+        autoInk: Boolean(state.autoInk),
+        autoSignatureColor: Boolean(state.autoSignatureColor),
+        oneColor: Boolean(oneColorInput.checked),
+        quoteFont: quoteFontInput.value,
+        authorFont: authorFontInput.value,
+        weight: String(weightInput.value),
+        styleAsQuote: Boolean(styleAsQuoteInput.checked),
+        quoteItalic: Boolean(quoteItalicInput.checked),
+        size: Number(sizeInput.value),
+        textWidth: Number(textWidthInput.value),
+        quoteSize: Number(quoteSizeInput.value),
+        authorSize: Number(authorSizeInput.value),
+        verticalOffset: Number(yInput.value),
+        letterSpacing: Number(spacingInput.value),
+        lineSpacing: Number(leadingInput.value),
+        attributionGap: Number(attributionGapInput.value),
+        printMethod: printMethodInput.value,
+        fabric: fabricInput.value,
+        exportInkMode: state.exportInkMode,
+        textBoxCenterOffsetX: Number(state.textBoxCenterOffsetX),
+        textBoxCenterOffsetY: Number(state.textBoxCenterOffsetY),
+        itemOffsets: {
+          composition: { x: Number(state.itemOffsets.composition.x), y: Number(state.itemOffsets.composition.y) },
+          quote: { x: Number(state.itemOffsets.quote.x), y: Number(state.itemOffsets.quote.y) },
+          author: { x: Number(state.itemOffsets.author.x), y: Number(state.itemOffsets.author.y) }
+        },
+        artworks: state.artworks.map(function (item) {
+          return {
+            id: item.id,
+            data: item.data,
+            name: item.name,
+            type: item.type,
+            width: Number(item.width),
+            height: Number(item.height),
+            vector: Boolean(item.vector),
+            hybrid: Boolean(item.hybrid),
+            hasTransparency: Boolean(item.hasTransparency),
+            semiTransparent: Boolean(item.semiTransparent),
+            builtIn: Boolean(item.builtIn),
+            recolorable: Boolean(item.recolorable),
+            catalogId: item.catalogId || '',
+            creator: item.creator || '',
+            licenseName: item.licenseName || '',
+            licenseFile: item.licenseFile || '',
+            sourceUrl: item.sourceUrl || '',
+            size: Number(item.size),
+            opacity: Number(item.opacity),
+            position: item.position,
+            layer: item.layer,
+            color: item.color,
+            offset: { x: Number(item.offset.x), y: Number(item.offset.y) }
+          };
+        })
+      }
+    };
+    if (snapshot.design.artworks.length > MAX_SHARED_ARTWORKS) throw new Error('A shared design can contain at most 12 artworks');
+    var bytes = new TextEncoder().encode(JSON.stringify(snapshot)).length;
+    if (bytes > MAX_SHARE_JSON_BYTES) throw new Error('The shared design package is larger than 20 MB');
+    return snapshot;
+  }
+
+  function normalizeIncomingShare(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot) || snapshot.schemaVersion !== SHARE_SCHEMA_VERSION) throw new Error('Shared design version is not supported');
+    var item = snapshot.design;
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Shared design is invalid');
+    var artworks = Array.isArray(item.artworks) ? item.artworks : null;
+    if (!artworks || artworks.length > MAX_SHARED_ARTWORKS) throw new Error('Shared artwork list is invalid');
+    var cleanArtworks = artworks.map(normalizeSharedArtwork);
+    var ids = {};
+    cleanArtworks.forEach(function (artwork) {
+      if (ids[artwork.id]) throw new Error('Shared artwork IDs are duplicated');
+      ids[artwork.id] = true;
+    });
+    var itemOffsets = item.itemOffsets;
+    if (!itemOffsets || typeof itemOffsets !== 'object' || Array.isArray(itemOffsets)) throw new Error('Shared item offsets are invalid');
+    var themeIds = themes.map(function (theme) { return theme.id; });
+    var layoutIds = layouts.map(function (layout) { return layout.id; });
+    var fitIds = shirtFits.map(function (fit) { return fit.id; });
+    return {
+      theme: sharedEnum(item.theme, themeIds, 'Theme'),
+      layout: sharedEnum(item.layout, layoutIds, 'Composition'),
+      fit: sharedEnum(item.fit, fitIds, 'Fit'),
+      quote: cleanSharedText(item.quote, 'Text', 360),
+      author: cleanSharedText(item.author, 'Attribution', 80),
+      letterCase: sharedEnum(item.letterCase, ['original', 'upper', 'title', 'lower'], 'Letter case'),
+      shirt: sharedColor(item.shirt, 'Shirt color'),
+      ink: sharedColor(item.ink, 'Text color'),
+      signature: sharedColor(item.signature, 'Signature color'),
+      accent: sharedColor(item.accent, 'Decoration color'),
+      autoInk: sharedBoolean(item.autoInk, 'Automatic ink mode'),
+      autoSignatureColor: sharedBoolean(item.autoSignatureColor, 'Automatic signature mode'),
+      oneColor: sharedBoolean(item.oneColor, 'One-color mode'),
+      quoteFont: sharedEnum(item.quoteFont, ['theme'].concat(Object.keys(fontFamilies)), 'Quote font'),
+      authorFont: sharedEnum(item.authorFont, ['match'].concat(Object.keys(authorFonts)), 'Attribution font'),
+      weight: sharedEnum(String(item.weight), ['theme', '400', '500', '600', '700', '800', '900'], 'Text weight'),
+      styleAsQuote: sharedBoolean(item.styleAsQuote, 'Quotation mode'),
+      quoteItalic: sharedBoolean(item.quoteItalic, 'Italic mode'),
+      size: sharedNumber(item.size, 'Text lockup scale', 20, 250),
+      textWidth: sharedNumber(item.textWidth, 'Text width', 40, 250),
+      quoteSize: sharedNumber(item.quoteSize, 'Quote size', 50, 180),
+      authorSize: sharedNumber(item.authorSize, 'Attribution size', 40, 220),
+      verticalOffset: sharedNumber(item.verticalOffset, 'Vertical offset', -25, 25),
+      letterSpacing: sharedNumber(item.letterSpacing, 'Letter spacing', -4, 18),
+      lineSpacing: sharedNumber(item.lineSpacing, 'Line spacing', 82, 145),
+      attributionGap: sharedNumber(item.attributionGap, 'Attribution gap', 0, 200),
+      printMethod: sharedEnum(item.printMethod, Object.keys(printMethods), 'Print method'),
+      fabric: sharedEnum(item.fabric, ['cotton', 'blend', 'polyester'], 'Garment material'),
+      exportInkMode: sharedEnum(item.exportInkMode, Object.keys(EXPORT_INK_MODES), 'Export color'),
+      textBoxCenterOffsetX: sharedNumber(item.textBoxCenterOffsetX, 'Text box horizontal offset', -12000, 12000),
+      textBoxCenterOffsetY: sharedNumber(item.textBoxCenterOffsetY, 'Text box vertical offset', -12000, 12000),
+      itemOffsets: {
+        composition: sharedOffset(itemOffsets.composition, 'Composition offset'),
+        quote: sharedOffset(itemOffsets.quote, 'Text offset'),
+        author: sharedOffset(itemOffsets.author, 'Attribution offset')
+      },
+      artworks: cleanArtworks
+    };
+  }
+
+  function applyIncomingShare(design) {
+    invalidatePendingPng();
+    state.theme = design.theme;
+    state.layout = design.layout;
+    state.fit = design.fit;
+    state.example = -1;
+    state.artworks = design.artworks;
+    state.nextArtworkId = design.artworks.reduce(function (maximum, artwork) {
+      return Math.max(maximum, Number(artwork.id.split('-')[1]) + 1);
+    }, 1);
+    state.selectedPiece = null;
+    state.snapToGrid = true;
+    state.snapToObjects = true;
+    state.gridSize = 25;
+    state.autoInk = design.autoInk;
+    state.autoSignatureColor = design.autoSignatureColor;
+    state.exportInkMode = design.exportInkMode;
+    state.textBoxCenterOffsetX = design.textBoxCenterOffsetX;
+    state.textBoxCenterOffsetY = design.textBoxCenterOffsetY;
+    state.itemOffsets = design.itemOffsets;
+    state.exportedSvg = '';
+    state.exportedMockup = '';
+    state.exportedBrief = '';
+    state.preflight = null;
+    state.exportReport = null;
+    quoteInput.value = design.quote;
+    authorInput.value = design.author;
+    caseInput.value = design.letterCase;
+    shirtInput.value = design.shirt;
+    inkInput.value = design.ink;
+    signatureInput.value = design.signature;
+    accentInput.value = design.accent;
+    autoInkInput.checked = design.autoInk;
+    autoSignatureInput.checked = design.autoSignatureColor;
+    oneColorInput.checked = design.oneColor;
+    quoteFontInput.value = design.quoteFont;
+    authorFontInput.value = design.authorFont;
+    weightInput.value = design.weight;
+    styleAsQuoteInput.checked = design.styleAsQuote;
+    quoteItalicInput.checked = design.quoteItalic;
+    sizeInput.value = String(design.size);
+    textWidthInput.value = String(design.textWidth);
+    quoteSizeInput.value = String(design.quoteSize);
+    authorSizeInput.value = String(design.authorSize);
+    yInput.value = String(design.verticalOffset);
+    spacingInput.value = String(design.letterSpacing);
+    leadingInput.value = String(design.lineSpacing);
+    attributionGapInput.value = String(design.attributionGap);
+    printMethodInput.value = design.printMethod;
+    fabricInput.value = design.fabric;
+    exportInkModeInput.value = design.exportInkMode;
+    logoFileInput.value = '';
+    selectedPieceInput.value = '';
+    clearPositionHistory();
+    previewView.zoom = 1;
+    previewView.x = 0;
+    previewView.y = 0;
+    exportPanel.hidden = true;
+    clearExportPreview();
+    shareApplying = true;
+    try {
+      renderThemeChoices();
+      renderLayoutChoices();
+      renderFitChoices();
+      if (artworkCatalog) renderArtworkCatalog();
+      renderPreview();
+    } finally {
+      shareApplying = false;
+    }
+  }
+
+  function shareLink(id) {
+    return SHARE_BASE_URL + '?share=' + encodeURIComponent(id);
+  }
+
+  function readRevocationKeys() {
+    var stored;
+    try { stored = JSON.parse(localStorage.getItem(SHARE_REVOCATION_KEY) || '{}'); } catch (error) { stored = {}; }
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) stored = {};
+    var now = Date.now();
+    var clean = {};
+    Object.keys(stored).filter(function (id) { return SHARE_ID_PATTERN.test(id); }).slice(0, 50).forEach(function (id) {
+      var item = stored[id];
+      if (item && typeof item.token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(item.token) && Number(item.expiresAt) > now) {
+        clean[id] = { token: item.token, expiresAt: Number(item.expiresAt) };
+      }
+    });
+    return clean;
+  }
+
+  function writeRevocationKey(id, token, expiresAt) {
+    var stored = readRevocationKeys();
+    stored[id] = { token: token, expiresAt: expiresAt };
+    var entries = Object.keys(stored).sort(function (a, b) { return stored[b].expiresAt - stored[a].expiresAt; }).slice(0, 25);
+    var bounded = {};
+    entries.forEach(function (key) { bounded[key] = stored[key]; });
+    try { localStorage.setItem(SHARE_REVOCATION_KEY, JSON.stringify(bounded)); } catch (error) {}
+  }
+
+  function removeRevocationKey(id) {
+    var stored = readRevocationKeys();
+    delete stored[id];
+    try { localStorage.setItem(SHARE_REVOCATION_KEY, JSON.stringify(stored)); } catch (error) {}
+  }
+
+  function revocationKey(id) {
+    var item = readRevocationKeys()[id];
+    return item ? item.token : '';
+  }
+
+  function expiryLabel(expiresAt) {
+    try {
+      return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(expiresAt));
+    } catch (error) {
+      return new Date(expiresAt).toLocaleString();
+    }
+  }
+
+  function updateShareUi(message) {
+    if (typeof message === 'string') shareMessage = message;
+    var hasShare = Boolean(currentShare && SHARE_ID_PATTERN.test(currentShare.id));
+    var token = hasShare ? revocationKey(currentShare.id) : '';
+    shareCreateButton.disabled = shareBusy || (hasShare && !shareDirty);
+    shareCreateButton.textContent = hasShare && !shareDirty ? 'Current version is shared' : (hasShare ? 'Create new 10-day link' : 'Create 10-day link');
+    shareCopyButton.hidden = !hasShare;
+    shareCopyButton.disabled = shareBusy;
+    shareRevokeButton.hidden = !hasShare || !token;
+    shareRevokeButton.disabled = shareBusy;
+    if (Date.now() > revokeArmedUntil) shareRevokeButton.textContent = 'Revoke link';
+    shareLinkInput.hidden = !hasShare;
+    shareLinkInput.value = hasShare ? shareLink(currentShare.id) : '';
+    if (shareMessage) shareStatus.textContent = shareMessage;
+    else if (shareBusy) shareStatus.textContent = 'Contacting the protected sharing service.';
+    else if (hasShare && shareDirty) shareStatus.textContent = 'The current edits are local. Create a new link to share this version.';
+    else if (hasShare) shareStatus.textContent = 'Link active until ' + expiryLabel(currentShare.expiresAt) + '.';
+    else shareStatus.textContent = 'Nothing has been shared.';
+    var loadedCopy = shareNoticeMode === 'loaded' && hasShare && currentShare.origin === 'loaded';
+    shareNotice.hidden = !shareNoticeMode;
+    if (loadedCopy) {
+      shareNoticeTitle.textContent = 'Editing a shared copy';
+      shareNoticeCopy.textContent = shareDirty
+        ? 'Your changes are local. Create a new link to share this version. The original link remains unchanged.'
+        : 'You can customize this design. The original link remains unchanged.';
+    }
+  }
+
+  function loadPinnedShareScript(file, ready) {
+    if (ready()) return Promise.resolve();
+    var url = SHARE_FIREBASE_SDK + file;
+    return new Promise(function (resolve, reject) {
+      var finished = false;
+      var timeout = setTimeout(function () { finish(new Error('Firebase module timed out')); }, 10000);
+      function finish(error) {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
+        if (error || !ready()) reject(error || new Error('Firebase module did not initialize'));
+        else resolve();
+      }
+      var script = Array.prototype.slice.call(document.scripts).filter(function (item) { return item.src === url; })[0];
+      if (!script) {
+        script = document.createElement('script');
+        script.src = url;
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        script.referrerPolicy = 'no-referrer';
+        document.head.appendChild(script);
+      }
+      script.addEventListener('load', function () { finish(); }, { once: true });
+      script.addEventListener('error', function () { finish(new Error('Firebase module was blocked')); }, { once: true });
+      var poll = setInterval(function () {
+        if (ready()) { clearInterval(poll); finish(); }
+        if (finished) clearInterval(poll);
+      }, 40);
+    });
+  }
+
+  function ensureShareAuth() {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var signingIn = false;
+      var timeout = setTimeout(function () { finish(new Error('Firebase Authentication timed out')); }, 15000);
+      var unsubscribe = function () {};
+      function finish(error, user) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        unsubscribe();
+        if (error) reject(error); else resolve(user);
+      }
+      unsubscribe = window.firebase.auth().onAuthStateChanged(function (user) {
+        if (user) { finish(null, user); return; }
+        if (signingIn) return;
+        signingIn = true;
+        window.firebase.auth().signInAnonymously().then(function (credential) {
+          finish(null, credential.user);
+        }).catch(function (error) { finish(error); });
+      }, function (error) { finish(error); });
+    });
+  }
+
+  function loadShareFirebase() {
+    if (shareFirebasePromise) return shareFirebasePromise;
+    shareFirebasePromise = loadPinnedShareScript('firebase-app-compat.js', function () { return Boolean(window.firebase && window.firebase.initializeApp); })
+      .then(function () {
+        return Promise.all([
+          loadPinnedShareScript('firebase-auth-compat.js', function () { return Boolean(window.firebase && window.firebase.auth); }),
+          loadPinnedShareScript('firebase-app-check-compat.js', function () { return Boolean(window.firebase && window.firebase.appCheck); }),
+          loadPinnedShareScript('firebase-functions-compat.js', function () { return Boolean(window.firebase && window.firebase.functions); })
+        ]);
+      })
+      .then(function () {
+        if (!window.firebase.apps.length) window.firebase.initializeApp(SHARE_FIREBASE_CONFIG);
+        try { window.firebase.appCheck().activate(SHARE_RECAPTCHA_KEY, true); } catch (error) {}
+        return ensureShareAuth();
+      })
+      .then(function () { return window.firebase.functions('us-central1'); })
+      .catch(function (error) {
+        shareFirebasePromise = null;
+        throw error;
+      });
+    return shareFirebasePromise;
+  }
+
+  function shareErrorMessage(error) {
+    var code = String(error && error.code || '').replace(/^functions\//, '');
+    if (code === 'resource-exhausted') return 'The fair-use limit has been reached. Please try again later.';
+    if (code === 'not-found') return 'This shared design is unavailable or has expired.';
+    if (code === 'invalid-argument' || code === 'data-loss') return 'The shared design could not be verified safely.';
+    if (code === 'permission-denied') return 'This browser cannot revoke that link.';
+    if (code === 'unauthenticated') return 'A private anonymous session could not be created.';
+    if (code === 'failed-precondition') return 'App verification is unavailable. Please reload and try again.';
+    return 'The sharing service is unavailable. Your design remains in this browser.';
+  }
+
+  function validateShareResponse(value) {
+    if (!value || typeof value !== 'object' || !SHARE_ID_PATTERN.test(value.id) || !isFinite(value.expiresAt) || value.expiresAt <= Date.now() || value.expiresAt > Date.now() + 11 * 24 * 60 * 60 * 1000) {
+      throw new Error('Invalid sharing response');
+    }
+    return { id: value.id, expiresAt: Number(value.expiresAt), reused: Boolean(value.reused), revocationToken: value.revocationToken || '' };
+  }
+
+  function createSharedLink() {
+    var snapshot;
+    try { snapshot = buildShareSnapshot(); } catch (error) { updateShareUi(error.message + '.'); return; }
+    shareBusy = true;
+    var serial = ++shareRequestSerial;
+    var version = shareStateVersion;
+    updateShareUi('Creating an immutable 10-day snapshot.');
+    loadShareFirebase().then(function (functions) {
+      var callable = functions.httpsCallable('createTshirtShare', { timeout: 60000, limitedUseAppCheckTokens: true });
+      return callable({ snapshot: snapshot });
+    }).then(function (result) {
+      if (serial !== shareRequestSerial || version !== shareStateVersion) {
+        shareBusy = false;
+        updateShareUi('The design changed during sharing. Create a link for the current version.');
+        return;
+      }
+      var response = validateShareResponse(result.data);
+      if (response.revocationToken && /^[A-Za-z0-9_-]{43}$/.test(response.revocationToken)) writeRevocationKey(response.id, response.revocationToken, response.expiresAt);
+      currentShare = { id: response.id, expiresAt: response.expiresAt, origin: 'created' };
+      shareDirty = false;
+      shareBusy = false;
+      updateShareUi(response.reused ? 'This unchanged design already had an active link, so the same link was reused.' : 'New link created. The snapshot cannot be overwritten.');
+    }).catch(function (error) {
+      if (serial !== shareRequestSerial) return;
+      shareBusy = false;
+      updateShareUi(shareErrorMessage(error));
+    });
+  }
+
+  function copySharedLink() {
+    if (!currentShare) return;
+    copyText(shareLink(currentShare.id)).then(function () {
+      updateShareUi('Link copied.');
+    }, function () {
+      shareLinkInput.focus();
+      shareLinkInput.select();
+      updateShareUi('The link is selected. Use your browser copy command.');
+    });
+  }
+
+  function revokeSharedLink() {
+    if (!currentShare || shareBusy) return;
+    var token = revocationKey(currentShare.id);
+    if (!token) { updateShareUi('Only the browser that created this link can revoke it.'); return; }
+    if (Date.now() > revokeArmedUntil) {
+      revokeArmedUntil = Date.now() + 5000;
+      shareRevokeButton.textContent = 'Confirm revoke';
+      updateShareUi('Press Confirm revoke within five seconds to delete the shared snapshot.');
+      setTimeout(function () { if (Date.now() > revokeArmedUntil) updateShareUi(); }, 5100);
+      return;
+    }
+    shareBusy = true;
+    revokeArmedUntil = 0;
+    var id = currentShare.id;
+    var serial = ++shareRequestSerial;
+    updateShareUi('Revoking the shared link.');
+    loadShareFirebase().then(function (functions) {
+      var callable = functions.httpsCallable('revokeTshirtShare', { timeout: 60000, limitedUseAppCheckTokens: true });
+      return callable({ id: id, revocationToken: token });
+    }).then(function () {
+      if (serial !== shareRequestSerial) return;
+      removeRevocationKey(id);
+      if (currentShare && currentShare.id === id) currentShare = null;
+      shareDirty = false;
+      shareBusy = false;
+      shareNoticeMode = '';
+      updateShareUi('Link revoked. This editor copy remains available in your browser.');
+    }).catch(function (error) {
+      if (serial !== shareRequestSerial) return;
+      shareBusy = false;
+      updateShareUi(shareErrorMessage(error));
+    });
+  }
+
+  function loadSharedDesignFromUrl() {
+    var id;
+    try { id = new URL(window.location.href).searchParams.get('share'); } catch (error) { return; }
+    if (id === null) return;
+    shareNoticeMode = 'loading';
+    if (!SHARE_ID_PATTERN.test(id)) {
+      shareNoticeMode = 'error';
+      shareNoticeTitle.textContent = 'Shared design unavailable';
+      shareNoticeCopy.textContent = 'The link format is invalid. The local editor is still ready.';
+      updateShareUi('The share link is invalid.');
+      return;
+    }
+    shareNoticeTitle.textContent = 'Loading shared design';
+    shareNoticeCopy.textContent = 'The snapshot is being verified before it reaches the editor.';
+    shareBusy = true;
+    var serial = ++shareRequestSerial;
+    var version = shareStateVersion;
+    updateShareUi('Loading and verifying the shared snapshot.');
+    loadShareFirebase().then(function (functions) {
+      var callable = functions.httpsCallable('getTshirtShare', { timeout: 30000 });
+      return callable({ id: id });
+    }).then(function (result) {
+      if (serial !== shareRequestSerial || version !== shareStateVersion) {
+        shareBusy = false;
+        shareNoticeMode = 'error';
+        shareNoticeTitle.textContent = 'Shared design not applied';
+        shareNoticeCopy.textContent = 'The editor changed while the link was loading. Reload the link to apply its snapshot.';
+        updateShareUi('The shared snapshot was not applied because the editor changed.');
+        return;
+      }
+      var response = validateShareResponse(result.data);
+      var design = normalizeIncomingShare(result.data.snapshot);
+      applyIncomingShare(design);
+      currentShare = { id: response.id, expiresAt: response.expiresAt, origin: 'loaded' };
+      shareDirty = false;
+      shareBusy = false;
+      shareNoticeMode = 'loaded';
+      updateShareUi('Shared copy loaded. The original snapshot remains immutable.');
+    }).catch(function (error) {
+      if (serial !== shareRequestSerial) return;
+      shareBusy = false;
+      shareNoticeMode = 'error';
+      shareNoticeTitle.textContent = 'Shared design unavailable';
+      shareNoticeCopy.textContent = shareErrorMessage(error) + ' The local editor is still ready.';
+      updateShareUi(shareErrorMessage(error));
+    });
+  }
+
   function restoreFactoryDefaults() {
+    shareRequestSerial += 1;
+    shareBusy = false;
     invalidatePendingPng();
     if (artworkAssetController) artworkAssetController.abort();
     artworkRequestSerial += 1;
@@ -6605,6 +7337,10 @@ ul.task-list li input[type="checkbox"] {
   }
 
   function acceptLogo(logo) {
+    if (state.artworks.length >= MAX_SHARED_ARTWORKS) {
+      document.getElementById('tee-logo-name').textContent = 'A design can contain at most 12 artworks.';
+      return false;
+    }
     var before = copyArrangementState();
     var positions = ['top', 'left', 'right', 'bottom', 'center'];
     var artwork = Object.assign({}, logo, {
@@ -6681,6 +7417,9 @@ ul.task-list li input[type="checkbox"] {
   }
 
   document.getElementById('tee-logo-remove').addEventListener('click', removeSelectedArtwork);
+  shareCreateButton.addEventListener('click', createSharedLink);
+  shareCopyButton.addEventListener('click', copySharedLink);
+  shareRevokeButton.addEventListener('click', revokeSharedLink);
 
   document.getElementById('tee-example').addEventListener('click', function () {
     state.example = (state.example + 1) % examples.length;
@@ -6772,6 +7511,7 @@ ul.task-list li input[type="checkbox"] {
   loadArtworkCatalog();
   updatePositionHistoryUI();
   renderPreview();
+  loadSharedDesignFromUrl();
 })();
 </script>
 

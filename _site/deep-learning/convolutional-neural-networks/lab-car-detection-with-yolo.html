@@ -1,0 +1,1849 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-18">
+<meta name="description" content="Use a pretrained YOLOv2 detector on a road image, filter its boxes, apply class-aware non-max suppression, and draw final detections.">
+
+<title>Lab: Car Detection with YOLO – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" rel="next">
+<link href="../../deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-87fe4da730787eeec4a7ec728bf0e0b5.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="Lab: Car Detection with YOLO – H’s Notes">
+<meta property="og:description" content="Use a pretrained YOLOv2 detector on a road image, filter its boxes, apply class-aware non-max suppression, and draw final detections.">
+<meta property="og:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/lab-car-detection-with-yolo_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Lab: Car Detection with YOLO – H’s Notes">
+<meta name="twitter:description" content="Use a pretrained YOLOv2 detector on a road image, filter its boxes, apply class-aware non-max suppression, and draw final detections.">
+<meta name="twitter:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/lab-car-detection-with-yolo_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../networking/archive.html">
+ <span class="dropdown-text">Archive</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../deep-learning/convolutional-neural-networks/lab-car-detection-with-yolo.html">Car Detection with YOLO</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutional Neural Networks</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/convolutions-and-edge-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutions and Edge Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Strided Convolutions and Convolutions Over Volume</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/one-layer-of-a-convolutional-network.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One Layer of a Convolutional Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/pooling-layers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pooling Layers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/full-convnet-example-and-why-convolutions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Full ConvNet Example and Why Convolutions</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/lab-convolutional-model-step-by-step.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Convolutional Model Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/lab-convolutional-model-application.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Convolutional Model Application</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/classic-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classic Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/modern-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modern Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/lab-residual-networks.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Residual Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/mobilenet-and-efficientnet.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MobileNet and EfficientNet</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/practical-advice-for-convnets.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Practical Advice for Using ConvNets</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/lab-transfer-learning-with-mobilenet.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Transfer Learning with MobileNetV2</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Object Localization and Landmark Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sliding Windows and Region Proposals</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bounding Box Predictions with YOLO</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">IoU, Non-max Suppression, and Anchor Boxes</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/lab-car-detection-with-yolo.html" class="sidebar-item-text sidebar-link active"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Car Detection with YOLO</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Semantic Segmentation with U-Net</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#problem-statement" id="toc-problem-statement" class="nav-link active" data-scroll-target="#problem-statement">Problem Statement</a></li>
+  <li><a href="#road-image-and-box-coordinates" id="toc-road-image-and-box-coordinates" class="nav-link" data-scroll-target="#road-image-and-box-coordinates">Road Image and Box Coordinates</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#rearranging-and-scoring-candidates" id="toc-rearranging-and-scoring-candidates" class="nav-link" data-scroll-target="#rearranging-and-scoring-candidates">Rearranging and Scoring Candidates</a>
+  <ul class="collapse">
+  <li><a href="#visualizing-what-the-grid-believes" id="toc-visualizing-what-the-grid-believes" class="nav-link" data-scroll-target="#visualizing-what-the-grid-believes">Visualizing What the Grid Believes</a></li>
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#computing-iou-and-suppressing-duplicates" id="toc-computing-iou-and-suppressing-duplicates" class="nav-link" data-scroll-target="#computing-iou-and-suppressing-duplicates">Computing IoU and Suppressing Duplicates</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#running-pretrained-yolo" id="toc-running-pretrained-yolo" class="nav-link" data-scroll-target="#running-pretrained-yolo">Running Pretrained YOLO</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#detecting-across-the-whole-dataset" id="toc-detecting-across-the-whole-dataset" class="nav-link" data-scroll-target="#detecting-across-the-whole-dataset">Detecting Across the Whole Dataset</a></li>
+  <li><a href="#yolo26-update" id="toc-yolo26-update" class="nav-link" data-scroll-target="#yolo26-update">YOLO26 Update</a>
+  <ul class="collapse">
+  <li><a href="#should-this-lab-be-rewritten" id="toc-should-this-lab-be-rewritten" class="nav-link" data-scroll-target="#should-this-lab-be-rewritten">Should This Lab Be Rewritten</a></li>
+  <li><a href="#what-actually-changed" id="toc-what-actually-changed" class="nav-link" data-scroll-target="#what-actually-changed">What Actually Changed</a></li>
+  <li><a href="#finding-current-documentation" id="toc-finding-current-documentation" class="nav-link" data-scroll-target="#finding-current-documentation">Finding Current Documentation</a></li>
+  <li><a href="#running-it" id="toc-running-it" class="nav-link" data-scroll-target="#running-it">Running It</a></li>
+  <li><a href="#review-questions-4" id="toc-review-questions-4" class="nav-link" data-scroll-target="#review-questions-4">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#summary" id="toc-summary" class="nav-link" data-scroll-target="#summary">Summary</a></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../auth.js"></script>
+<script src="../../giscus-note.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../nav-columns.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title"><span class="bi bi-flask lab-title-icon" aria-hidden="true"></span><span class="visually-hidden">Lab:</span> Car Detection with YOLO</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">convolutional-neural-networks</div>
+    <div class="quarto-category">computer-vision</div>
+    <div class="quarto-category">object-detection</div>
+    <div class="quarto-category">yolo</div>
+    <div class="quarto-category">tensorflow</div>
+    <div class="quarto-category">non-max-suppression</div>
+    <div class="quarto-category">lab</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Use a pretrained YOLOv2 detector on a road image, filter its boxes, apply class-aware non-max suppression, and draw final detections.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 18, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~83 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~4,300 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p><a href="../../deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html">Bounding Box Predictions with YOLO</a> introduced the grid, target volume, and box encoding. <a href="../../deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes.html">IoU, Non-max Suppression, and Anchor Boxes</a> showed how duplicate predictions are removed. This lab turns those ideas into the post-processing code around a pretrained YOLOv2 model.</p>
+<p>The model is already trained. Training it needs the 204 MB weight file supplied with the original exercise and far more road images than this page needs. Our work begins after its one forward pass. We will turn a <span class="math inline">\(19 \times 19 \times 5 \times 85\)</span> prediction tensor into labelled boxes on a real road photograph.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Modern Update
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><strong>Updated 2026-08-18.</strong> This main lab deliberately preserves the original YOLOv2 exercise because it teaches how confidence filtering, IoU, and non-max suppression work. For current model usage, see <a href="#yolo26-update">YOLO26 Update</a> after the original workflow.</p>
+</div>
+</div>
+<section id="problem-statement" class="level2">
+<h2 class="anchored" data-anchor-id="problem-statement">Problem Statement</h2>
+<p>The setting is a self-driving car. A camera is mounted on the hood, and it photographs the road ahead every few seconds while the car is driven around Silicon Valley. Those photographs are the dataset, and every car in them was labelled by hand, by drawing a rectangle around it. The task is to build the detector that produces those rectangles by itself.</p>
+<p>There are 80 classes to recognize, and the class label of a box can be written two ways. It can be an integer from 1 to 80, or an 80 component vector with a single 1 in the position of the correct class and zeros everywhere else. The lecture notes use the second form, and this lab uses whichever is more convenient at each step. The network predicts the vector, because a network has to output a number per class, while the code that sorts and draws the results carries the integer, because an index is easier to look up in a list of names.</p>
+<p>Training a detector like this from scratch is not on the table. It needs a large labelled dataset and a great deal of computation, so the weights here are pretrained and the work begins one forward pass later.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Lab Files Download
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The post-processing on this page runs on small hand-made tensors, so nothing needs downloading to follow it. These are the files behind the photographs and the stored detection result.</p>
+<ul>
+<li><a href="../../media/deep-learning/car-detection-yolo/test.jpg">test.jpg</a> (301 KB), the road frame every figure on this page uses</li>
+<li><a href="../../media/deep-learning/car-detection-yolo/test-detections.jpg">test-detections.jpg</a> (495 KB), the pretrained model’s own output on that frame</li>
+<li><a href="../../media/deep-learning/car-detection-yolo/coco_classes.txt">coco_classes.txt</a> (625 bytes), the 80 class names in the order the network predicts them</li>
+<li><a href="../../media/deep-learning/car-detection-yolo/yolo_anchors.txt">yolo_anchors.txt</a> (90 bytes), the five anchor shapes in grid-cell units</li>
+<li><a href="../../media/deep-learning/car-detection-yolo/yolo-outputs.npz">yolo-outputs.npz</a> (35 KB), the model’s own decoded output for that frame, so the figures below can be drawn without the 204 MB model</li>
+<li><a href="../../media/deep-learning/car-detection-yolo/predictions.mp4">predictions.mp4</a> (3.4 MB), the detector run over the whole sample</li>
+<li><a href="../../media/deep-learning/car-detection-yolo/LICENSE.txt">LICENSE.txt</a>, the Drive.ai Sample Dataset licence and credits</li>
+</ul>
+<p>The pretrained model itself is not hosted here. Its <code>saved_model.pb</code> and 204 MB variables file stay in the course lab archive.</p>
+</div>
+</div>
+</section>
+<section id="road-image-and-box-coordinates" class="level2">
+<h2 class="anchored" data-anchor-id="road-image-and-box-coordinates">Road Image and Box Coordinates</h2>
+<p>The Drive.ai sample is 122 road frames of 1280 by 720 pixels, and this lab works on one of them. A detector returns four numbers marking a rectangle, not a cropped car.</p>
+<p>Two corner orders appear in what follows, and mixing them up is the most common way to get boxes that land in the wrong place. The <code>iou</code> function written below takes <code>(x1, y1, x2, y2)</code>, which is the easier order to reason about on paper. The tensors that reach <code>tf.image.non_max_suppression</code> use <code>(y_min, x_min, y_max, x_max)</code> instead, because that is the order TensorFlow expects, and <code>yolo_boxes_to_corners</code> is the function that swaps them.</p>
+<div id="8c0dd71f" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-car-detection-with-yolo_files/figure-html/cell-2-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>One candidate box drawn in the road frame. Photograph from the Drive.ai Sample Dataset, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p><code>x</code> increases rightward and <code>y</code> increases downward because the origin is the top-left pixel. The network receives a 608 by 608 resized copy, then makes one dense set of predictions. It does not scan separate image crops.</p>
+<p>Two files describe what the network is set up to predict, and both are small enough to read. <code>coco_classes.txt</code> holds the 80 class names in the order the network predicts them, so index 2 is <code>car</code>. <code>yolo_anchors.txt</code> holds five pairs of numbers, and that is the entire definition of the five anchor boxes, because <strong>an anchor box is defined only by a width and a height</strong>. It has no position. Position comes from the grid cell that reports it.</p>
+<p>Those five shapes were not invented. They were chosen by looking at the training data and picking height and width ratios that represent the range of objects in it, which is the k-means procedure described at the end of <a href="../../deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes.html#anchor-boxes">Anchor Boxes</a>. Five is enough to cover 80 classes, because many classes share a silhouette.</p>
+<div id="6017f4ca" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-car-detection-with-yolo_files/figure-html/cell-3-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>One forward pass changes a road image into a dense grid of YOLO predictions. Each grid position holds five anchor-box descriptions.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. Why is the image resized before it enters the network?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The pretrained architecture expects a fixed 608 by 608 input. The final boxes are scaled back to the 1280 by 720 original frame before drawing, so the network can stay fixed while the result lines up with the original photograph.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="rearranging-and-scoring-candidates" class="level2">
+<h2 class="anchored" data-anchor-id="rearranging-and-scoring-candidates">Rearranging and Scoring Candidates</h2>
+<p>The saved model flattens five anchors and their 85 values into 425 channels. For post-processing, we immediately view them as five separate descriptions again. One description has object confidence, four box values, and 80 class probabilities.</p>
+<div id="89896ea4" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-car-detection-with-yolo_files/figure-html/cell-4-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Flattening preserves all five anchor descriptions while replacing two explanatory axes with one 425-channel axis.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Doing that split is the job of <code>yolo_head</code>, the helper supplied with the exercise in <code>yad2k/models/keras_yolo.py</code>. It takes the raw <code>(m, 19, 19, 425)</code> tensor the network emits and returns four separate tensors, because the 85 numbers in one anchor description mean four different things and each needs its own treatment. It also applies the sigmoid and exponential the raw output has not been through yet, and adds each cell’s grid offset, so the box values come back as fractions of the whole image rather than offsets inside a cell.</p>
+<p>The four tensors are <code>box_xy</code> and <code>box_wh</code>, each <code>(19, 19, 5, 2)</code>, holding the midpoint and the size, then <code>box_confidence</code> at <code>(19, 19, 5, 1)</code> and <code>box_class_probs</code> at <code>(19, 19, 5, 80)</code>. The first two combine into the <code>(19, 19, 5, 4)</code> corner boxes the filtering step wants. Broadcasting the confidence against the class probabilities repeats each confidence across its 80 class slots, making one class score per class and candidate.</p>
+<div id="11c26a9e" class="cell" data-execution_count="4">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tensorflow <span class="im">as</span> tf</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> yolo_filter_boxes(boxes, box_confidence, box_class_probs, threshold<span class="op">=</span><span class="fl">0.6</span>):</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Keep candidates whose best class score reaches the threshold."""</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    box_scores <span class="op">=</span> box_confidence <span class="op">*</span> box_class_probs</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    box_classes <span class="op">=</span> tf.math.argmax(box_scores, axis<span class="op">=-</span><span class="dv">1</span>)</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    box_class_scores <span class="op">=</span> tf.math.reduce_max(box_scores, axis<span class="op">=-</span><span class="dv">1</span>)</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    mask <span class="op">=</span> box_class_scores <span class="op">&gt;=</span> threshold</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (tf.boolean_mask(box_class_scores, mask), tf.boolean_mask(boxes, mask), tf.boolean_mask(box_classes, mask))</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>confidence <span class="op">=</span> tf.constant([[[[<span class="fl">0.90</span>], [<span class="fl">0.80</span>], [<span class="fl">0.70</span>]]]])</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>boxes <span class="op">=</span> tf.constant([[[[<span class="fl">0.10</span>, <span class="fl">0.15</span>, <span class="fl">0.40</span>, <span class="fl">0.50</span>], [<span class="fl">0.48</span>, <span class="fl">0.52</span>, <span class="fl">0.72</span>, <span class="fl">0.82</span>], [<span class="fl">0.20</span>, <span class="fl">0.25</span>, <span class="fl">0.35</span>, <span class="fl">0.42</span>]]]])</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>class_probs <span class="op">=</span> tf.constant([[[[<span class="fl">0.10</span>, <span class="fl">0.90</span>, <span class="fl">0.05</span>], [<span class="fl">0.90</span>, <span class="fl">0.05</span>, <span class="fl">0.10</span>], [<span class="fl">0.20</span>, <span class="fl">0.50</span>, <span class="fl">0.10</span>]]]])</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>scores, kept_boxes, classes <span class="op">=</span> yolo_filter_boxes(boxes, confidence, class_probs)</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'scores:'</span>, scores.numpy())</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'classes:'</span>, classes.numpy())</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'kept boxes:'</span>, kept_boxes.numpy())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>scores: [0.80999994 0.71999997]
+classes: [1 0]
+kept boxes: [[0.1  0.15 0.4  0.5 ]
+ [0.48 0.52 0.72 0.82]]</code></pre>
+</div>
+</div>
+<p>The first candidate scores <span class="math inline">\(0.90 \times 0.90 = 0.81\)</span> for its strongest class. The third reaches only 0.35 and vanishes. The diagram below recreates the original lab’s class-score figure with the multiplication made explicit.</p>
+<div id="8ea8d8ea" class="cell" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-car-detection-with-yolo_files/figure-html/cell-6-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Class-score extraction for one anchor. The largest product supplies both the provisional class label and the score used for filtering.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<section id="visualizing-what-the-grid-believes" class="level3">
+<h3 class="anchored" data-anchor-id="visualizing-what-the-grid-believes">Visualizing What the Grid Believes</h3>
+<p>Neither of the two pictures below is part of the algorithm. Both are ways of looking at an intermediate result, and both are drawn from the model’s own output on this frame, stored in <code>yolo-outputs.npz</code> so the figures can be produced without the 204 MB model.</p>
+<p>The first colours every one of the 361 cells by whichever class wins its best anchor. Reading it teaches something the score alone does not.</p>
+<div id="afcf5f7d" class="cell" data-execution_count="6">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-car-detection-with-yolo_files/figure-html/cell-7-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Every grid cell coloured by the class its strongest anchor claims, whatever the score. Photograph from the Drive.ai Sample Dataset, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The left panel looks confident everywhere, including over empty tarmac and sky, and that is the honest picture of what the network emits. Every cell names a class because every cell has to produce 80 numbers and one of them is always largest. The right panel fades each cell by its score, and the picture collapses onto the cars. Almost all of the left panel is noise with a score near zero, which is precisely what the threshold is for.</p>
+<p>The second picture plots the boxes themselves.</p>
+<div id="5c5f0f72" class="cell" data-execution_count="7">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-car-detection-with-yolo_files/figure-html/cell-8-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Left, every box the network proposes from one forward pass. Right, what survives a 0.3 score threshold, still before non-max suppression. Photograph from the Drive.ai Sample Dataset, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>That left panel is the whole point of “you only look once”. Nineteen by nineteen cells with five anchor boxes each is <span class="math inline">\(19 \times 19 \times 5 = 1805\)</span> boxes, and every one of them came from a single pass over the image. The right panel is the same thing after one line of filtering. Everything from here is about getting from the left panel to ten rectangles.</p>
+</section>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. Why does multiplying <code>(19, 19, 5, 1)</code> by <code>(19, 19, 5, 80)</code> produce <code>(19, 19, 5, 80)</code>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Broadcasting repeats the final dimension of size 1 across the 80 class slots. Each anchor confidence multiplies all of its class probabilities without an explicit loop.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="computing-iou-and-suppressing-duplicates" class="level2">
+<h2 class="anchored" data-anchor-id="computing-iou-and-suppressing-duplicates">Computing IoU and Suppressing Duplicates</h2>
+<p>The preceding page derived IoU geometrically. Here it becomes code, and the geometry is worth stating once in terms of the corners.</p>
+<p>A box is two corners, upper left <span class="math inline">\((x_1, y_1)\)</span> and lower right <span class="math inline">\((x_2, y_2)\)</span>, so its area is <span class="math inline">\((x_2 - x_1)(y_2 - y_1)\)</span>. The intersection of two boxes is itself a box. Its upper left corner is the <strong>larger</strong> of the two upper left corners, taken coordinate by coordinate, because the overlap starts wherever the later box starts. Its lower right corner is the <strong>smaller</strong> of the two lower right corners, because the overlap ends wherever the earlier box ends. So <code>max</code> finds one corner and <code>min</code> finds the other.</p>
+<p>Two cases break that if it is written naively. When the boxes do not overlap at all, the arithmetic produces a negative width or a negative height, which would give a positive area once multiplied by another negative and quietly report overlap where there is none. When the boxes touch along an edge or meet at a single corner, one of the two dimensions comes out exactly zero and the answer should be zero. Clamping both dimensions at zero before multiplying handles both cases with one guard.</p>
+<div id="1eb36f4a" class="cell" data-execution_count="8">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> iou(box1, box2):</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Return IoU for corner-form boxes ordered as (x1, y1, x2, y2)."""</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    x1a, y1a, x2a, y2a <span class="op">=</span> box1</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    x1b, y1b, x2b, y2b <span class="op">=</span> box2</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    intersection <span class="op">=</span> <span class="bu">max</span>(<span class="bu">min</span>(x2a, x2b) <span class="op">-</span> <span class="bu">max</span>(x1a, x1b), <span class="dv">0</span>) <span class="op">*</span> <span class="bu">max</span>(<span class="bu">min</span>(y2a, y2b) <span class="op">-</span> <span class="bu">max</span>(y1a, y1b), <span class="dv">0</span>)</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    union <span class="op">=</span> (x2a <span class="op">-</span> x1a) <span class="op">*</span> (y2a <span class="op">-</span> y1a) <span class="op">+</span> (x2b <span class="op">-</span> x1b) <span class="op">*</span> (y2b <span class="op">-</span> y1b) <span class="op">-</span> intersection</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> intersection <span class="op">/</span> union</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'overlapping boxes:'</span>, <span class="bu">round</span>(iou((<span class="dv">2</span>, <span class="dv">1</span>, <span class="dv">4</span>, <span class="dv">3</span>), (<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>)), <span class="dv">6</span>))</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'touching corners:'</span>, iou((<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">2</span>), (<span class="dv">2</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">3</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>overlapping boxes: 0.142857
+touching corners: 0.0</code></pre>
+</div>
+</div>
+<p>Thresholding removes weak predictions but not repeated descriptions of one object. That is what non-max suppression is for, and it is three steps repeated until nothing is left.</p>
+<ol type="1">
+<li>Select the box with the highest score and output it.</li>
+<li>Compute its overlap with every remaining box <strong>of the same class</strong>, and discard any whose IoU reaches the threshold.</li>
+<li>Go back to step 1 with whatever survives.</li>
+</ol>
+<p>The restriction to one class in step 2 is what stops a confident car from deleting the pedestrian standing in front of it. In code that is easiest to arrange by splitting the candidates by class up front, suppressing inside each class independently, and merging the survivors at the end.</p>
+<div id="713972a6" class="cell" data-execution_count="9">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-car-detection-with-yolo_files/figure-html/cell-10-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Non-max suppression keeps the strongest car box and removes its close car duplicate. The nearby bus is retained because it belongs to a different class.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The implementation below follows the divide-and-conquer shape the exercise recommends. Split the candidates by class, let <code>tf.image.non_max_suppression</code> do the work within each class, then merge the survivors and keep the highest scoring <code>max_boxes</code> of them. <code>tf.where</code> records where each class’s candidates sat in the original arrays, so the indices <code>tf.image.non_max_suppression</code> returns can be mapped back.</p>
+<div id="fe1b3d0e" class="cell" data-execution_count="10">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> yolo_non_max_suppression(scores, boxes, classes, max_boxes<span class="op">=</span><span class="dv">10</span>, iou_threshold<span class="op">=</span><span class="fl">0.5</span>):</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Keep high-scoring boxes while suppressing overlaps within each class."""</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    scores, boxes, classes <span class="op">=</span> tf.cast(scores, tf.float32), tf.cast(boxes, tf.float32), tf.cast(classes, tf.int32)</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    kept <span class="op">=</span> []</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> label <span class="kw">in</span> tf.unique(classes)[<span class="dv">0</span>]:</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>        mask <span class="op">=</span> classes <span class="op">==</span> label</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>        original <span class="op">=</span> tf.squeeze(tf.where(mask), axis<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>        selected <span class="op">=</span> tf.image.non_max_suppression(tf.boolean_mask(boxes, mask), tf.boolean_mask(scores, mask), max_boxes, iou_threshold<span class="op">=</span>iou_threshold)</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>        kept.append(tf.gather(original, selected))</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    kept <span class="op">=</span> tf.concat(kept, axis<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    kept <span class="op">=</span> tf.gather(kept, tf.argsort(tf.gather(scores, kept), direction<span class="op">=</span><span class="st">'DESCENDING'</span>)[:max_boxes])</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> tf.gather(scores, kept), tf.gather(boxes, kept), tf.gather(classes, kept)</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>scores <span class="op">=</span> tf.constant([<span class="fl">0.91</span>, <span class="fl">0.76</span>, <span class="fl">0.82</span>])</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>boxes <span class="op">=</span> tf.constant([[<span class="fl">1.00</span>, <span class="fl">1.00</span>, <span class="fl">4.00</span>, <span class="fl">4.00</span>], [<span class="fl">1.20</span>, <span class="fl">1.15</span>, <span class="fl">4.05</span>, <span class="fl">4.10</span>], [<span class="fl">1.20</span>, <span class="fl">1.15</span>, <span class="fl">4.05</span>, <span class="fl">4.10</span>]])</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>classes <span class="op">=</span> tf.constant([<span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">1</span>])</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>kept_scores, kept_boxes, kept_classes <span class="op">=</span> yolo_non_max_suppression(scores, boxes, classes)</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'kept scores:'</span>, kept_scores.numpy())</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'kept classes:'</span>, kept_classes.numpy())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>kept scores: [0.91 0.82]
+kept classes: [0 1]</code></pre>
+</div>
+</div>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. Why clamp the width and height of an intersection to zero?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>When boxes do not overlap, the calculated intersection width or height is negative. A negative-sized rectangle is not real, so clamping it to zero gives the correct zero intersection area.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why is non-max suppression run once per class?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Overlap only signals a duplicate when both boxes claim the same kind of object. A person can overlap a car, so processing all classes together could delete a real detection.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="running-pretrained-yolo" class="level2">
+<h2 class="anchored" data-anchor-id="running-pretrained-yolo">Running Pretrained YOLO</h2>
+<p>The final wrapper converts midpoint and size values into corners, score-filters, scales the 608 by 608 coordinates back to the original image, and suppresses duplicates. This is the source lab’s complete sequence, with grading scaffolding removed.</p>
+<div id="d7e8422a" class="cell" data-execution_count="11">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> yolo_boxes_to_corners(box_xy, box_wh):</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    box_mins, box_maxes <span class="op">=</span> box_xy <span class="op">-</span> box_wh <span class="op">/</span> <span class="dv">2</span>, box_xy <span class="op">+</span> box_wh <span class="op">/</span> <span class="dv">2</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> tf.keras.backend.concatenate([box_mins[..., <span class="dv">1</span>:<span class="dv">2</span>], box_mins[..., <span class="dv">0</span>:<span class="dv">1</span>], box_maxes[..., <span class="dv">1</span>:<span class="dv">2</span>], box_maxes[..., <span class="dv">0</span>:<span class="dv">1</span>]])</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> yolo_eval(yolo_outputs, image_shape<span class="op">=</span>(<span class="dv">720</span>, <span class="dv">1280</span>), max_boxes<span class="op">=</span><span class="dv">10</span>, score_threshold<span class="op">=</span><span class="fl">0.3</span>, iou_threshold<span class="op">=</span><span class="fl">0.5</span>):</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    box_xy, box_wh, box_confidence, box_class_probs <span class="op">=</span> yolo_outputs</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    scores, boxes, classes <span class="op">=</span> yolo_filter_boxes(yolo_boxes_to_corners(box_xy, box_wh), box_confidence, box_class_probs, score_threshold)</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    boxes <span class="op">=</span> boxes <span class="op">*</span> tf.constant([image_shape[<span class="dv">0</span>], image_shape[<span class="dv">1</span>], image_shape[<span class="dv">0</span>], image_shape[<span class="dv">1</span>]], tf.float32)</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> yolo_non_max_suppression(scores, boxes, classes, max_boxes, iou_threshold)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The weights themselves have a history worth knowing. They were trained by the YOLO authors and published on the official YOLO website in the Darknet framework, then converted to Keras by <a href="https://github.com/allanzelener/YAD2K">Zelener (2017)</a>, whose YAD2K project also supplies <code>yolo_head</code> and the image helpers this lab imports. They are the parameters of YOLOv2 specifically, although the exercise refers to them simply as YOLO.</p>
+<p>The source archive includes <code>saved_model.pb</code>, its 204 MB variables file, <code>yolo_anchors.txt</code>, and <code>coco_classes.txt</code>. The full model is intentionally not hosted with this page. It is large and uses a legacy TensorFlow graph. The code below runs from the supplied course archive, while the post-processing above runs in this page.</p>
+<p>Two helpers do the work either side of the network. <code>preprocess_image</code> opens the file, resizes it to 608 by 608, reshapes it into a batch of one, and divides by 255 so the values land between 0 and 1. It hands back two things, a PIL image kept at full size for drawing on later, and the numpy array that goes into the network. At the other end, the step written here as a multiplication is what the original calls <code>scale_boxes</code>, and it maps coordinates expressed as fractions of the input onto pixels of the 720 by 1280 photograph, which is the only reason the rectangles land on the right cars.</p>
+<p>One line of the original notebook no longer works. It loads the model with <code>load_model('model_data/', compile=False)</code>, and Keras 3 refuses that, because <code>model_data/</code> is a TensorFlow SavedModel directory rather than a <code>.keras</code> or <code>.h5</code> file. The replacement is <code>keras.layers.TFSMLayer</code>, which wraps a SavedModel as an inference-only layer. It returns a dictionary keyed by the graph’s output name, which for this model is <code>conv2d_22</code>, so the result has to be unwrapped before <code>yolo_head</code> sees it.</p>
+<div id="1ec9a689" class="cell" data-execution_count="12">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> pathlib <span class="im">import</span> Path</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> keras</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> yad2k.models.keras_yolo <span class="im">import</span> yolo_head</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> yad2k.utils.utils <span class="im">import</span> preprocess_image, read_anchors, read_classes, draw_boxes</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>lab_root <span class="op">=</span> Path(<span class="st">'Car detection with YOLO'</span>)</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>class_names <span class="op">=</span> read_classes(<span class="bu">str</span>(lab_root <span class="op">/</span> <span class="st">'model_data/coco_classes.txt'</span>))</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>anchors <span class="op">=</span> read_anchors(<span class="bu">str</span>(lab_root <span class="op">/</span> <span class="st">'model_data/yolo_anchors.txt'</span>))</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Keras 3 cannot load a SavedModel directory through load_model, so wrap it instead.</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>yolo_model <span class="op">=</span> keras.layers.TFSMLayer(lab_root <span class="op">/</span> <span class="st">'model_data'</span>, call_endpoint<span class="op">=</span><span class="st">'serving_default'</span>)</span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>image, image_data <span class="op">=</span> preprocess_image(lab_root <span class="op">/</span> <span class="st">'images/test.jpg'</span>, model_image_size<span class="op">=</span>(<span class="dv">608</span>, <span class="dv">608</span>))</span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>raw <span class="op">=</span> yolo_model(image_data)[<span class="st">'conv2d_22'</span>]          <span class="co"># the SavedModel's single named output</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>yolo_outputs <span class="op">=</span> yolo_head(raw, anchors, <span class="bu">len</span>(class_names))</span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>scores, boxes, classes <span class="op">=</span> yolo_eval(yolo_outputs, image_shape<span class="op">=</span>(image.size[<span class="dv">1</span>], image.size[<span class="dv">0</span>]))</span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>draw_boxes(image, boxes, classes, class_names, scores)</span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>image.save(<span class="st">'out/test.jpg'</span>, quality<span class="op">=</span><span class="dv">100</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>That run reports <strong>10 boxes</strong>, and they are worth reading rather than glancing at. Eight are cars, one is the bus at the left edge, and one is a traffic light 11 pixels wide near the top of the frame. Nothing else in a busy street scene survives, which is the whole point of the two filters. Coordinates are pixels in the original 1280 by 720 photograph, not in the 608 by 608 input the network saw.</p>
+<div id="tbl-yolo-detections" class="quarto-float quarto-figure quarto-figure-center anchored" data-tbl-colwidths="[26,16,29,29]" data-tbl-align="left">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-yolo-detections-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;1: The 10 detections the pretrained model returns for this frame
+</figcaption>
+<div aria-describedby="tbl-yolo-detections-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 26%">
+<col style="width: 16%">
+<col style="width: 28%">
+<col style="width: 28%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">class</th>
+<th style="text-align: right;">score</th>
+<th style="text-align: right;">top left</th>
+<th style="text-align: right;">bottom right</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">car</td>
+<td style="text-align: right;">0.89</td>
+<td style="text-align: right;">(367, 300)</td>
+<td style="text-align: right;">(745, 648)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">car</td>
+<td style="text-align: right;">0.80</td>
+<td style="text-align: right;">(761, 282)</td>
+<td style="text-align: right;">(942, 412)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">car</td>
+<td style="text-align: right;">0.74</td>
+<td style="text-align: right;">(159, 303)</td>
+<td style="text-align: right;">(346, 440)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">car</td>
+<td style="text-align: right;">0.70</td>
+<td style="text-align: right;">(947, 324)</td>
+<td style="text-align: right;">(1280, 705)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">bus</td>
+<td style="text-align: right;">0.67</td>
+<td style="text-align: right;">(5, 266)</td>
+<td style="text-align: right;">(220, 407)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">car</td>
+<td style="text-align: right;">0.66</td>
+<td style="text-align: right;">(706, 279)</td>
+<td style="text-align: right;">(786, 350)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">car</td>
+<td style="text-align: right;">0.60</td>
+<td style="text-align: right;">(925, 285)</td>
+<td style="text-align: right;">(1045, 374)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">car</td>
+<td style="text-align: right;">0.44</td>
+<td style="text-align: right;">(336, 296)</td>
+<td style="text-align: right;">(378, 335)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">car</td>
+<td style="text-align: right;">0.37</td>
+<td style="text-align: right;">(965, 273)</td>
+<td style="text-align: right;">(1022, 292)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">traffic light</td>
+<td style="text-align: right;">0.36</td>
+<td style="text-align: right;">(681, 195)</td>
+<td style="text-align: right;">(692, 214)</td>
+</tr>
+</tbody>
+</table>
+</div>
+</figure>
+</div>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="../../media/deep-learning/car-detection-yolo/test-detections.jpg" class="img-fluid figure-img" alt="Road image with YOLOv2 boxes around eight cars, a bus at the left edge, and one traffic light."></p>
+<figcaption>YOLOv2 detections on the Drive.ai Sample Dataset road frame.</figcaption>
+</figure>
+</div>
+<p>The lowest surviving scores are the interesting ones. The 0.37 car and the 0.36 traffic light both clear the 0.3 threshold this run uses, and both are genuinely there. Raising the threshold to the 0.6 the notebook defaults to would drop them along with the 0.44 car, which is the trade the threshold controls.</p>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. Why are model boxes scaled before drawing them?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The network predicts positions in the resized 608 by 608 input. The photograph has different dimensions, so its boxes must be rescaled before their pixels can line up with the original image.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="detecting-across-the-whole-dataset" class="level2">
+<h2 class="anchored" data-anchor-id="detecting-across-the-whole-dataset">Detecting Across the Whole Dataset</h2>
+<p>Wrapping those steps in a function called <code>predict(image_file)</code> is what the original exercise does, and it is worth doing here for the same reason. The interesting part of the pipeline is per image, so the moment it is a function, running it over the whole sample is a loop.</p>
+<div id="1c8adb77" class="cell" data-execution_count="13">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> PIL <span class="im">import</span> Image</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> predict(image_file):</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Run the detector on one frame, draw the boxes, and save the result."""</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    image, image_data <span class="op">=</span> preprocess_image(lab_root <span class="op">/</span> <span class="st">'images'</span> <span class="op">/</span> image_file,</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>                                         model_image_size<span class="op">=</span>(<span class="dv">608</span>, <span class="dv">608</span>))</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    raw <span class="op">=</span> yolo_model(image_data)[<span class="st">'conv2d_22'</span>]</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>    yolo_outputs <span class="op">=</span> yolo_head(raw, anchors, <span class="bu">len</span>(class_names))</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    out_scores, out_boxes, out_classes <span class="op">=</span> yolo_eval(</span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>        yolo_outputs, image_shape<span class="op">=</span>(image.size[<span class="dv">1</span>], image.size[<span class="dv">0</span>]),</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>        max_boxes<span class="op">=</span><span class="dv">10</span>, score_threshold<span class="op">=</span><span class="fl">0.3</span>, iou_threshold<span class="op">=</span><span class="fl">0.5</span>)</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f'Found </span><span class="sc">{</span><span class="bu">len</span>(out_boxes)<span class="sc">}</span><span class="ss"> boxes for images/</span><span class="sc">{</span>image_file<span class="sc">}</span><span class="ss">'</span>)</span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>    draw_boxes(image, out_boxes, out_classes, class_names, out_scores)</span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>    image.save(os.path.join(<span class="st">'out'</span>, image_file), quality<span class="op">=</span><span class="dv">100</span>)</span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out_scores, out_boxes, out_classes</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> frame <span class="kw">in</span> <span class="bu">sorted</span>(os.listdir(lab_root <span class="op">/</span> <span class="st">'images'</span>)):</span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>    predict(frame)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Nothing in <code>predict</code> is new. It is the same preprocess, forward pass, decode, filter and suppress, with the drawing and saving attached. Swapping <code>test.jpg</code> for any other filename in the <code>images</code> folder is the whole of “test it on your own images”.</p>
+<p>Run it over all 122 frames and stitch the results back together in order, and the still picture becomes the thing the detector was actually built for.</p>
+<div style="text-align:center;">
+<video controls="" preload="none" width="1054" style="max-width:100%;" poster="../../media/deep-learning/car-detection-yolo/test-detections.jpg" src="../../media/deep-learning/car-detection-yolo/predictions.mp4" type="video/mp4"></video>
+</div>
+<p>Watching it run is a better test than any single frame. Boxes appear and disappear between consecutive frames on the same car, distant cars are picked up only once they are large enough to clear the threshold, and the occasional box flickers onto something that is not a vehicle at all. None of that is visible in one photograph, and all of it is the ordinary behaviour of a detector run per frame with no memory of the frame before.</p>
+</section>
+<section id="yolo26-update" class="level2">
+<h2 class="anchored" data-anchor-id="yolo26-update">YOLO26 Update</h2>
+<p>Everything above is a 2016 model driven by 2016 conventions. It is fair to ask whether the lab should simply be rewritten against a current detector, so this section answers that question rather than dodging it, and then shows how to keep answering it after this page stops being maintained.</p>
+<p>The current Ultralytics family is <strong>YOLO26</strong>, described by <a href="https://doi.org/10.48550/arXiv.2606.03748">Jocher et al.&nbsp;(2026)</a>. The original workflow uses <strong>YOLOv2</strong>, presented as <em>YOLO9000</em> by <a href="https://doi.org/10.1109/CVPR.2017.690">Redmon and Farhadi (2017)</a>.</p>
+<section id="should-this-lab-be-rewritten" class="level3">
+<h3 class="anchored" data-anchor-id="should-this-lab-be-rewritten">Should This Lab Be Rewritten</h3>
+<p>No, and the reason is the most interesting fact about YOLO26.</p>
+<p>This lab is not really about YOLO. It is about the three operations that turn a dense prediction tensor into a short list of objects, namely score thresholding, IoU, and non-max suppression. YOLO26 is documented as <strong>natively end-to-end</strong>. Its default head produces final detections directly, with no non-max suppression step at all. Port this lab to it and every exercise disappears. <code>yolo_filter_boxes</code>, <code>iou</code>, <code>yolo_non_max_suppression</code> and <code>yolo_eval</code> collapse into <code>model.predict(image)</code>, and the reader learns one API call instead of the ideas underneath it.</p>
+<p>That is a genuine argument for keeping the old model as the teaching vehicle, not nostalgia.</p>
+<p>It is also not an argument that the operations are obsolete, and this is the part worth being precise about. YOLO26 ships a <strong>dual-head architecture</strong>. The one-to-one head is the default and returns at most 300 detections per image with no post-processing. The one-to-many head produces traditional YOLO output, shaped <code>(N, nc + 4, 8400)</code>, which <strong>still requires non-max suppression</strong> and which the documentation notes is typically slightly more accurate. Choosing it is one keyword.</p>
+<div id="cf84fd9b" class="cell" data-execution_count="14">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Run manually in a separate environment. Do not run this during a site render.</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="co"># uv pip install "ultralytics==8.4.108"</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> ultralytics <span class="im">import</span> YOLO</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> YOLO(<span class="st">'yolo26n.pt'</span>)                  <span class="co"># downloads the public pretrained weights once</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>results <span class="op">=</span> model.predict(<span class="st">'images/test.jpg'</span>)                  <span class="co"># one-to-one head, no NMS</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>results <span class="op">=</span> model.predict(<span class="st">'images/test.jpg'</span>, end2end<span class="op">=</span><span class="va">False</span>)   <span class="co"># one-to-many head, needs NMS</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>So the code written above is not a museum piece. It is what the second line still needs, and it is what most detectors that are not YOLO26 still need. The concept outlived the model, which is the usual pattern and the reason the lab is worth doing in its original form.</p>
+</section>
+<section id="what-actually-changed" class="level3">
+<h3 class="anchored" data-anchor-id="what-actually-changed">What Actually Changed</h3>
+<p><a href="#tbl-yolo-versions" class="quarto-xref">Table&nbsp;2</a> is the comparison, restricted to things that can be checked against the paper and the documentation rather than impressions.</p>
+<div id="tbl-yolo-versions" class="quarto-float quarto-figure quarto-figure-center anchored" data-tbl-colwidths="[19,40,41]" data-tbl-align="left">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-yolo-versions-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;2: What separates the model this lab uses from the current one
+</figcaption>
+<div aria-describedby="tbl-yolo-versions-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 19%">
+<col style="width: 40%">
+<col style="width: 41%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: left;">Original lab, YOLOv2</th>
+<th style="text-align: left;">Current, YOLO26</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Duplicate removal</td>
+<td style="text-align: left;">Score threshold plus non-max suppression, written by hand in this lab</td>
+<td style="text-align: left;">End-to-end by default, one-to-one head, no NMS; the one-to-many head still needs it</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Detection head</td>
+<td style="text-align: left;">Five anchor boxes per cell, read from <code>yolo_anchors.txt</code></td>
+<td style="text-align: left;">Dual head, <code>(N, 300, 6)</code> end-to-end or <code>(N, nc + 4, 8400)</code> traditional</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Box regression</td>
+<td style="text-align: left;">Direct offsets, decoded by hand in <code>yolo_head</code></td>
+<td style="text-align: left;">Distribution Focal Loss removed, which simplifies the head and the export path</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Output to decode</td>
+<td style="text-align: left;"><code>19 × 19 × 425</code>, unpacked by the reader</td>
+<td style="text-align: left;">Final detections, or the traditional tensor on request</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Tasks</td>
+<td style="text-align: left;">Detection only</td>
+<td style="text-align: left;">Detection, instance and semantic segmentation, pose, oriented boxes, and an open-vocabulary variant</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Training</td>
+<td style="text-align: left;">Not attempted here, weights converted from Darknet</td>
+<td style="text-align: left;">Trained through the package, with the MuSGD optimizer and Progressive Loss with STAL</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Stack</td>
+<td style="text-align: left;">TensorFlow, plus YAD2K conversion helpers</td>
+<td style="text-align: left;">PyTorch, through the maintained Ultralytics package</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Inference call</td>
+<td style="text-align: left;">Preprocess, forward pass, <code>yolo_head</code>, <code>yolo_eval</code></td>
+<td style="text-align: left;"><code>YOLO('yolo26n.pt').predict(path)</code></td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Licence</td>
+<td style="text-align: left;">Weights from the original YOLO website</td>
+<td style="text-align: left;">AGPL-3.0 or an Enterprise licence, which matters for products</td>
+</tr>
+</tbody>
+</table>
+</div>
+</figure>
+</div>
+</section>
+<section id="finding-current-documentation" class="level3">
+<h3 class="anchored" data-anchor-id="finding-current-documentation">Finding Current Documentation</h3>
+<p>This page will fall out of date, and the useful skill is not memorizing YOLO26 but knowing where to look when YOLO27 appears. Four places answer almost everything.</p>
+<p><strong>The model page</strong> at <code>docs.ultralytics.com/models/</code> lists every supported model family with its own page. Each one carries a Key Features section, a table of supported tasks and modes, and a Quickstart with the exact Python and CLI calls. When a page says something is default behaviour, that is the sentence to trust over a blog post.</p>
+<p><strong>The citation block</strong> at the foot of each model page gives the paper. That is where the arXiv identifier and DOI for this page’s YOLO26 reference came from, and it is a better source than a search engine, because it is maintained by the people who trained the model.</p>
+<p><strong>The package index</strong> settles versions. Checking <code>ultralytics</code> on PyPI is how the pin below was confirmed to exist, and it is how you find out whether the version a tutorial used is still current.</p>
+<p><strong>The repository</strong> at <code>github.com/ultralytics/ultralytics</code> settles behaviour the documentation leaves ambiguous, because the argument you are unsure about is in the source.</p>
+<p>The habit worth taking away is checking the default. Between YOLOv2 and YOLO26 the biggest single change for anyone writing code is that post-processing moved inside the model, and that is the kind of change that silently invalidates a tutorial without producing an error message. Code written for the old default still runs. It simply suppresses boxes that were already unique.</p>
+</section>
+<section id="running-it" class="level3">
+<h3 class="anchored" data-anchor-id="running-it">Running It</h3>
+<p>The example below does not run when this page renders. Running it manually downloads the public pretrained checkpoint on first use into the local Ultralytics cache, so it needs a network connection. Use a separate environment and pin the reviewed version. The pin below is <code>ultralytics==8.4.108</code>, checked on 2026-08-18 against the package index, where the newest release at that date was 8.4.121. Review Ultralytics licensing before using the model in a product, because its code and models are offered under AGPL-3.0 or an Enterprise licence.</p>
+<div id="2e4e67ca" class="cell" data-execution_count="15">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Run manually in a separate environment. Do not run this during a site render.</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="co"># uv pip install "ultralytics==8.4.108"</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> pathlib <span class="im">import</span> Path</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> PIL <span class="im">import</span> Image</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> ultralytics <span class="im">import</span> YOLO</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>image_path <span class="op">=</span> Path(<span class="st">'images/test.jpg'</span>)</span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> YOLO(<span class="st">'yolo26n.pt'</span>)                 <span class="co"># downloads the public pretrained weights once</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>results <span class="op">=</span> model.predict(source<span class="op">=</span>image_path, imgsz<span class="op">=</span><span class="dv">640</span>, conf<span class="op">=</span><span class="fl">0.25</span>)</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>annotated <span class="op">=</span> Image.fromarray(results[<span class="dv">0</span>].plot())</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>annotated.save(<span class="st">'out/yolo26-test.jpg'</span>)</span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>annotated</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>For a reproducible lab run, record the downloaded checkpoint’s SHA-256 digest next to the experiment and keep the checked model outside <code>media/</code>. That avoids a silent checkpoint change and keeps large weights out of the rendered website. The model should be trained or fine-tuned separately, then its saved predictions should be shown in the page. It must never train during a render.</p>
+</section>
+<section id="review-questions-4" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-4">Review Questions</h3>
+<p><strong>1. Why does this lab still teach non-max suppression when YOLO26 does not use it by default?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the default is not the only path. YOLO26 keeps a one-to-many head that produces traditional output and still requires non-max suppression, and the documentation notes it is typically slightly more accurate, so it is a reasonable choice when accuracy matters more than latency. Beyond YOLO26, most detectors still produce more candidates than objects. The operation outlived the model that made it famous.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. A tutorial written for an older YOLO applies its own non-max suppression to YOLO26 output. What happens?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Nothing visible, which is what makes it dangerous. The default head has already removed duplicates, so a second suppression pass finds no pair of boxes overlapping above the threshold and returns what it was given. The code runs, the results look right, and the wasted step hides until someone reads it. Checking what a model does by default, rather than assuming the older convention, is the habit that catches this.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Where would you look first to find out whether a newer model still needs non-max suppression?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Its own model page in the official documentation, specifically the Key Features section and the description of the detection head, because that is where default behaviour is stated. The citation block on the same page gives the paper for the details, and the repository settles anything the documentation leaves ambiguous.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="summary" class="level2">
+<h2 class="anchored" data-anchor-id="summary">Summary</h2>
+<p>The whole pipeline, from one photograph to a handful of labelled boxes, is five steps.</p>
+<ol type="1">
+<li>Resize the image to 608 by 608 by 3 and run it through the network once.</li>
+<li>Take back a <span class="math inline">\(19 \times 19 \times 425\)</span> volume, which is <span class="math inline">\(19 \times 19 \times 5 \times 85\)</span> read differently. Each of the 361 cells describes five anchor boxes, and each description is 1 confidence plus 4 box numbers plus 80 class probabilities.</li>
+<li>Score every candidate as <span class="math inline">\(p_c \times c_i\)</span> and keep its best class. That is <span class="math inline">\(19 \times 19 \times 5 = 1805\)</span> candidate boxes from a single forward pass, before anything is discarded.</li>
+<li>Throw away every candidate scoring below the threshold.</li>
+<li>Run non-max suppression, once per class, on what is left.</li>
+</ol>
+<p>Steps 1 and 2 are the network. Steps 3 to 5 are the code on this page, and they are what turns 1805 candidates into the 10 detections in <a href="#tbl-yolo-detections" class="quarto-xref">Table&nbsp;1</a>.</p>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li>Jocher, G., Qiu, J., Liu, M., Lyu, S., Akyon, F. C., &amp; Kalfaoglu, M. E. (2026). <em>Ultralytics YOLO26: Unified real-time end-to-end vision models</em>. arXiv. <a href="https://doi.org/10.48550/arXiv.2606.03748" class="uri">https://doi.org/10.48550/arXiv.2606.03748</a></li>
+<li>Redmon, J., Divvala, S., Girshick, R., &amp; Farhadi, A. (2016). You only look once: Unified, real-time object detection. In <em>2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)</em> (pp.&nbsp;779-788). IEEE. <a href="https://doi.org/10.1109/CVPR.2016.91" class="uri">https://doi.org/10.1109/CVPR.2016.91</a></li>
+<li>Redmon, J., &amp; Farhadi, A. (2017). YOLO9000: Better, faster, stronger. In <em>2017 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)</em> (pp.&nbsp;6517-6525). IEEE. <a href="https://doi.org/10.1109/CVPR.2017.690" class="uri">https://doi.org/10.1109/CVPR.2017.690</a></li>
+<li>Zelener, A. (2017). <em>YAD2K: Yet another Darknet 2 Keras</em>. GitHub. <a href="https://github.com/allanzelener/YAD2K" class="uri">https://github.com/allanzelener/YAD2K</a></li>
+</ul>
+<p>The Drive.ai Sample Dataset is provided by Drive.ai under a <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 International licence</a>, with thanks to Brody Huval, Chih Hu and Rahul Patel for providing the data. The helper modules this lab imports, <code>yolo_head</code> and the utilities in <code>yad2k</code>, come from Zelener’s YAD2K repository by way of the course archive.</p>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 96%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">96% completed (1356 of 1412 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes.html" class="pagination-link" aria-label="IoU, Non-max Suppression, and Anchor Boxes">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">IoU, Non-max Suppression, and Anchor Boxes</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" class="pagination-link" aria-label="Semantic Segmentation with U-Net">
+        <span class="nav-page-text">Semantic Segmentation with U-Net</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
