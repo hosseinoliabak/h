@@ -6,10 +6,10 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-08-17">
-<meta name="description" content="Why classifying every window in an image is too slow, how turning fully connected layers into convolutions collapses the sweep into one forward pass, and what region proposals do instead.">
+<meta name="dcterms.date" content="2026-08-18">
+<meta name="description" content="How overlap is measured, how duplicate detections of the same object are removed, how one grid cell reports two objects, and how the whole YOLO algorithm fits together.">
 
-<title>Sliding Windows and Region Proposals – H’s Notes</title>
+<title>IoU, Non-max Suppression, and Anchor Boxes – H’s Notes</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -35,8 +35,8 @@ ul.task-list li input[type="checkbox"] {
 <script src="../../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../../">
-<link href="../../deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" rel="next">
-<link href="../../deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html" rel="prev">
+<link href="../../deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" rel="next">
+<link href="../../deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" rel="prev">
 <link href="../../media/favicon.ico" rel="icon">
 <script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
@@ -107,17 +107,17 @@ window.Quarto = {
 </script>
 
 <link rel="stylesheet" href="../../styles.css">
-<meta property="og:title" content="Sliding Windows and Region Proposals – H’s Notes">
-<meta property="og:description" content="Why classifying every window in an image is too slow, how turning fully connected layers into convolutions collapses the sweep into one forward pass, and what region proposals do instead.">
-<meta property="og:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals_files/figure-html/cell-2-output-1.png">
+<meta property="og:title" content="IoU, Non-max Suppression, and Anchor Boxes – H’s Notes">
+<meta property="og:description" content="How overlap is measured, how duplicate detections of the same object are removed, how one grid cell reports two objects, and how the whole YOLO algorithm fits together.">
+<meta property="og:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes_files/figure-html/cell-2-output-1.png">
 <meta property="og:site_name" content="H’s Notes">
-<meta property="og:image:height" content="317">
-<meta property="og:image:width" content="1208">
-<meta name="twitter:title" content="Sliding Windows and Region Proposals – H’s Notes">
-<meta name="twitter:description" content="Why classifying every window in an image is too slow, how turning fully connected layers into convolutions collapses the sweep into one forward pass, and what region proposals do instead.">
-<meta name="twitter:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals_files/figure-html/cell-2-output-1.png">
-<meta name="twitter:image-height" content="317">
-<meta name="twitter:image-width" content="1208">
+<meta property="og:image:height" content="452">
+<meta property="og:image:width" content="1071">
+<meta name="twitter:title" content="IoU, Non-max Suppression, and Anchor Boxes – H’s Notes">
+<meta name="twitter:description" content="How overlap is measured, how duplicate detections of the same object are removed, how one grid cell reports two objects, and how the whole YOLO algorithm fits together.">
+<meta name="twitter:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes_files/figure-html/cell-2-output-1.png">
+<meta name="twitter:image-height" content="452">
+<meta name="twitter:image-width" content="1071">
 <meta name="twitter:card" content="summary_large_image">
 </head>
 
@@ -377,7 +377,7 @@ window.Quarto = {
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html">Sliding Windows and Region Proposals</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes.html">IoU, Non-max Suppression, and Anchor Boxes</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -486,7 +486,7 @@ window.Quarto = {
 </li>
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html" class="sidebar-item-text sidebar-link active">
+  <a href="../../deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Sliding Windows and Region Proposals</span></a>
   </div>
 </li>
@@ -494,6 +494,12 @@ window.Quarto = {
   <div class="sidebar-item-container"> 
   <a href="../../deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Bounding Box Predictions with YOLO</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">IoU, Non-max Suppression, and Anchor Boxes</span></a>
   </div>
 </li>
         <li class="sidebar-item">
@@ -532,19 +538,19 @@ window.Quarto = {
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#sliding-windows-detection" id="toc-sliding-windows-detection" class="nav-link active" data-scroll-target="#sliding-windows-detection">Sliding Windows Detection</a>
+  <li><a href="#measuring-overlap-with-iou" id="toc-measuring-overlap-with-iou" class="nav-link active" data-scroll-target="#measuring-overlap-with-iou">Measuring Overlap with IoU</a>
   <ul class="collapse">
   <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
   </ul></li>
-  <li><a href="#fully-connected-layers-as-convolutions" id="toc-fully-connected-layers-as-convolutions" class="nav-link" data-scroll-target="#fully-connected-layers-as-convolutions">Fully Connected Layers as Convolutions</a>
+  <li><a href="#non-max-suppression" id="toc-non-max-suppression" class="nav-link" data-scroll-target="#non-max-suppression">Non-max Suppression</a>
   <ul class="collapse">
   <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
   </ul></li>
-  <li><a href="#one-pass-instead-of-four" id="toc-one-pass-instead-of-four" class="nav-link" data-scroll-target="#one-pass-instead-of-four">One Pass Instead of Four</a>
+  <li><a href="#anchor-boxes" id="toc-anchor-boxes" class="nav-link" data-scroll-target="#anchor-boxes">Anchor Boxes</a>
   <ul class="collapse">
   <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
   </ul></li>
-  <li><a href="#region-proposals" id="toc-region-proposals" class="nav-link" data-scroll-target="#region-proposals">Region Proposals</a>
+  <li><a href="#putting-the-algorithm-together" id="toc-putting-the-algorithm-together" class="nav-link" data-scroll-target="#putting-the-algorithm-together">Putting the Algorithm Together</a>
   <ul class="collapse">
   <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
   </ul></li>
@@ -567,20 +573,21 @@ window.Quarto = {
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">Sliding Windows and Region Proposals</h1>
+<h1 class="title">IoU, Non-max Suppression, and Anchor Boxes</h1>
   <div class="quarto-categories">
     <div class="quarto-category">deep-learning</div>
     <div class="quarto-category">convolutional-neural-networks</div>
     <div class="quarto-category">computer-vision</div>
     <div class="quarto-category">object-detection</div>
-    <div class="quarto-category">sliding-windows</div>
-    <div class="quarto-category">r-cnn</div>
+    <div class="quarto-category">yolo</div>
+    <div class="quarto-category">non-max-suppression</div>
+    <div class="quarto-category">anchor-boxes</div>
   </div>
   </div>
 
 <div>
   <div class="description">
-    Why classifying every window in an image is too slow, how turning fully connected layers into convolutions collapses the sweep into one forward pass, and what region proposals do instead.
+    How overlap is measured, how duplicate detections of the same object are removed, how one grid cell reports two objects, and how the whole YOLO algorithm fits together.
   </div>
 </div>
 
@@ -591,7 +598,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">August 17, 2026</p>
+      <p class="date">August 18, 2026</p>
     </div>
   </div>
   
@@ -609,11 +616,11 @@ document.addEventListener("DOMContentLoaded", function () {
   if (meta) {
     var div = document.createElement("div");
     div.style.order = "3";
-    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~50 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~46 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
     meta.appendChild(div);
     var lenDiv = document.createElement("div");
     lenDiv.style.order = "1";
-    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,700 words</p></div>';
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,200 words</p></div>';
     meta.appendChild(lenDiv);
     var diffDiv = document.createElement("div");
     diffDiv.style.order = "4";
@@ -635,30 +642,33 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
-<p><a href="../../deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html">Object Localization</a> built a network that finds one object and draws a box around it. Detection asks for all of them, and the number of objects is not known in advance, so a fixed output vector no longer fits the problem.</p>
-<p>The oldest answer is also the most obvious one. If a classifier can say whether a small picture contains a car, run it on every small piece of a big picture and record where it says yes. That is <strong>sliding windows detection</strong>, and it works. It is also, done naively, far too slow to use, which is the interesting part, because the fix turns out to be a statement about convolutions rather than a faster computer.</p>
-<section id="sliding-windows-detection" class="level2">
-<h2 class="anchored" data-anchor-id="sliding-windows-detection">Sliding Windows Detection</h2>
-<p>Start by building a classifier rather than a detector. The training set is made of <strong>closely cropped</strong> images, each one cut down so that the car fills nearly the whole frame, labelled 1, along with pictures containing no car, labelled 0. A ConvNet trained on that data answers one question about a small image, whether it is a car.</p>
-<p>Now take a test image and pick a window size. Feed the region under the window into the ConvNet, record the answer, shift the window across by some stride, and repeat until the window has visited every position. Then do it again with a larger window, resizing each crop to whatever input size the ConvNet expects, and again with a larger one still. If a car is present at some position and scale, one of those crops should contain it, and the classifier should say so.</p>
-<div id="1d28cfa0" class="cell" data-execution_count="1">
+<p><a href="../../deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html">Bounding Box Predictions with YOLO</a> built the grid, the target volume, and the box encoding. Run that network on a real photograph and three practical problems appear immediately.</p>
+<p>There is no way yet to say whether a predicted box is any good, since it will never match the true box exactly. The same object gets reported many times over, because several cells near it are confident. And a cell that holds two midpoints still has to choose between them.</p>
+<p>This page takes those three in turn, and then assembles the whole algorithm.</p>
+<section id="measuring-overlap-with-iou" class="level2">
+<h2 class="anchored" data-anchor-id="measuring-overlap-with-iou">Measuring Overlap with IoU</h2>
+<p>Suppose the true box for a car is known, and the algorithm outputs a box that is close but not identical. Is that a correct detection or not? Something has to turn “close” into a number.</p>
+<p><strong>Intersection over union</strong>, written IoU, is that number. Take the two boxes, measure the area where they overlap, measure the area covered by either of them, and divide.</p>
+<p><span class="math display">\[
+\text{IoU} = \frac{\text{area of intersection}}{\text{area of union}}
+\]</span></p>
+<p>The intersection is the region inside both boxes. The union is the region inside at least one of them, which is the two areas added together minus the intersection, since the overlap would otherwise be counted twice.</p>
+<div id="5eb1b100" class="cell" data-execution_count="1">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
-<p><img src="sliding-windows-and-region-proposals_files/figure-html/cell-2-output-1.png" class="img-fluid figure-img"></p>
+<p><img src="iou-non-max-suppression-and-anchor-boxes_files/figure-html/cell-2-output-1.png" class="img-fluid figure-img"></p>
 <figcaption>Photograph from the Drive.ai Sample Dataset, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption>
 </figure>
 </div>
 </div>
 </div>
-<p>Each panel draws four successive positions of the window, the last one in red, with an arrow along the direction of travel. Consecutive positions overlap by half, which is what makes this a sweep rather than a tiling of the frame, and it is also why only four are drawn out of the number in the caption.</p>
-<p>On this 1280 by 720 photograph, stepping the 64 pixel window by half its width takes 819 positions, and the two larger sizes add 190 and 72, so one sweep at that coarse setting is 1,081 crops. Cutting the step to 8 pixels, which is what a detector wanting decent localization would use, takes the 64 pixel window alone to 12,699 positions and all three sizes to 32,753. Every one of those is a separate forward pass through the ConvNet.</p>
-<p>The stride is the only dial available, and it does not help. A coarse stride cuts the number of windows, but the window then lands further from where the object actually is, so the reported position gets worse and the classifier sees badly framed crops. A fine stride frames objects well and multiplies the cost.</p>
-<p>This is worth putting in historical order, because sliding windows was not always a bad idea. Before neural networks took over, detectors used simple classifiers, often a linear function over hand engineered features. Each window cost almost nothing to evaluate, so sweeping thousands of them was ordinary practice and the method performed respectably. A ConvNet is a far better classifier and a far more expensive one, and running it thousands of times per image is infeasibly slow.</p>
-<p>So the choice looks like a trade between accuracy and speed. It is not, and the next section explains why.</p>
+<p>If the two boxes coincide perfectly the intersection equals the union and IoU is 1. If they do not touch at all the intersection is zero and so is IoU. Everything useful happens in between.</p>
+<p>By convention, a detection counts as correct when <strong>IoU is at least 0.5</strong>. That number is a human choice rather than a result. There is no theory behind 0.5, it is simply a threshold that people agreed produces sensible judgements. Being stricter is perfectly reasonable, and 0.6 or 0.7 are both used when a task needs tighter boxes. Going below 0.5 is rare, because at that point two boxes can be called a match while overlapping less than half.</p>
+<p>IoU has a second use, which arrives in the next section. Stated generally, it measures how similar two boxes are, and nothing about the definition requires one of them to be a ground truth label. Two predictions can be compared the same way, and that is exactly what removes duplicates.</p>
 <section id="review-questions" class="level3 unnumbered">
 <h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
-<p><strong>1. Why is the training set for a sliding windows classifier made of closely cropped images?</strong></p>
+<p><strong>1. Why divide by the union rather than by the area of one of the boxes?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -671,12 +681,12 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-1" class="callout-1-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>Because that is what the classifier will be shown at test time. Each window hands it a small region that either frames an object tightly or contains no object at all, so the training data has to look the same, meaning positives cropped down to the object and negatives containing nothing of interest. A classifier trained on wide scenes containing a small car would learn to answer a different question, namely whether a car appears somewhere in a large picture, which says nothing about where.</p>
+<p>Because dividing by one box can be fooled. If the predicted box were tiny and sat entirely inside the true box, then the intersection would equal the whole predicted box, and dividing by the predicted area would give a perfect score for a box that misses almost all of the object. The union counts every region either box claims, so a prediction is penalized both for missing part of the object and for covering things that are not the object.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>1. Both a coarse stride and a fine stride cause a problem. What are the two problems, and why can a single stride value not avoid both?</strong></p>
+<p><strong>1. What IoU do two identical boxes have, and two boxes that do not touch?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -689,12 +699,12 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-2" class="callout-2-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>A coarse stride reduces the number of windows and therefore the cost, but the window grid becomes sparse, so no window frames the object well and the position that comes back is imprecise. A fine stride frames objects closely and localizes better, but the number of windows grows roughly with the square of the reduction in stride, and every window is a full ConvNet evaluation. The stride sets cost and localization accuracy at the same time and pulls them in opposite directions, so no single value escapes both.</p>
+<p>Identical boxes give 1, because the intersection and the union are the same region. Boxes that do not touch give 0, because the intersection is empty while the union is not. Every other case falls between, and the measured 0.76 in the figure above is two boxes drawn around the same car with slightly different sizes and positions.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>1. Sliding windows worked acceptably before ConvNets. What changed?</strong></p>
+<p><strong>1. Is a detection with IoU 0.55 correct?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -707,32 +717,43 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-3" class="callout-3-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>The cost of one classification. Earlier detectors ran a simple classifier, often linear, over hand engineered features, and evaluating it on a window was cheap enough that thousands of windows per image were affordable. A ConvNet classifies far more accurately and costs orders of magnitude more per evaluation, so the same sweep becomes impractical. The algorithm did not get worse, the thing being repeated got heavier.</p>
+<p>Under the usual convention, yes, since the threshold is 0.5. It is worth being clear that this is a convention rather than a fact. The same detection would be counted wrong under a stricter threshold of 0.6 or 0.7, which some evaluations use, so a reported accuracy means nothing until the threshold behind it is stated.</p>
 </div>
 </div>
 </div>
 </section>
 </section>
-<section id="fully-connected-layers-as-convolutions" class="level2">
-<h2 class="anchored" data-anchor-id="fully-connected-layers-as-convolutions">Fully Connected Layers as Convolutions</h2>
-<p>The way out begins with an observation about the network itself, before any sliding happens. A fully connected layer can be written as a convolution, and once it is, the whole network becomes convolutional, which is what lets the sweep collapse.</p>
-<p>Take a small classifier of the kind sliding windows would use. It accepts a 14 by 14 by 3 image, applies 16 filters of size 5 by 5, which gives 10 by 10 by 16, then a 2 by 2 max pooling, which gives 5 by 5 by 16. Two fully connected layers of 400 units follow, and a softmax outputs four numbers, one per class, for pedestrian, car, motorcycle, and background.</p>
-<p>Now replace the first fully connected layer with a convolution. Use 400 filters, each of size 5 by 5 by 16, matching the volume exactly. A filter that covers the entire input has only one position to sit in, so each filter produces a single number, and 400 filters produce a 1 by 1 by 400 volume.</p>
-<p>That is not an approximation of the fully connected layer. It is the same arithmetic. A fully connected unit computes one linear function of all <span class="math inline">\(5 \times 5 \times 16 = 400\)</span> activations, and so does a filter of that size, so the two layers have the same parameters and produce the same values, only arranged as a volume rather than as a list.</p>
-<p>The remaining layers convert the same way. The second fully connected layer becomes 400 filters of size 1 by 1, giving another 1 by 1 by 400, and the output layer becomes 4 filters of size 1 by 1 followed by the softmax, giving 1 by 1 by 4.</p>
-<div id="5fe569b2" class="cell" data-execution_count="2">
+<section id="non-max-suppression" class="level2">
+<h2 class="anchored" data-anchor-id="non-max-suppression">Non-max Suppression</h2>
+<p>Run the detector on a real photograph and it does not report one box per object. It reports several, because detection is happening at every position of a fine grid.</p>
+<p>The reason is worth stating carefully. On a 19 by 19 grid there are <span class="math inline">\(19 \times 19 = 361\)</span> cells, each running classification with localization. Only one of them holds the midpoint of a given car, so in principle only one should fire. In practice the cells around it see most of the same car and are also fairly confident, so a single car produces a cluster of overlapping boxes with different scores.</p>
+<p><strong>Non-max suppression</strong> cleans that up. The name says what it does, which is to keep the maximum and suppress the rest.</p>
+<p>The procedure is short.</p>
+<ol type="1">
+<li>Discard every box whose score is below a threshold, commonly 0.6. Most of the 361 cells are reporting nothing at all, and this removes them in one step.</li>
+<li>While any boxes remain, take the one with the <strong>highest score</strong> and output it as a real detection.</li>
+<li>Discard every remaining box whose <strong>IoU with that output box is 0.5 or more</strong>, since a box overlapping it that much is describing the same object.</li>
+<li>Repeat from step 2 with what is left.</li>
+</ol>
+<p>The figure below runs exactly that on the photograph, using the detector that ships with the course lab.</p>
+<div id="eb765a09" class="cell" data-execution_count="2">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
-<p><img src="sliding-windows-and-region-proposals_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+<p><img src="iou-non-max-suppression-and-anchor-boxes_files/figure-html/cell-3-output-1.png" class="img-fluid figure-img"></p>
+<figcaption>Photograph from the Drive.ai Sample Dataset, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption>
 </figure>
 </div>
 </div>
 </div>
-<p>Nothing has been gained yet. The two networks compute the same four numbers from the same 14 by 14 input, at the same cost. What has changed is that the network no longer contains a layer that insists on a fixed input size, and that is what the next section spends.</p>
+<p>Seventeen boxes go in and ten come out. Following one cluster shows why.</p>
+<p>The car on the right of the frame attracts four boxes, scoring 0.80, 0.63, 0.54, and 0.43. Non-max suppression takes the 0.80 box first, because it is the highest, and outputs it. It then measures the others against it and finds IoU values of 0.82, 0.80, and 0.64, all comfortably above the 0.5 threshold, so all three are discarded as descriptions of a car that has already been reported. The bus at the left edge loses a duplicate the same way, at IoU 0.72, and the large car in the middle loses one at IoU 0.76.</p>
+<p>Two details matter for using this correctly.</p>
+<p>The score being compared is <span class="math inline">\(p_c\)</span>, the probability that there is an object. In a full implementation it is usually <span class="math inline">\(p_c\)</span> multiplied by the class probability, so that a confident car detection outranks an uncertain one of the same class.</p>
+<p>With more than one class, non-max suppression is run <strong>independently for each class</strong>. Detecting pedestrians, cars, and motorcycles means running the procedure three times, once over the boxes labelled pedestrian, once over cars, and once over motorcycles. Doing it jointly would let a confident car suppress a pedestrian standing next to it, which is a different object and should be reported.</p>
 <section id="review-questions-1" class="level3 unnumbered">
 <h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
-<p><strong>1. Why does a convolution with 400 filters of size 5 by 5 by 16 produce a 1 by 1 by 400 volume rather than something larger?</strong></p>
+<p><strong>1. Why does one object produce several boxes in the first place?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -745,12 +766,12 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-4" class="callout-4-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>Because the filter is exactly as large as the volume it slides over. A 5 by 5 by 16 filter on a 5 by 5 by 16 input has one valid position, so each filter emits a single number, and 400 of them emit 400 numbers, arranged as a 1 by 1 by 400 volume. The convention that a filter always spans every channel is what makes the depth match, so the 16 in the filter and the 16 in the volume must be equal.</p>
+<p>Because every cell of the grid runs the detector, and cells neighbouring the one that owns the object can see most of that object too. On a 19 by 19 grid there are 361 chances to be confident about the same car, and although only the cell containing the midpoint is supposed to claim it, nearby cells produce plausible boxes with somewhat lower scores. In the photograph above, one car drew four boxes scoring between 0.43 and 0.80.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>1. In what sense is the converted layer the same as the fully connected layer, rather than an approximation of it?</strong></p>
+<p><strong>1. Why is a box discarded on the basis of its IoU with an already output box, rather than on its own score?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -763,12 +784,12 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-5" class="callout-5-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>In the exact sense. A fully connected unit computes a weighted sum of all <span class="math inline">\(5 \times 5 \times 16 = 400\)</span> input activations plus a bias, and a 5 by 5 by 16 filter applied at its single valid position computes precisely the same weighted sum. The two layers have the same number of parameters and produce the same numbers for the same input. Only the shape of the output changes, from a list of 400 values to a 1 by 1 by 400 volume.</p>
+<p>Because a low score does not mean a box is wrong, it means the network is less sure. The question that matters is whether the box describes something already reported. High overlap with an output box says it does, so it is a duplicate rather than a new object. A box with a similar score but little overlap survives, because it is describing something else, which is exactly how several nearby cars all get reported.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>1. After the conversion, what stops the network from insisting on a 14 by 14 input?</strong></p>
+<p><strong>1. Why run the procedure separately for each class?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -781,80 +802,38 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-6" class="callout-6-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>Nothing does, which is the point. A fully connected layer has a fixed number of weights tied to a fixed number of input activations, so the input size cannot change. A convolutional layer applies the same filter at every position that fits, so a larger input simply produces more positions and a larger output volume. Every layer in the converted network is now of that kind, so the network accepts any input at least as large as the one it was designed for.</p>
+<p>Because overlap between boxes of different classes is not evidence of duplication. A pedestrian standing beside a car produces boxes that overlap heavily, and suppressing one because of the other would delete a real detection. Running the procedure once per class means only boxes claiming the same kind of object can suppress each other, so the pedestrian and the car both survive.</p>
 </div>
 </div>
 </div>
 </section>
 </section>
-<section id="one-pass-instead-of-four" class="level2">
-<h2 class="anchored" data-anchor-id="one-pass-instead-of-four">One Pass Instead of Four</h2>
-<p>Now feed the converted network something bigger than it was trained on. The classifier expects 14 by 14, so consider a 16 by 16 test image, which contains four 14 by 14 windows at a stride of 2, one in each corner.</p>
-<p>The naive method runs the ConvNet four times, once per window. Watch what the converted network does with the whole 16 by 16 image in a single pass. The first convolution gives 12 by 12 by 16, the max pooling gives 6 by 6 by 16, the 400 filters of size 5 by 5 give <strong>2 by 2 by 400</strong>, the two 1 by 1 convolutions preserve that grid, and the output is 2 by 2 by 4.</p>
-<p>That output is not four numbers, it is four sets of four numbers, and each set is exactly what the network would have produced for one of the four windows. The upper left 1 by 1 by 4 is the result for the upper left window, the upper right for the upper right window, and so on.</p>
-<div id="4bc90e1a" class="cell" data-execution_count="3">
+<section id="anchor-boxes" class="level2">
+<h2 class="anchored" data-anchor-id="anchor-boxes">Anchor Boxes</h2>
+<p>One problem from the previous page is still open. Each grid cell reports one object, so when two midpoints land in the same cell, one of them is lost.</p>
+<p>That sounds like a rare accident, and with a 19 by 19 grid it mostly is. It does happen, though, and the classic case is a pedestrian standing in front of a car. Both objects are roughly in the same place, so both midpoints fall in the same cell, and a cell with one eight number vector has to choose.</p>
+<p><strong>Anchor boxes</strong> solve it by giving the cell more than one slot, and by giving each slot a characteristic shape decided in advance. A natural pair is one tall thin rectangle, roughly the proportions of a standing person, and one short wide rectangle, roughly the proportions of a car.</p>
+<div id="4f0a7630" class="cell" data-execution_count="3">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
-<p><img src="sliding-windows-and-region-proposals_files/figure-html/cell-4-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+<p><img src="iou-non-max-suppression-and-anchor-boxes_files/figure-html/cell-4-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
 </figure>
 </div>
 </div>
 </div>
-<p>The saving comes from overlap. Those four windows share most of their pixels, so running them separately recomputes the same convolutions over the same regions four times. A convolution over the full image computes each of those shared responses once and lets every window that needs it read the same value. The four passes become one, and nothing is approximated.</p>
-<p>The same arithmetic scales to a realistic input. A 28 by 28 image produces an 8 by 8 by 4 output, which is 64 window positions evaluated in one forward pass.</p>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 16%">
-<col style="width: 16%">
-<col style="width: 16%">
-<col style="width: 16%">
-<col style="width: 16%">
-<col style="width: 16%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Input</th>
-<th>5 by 5 conv, 16 filters</th>
-<th>2 by 2 max pool</th>
-<th>5 by 5 conv, 400 filters</th>
-<th>1 by 1 conv, 400</th>
-<th>1 by 1 conv, 4</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>14 x 14 x 3</td>
-<td>10 x 10 x 16</td>
-<td>5 x 5 x 16</td>
-<td>1 x 1 x 400</td>
-<td>1 x 1 x 400</td>
-<td>1 x 1 x 4</td>
-</tr>
-<tr class="even">
-<td>16 x 16 x 3</td>
-<td>12 x 12 x 16</td>
-<td>6 x 6 x 16</td>
-<td>2 x 2 x 400</td>
-<td>2 x 2 x 400</td>
-<td>2 x 2 x 4</td>
-</tr>
-<tr class="odd">
-<td>28 x 28 x 3</td>
-<td>24 x 24 x 16</td>
-<td>12 x 12 x 16</td>
-<td>8 x 8 x 400</td>
-<td>8 x 8 x 400</td>
-<td>8 x 8 x 4</td>
-</tr>
-</tbody>
-</table>
-<p>Reading down the first column shows where the window stride went. The input grew by 2 pixels from 14 to 16 and the output grew by one position, so one output step corresponds to two input pixels. That factor of 2 is the max pooling layer, and nothing else. The stride of the sweep is not a parameter of this method at all, it is whatever the pooling and strided layers of the network multiply out to.</p>
-<p>This is the OverFeat construction, from <a href="https://doi.org/10.48550/arXiv.1312.6229">Sermanet, Eigen, Zhang, Mathieu, Fergus, and LeCun (2013)</a>.</p>
-<p>One weakness survives all of this, and it is about accuracy rather than speed. The boxes this method can report are exactly the window positions, so they sit on a grid whose spacing is set by the pooling, and they have the aspect ratio of the window. A car that is neither square nor aligned to that grid will not have a window that fits it well, so the box comes back close but not right.</p>
+<p>The labelling rule changes in one specific way. Before anchor boxes, an object was assigned to the grid cell containing its midpoint. Now it is assigned to a <strong>pair</strong>, a grid cell and an anchor box. The cell is still the one containing the midpoint, and the anchor is whichever of the predefined shapes has the highest IoU with the object’s own shape. This is the second use of IoU promised earlier, and here it compares an object against a shape rather than against a ground truth.</p>
+<p>The target for one cell becomes two eight number blocks stacked, which is the <span class="math inline">\(3 \times 3 \times 16\)</span> volume from the previous page. A pedestrian and a car in the same cell now both fit, the pedestrian described in the first block and the car in the second.</p>
+<p>When a cell holds only a car, the arrangement is the same and the first block is simply switched off. Its <span class="math inline">\(p_c\)</span> is 0 and its remaining seven entries are do not care values, while the second block carries the car.</p>
+<p>Two situations this does not handle deserve to be said out loud, since it is easy to assume the problem is fully solved.</p>
+<p><strong>Three objects in a cell with two anchors.</strong> There is no good answer, and the algorithm falls back on some default tiebreak. It is uncommon enough to live with.</p>
+<p><strong>Two objects in a cell with the same anchor shape.</strong> Two cars side by side whose midpoints share a cell both want the wide anchor, and again one has to be dropped by a tiebreak.</p>
+<p>With a 19 by 19 grid both are rare, which is what makes the compromise acceptable in practice.</p>
+<p>There is a second, and arguably better, reason to use anchor boxes than the collision it fixes. It lets the network <strong>specialize</strong>. Some output units become responsible for tall thin objects and others for short wide ones, so each set of weights learns the appearance of a narrower family of shapes rather than trying to cover everything at once. That specialization helps even in images where no two midpoints ever collide.</p>
+<p>Choosing the shapes is the remaining question. By hand is common, picking five or ten shapes that span the range of objects expected, some tall and thin, some short and wide. A better method, used in later YOLO work by <a href="https://doi.org/10.1109/CVPR.2017.690">Redmon and Farhadi (2017)</a>, is to run k-means clustering over the shapes of the objects in the training set and take the cluster centres as anchors, which produces a set that matches the data rather than the intuition of whoever picked them.</p>
 <section id="review-questions-2" class="level3 unnumbered">
 <h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
-<p><strong>1. Where does the factor of 2 between input pixels and output positions come from?</strong></p>
+<p><strong>1. What exactly changes about the labelling rule when anchor boxes are introduced?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -867,12 +846,12 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-7" class="callout-7-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>From the 2 by 2 max pooling layer, which is the only place the resolution is reduced in this network. Every other layer either preserves the grid or shrinks it by the filter size in a way that shifts positions one for one. The consequence is that the effective stride of the sweep is not something chosen separately, it is the product of the strides and pooling factors of the network, so changing the stride means changing the architecture.</p>
+<p>An object is assigned to a pair rather than to a cell. Before, it went to the grid cell containing its midpoint. Now it goes to that same cell and, within it, to the anchor box whose shape has the highest IoU with the object’s shape. The output grows accordingly, from one eight number vector per cell to one per anchor, which for two anchors is the sixteen numbers of a <span class="math inline">\(3 \times 3 \times 16\)</span> target.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>1. Four 14 by 14 windows inside a 16 by 16 image contain 784 pixels each, 3,136 in total, while the image has only 256. What does that arithmetic say about the naive method?</strong></p>
+<p><strong>1. A cell contains only a car. What does its first anchor slot contain?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -885,12 +864,12 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-8" class="callout-8-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>That it recomputes the same work many times over. The windows overlap so heavily that the four crops together contain more than twelve times as many pixels as the image itself, which means most pixels are convolved with the same filters repeatedly, once per window that covers them. The convolutional implementation computes each filter response once at each image position and lets every window that needs it share the result, which is why the saving grows as the windows overlap more, meaning as the stride gets finer.</p>
+<p><span class="math inline">\(p_c = 0\)</span> and seven do not care entries. Anchors are slots, not objects, so an unused slot has to be labelled as empty rather than left undefined, otherwise the network is never taught to report nothing there. The car occupies whichever slot its shape matches, which for a wide object is the wide anchor.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>1. The convolutional implementation removes the speed problem. Which problem does it leave untouched, and why?</strong></p>
+<p><strong>1. Anchor boxes are introduced to fix collisions, which are rare on a 19 by 19 grid. What is the better argument for them?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -903,67 +882,23 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-9" class="callout-9-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>The accuracy of the box. The output positions correspond to window positions, so the boxes available are those of a fixed size and aspect ratio, spaced by the effective stride of the network. Nothing in this construction lets a box be reported at an arbitrary position, or with a shape that differs from the window’s. Making the sweep cheap does not make the grid finer or the window shapes more varied, so a box that fits an object closely is still not expressible.</p>
+<p>Specialization. With anchors of different shapes, some output units become responsible for tall thin objects and others for short wide ones, so each learns a narrower and more consistent family of appearances instead of covering every shape at once. That benefit applies to every image, including the vast majority where no two midpoints ever land in the same cell.</p>
 </div>
 </div>
 </div>
 </section>
 </section>
-<section id="region-proposals" class="level2">
-<h2 class="anchored" data-anchor-id="region-proposals">Region Proposals</h2>
-<p>Convolutional sliding windows answers the cost problem by making the sweep cheap. A different line of work answers the same problem by making the sweep shorter, and the reasoning is easy to sympathize with. Most of the windows in a sweep contain nothing at all, blank road or plain sky, and running a classifier there is wasted effort.</p>
-<p><a href="https://doi.org/10.1109/CVPR.2014.81">Girshick, Donahue, Darrell, and Malik (2014)</a> proposed <strong>R-CNN</strong>, meaning regions with convolutional networks. Rather than classify every window, run a segmentation algorithm first, which groups pixels into regions that look like they belong together, and take a bounding box around each blob. Those boxes are the <strong>region proposals</strong>, and the classifier runs only on them, around two thousand per image rather than tens of thousands of windows.</p>
-<div id="28cff181" class="cell" data-execution_count="4">
-<div class="cell-output cell-output-display">
-<div class="quarto-figure quarto-figure-center">
-<figure class="figure">
-<p><img src="sliding-windows-and-region-proposals_files/figure-html/cell-5-output-1.png" class="img-fluid figure-img"></p>
-<figcaption>Photograph from the Drive.ai Sample Dataset, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption>
-</figure>
-</div>
-</div>
-</div>
-<p>The right hand panel is a real segmentation of that photograph rather than an illustration of one, and it shows both what the idea buys and where it strains. Seventy proposals replace 12,699 windows, which is the saving. The proposal that lands on the car, drawn solid, overlaps the true box, drawn dashed, by 44 percent, which is the strain. A blob that groups pixels by colour and texture does not know where an object ends.</p>
-<p>That is why R-CNN does not trust the box it was handed. For each proposed region it outputs a class <strong>and</strong> its own bounding box, <span class="math inline">\(b_x, b_y, b_h, b_w\)</span>, refining the rough proposal into something that fits. The proposal decides where to look, and the network decides what is actually there and exactly where.</p>
-<p>R-CNN was accurate and slow, and the work that followed chipped away at the slowness in two steps.</p>
-<p><strong>Fast R-CNN</strong>, from <a href="https://doi.org/10.1109/ICCV.2015.169">Girshick (2015)</a>, keeps the proposal step but classifies the regions with the convolutional implementation of sliding windows from the previous section, so the shared computation is shared once again rather than repeated per region. That removes most of the classification cost and leaves the proposal step as the bottleneck, because the segmentation is itself slow.</p>
-<p><strong>Faster R-CNN</strong>, from <a href="https://doi.org/10.1109/TPAMI.2016.2577031">Ren, He, Girshick, and Sun (2017)</a>, replaces the segmentation with a convolutional network that proposes the regions, so the proposals come from the same kind of computation as everything else and can run on the same hardware. It is considerably quicker than Fast R-CNN, and most implementations are still slower than the single pass method the next section builds towards.</p>
-<p>The three steps of that story are worth keeping side by side, because each one removes the bottleneck the previous one left behind.</p>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Approach</th>
-<th>Main change</th>
-<th>Remaining bottleneck</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>R-CNN</td>
-<td>Propose regions with a segmentation, then classify each region separately</td>
-<td>Thousands of separate ConvNet evaluations</td>
-</tr>
-<tr class="even">
-<td>Fast R-CNN</td>
-<td>Classify the proposals with the convolutional implementation, sharing the work</td>
-<td>The segmentation that proposes the regions is still slow</td>
-</tr>
-<tr class="odd">
-<td>Faster R-CNN</td>
-<td>Propose the regions with a convolutional network too</td>
-<td>Proposing and detecting remain two separate steps</td>
-</tr>
-</tbody>
-</table>
-<p>The course offers a view here, and flags it as a personal one rather than a settled matter. Proposing regions is an interesting idea, but doing detection in two steps, first propose and then classify, looks less promising in the long run than doing everything at once. That is worth knowing as an opinion held while the field was still deciding, and worth knowing because the R-CNN family remains common enough that the names come up constantly.</p>
+<section id="putting-the-algorithm-together" class="level2">
+<h2 class="anchored" data-anchor-id="putting-the-algorithm-together">Putting the Algorithm Together</h2>
+<p>Everything needed is now on the table, so here is the whole method in order.</p>
+<p><strong>Construct the training targets.</strong> Suppose three classes, pedestrian, car, and motorcycle, and two anchor boxes. The target for an image is <span class="math inline">\(3 \times 3 \times 2 \times 8\)</span>, usually written <span class="math inline">\(3 \times 3 \times 16\)</span>. Go through the nine cells. For a cell with nothing in it, set <span class="math inline">\(p_c = 0\)</span> in both anchor slots and leave the rest as do not care values. For a cell holding an object, put that object in the anchor whose shape matches it best, filling in <span class="math inline">\(p_c = 1\)</span>, the four box numbers measured against the cell, and a one in the class component that applies. A real implementation uses a finer grid and often more anchors, so the target is more like <span class="math inline">\(19 \times 19 \times 16\)</span>, or <span class="math inline">\(19 \times 19 \times 40\)</span> with five anchors, since <span class="math inline">\(5 \times 8 = 40\)</span>.</p>
+<p><strong>Train.</strong> Feed images in, say <span class="math inline">\(100 \times 100 \times 3\)</span>, and train an ordinary ConvNet to output that volume. This is unremarkable supervised learning.</p>
+<p><strong>Predict.</strong> Run an image through once. The network outputs a number in every position of the volume, including positions where there is nothing, because a network cannot output a question mark. Those numbers are noise and it does not matter, since the <span class="math inline">\(p_c\)</span> beside them is near zero and everything else in that slot is ignored.</p>
+<p><strong>Clean up.</strong> Two steps, in this order. Discard every box whose score falls below the threshold, which removes the great majority. Then run non-max suppression <strong>once per class</strong>, so that duplicate cars suppress each other, duplicate pedestrians suppress each other, and neither interferes with the other.</p>
+<p>What comes out is one box per object, with a class and a confidence, from a single pass over the image. On the photograph used throughout this page, that is the ten boxes in the right hand panel above, produced from seventeen candidates, in one forward pass.</p>
 <section id="review-questions-3" class="level3 unnumbered">
 <h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
-<p><strong>1. Region proposals and convolutional sliding windows attack the same problem. How do their answers differ?</strong></p>
+<p><strong>1. The network outputs numbers for grid cells that contain nothing. Why is that harmless?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -976,12 +911,12 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-10" class="callout-10-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>Both are responses to the cost of classifying many windows. The convolutional implementation keeps every window and makes them collectively cheap, by computing shared filter responses once and reading a result per position out of one forward pass. Region proposals keep the classifier expensive per region and cut the number of regions instead, using a segmentation to guess where objects might be. The first changes how the sweep is computed, the second changes what gets swept.</p>
+<p>Because those numbers are never read. A network has to emit a value at every output position, so a cell with no object still produces box coordinates and class scores, and they are meaningless. The <span class="math inline">\(p_c\)</span> for that slot is near zero, the thresholding step removes the slot on that basis, and nothing downstream ever looks at the rest of it. The training labels take the same view, marking those entries as do not care so they contribute nothing to the loss.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>1. Why does R-CNN output its own bounding box rather than reporting the proposed region?</strong></p>
+<p><strong>1. Put the three ideas on this page in the order they are used, and say what each one is for.</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -994,12 +929,12 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-11" class="callout-11-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>Because a proposal is only a guess about where something interesting is. The segmentation groups pixels by appearance and knows nothing about object boundaries, so its box is typically offset, too large, or too small, as in the figure above where the best proposal for the car overlaps the true box by 44 percent. Predicting <span class="math inline">\(b_x, b_y, b_h, b_w\)</span> for the region lets the network correct the proposal into a box that fits, which is the same regression the localization page introduced, applied to a region rather than to a whole image.</p>
+<p>Anchor boxes act first, at labelling and training time, deciding which slot of which cell is responsible for each object so that two objects sharing a cell can both be described. IoU appears twice, once inside that assignment as the measure of which anchor shape fits an object, and again after prediction as the measure of whether two boxes describe the same thing. Non-max suppression acts last, at prediction time, using IoU to remove the duplicate boxes that a fine grid inevitably produces.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>1. Fast R-CNN sped up the classification step, and the algorithm was still slow. Why, and how did Faster R-CNN respond?</strong></p>
+<p><strong>1. With five anchor boxes and three classes on a 19 by 19 grid, what shape is the output volume?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -1012,7 +947,7 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-12" class="callout-12-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>Because the proposal step was not touched. Fast R-CNN classifies the proposed regions with the convolutional implementation, which removes the repeated work, but the segmentation that produces the proposals is a separate and slow algorithm, so it becomes the bottleneck once everything around it gets faster. Faster R-CNN removes that bottleneck by having a convolutional network propose the regions, so proposal and classification are the same kind of computation.</p>
+<p><span class="math inline">\(19 \times 19 \times 40\)</span>. Each anchor needs one <span class="math inline">\(p_c\)</span>, four box numbers, and three class components, which is 8, and five anchors give <span class="math inline">\(5 \times 8 = 40\)</span> numbers per cell. Written with the anchor axis kept separate it is <span class="math inline">\(19 \times 19 \times 5 \times 8\)</span>, which is the same volume arranged differently.</p>
 </div>
 </div>
 </div>
@@ -1021,19 +956,17 @@ document.addEventListener("DOMContentLoaded", function () {
 <section id="references" class="level2">
 <h2 class="anchored" data-anchor-id="references">References</h2>
 <ul>
-<li>Girshick, R. (2015). Fast R-CNN. In <em>2015 IEEE International Conference on Computer Vision (ICCV)</em> (pp.&nbsp;1440-1448). IEEE. <a href="https://doi.org/10.1109/ICCV.2015.169" class="uri">https://doi.org/10.1109/ICCV.2015.169</a></li>
-<li>Girshick, R., Donahue, J., Darrell, T., &amp; Malik, J. (2014). Rich feature hierarchies for accurate object detection and semantic segmentation. In <em>2014 IEEE Conference on Computer Vision and Pattern Recognition</em> (pp.&nbsp;580-587). IEEE. <a href="https://doi.org/10.1109/CVPR.2014.81" class="uri">https://doi.org/10.1109/CVPR.2014.81</a></li>
-<li>Ren, S., He, K., Girshick, R., &amp; Sun, J. (2017). Faster R-CNN: Towards real-time object detection with region proposal networks. <em>IEEE Transactions on Pattern Analysis and Machine Intelligence, 39</em>(6), 1137-1149. <a href="https://doi.org/10.1109/TPAMI.2016.2577031" class="uri">https://doi.org/10.1109/TPAMI.2016.2577031</a></li>
-<li>Sermanet, P., Eigen, D., Zhang, X., Mathieu, M., Fergus, R., &amp; LeCun, Y. (2013). <em>OverFeat: Integrated recognition, localization and detection using convolutional networks</em>. arXiv. <a href="https://doi.org/10.48550/arXiv.1312.6229" class="uri">https://doi.org/10.48550/arXiv.1312.6229</a></li>
+<li>Redmon, J., &amp; Farhadi, A. (2017). YOLO9000: Better, faster, stronger. In <em>2017 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)</em> (pp.&nbsp;6517-6525). IEEE. <a href="https://doi.org/10.1109/CVPR.2017.690" class="uri">https://doi.org/10.1109/CVPR.2017.690</a></li>
+<li>Redmon, J., Divvala, S., Girshick, R., &amp; Farhadi, A. (2016). You only look once: Unified, real-time object detection. In <em>2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)</em> (pp.&nbsp;779-788). IEEE. <a href="https://doi.org/10.1109/CVPR.2016.91" class="uri">https://doi.org/10.1109/CVPR.2016.91</a></li>
 </ul>
 
 
 <div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
   <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
   <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
-    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 91%; border-radius: 6px;"></div>
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 95%; border-radius: 6px;"></div>
   </div>
-  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">91% completed (1168 of 1277 min)</p>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">95% completed (1267 of 1323 min)</p>
 </div>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -1477,13 +1410,13 @@ document.addEventListener("DOMContentLoaded", function() {
 </script>
 <nav class="page-navigation">
   <div class="nav-page nav-page-previous">
-      <a href="../../deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html" class="pagination-link" aria-label="Object Localization and Landmark Detection">
-        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Object Localization and Landmark Detection</span>
+      <a href="../../deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" class="pagination-link" aria-label="Bounding Box Predictions with YOLO">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Bounding Box Predictions with YOLO</span>
       </a>          
   </div>
   <div class="nav-page nav-page-next">
-      <a href="../../deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" class="pagination-link" aria-label="Bounding Box Predictions with YOLO">
-        <span class="nav-page-text">Bounding Box Predictions with YOLO</span> <i class="bi bi-arrow-right-short"></i>
+      <a href="../../deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" class="pagination-link" aria-label="Semantic Segmentation with U-Net">
+        <span class="nav-page-text">Semantic Segmentation with U-Net</span> <i class="bi bi-arrow-right-short"></i>
       </a>
   </div>
 </nav>
