@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-18">
+<meta name="description" content="Labelling every pixel rather than drawing a box, the transpose convolution that grows a representation back, and the U-Net that puts the two together.">
+
+<title>Semantic Segmentation with U-Net – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-a06763021a52c43c40a351ac8b799b8f.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-87fe4da730787eeec4a7ec728bf0e0b5.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="Semantic Segmentation with U-Net – H’s Notes">
+<meta property="og:description" content="Labelling every pixel rather than drawing a box, the transpose convolution that grows a representation back, and the U-Net that puts the two together.">
+<meta property="og:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Semantic Segmentation with U-Net – H’s Notes">
+<meta name="twitter:description" content="Labelling every pixel rather than drawing a box, the transpose convolution that grows a representation back, and the U-Net that puts the two together.">
+<meta name="twitter:image" content="https://h.oliabak.com/deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../networking/archive.html">
+ <span class="dropdown-text">Archive</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html">Semantic Segmentation with U-Net</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutional Neural Networks</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/convolutions-and-edge-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutions and Edge Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Strided Convolutions and Convolutions Over Volume</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/one-layer-of-a-convolutional-network.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One Layer of a Convolutional Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/pooling-layers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pooling Layers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/full-convnet-example-and-why-convolutions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Full ConvNet Example and Why Convolutions</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/lab-convolutional-model-step-by-step.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Convolutional Model Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/lab-convolutional-model-application.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Convolutional Model Application</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/classic-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classic Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/modern-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modern Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/lab-residual-networks.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Residual Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/mobilenet-and-efficientnet.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MobileNet and EfficientNet</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/practical-advice-for-convnets.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Practical Advice for Using ConvNets</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/lab-transfer-learning-with-mobilenet.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Transfer Learning with MobileNetV2</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Object Localization and Landmark Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sliding Windows and Region Proposals</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bounding Box Predictions with YOLO</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Semantic Segmentation with U-Net</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#pixel-labels" id="toc-pixel-labels" class="nav-link active" data-scroll-target="#pixel-labels">Pixel Labels</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#transpose-convolutions" id="toc-transpose-convolutions" class="nav-link" data-scroll-target="#transpose-convolutions">Transpose Convolutions</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#compression-expansion-and-skip-connections" id="toc-compression-expansion-and-skip-connections" class="nav-link" data-scroll-target="#compression-expansion-and-skip-connections">Compression, Expansion, and Skip Connections</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#full-architecture" id="toc-full-architecture" class="nav-link" data-scroll-target="#full-architecture">Full Architecture</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../auth.js"></script>
+<script src="../../giscus-note.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../nav-columns.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Semantic Segmentation with U-Net</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">convolutional-neural-networks</div>
+    <div class="quarto-category">computer-vision</div>
+    <div class="quarto-category">semantic-segmentation</div>
+    <div class="quarto-category">u-net</div>
+    <div class="quarto-category">transpose-convolution</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Labelling every pixel rather than drawing a box, the transpose convolution that grows a representation back, and the U-Net that puts the two together.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 18, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~56 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,100 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";      if (!dateEl.dataset.weekdayified) {
+        var d = new Date(dateEl.textContent.trim());
+        if (!isNaN(d.getTime())) {
+          var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          dateEl.textContent = days[d.getDay()] + ", " + dateEl.textContent.trim();
+        }
+        dateEl.dataset.weekdayified = "1";
+      }
+    }
+  }
+});
+</script>
+
+<p>Detection reports objects with rectangles. <a href="../../deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html">Bounding Box Predictions with YOLO</a> produces a box, a class, and a confidence for each object it finds, and for a great many applications that is enough.</p>
+<p>A box is a coarse answer, though. It says a car is somewhere inside this rectangle, and the rectangle inevitably contains road, sky, and pieces of other cars. <strong>Semantic segmentation</strong> asks the harder question, which is not where the object roughly is but which exact pixels belong to it. The answer is a label for every pixel in the image.</p>
+<section id="pixel-labels" class="level2">
+<h2 class="anchored" data-anchor-id="pixel-labels">Pixel Labels</h2>
+<p>Start with the simplest version of the task, separating a car from everything else. Every pixel gets one of two labels, 1 if it is part of the car and 0 if it is not. The output is therefore not a class, and not four coordinates, but a grid of labels the same height and width as the input.</p>
+<p>A richer version uses more classes. Label the car 1, the buildings 2, and the road 3, and the algorithm has to colour in the whole picture, deciding for each pixel which of the three it belongs to.</p>
+<div style="text-align:center;">
+<svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 940 315" role="img" aria-labelledby="seg-title seg-desc" style="max-width:100%;max-height:315px;">
+<title id="seg-title">
+Object detection compared with semantic segmentation
+</title>
+<desc id="seg-desc">The same street scene has one result made of bounding boxes and another result made of labelled pixels for buildings, car, and road.</desc> <defs><marker id="seg-arrow" markerwidth="9" markerheight="9" refx="8" refy="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#777"></path></marker></defs> <g transform="translate(28 45)"> <rect width="260" height="195" rx="8" fill="#DCE8F3" stroke="#AEB7C0" stroke-width="2"></rect> <path d="M0 130 L76 90 L138 127 L202 80 L260 120 V195 H0Z" fill="#C8CED8"></path> <path d="M0 160 L64 142 L140 164 L208 131 L260 147 V195 H0Z" fill="#6F8D58"></path> <rect x="98" y="113" width="76" height="43" rx="8" fill="#7ED4E6"></rect><circle cx="119" cy="155" r="11" fill="#333"></circle><circle cx="154" cy="155" r="11" fill="#333"></circle> <text x="130" y="223" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#333">input image</text> </g> <path d="M310 142 H403" stroke="#777" stroke-width="3" marker-end="url(#seg-arrow)"></path> <g transform="translate(425 45)"> <rect width="220" height="195" rx="8" fill="#DCE8F3" stroke="#AEB7C0" stroke-width="2"></rect> <path d="M0 130 L70 90 L126 127 L180 80 L220 120 V195 H0Z" fill="#C8CED8"></path> <path d="M0 160 L54 142 L121 164 L177 131 L220 147 V195 H0Z" fill="#6F8D58"></path> <rect x="82" y="113" width="68" height="43" rx="8" fill="#7ED4E6"></rect><circle cx="101" cy="155" r="10" fill="#333"></circle><circle cx="132" cy="155" r="10" fill="#333"></circle> <rect x="75" y="104" width="85" height="62" fill="none" stroke="#CC0000" stroke-width="4"></rect> <text x="110" y="223" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#333">object detection</text> </g> <path d="M670 142 H753" stroke="#777" stroke-width="3" marker-end="url(#seg-arrow)"></path> <g transform="translate(774 45)"> <rect width="140" height="195" rx="8" fill="#F8F9FA" stroke="#AEB7C0" stroke-width="2"></rect> <path d="M0 0 H140 V121 L110 121 V91 H76 V130 H43 V100 H0Z" fill="#C8CED8"></path> <path d="M0 113 H43 V132 H76 V95 H110 V124 H140 V195 H0Z" fill="#7ED4E6"></path> <path d="M0 158 L41 142 L79 158 L111 135 L140 146 V195 H0Z" fill="#6F8D58"></path> <text x="70" y="223" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#333">pixel labels</text> </g> <g font-family="sans-serif" font-size="15" fill="#333"><rect x="453" y="278" width="14" height="14" fill="#C8CED8"></rect><text x="474" y="290">building</text><rect x="556" y="278" width="14" height="14" fill="#7ED4E6"></rect><text x="577" y="290">car</text><rect x="638" y="278" width="14" height="14" fill="#6F8D58"></rect><text x="659" y="290">road</text></g>
+</svg>
+</div>
+<p>Formally, for an image of height <span class="math inline">\(h\)</span> and width <span class="math inline">\(w\)</span> the output has a prediction at all <span class="math inline">\(h \times w\)</span> positions. With <span class="math inline">\(n_{\text{classes}}\)</span> classes, the final layer produces a vector of <span class="math inline">\(n_{\text{classes}}\)</span> numbers at each pixel, and taking the largest entry of that vector assigns the pixel to a class. An output of shape <span class="math inline">\(h \times w \times 3\)</span> is therefore three numbers per pixel, not three pixels.</p>
+<p>This is worth doing because several applications need exactly it, and a box would be useless for them.</p>
+<p>A self driving car needs to know which pixels are <strong>drivable surface</strong>. Drawing a rectangle around the road is meaningless, since a road is not rectangular and the rectangle would include the pavement and the cars parked on it. Marking every pixel that can be driven over is the useful answer, and some self driving teams use segmentation for precisely that.</p>
+<p>In medical imaging the same shift matters more. Given a chest X-ray, a diagnosis is useful, but an outline of exactly which pixels are lung, which are heart, and which are collarbone is more useful still, because it makes irregularities easier to spot and helps surgeons plan. Given a brain MRI, outlining a tumour by hand is slow and tedious work, and an algorithm that segments it automatically saves a radiologist a great deal of time and gives a surgical team something to plan against. The architecture in the rest of this page is the one that produces results like those.</p>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. How is semantic segmentation more detailed than object detection?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Object detection identifies an object and places a rectangle around it, so the answer is a handful of numbers per object. Semantic segmentation labels every pixel, so it can trace the exact boundary of an object, a road, or a building. A box says roughly where something is, while a segmentation says which pixels it is made of.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why can the output of an ordinary classifier not serve as a segmentation map?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because of its shape. A classifier reduces an image to a short vector, one number per class, and along the way the height and width of its activations shrink steadily. A segmentation map needs a prediction at every pixel position, so it has to be as tall and as wide as the input image. Getting there means the network has to grow the representation back up after shrinking it, which no ordinary classifier does.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. A segmentation network for three classes outputs a volume of shape <span class="math inline">\(h \times w \times 3\)</span>. What sits at one position of that volume, and how does it become a label?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Three numbers, one per class, describing how strongly that pixel belongs to each. The label is the position of the largest of the three, which is an <span class="math inline">\(\arg\max\)</span> over the class axis. Doing that at every one of the <span class="math inline">\(h \times w\)</span> positions turns the volume into a single map of labels, which is what gets displayed as a coloured overlay.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="transpose-convolutions" class="level2">
+<h2 class="anchored" data-anchor-id="transpose-convolutions">Transpose Convolutions</h2>
+<p>An ordinary convolution shrinks a representation, or at best keeps it the same size. Segmentation needs the opposite at some point, an operation that takes a small grid of activations and produces a larger one. The <strong>transpose convolution</strong> is that operation.</p>
+<p>Its mechanics invert the usual convolution in one specific way. A normal convolution places the filter on the <strong>input</strong>, multiplies element by element, and sums to produce one output number. A transpose convolution places the filter on the <strong>output</strong>. It takes one input number, multiplies the entire filter by that single number, and writes the scaled filter into the output grid.</p>
+<p>Because the input positions step across the output by the stride, and the filter is wider than the stride, neighbouring placements land on overlapping regions. Where placements overlap, their values are <strong>added</strong>.</p>
+<div style="text-align:center;">
+<svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 980 360" role="img" aria-labelledby="transpose-title transpose-desc" style="max-width:100%;max-height:360px;">
+<title id="transpose-title">
+How a transpose convolution grows an activation grid
+</title>
+<desc id="transpose-desc">Each entry in a two by two input scales a three by three filter and places it on a larger output. Overlapping contributions are added.</desc> <defs><marker id="transpose-arrow" markerwidth="9" markerheight="9" refx="8" refy="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#777"></path></marker></defs> <text x="122" y="38" text-anchor="middle" font-family="sans-serif" font-size="19" font-weight="bold" fill="#333">input activations</text> <g transform="translate(62 65)" font-family="sans-serif" font-size="22" text-anchor="middle"> <rect width="60" height="60" fill="#C8CED8" stroke="#fff" stroke-width="2"></rect><rect x="60" width="60" height="60" fill="#C8CED8" stroke="#fff" stroke-width="2"></rect><rect y="60" width="60" height="60" fill="#C8CED8" stroke="#fff" stroke-width="2"></rect><rect x="60" y="60" width="60" height="60" fill="#C8CED8" stroke="#fff" stroke-width="2"></rect> <text x="30" y="39">2</text><text x="90" y="39">1</text><text x="30" y="99">3</text><text x="90" y="99">2</text> </g> <text x="122" y="215" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#555">2 by 2</text> <path d="M210 126 H322" stroke="#777" stroke-width="3" marker-end="url(#transpose-arrow)"></path> <text x="266" y="103" text-anchor="middle" font-family="sans-serif" font-size="15" fill="#555">scale a 3 by 3 filter</text> <text x="266" y="148" text-anchor="middle" font-family="sans-serif" font-size="15" fill="#555">stride 2</text> <g transform="translate(348 65)"> <rect width="45" height="45" fill="#F49AC9" opacity=".55"></rect><rect x="45" width="45" height="45" fill="#F49AC9" opacity=".55"></rect><rect x="90" width="45" height="45" fill="#F49AC9" opacity=".55"></rect> <rect y="45" width="45" height="45" fill="#F49AC9" opacity=".55"></rect><rect x="45" y="45" width="45" height="45" fill="#F49AC9" opacity=".55"></rect><rect x="90" y="45" width="45" height="45" fill="#F49AC9" opacity=".55"></rect> <rect y="90" width="45" height="45" fill="#F49AC9" opacity=".55"></rect><rect x="45" y="90" width="45" height="45" fill="#F49AC9" opacity=".55"></rect><rect x="90" y="90" width="45" height="45" fill="#F49AC9" opacity=".55"></rect> <text x="68" y="161" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#555">one scaled filter</text> </g> <path d="M520 126 H626" stroke="#777" stroke-width="3" marker-end="url(#transpose-arrow)"></path> <text x="574" y="103" text-anchor="middle" font-family="sans-serif" font-size="15" fill="#555">place each scaled filter</text> <text x="574" y="148" text-anchor="middle" font-family="sans-serif" font-size="15" fill="#555">and add overlaps</text> <text x="787" y="38" text-anchor="middle" font-family="sans-serif" font-size="19" font-weight="bold" fill="#333">larger output</text> <g transform="translate(697 65)"> <rect width="45" height="45" fill="#7ED4E6" stroke="#fff" stroke-width="2"></rect><rect x="45" width="45" height="45" fill="#7ED4E6" stroke="#fff" stroke-width="2"></rect><rect x="90" width="45" height="45" fill="#F49AC9" stroke="#fff" stroke-width="2"></rect><rect x="135" width="45" height="45" fill="#F49AC9" stroke="#fff" stroke-width="2"></rect> <rect y="45" width="45" height="45" fill="#7ED4E6" stroke="#fff" stroke-width="2"></rect><rect x="45" y="45" width="45" height="45" fill="#CC7000" stroke="#fff" stroke-width="2"></rect><rect x="90" y="45" width="45" height="45" fill="#CC7000" stroke="#fff" stroke-width="2"></rect><rect x="135" y="45" width="45" height="45" fill="#F49AC9" stroke="#fff" stroke-width="2"></rect> <rect y="90" width="45" height="45" fill="#7ED4E6" stroke="#fff" stroke-width="2"></rect><rect x="45" y="90" width="45" height="45" fill="#CC7000" stroke="#fff" stroke-width="2"></rect><rect x="90" y="90" width="45" height="45" fill="#CC7000" stroke="#fff" stroke-width="2"></rect><rect x="135" y="90" width="45" height="45" fill="#F49AC9" stroke="#fff" stroke-width="2"></rect> <rect y="135" width="45" height="45" fill="#7ED4E6" stroke="#fff" stroke-width="2"></rect><rect x="45" y="135" width="45" height="45" fill="#7ED4E6" stroke="#fff" stroke-width="2"></rect><rect x="90" y="135" width="45" height="45" fill="#F49AC9" stroke="#fff" stroke-width="2"></rect><rect x="135" y="135" width="45" height="45" fill="#F49AC9" stroke="#fff" stroke-width="2"></rect> </g> <text x="787" y="270" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#555">4 by 4 after removing padding</text> <rect x="697" y="297" width="14" height="14" fill="#7ED4E6"></rect><text x="719" y="310" font-family="sans-serif" font-size="14" fill="#555">one contribution</text><rect x="805" y="297" width="14" height="14" fill="#CC7000"></rect><text x="827" y="310" font-family="sans-serif" font-size="14" fill="#555">overlap added</text>
+</svg>
+</div>
+<p>Carrying that through with actual numbers is the quickest way to be sure of it. Take a 2 by 2 input, a 3 by 3 filter, and a stride of 2, and ask for a 4 by 4 output.</p>
+<div id="cc8226e7" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="semantic-segmentation-with-u-net_files/figure-html/cell-2-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Follow one number through. The input entry in the top left is 2, so the whole filter is multiplied by 2, giving <span class="math inline">\([[2, 4, 2], [0, 2, 0], [2, 0, 4]]\)</span>, and that 3 by 3 block is written into the top left of the output canvas. The next input entry along is 1, so the filter is multiplied by 1 and written two columns further across, because the stride is 2. Since the block is 3 wide and the step is only 2, its left column lands on top of the previous block’s right column, and those two values are added rather than one replacing the other. Repeating for the remaining two input entries fills the canvas, and keeping the top left 4 by 4 gives the answer.</p>
+<p>The shaded cells in the last panel are the seven positions that received more than one contribution. The cell holding 10 is the busiest, and it is worth checking by hand: it takes 4 from the block scaled by 2, 1 from the block scaled by 1, 3 from the block scaled by 3, and 2 from the last block, and <span class="math inline">\(4 + 1 + 3 + 2 = 10\)</span>.</p>
+<p>These numbers are not taken on trust. The same input, filter, stride, and output shape passed to <code>tf.nn.conv2d_transpose</code> return exactly the 4 by 4 grid inside the dashed rectangle.</p>
+<p>One question is worth answering before moving on, which is why bother with this rather than simply scaling the image up. The filter values here are <strong>learned</strong>, like any other convolutional filter. A fixed rule for enlargement, such as repeating each pixel or interpolating between them, treats every region the same way. A learned filter can decide how a compact representation should be spread into a larger one, which is what makes the operation useful inside a network that has to reconstruct fine detail.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. What happens when two scaled copies of the filter write to the same output position?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The contributions are added. A transpose convolution does not choose between placements or overwrite one with another, it accumulates every contribution landing on a position. In the worked example seven of the sixteen output cells receive more than one copy, and the cell holding 10 receives four of them, <span class="math inline">\(4 + 1 + 3 + 2\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does a stride of 2 with a 3 by 3 filter guarantee overlap?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the filter is wider than the step. Each placement covers three columns of the output, while consecutive placements start only two columns apart, so the third column of one placement lands on the first column of the next. Overlap disappears only when the stride is at least as large as the filter, which is also when the operation stops blending neighbouring contributions.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why is a learned transpose convolution preferable to simply enlarging the activations with a fixed rule?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because a fixed rule cannot adapt. Repeating pixels or interpolating between them applies the same recipe everywhere, regardless of what the activations mean. The filter in a transpose convolution is trained like any other, so the network can learn how a compact representation should be spread out to reconstruct the detail that matters for the task, which for segmentation means the boundary between one class and the next.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="compression-expansion-and-skip-connections" class="level2">
+<h2 class="anchored" data-anchor-id="compression-expansion-and-skip-connections">Compression, Expansion, and Skip Connections</h2>
+<p>With the enlarging operation in hand, the shape of the architecture follows from what the task needs.</p>
+<p>The first half of the network is an ordinary ConvNet. Convolutions and pooling layers steadily reduce the height and width of the activations while the number of channels grows, so the representation becomes small and deep. That is exactly what recognizing content requires, and it is also lossy in a specific way. A small deep volume can carry the information that something cat like is present in the lower right part of the image, without carrying where the edge of the cat runs.</p>
+<p>The second half undoes the shrinking. Transpose convolutions grow the height and width back up, step by step, until the activations are as large as the input image and a prediction can be made at every pixel.</p>
+<div style="text-align:center;">
+<svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 980 380" role="img" aria-labelledby="unet-intuition-title unet-intuition-desc" style="max-width:100%;max-height:380px;">
+<title id="unet-intuition-title">
+U-Net compression, expansion, and skip connections
+</title>
+<desc id="unet-intuition-desc">Activations narrow into a small contextual representation and expand to a segmentation map. Skip connections carry high-resolution features across the U shape.</desc> <defs><marker id="unet-arrow" markerwidth="9" markerheight="9" refx="8" refy="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#555"></path></marker></defs> <text x="168" y="39" text-anchor="middle" font-family="sans-serif" font-size="20" font-weight="bold" fill="#333">compress</text> <text x="813" y="39" text-anchor="middle" font-family="sans-serif" font-size="20" font-weight="bold" fill="#333">expand</text> <g stroke="#fff" stroke-width="2"> <rect x="62" y="83" width="70" height="205" fill="#C8CED8"></rect><rect x="201" y="111" width="70" height="155" fill="#7ED4E6"></rect><rect x="340" y="143" width="70" height="95" fill="#7ED4E6"></rect><rect x="479" y="166" width="70" height="50" fill="#7ED4E6"></rect> <rect x="618" y="143" width="70" height="95" fill="#7ED4E6"></rect><rect x="757" y="111" width="70" height="155" fill="#7ED4E6"></rect><rect x="896" y="83" width="35" height="205" fill="#F49AC9"></rect> </g> <g stroke="#555" stroke-width="3" fill="none" marker-end="url(#unet-arrow)"><path d="M142 185 H190"></path><path d="M281 188 H329"></path><path d="M420 190 H468"></path><path d="M559 190 H607"></path><path d="M698 188 H746"></path><path d="M837 185 H884"></path></g> <g stroke="#888" stroke-width="3" stroke-dasharray="7 5" fill="none" marker-end="url(#unet-arrow)"><path d="M132 80 C295 18 685 18 757 108"></path><path d="M271 109 C390 61 615 61 618 141"></path><path d="M410 142 C490 113 597 113 618 143"></path></g> <g font-family="sans-serif" font-size="15" fill="#555"><text x="96" y="316" text-anchor="middle">high resolution</text><text x="514" y="244" text-anchor="middle">context</text><text x="914" y="316" text-anchor="middle">pixel labels</text><text x="485" y="354" text-anchor="middle">dashed arrows copy high-resolution features to the expanding side</text></g>
+</svg>
+</div>
+<p>An architecture built from those two halves alone would work poorly, and the reason is the loss just described. By the time the representation reaches the bottom, the fine spatial detail is gone, so the expanding half is asked to reconstruct a precise boundary from information that no longer contains it.</p>
+<p>The fix is the <strong>skip connection</strong>, and it is the reason the architecture is worth a name. Activations from a layer on the contracting side are copied directly across to the matching layer on the expanding side, skipping everything in between. The later layer then has two sources of information at once.</p>
+<p>The <strong>high level context</strong> arrives up through the expanding path. It is low resolution but semantically rich, and it knows there is a cat in this region.</p>
+<p>The <strong>fine detail</strong> arrives across the skip connection. It is high resolution and semantically thin, and it knows how much fur like texture sits at this exact pixel.</p>
+<p>Deciding whether one particular pixel belongs to the cat needs both, which is why the two are concatenated and handed to the convolutions that follow.</p>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. What is lost as pooling makes the activation grid smaller, and why does that matter for segmentation?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Precise spatial detail. A small deep volume can represent that a cat is roughly in one region, but it cannot represent where the boundary of the cat falls, because there are no longer enough positions to say so. For classification that loss costs nothing, since the answer is one label for the whole image. For segmentation it is fatal on its own, because the answer needs a decision at every pixel, and that is what the skip connections restore.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What two kinds of information meet at a skip connection, and why is neither enough alone?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Low resolution context from the expanding path, which knows what is in the region but not exactly where, and high resolution detail copied from the contracting path, which knows the texture at a pixel but not what object it belongs to. Labelling a pixel needs both at once, so the two are combined and passed through further convolutions. Context alone gives blurry blobs, and detail alone gives edges with no idea what they enclose.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="full-architecture" class="level2">
+<h2 class="anchored" data-anchor-id="full-architecture">Full Architecture</h2>
+<p>Putting all of it together gives the shape the architecture is named after. Drawn with the contracting path descending on the left and the expanding path rising on the right, the diagram looks like the letter U.</p>
+<div style="text-align:center;">
+<svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 1120 510" role="img" aria-labelledby="unet-architecture-title unet-architecture-desc" style="max-width:100%;max-height:510px;">
+<title id="unet-architecture-title">
+Complete U-Net architecture
+</title>
+<desc id="unet-architecture-desc">A U-shaped network uses convolution and max pooling on the left, transpose convolution and skip connections on the right, and a final one by one convolution to make a segmentation map.</desc> <defs><marker id="arch-black" markerwidth="9" markerheight="9" refx="8" refy="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#333"></path></marker><marker id="arch-green" markerwidth="9" markerheight="9" refx="8" refy="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#1E6B3E"></path></marker><marker id="arch-grey" markerwidth="9" markerheight="9" refx="8" refy="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#888"></path></marker></defs> <g stroke="#fff" stroke-width="2"><rect x="44" y="88" width="60" height="270" fill="#C8CED8"></rect><rect x="188" y="119" width="70" height="208" fill="#7ED4E6"></rect><rect x="342" y="157" width="80" height="133" fill="#7ED4E6"></rect><rect x="506" y="192" width="90" height="62" fill="#7ED4E6"></rect><rect x="680" y="157" width="80" height="133" fill="#7ED4E6"></rect><rect x="834" y="119" width="70" height="208" fill="#7ED4E6"></rect><rect x="978" y="88" width="60" height="270" fill="#F49AC9"></rect></g> <g fill="none" stroke="#333" stroke-width="3" marker-end="url(#arch-black)"><path d="M114 223 H174"></path><path d="M268 223 H328"></path><path d="M432 223 H492"></path><path d="M770 223 H820"></path><path d="M914 223 H964"></path></g> <g fill="none" stroke="#1E6B3E" stroke-width="3" marker-end="url(#arch-green)"><path d="M606 223 H666"></path><path d="M760 223 H820"></path><path d="M904 223 H964"></path></g> <g fill="none" stroke="#888" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#arch-grey)"><path d="M104 83 C305 17 716 17 834 116"></path><path d="M258 116 C400 60 670 60 680 154"></path><path d="M422 156 C505 121 628 121 680 156"></path></g> <path d="M1048 223 H1080" stroke="#CC00A0" stroke-width="4" marker-end="url(#arch-black)"></path> <g font-family="sans-serif" fill="#333" text-anchor="middle"><text x="74" y="385" font-size="16">h × w × 3</text><text x="223" y="353" font-size="15">conv + ReLU</text><text x="382" y="316" font-size="15">max pool</text><text x="551" y="280" font-size="15">small, deep</text><text x="720" y="316" font-size="15">transpose conv</text><text x="869" y="353" font-size="15">conv + ReLU</text><text x="1008" y="385" font-size="16">h × w × n classes</text><text x="1094" y="201" font-size="14" fill="#CC00A0">1 by 1</text><text x="1094" y="219" font-size="14" fill="#CC00A0">conv</text></g> <g font-family="sans-serif" font-size="15" fill="#555"><line x1="97" y1="442" x2="129" y2="442" stroke="#333" stroke-width="3"></line><text x="137" y="447">convolution plus ReLU or max pool</text><line x1="437" y1="442" x2="469" y2="442" stroke="#1E6B3E" stroke-width="3"></line><text x="477" y="447">transpose convolution</text><line x1="697" y1="442" x2="729" y2="442" stroke="#888" stroke-width="3" stroke-dasharray="7 5"></line><text x="737" y="447">skip connection</text></g>
+</svg>
+</div>
+<p>Reading it from the input, the input is an image of shape <span class="math inline">\(h \times w \times 3\)</span>, the three channels being red, green, and blue. Convolutions, each followed by a ReLU, process it while max pooling occasionally halves the height and width. The channel count grows as the spatial size shrinks, so the volume gets thinner and deeper as it descends, until the bottom of the U holds a small, deep, context rich representation.</p>
+<p>Coming back up, each step is a transpose convolution that enlarges the height and width, followed by a skip connection that copies the matching activations from the left side and concatenates them, followed by ordinary convolutions with ReLU that mix the two sources together. That triple repeats until the activations are back to <span class="math inline">\(h \times w\)</span>.</p>
+<p>The last operation is a <span class="math inline">\(1 \times 1\)</span> convolution, which looks at one pixel position at a time across all channels and maps it to <span class="math inline">\(n_{\text{classes}}\)</span> numbers. The output is therefore <span class="math inline">\(h \times w \times n_{\text{classes}}\)</span>, a vector of class scores at every pixel, and an <span class="math inline">\(\arg\max\)</span> over that vector at each position produces the segmentation map. For three classes the output is <span class="math inline">\(h \times w \times 3\)</span>, and for ten classes it is <span class="math inline">\(h \times w \times 10\)</span>, with the height and width unchanged in both cases.</p>
+<p>The architecture is due to <a href="https://doi.org/10.1007/978-3-319-24574-4_28">Ronneberger, Fischer, and Brox (2015)</a>, who were working on biomedical image segmentation at the time. The ideas turned out to transfer well beyond that, and U-Net is now one of the standard architectures for segmentation of any kind.</p>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. Why do the activations become deeper as they become smaller on the contracting path?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the two changes come from different layers. Pooling reduces the height and width, while each convolutional layer can use more filters than the last, which increases the channel count. The combination trades spatial resolution for representational depth, giving a compact volume that describes what is present rather than exactly where it is.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What does the final <span class="math inline">\(1 \times 1\)</span> convolution do, and why is that the right last step?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>It maps the channels at each pixel position to one score per class, turning an <span class="math inline">\(h \times w \times \text{channels}\)</span> volume into an <span class="math inline">\(h \times w \times n_{\text{classes}}\)</span> volume. A <span class="math inline">\(1 \times 1\)</span> filter looks at a single position across all channels and mixes them without touching neighbouring pixels, which is exactly what is wanted for a per-pixel decision at this point, since the spatial mixing has already been done by the convolutions before it.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why is the network drawn as a U rather than as a straight line of layers?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the drawing puts the shrinking half on the way down and the growing half on the way up, so the spatial size of the activations traces a U, small at the bottom and full size at both ends. Drawing it that way also puts each skip connection on a horizontal line between two layers of equal size, which is what makes the copying across visible in the picture.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li>Ronneberger, O., Fischer, P., &amp; Brox, T. (2015). U-Net: Convolutional networks for biomedical image segmentation. In <em>Medical Image Computing and Computer-Assisted Intervention, MICCAI 2015</em>, Lecture Notes in Computer Science (Vol. 9351, pp.&nbsp;234-241). Springer. <a href="https://doi.org/10.1007/978-3-319-24574-4_28" class="uri">https://doi.org/10.1007/978-3-319-24574-4_28</a></li>
+</ul>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 100%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">100% completed (1277 of 1277 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" class="pagination-link" aria-label="Bounding Box Predictions with YOLO">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Bounding Box Predictions with YOLO</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

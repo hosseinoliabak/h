@@ -35,6 +35,7 @@ ul.task-list li input[type="checkbox"] {
 <script src="../../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../../">
+<link href="../../deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" rel="next">
 <link href="../../deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html" rel="prev">
 <link href="../../media/favicon.ico" rel="icon">
 <script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
@@ -495,6 +496,12 @@ window.Quarto = {
  <span class="menu-text">Bounding Box Predictions with YOLO</span></a>
   </div>
 </li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Semantic Segmentation with U-Net</span></a>
+  </div>
+</li>
     </ul>
     </div>
 </nav>
@@ -601,11 +608,11 @@ document.addEventListener("DOMContentLoaded", function () {
   if (meta) {
     var div = document.createElement("div");
     div.style.order = "3";
-    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~38 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~53 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
     meta.appendChild(div);
     var lenDiv = document.createElement("div");
     lenDiv.style.order = "1";
-    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~2,500 words</p></div>';
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~4,000 words</p></div>';
     meta.appendChild(lenDiv);
     var diffDiv = document.createElement("div");
     diffDiv.style.order = "4";
@@ -631,10 +638,14 @@ document.addEventListener("DOMContentLoaded", function () {
 <p><strong>YOLO</strong>, meaning You Only Look Once, fixes that by asking the network for the box directly. The sweep is replaced by a grid, and every cell of that grid runs the localization idea from <a href="../../deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html">Object Localization</a>, predicting its own <span class="math inline">\(b_x, b_y, b_h, b_w\)</span> rather than choosing among fixed windows.</p>
 <section id="grid-of-cells" class="level2">
 <h2 class="anchored" data-anchor-id="grid-of-cells">Grid of Cells</h2>
-<p>Place a grid over the image. Three by three is the size to think with, and it is far too coarse for real use, where 19 by 19 is typical. Each cell is then handed the classification with localization task, so each cell outputs the same eight numbers as before, one <span class="math inline">\(p_c\)</span>, four box coordinates, and three class components.</p>
-<p>That immediately raises a question. Objects are larger than cells and straddle several of them, so which cell is responsible for a car that covers four?</p>
-<p>The rule is the <strong>midpoint</strong>. Take the centre of the object’s bounding box, find the one cell that contains that point, and make that cell responsible for the whole object. Every other cell the object touches reports nothing. A cell that contains parts of two cars but the midpoint of neither is a cell with no object in it, and its label says so.</p>
-<div id="953bd21d" class="cell" data-execution_count="1">
+<p>Place a grid over the image. Three by three is the size to think with, and it is far too coarse for real use, where 19 by 19 is typical.</p>
+<p>Now picture cutting the photograph into those nine pieces and asking about each piece the two questions from <a href="../../deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html">Object Localization</a>. Is there an object here, and if there is, where exactly is it and what is it? Each cell therefore reports the same eight numbers a single object network reported for a whole image. One <span class="math inline">\(p_c\)</span> saying whether an object is present, four numbers <span class="math inline">\(b_x, b_y, b_h, b_w\)</span> describing its box, and three components <span class="math inline">\(c_1, c_2, c_3\)</span> saying which of the three classes it is.</p>
+<p>Nothing about the question asked of one cell is new. What is new is that it gets asked at every position at once, and the answers come back arranged in a grid.</p>
+<p>The cutting is imaginary, and it is worth being clear that it stays imaginary. The network is not run nine times on nine crops. One network looks at the whole picture a single time and produces an output with nine positions in it, for the reason the <a href="#one-network-one-pass">last section</a> on this page explains.</p>
+<p>Before any of this can be turned into training labels, one awkward question has to be settled. Objects are usually bigger than cells, so a car can cover four of them at once. Which of those four cells is supposed to report it? If all four report it, the same car is detected four times over. If the rule depends on how much of the car falls in each cell, then labelling a training image means measuring overlaps, and cells that catch a bumper argue with cells that catch a roof.</p>
+<p>The rule that avoids all of that is the <strong>midpoint</strong> rule. Find the centre of the object’s bounding box. That centre is a single point, so it lies in exactly one cell, and that cell is made responsible for the entire object, however far the object spills outside it. Every other cell the object touches reports nothing at all, exactly as if the object were not there.</p>
+<p>So a cell can hold a great deal of a car and still be labelled empty. That sounds wrong until you notice what it buys, which is that labelling an image requires nothing but a list of midpoints, with no judgement calls about how much of an object counts.</p>
+<div id="1da21004" class="cell" data-execution_count="1">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -644,9 +655,12 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 </div>
 </div>
-<p>The red dots are the midpoints, the red rectangles the objects, and the shaded cells are the ones made responsible. The two grids tell the same story at different resolutions, and the numbers underneath are counted from this photograph rather than assumed.</p>
-<p>On the three by three grid, seven objects fall into four cells. One cell holds three car midpoints and another holds a car and a bus, and since a cell has one eight component label, it can describe only one of them. The rest are lost. On the nineteen by nineteen grid the same seven objects land in seven separate cells, and nothing is lost.</p>
-<p>That is the argument for a fine grid, and it is a probabilistic one rather than a guarantee. Two midpoints can still collide in a 19 by 19 grid, it just happens rarely, because a midpoint has 361 cells to fall into instead of 9.</p>
+<p>The red dots are the midpoints, the red rectangles are the objects a detector found in this photograph, and the shaded cells are the ones the midpoint rule makes responsible. The numbers underneath are counted from this picture rather than assumed.</p>
+<p>Walk the three by three grid and the rule stops being abstract.</p>
+<p>The whole top row is sky, rooftops, and the tops of distant trees. No midpoint falls there, so all three cells are labelled with no object, which is uncontroversial.</p>
+<p>The bottom middle cell is more interesting, because it is not empty of car at all. The nearest car spills into it, bumper and shadow included, and yet its label says no object. The reason is arithmetic rather than judgement. That car’s midpoint sits at 0.658 of the way down the picture, and the boundary between the middle and bottom rows sits at <span class="math inline">\(2/3 = 0.667\)</span>, so the midpoint misses the bottom row by nine thousandths of the image height, about six pixels. Ownership goes to the cell above, and the bottom cell reports nothing.</p>
+<p>The middle row holds every midpoint in this picture, and that is where the coarse grid runs into trouble. One cell holds the midpoints of three separate cars, and another holds a car and a bus. A cell reports as many objects as it has slots, so a cell with a single eight number slot has to drop two of those three cars.</p>
+<p>On the nineteen by nineteen grid the same seven objects land in seven separate cells and nothing has to be dropped. That is the argument for a fine grid, and it is worth being honest that it is a matter of probability rather than a guarantee. A midpoint now has <span class="math inline">\(19 \times 19 = 361\)</span> cells to land in instead of 9, so collisions become rare, but two midpoints can still share a cell and one object would still be lost.</p>
 <section id="review-questions" class="level3 unnumbered">
 <h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
 <p><strong>1. A car spans four cells of the grid. How many cells report it, and which?</strong></p>
@@ -680,7 +694,7 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-2" class="callout-2-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>The label of an empty cell, <span class="math inline">\(p_c = 0\)</span> with the remaining seven components ignored. Containing part of an object counts for nothing under the midpoint rule. This is what allows a cell to be labelled by looking only at the list of object midpoints, without reasoning about how much of an object happens to overlap it.</p>
+<p>The label of an empty cell, <span class="math inline">\(p_c = 0\)</span> in every slot, with the remaining seven components of each slot ignored as do not care entries. Containing part of an object counts for nothing under the midpoint rule. That is what allows an image to be labelled from nothing but a list of object midpoints, with no need to measure how much of an object happens to overlap each cell, and no argument between neighbouring cells about which of them caught more of the car.</p>
 </div>
 </div>
 </div>
@@ -698,7 +712,7 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-3" class="callout-3-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>It reduces collisions. A cell can describe only one object, so two midpoints in the same cell means one object is dropped, and spreading the midpoints over 361 cells instead of 9 makes that far less likely. On the photograph above it is the difference between seven objects fitting into four cells, with two collisions, and seven objects occupying seven separate cells. What it does not fix is the underlying limit, since one cell still describes one object, so two objects whose midpoints coincide remain a problem no matter how fine the grid.</p>
+<p>It reduces collisions. A cell has a fixed number of slots, two in the version used here, so a third midpoint landing in the same cell means an object is dropped. Spreading the midpoints over 361 cells instead of 9 makes that far less likely. On the photograph above it is the difference between seven objects crowding into four cells, one of which holds three of them, and seven objects occupying seven separate cells. What a finer grid does not fix is the underlying limit, because a cell with two slots still reports at most two objects, so midpoints that coincide remain a problem at any grid size.</p>
 </div>
 </div>
 </div>
@@ -706,12 +720,31 @@ document.addEventListener("DOMContentLoaded", function () {
 </section>
 <section id="target-volume" class="level2">
 <h2 class="anchored" data-anchor-id="target-volume">Target Volume</h2>
-<p>Each cell carries the same eight component vector introduced for a single object.</p>
+<p>The reference example gives each cell not one slot but two, and the two slots are called <strong>anchor boxes</strong>. An anchor box is a shape chosen in advance, before any training happens, and a natural pair to choose is one tall narrow rectangle, roughly the proportions of a standing person, and one wide flat rectangle, roughly the proportions of a car seen from behind. When an object is assigned to a cell, it is put in whichever of that cell’s two slots has the more similar shape. A pedestrian goes in the tall slot, a car goes in the wide slot, and a cell can now report two objects at once rather than one. How that matching is actually measured is the subject of the next page, and for now the only thing that matters is that a cell has two slots rather than one.</p>
+<p>Each slot carries the same eight numbers as before, so write one slot as a column.</p>
 <p><span class="math display">\[
-y = \begin{bmatrix} p_c \\ b_x \\ b_y \\ b_h \\ b_w \\ c_1 \\ c_2 \\ c_3 \end{bmatrix}
+y^{(a)} = \begin{bmatrix} p_c \\ b_x \\ b_y \\ b_h \\ b_w \\ c_1 \\ c_2 \\ c_3 \end{bmatrix}, \qquad a \in \{1, 2\}
 \]</span></p>
-<p>There are nine cells in a three by three grid, so the label for the whole image is nine such vectors, which stack into a volume of shape <span class="math inline">\(3 \times 3 \times 8\)</span>. Each 1 by 1 by 8 column of that volume is one cell’s answer, sitting in the position of the cell it belongs to.</p>
-<div id="a11041ef" class="cell" data-execution_count="2">
+<p>Reading that column from the top: is there an object in this slot, where is its midpoint, how big is it, and which class is it. The class components are one hot, meaning exactly one of them is 1 when an object is present, so <span class="math inline">\(c_2 = 1\)</span> says the object is class 2, a car.</p>
+<p>Stacking the two slots gives one cell’s full answer, sixteen numbers.</p>
+<p><span class="math display">\[
+y_{\text{cell}} = \begin{bmatrix} y^{(1)} \\ y^{(2)} \end{bmatrix} \in \mathbb{R}^{16}
+\]</span></p>
+<p>There are nine cells in a three by three grid, so the label for the whole image is nine of those sixteen number columns, which is <span class="math inline">\(9 \times 16 = 144\)</span> numbers in total. Arranged by position, that is a <span class="math inline">\(3 \times 3 \times 2 \times 8\)</span> volume, and since the last two axes can be flattened into one, the same thing is usually written <span class="math inline">\(3 \times 3 \times 16\)</span>. That is the shape the network is built to output.</p>
+<p>Two cells of the photograph above make it concrete. Take the empty cell in the top left corner, which contains only sky, and the cell in the bottom right corner, which owns the car this page annotates later.</p>
+<p><span class="math display">\[
+\underbrace{\begin{bmatrix} 0 \\ ? \\ ? \\ ? \\ ? \\ ? \\ ? \\ ? \end{bmatrix}}_{\text{anchor 1}}
+\underbrace{\begin{bmatrix} 0 \\ ? \\ ? \\ ? \\ ? \\ ? \\ ? \\ ? \end{bmatrix}}_{\text{anchor 2}}
+\qquad\qquad
+\underbrace{\begin{bmatrix} 0 \\ ? \\ ? \\ ? \\ ? \\ ? \\ ? \\ ? \end{bmatrix}}_{\text{anchor 1}}
+\underbrace{\begin{bmatrix} 1 \\ 0.62 \\ 0.14 \\ 1.59 \\ 0.80 \\ 0 \\ 1 \\ 0 \end{bmatrix}}_{\text{anchor 2}}
+\]</span></p>
+<p><span class="math display">\[
+\text{top left cell, empty} \qquad\qquad\qquad\qquad \text{bottom right cell, one car}
+\]</span></p>
+<p>The empty cell sets <span class="math inline">\(p_c = 0\)</span> in both slots, and every other number in it is a <strong>do not care</strong> entry, written as a question mark. There is no correct box for an object that is not there, and no correct class either, so the label declines to say and the loss function ignores those entries.</p>
+<p>The occupied cell is more informative. Its first slot is empty, because only one object was assigned to this cell and it went to the second slot, the wide one, since the car is wider than it is tall. The second slot has <span class="math inline">\(p_c = 1\)</span>, then the four box numbers, then <span class="math inline">\(c_1 = 0\)</span>, <span class="math inline">\(c_2 = 1\)</span>, <span class="math inline">\(c_3 = 0\)</span> marking it a car. Those four box numbers are not invented for the example. They are measured from the photograph in the section after next, where 0.62 and 0.14 place the midpoint inside the cell and 1.59 and 0.80 give the size in units of the cell.</p>
+<div id="1117f28f" class="cell" data-execution_count="2">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -720,11 +753,11 @@ y = \begin{bmatrix} p_c \\ b_x \\ b_y \\ b_h \\ b_w \\ c_1 \\ c_2 \\ c_3 \end{bm
 </div>
 </div>
 </div>
-<p>A cell that owns an object fills in all eight numbers, with <span class="math inline">\(p_c = 1\)</span>, the box, and a one in the class component that applies. A cell that owns nothing sets <span class="math inline">\(p_c = 0\)</span> and leaves the rest as do not care entries, exactly as a background image did for the single object case.</p>
-<p>Training follows from that. The input is an image, say 100 by 100 by 3, the target is the <span class="math inline">\(3 \times 3 \times 8\)</span> volume, and an ordinary ConvNet of convolutional and pooling layers is arranged so its output has that shape. Backpropagation then maps input to target as usual, and nothing about the training procedure is special.</p>
+<p>A car is slightly wider than tall in the reference example, so it is assigned to anchor box 2. Its anchor-1 vector has <span class="math inline">\(p_c = 0\)</span> and seven do not care entries. Its anchor-2 vector has <span class="math inline">\(p_c = 1\)</span>, the car bounding box, and <span class="math inline">\(c_2 = 1\)</span>. A cell holding no assigned object has <span class="math inline">\(p_c = 0\)</span> for both anchors, followed by do not care entries.</p>
+<p>Training follows from that. The input is an image, say 100 by 100 by 3, and the target is the <span class="math inline">\(3 \times 3 \times 2 \times 8\)</span> volume, commonly flattened to <span class="math inline">\(3 \times 3 \times 16\)</span>. An ordinary ConvNet is arranged to produce that shape. Backpropagation then maps input to target as usual, and nothing about the training procedure is special.</p>
 <section id="review-questions-1" class="level3 unnumbered">
 <h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
-<p><strong>1. Where does the number 8 in <span class="math inline">\(3 \times 3 \times 8\)</span> come from, and what would it be for ten classes?</strong></p>
+<p><strong>1. Why is the target <span class="math inline">\(3 \times 3 \times 2 \times 8\)</span>, and why can it also be written <span class="math inline">\(3 \times 3 \times 16\)</span>?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -737,12 +770,12 @@ y = \begin{bmatrix} p_c \\ b_x \\ b_y \\ b_h \\ b_w \\ c_1 \\ c_2 \\ c_3 \end{bm
 </div>
 <div id="callout-4" class="callout-4-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>It is one <span class="math inline">\(p_c\)</span>, four box numbers, and one component per class, so <span class="math inline">\(1 + 4 + 3 = 8\)</span> for the three classes here. With ten classes it becomes <span class="math inline">\(1 + 4 + 10 = 15\)</span>, and the target volume would be <span class="math inline">\(3 \times 3 \times 15\)</span>. The grid size and the vector length are independent, one describing where answers are reported and the other what each answer contains.</p>
+<p>The first two dimensions locate the grid cell. There are two anchor boxes, and each anchor gets one <span class="math inline">\(p_c\)</span>, four box numbers, and three class components, so <span class="math inline">\(1 + 4 + 3 = 8\)</span>. Combining the two anchor vectors gives <span class="math inline">\(2 \times 8 = 16\)</span>, so the same target can be written <span class="math inline">\(3 \times 3 \times 16\)</span>.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>1. The target for one image is a volume rather than a vector. What does that change about training?</strong></p>
+<p><strong>1. What target is used for the unused anchor in a cell that contains a car?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -755,7 +788,7 @@ y = \begin{bmatrix} p_c \\ b_x \\ b_y \\ b_h \\ b_w \\ c_1 \\ c_2 \\ c_3 \end{bm
 </div>
 <div id="callout-5" class="callout-5-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>Very little. The network still maps an input image to a fixed size output, and backpropagation still minimizes a loss between what it produced and the target. The only change is the shape of the target, so the last layers must be arranged to produce a <span class="math inline">\(3 \times 3 \times 8\)</span> volume rather than a short vector. Everything about detection that looks new lives in how the target is constructed, not in how the network is trained.</p>
+<p>Its <span class="math inline">\(p_c\)</span> is zero and its remaining seven entries are do not care values. The car is assigned only to the anchor whose shape matches it better, so the other anchor must be taught that it has no object to report.</p>
 </div>
 </div>
 </div>
@@ -763,10 +796,12 @@ y = \begin{bmatrix} p_c \\ b_x \\ b_y \\ b_h \\ b_w \\ c_1 \\ c_2 \\ c_3 \end{bm
 </section>
 <section id="boxes-measured-against-their-cell" class="level2">
 <h2 class="anchored" data-anchor-id="boxes-measured-against-their-cell">Boxes Measured Against Their Cell</h2>
-<p>The four box numbers need a frame of reference, and it is the responsible cell rather than the whole image. Take the cell that owns the object, call its upper left corner <span class="math inline">\((0, 0)\)</span> and its lower right corner <span class="math inline">\((1, 1)\)</span>, and measure the box against that.</p>
-<p><span class="math inline">\(b_x\)</span> and <span class="math inline">\(b_y\)</span> give the midpoint in those coordinates. They are always between 0 and 1, and not by convention but by construction, since the cell was chosen precisely because it contains the midpoint. A value outside that range would mean the object belongs to a different cell.</p>
-<p><span class="math inline">\(b_h\)</span> and <span class="math inline">\(b_w\)</span> give the height and width as fractions of the cell. These can be greater than 1, and often are, because an object is frequently larger than the cell that owns it.</p>
-<div id="d533c68d" class="cell" data-execution_count="3">
+<p>Four numbers describe a rectangle only once you say what they are measured against. On <a href="../../deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html#bounding-box-output">Object Localization</a> they were measured against the whole image, with the upper left corner of the picture at <span class="math inline">\((0,0)\)</span> and the lower right at <span class="math inline">\((1,1)\)</span>. Here they are measured against the <strong>responsible cell</strong> instead. Its upper left corner is <span class="math inline">\((0, 0)\)</span>, its lower right corner is <span class="math inline">\((1, 1)\)</span>, and the box is described in those local coordinates.</p>
+<p>That change of reference is not decoration, and the reason is worth pausing on. Every cell has to be answerable by the same function, because one network computes all of them at once with the same filters. If boxes were measured against the whole image, then the identical car photographed in the top left and in the bottom right of the frame would need two completely different answers, and a single set of filters could not produce both. Measured against the owning cell, the answer for that car is the same wherever it appears, and the position information is carried by which cell answered rather than by the numbers themselves.</p>
+<p>With that convention in place, the four numbers split into two pairs that behave differently.</p>
+<p><span class="math inline">\(b_x\)</span> and <span class="math inline">\(b_y\)</span> give the midpoint in cell coordinates. They always land between 0 and 1, and not by convention but by construction, because the cell was chosen precisely for containing that midpoint. A value outside that range would be a contradiction, since it would describe a point in some other cell.</p>
+<p><span class="math inline">\(b_h\)</span> and <span class="math inline">\(b_w\)</span> give the height and width, measured in units of the cell rather than of the image. A value of 1 means exactly as tall or as wide as one cell. These are free to exceed 1, and frequently do, because an object is often bigger than the cell that happens to own its centre. There is nothing paradoxical about a cell reporting a box larger than itself, since the cell is only the address at which the answer is filed.</p>
+<div id="3a6c1772" class="cell" data-execution_count="3">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -837,10 +872,12 @@ y = \begin{bmatrix} p_c \\ b_x \\ b_y \\ b_h \\ b_w \\ c_1 \\ c_2 \\ c_3 \end{bm
 </section>
 <section id="one-network-one-pass" class="level2">
 <h2 class="anchored" data-anchor-id="one-network-one-pass">One Network, One Pass</h2>
-<p>Two things about this construction deserve to be stated plainly, because they are what the method is for.</p>
-<p>The boxes are <strong>precise</strong>. A cell predicts four real numbers, so it can express any midpoint inside itself and any width and height, at any aspect ratio. Nothing is restricted to the shape of a window or the spacing of a stride, which is the complaint sliding windows never answered.</p>
-<p>The computation is a <strong>single convolutional pass</strong>. The nine cells of a three by three grid, or the 361 cells of a 19 by 19 grid, are not nine or 361 runs of anything. It is one network, evaluated once, whose output happens to be a grid, and the work behind neighbouring cells is shared in exactly the way the <a href="../../deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html#one-pass-instead-of-four">convolutional implementation</a> shares it. That is why YOLO is fast enough to run on video in real time, which is a large part of why it became popular.</p>
-<p>One limitation survives, and it is the one the grid was never going to solve. A cell emits one eight component vector, so it describes one object. On the photograph above, a three by three grid already loses objects to that limit, and a finer grid makes it rare rather than impossible. Fixing it properly needs a second idea, which is what the next section is about.</p>
+<p>Training this is ordinary supervised learning, and it is worth saying so plainly, because the machinery around it can make it look exotic. The input is an image, say 100 by 100 by 3. The target is the <span class="math inline">\(3 \times 3 \times 16\)</span> volume built above, assembled from nothing but a list of object midpoints, boxes, and classes. In between sits a perfectly familiar stack of convolutional and pooling layers, chosen so that the final output has that shape. Backpropagation then does what it always does, adjusting weights to reduce the difference between the volume the network produced and the volume the label says it should have produced. Everything that looks new about detection lives in how the target is constructed, not in how the network is trained.</p>
+<p>At prediction time the same volume is read in reverse. Run the image through once, and for each of the nine positions, and each of the two slots at that position, look at <span class="math inline">\(p_c\)</span>. Where it is near zero, ignore the rest of that slot, since the network is saying there is nothing there. Where it is high, read off the four box numbers, convert them from cell coordinates back into image coordinates, and read the class components to see what was found.</p>
+<p>Two properties of this arrangement are the whole reason for it.</p>
+<p>The boxes are <strong>precise</strong>. A cell predicts four real numbers, so it can express any midpoint inside itself and any width and height, at any aspect ratio at all. Nothing is restricted to the shape of a window or to the spacing of a stride, which was exactly the complaint that sliding windows could never answer.</p>
+<p>The computation is a <strong>single convolutional pass</strong>. The nine cells of a three by three grid, or the 361 cells of a 19 by 19 grid, do not mean nine or 361 runs of anything. It is one network, evaluated once, whose output happens to be shaped like a grid, and the work behind neighbouring cells is shared in exactly the way the <a href="../../deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html#one-pass-instead-of-four">convolutional implementation</a> shares it. That is why YOLO runs fast enough to process video as it arrives, and a good part of why it became so widely used.</p>
+<p>One limitation survives all of this, and the grid alone was never going to solve it. A cell has as many slots as there are anchor boxes, so with two anchors it reports at most two objects. On the photograph above, one cell of the three by three grid holds three car midpoints, which is one more than the slots available, so even with anchor boxes a car is dropped. A finer grid makes that rare rather than impossible, and two objects with nearly identical shapes can also compete for the same slot. Handling those cases properly, and cleaning up the duplicate boxes a real network produces around every object, is what the next page takes up.</p>
 <section id="review-questions-3" class="level3 unnumbered">
 <h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
 <p><strong>1. In what sense does YOLO evaluate the grid without running anything 361 times?</strong></p>
@@ -903,9 +940,9 @@ y = \begin{bmatrix} p_c \\ b_x \\ b_y \\ b_h \\ b_w \\ c_1 \\ c_2 \\ c_3 \end{bm
 <div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
   <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
   <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
-    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 100%; border-radius: 6px;"></div>
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 95%; border-radius: 6px;"></div>
   </div>
-  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">100% completed (1204 of 1204 min)</p>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">95% completed (1221 of 1277 min)</p>
 </div>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -1354,6 +1391,9 @@ document.addEventListener("DOMContentLoaded", function() {
       </a>          
   </div>
   <div class="nav-page nav-page-next">
+      <a href="../../deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" class="pagination-link" aria-label="Semantic Segmentation with U-Net">
+        <span class="nav-page-text">Semantic Segmentation with U-Net</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
   </div>
 </nav>
 </div> <!-- /content -->
