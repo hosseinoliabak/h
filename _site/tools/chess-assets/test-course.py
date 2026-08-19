@@ -7,7 +7,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-ROOT = Path("/home/parallels/website/_site/tools")
+ROOT = Path(__file__).resolve().parents[2] / "_site" / "tools"
 URL = "http://localhost:8899/tools/reassess-your-chess.html"
 DATA = json.loads((ROOT / "chess-assets" / "course-lessons.json").read_text())
 LESSONS = DATA["lessons"]

@@ -6,6 +6,7 @@ error rather than a broken lesson in the browser.
 """
 import json
 import sys
+from pathlib import Path
 
 import chess
 
@@ -5737,7 +5738,7 @@ orphans = {L["part"] for L in data} - {p["id"] for p in PARTS}
 if orphans:
     fail(f"lessons reference unknown parts: {sorted(orphans)}")
 
-OUT = "/home/parallels/website/tools/chess-assets/course-lessons.json"
+OUT = str(Path(__file__).resolve().with_name("course-lessons.json"))
 doc = dict(v=1, parts=PARTS, lessons=data)
 js = json.dumps(doc, indent=1, ensure_ascii=False)
 open(OUT, "w", encoding="utf-8").write(js)

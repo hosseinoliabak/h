@@ -722,6 +722,145 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 }
 
 .snc-sub-actions.visible { display: block; }
+
+.snc-prefix-reference {
+  max-width: 900px;
+  margin-top: 34px;
+}
+
+.snc-prefix-reference h2 {
+  margin-bottom: 6px;
+}
+
+.snc-prefix-intro {
+  margin-bottom: 14px;
+  color: var(--site-text-muted, #555);
+}
+
+.snc-prefix-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.snc-prefix-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.snc-prefix-swatch {
+  width: 18px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid var(--site-surface-border);
+}
+
+.snc-prefix-swatch.network {
+  background: var(--site-accent);
+}
+
+.snc-prefix-swatch.host {
+  background: var(--site-accent-muted);
+}
+
+.snc-prefix-chart {
+  border: 1.5px solid var(--site-surface-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.snc-prefix-row {
+  display: grid;
+  grid-template-columns: 52px minmax(190px, 1fr) 150px 122px 112px;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--site-surface-border);
+  transition: background-color 0.15s, box-shadow 0.15s;
+}
+
+.snc-prefix-row:last-child {
+  border-bottom: none;
+}
+
+.snc-prefix-row.header {
+  min-height: 36px;
+  background: var(--site-accent-soft);
+  color: var(--site-accent);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+}
+
+.snc-prefix-row.octet-boundary {
+  border-top: 2px solid var(--site-accent-muted);
+}
+
+.snc-prefix-row.active {
+  background: var(--site-accent-soft);
+  box-shadow: inset 4px 0 0 var(--site-accent);
+}
+
+.snc-prefix-length,
+.snc-prefix-mask,
+.snc-prefix-count,
+.snc-prefix-usable {
+  font-family: 'Courier New', monospace;
+  font-weight: 700;
+}
+
+.snc-prefix-length {
+  color: var(--site-accent);
+  font-size: 16px;
+}
+
+.snc-prefix-mask {
+  font-size: 13px;
+}
+
+.snc-prefix-count,
+.snc-prefix-usable {
+  font-size: 12px;
+  text-align: right;
+}
+
+.snc-prefix-bits {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(34px, 1fr));
+  gap: 4px;
+}
+
+.snc-prefix-octet {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 1px;
+  height: 13px;
+}
+
+.snc-prefix-bit {
+  min-width: 2px;
+  border-radius: 1px;
+  background: var(--site-accent-muted);
+}
+
+.snc-prefix-bit.network {
+  background: var(--site-accent);
+}
+
+@media (max-width: 760px) {
+  .snc-prefix-chart {
+    overflow-x: auto;
+  }
+
+  .snc-prefix-row {
+    min-width: 680px;
+  }
+}
 </style>
 
 <p>Type an IPv4 or IPv6 address, alone or with a prefix length or subnet mask. The calculator detects the address family on its own and shows the network, host range, masks, and address type. Without a length, IPv4 falls back to the classful default and IPv6 to a /64. After the calculation you can migrate the network to a longer prefix and see every resulting subnet, and an IPv4 network also gets its IPv6 transition forms for migration planning. Everything runs in your browser, nothing is sent to any server.</p>
@@ -776,6 +915,16 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
 </div>
 
+<section class="snc-prefix-reference" aria-labelledby="snc-prefix-heading">
+  <h2 id="snc-prefix-heading" class="anchored">IPv4 Prefix and Subnet Mask Chart</h2>
+  <p class="snc-prefix-intro">Use this IPv4-only reference to compare CIDR prefix lengths, dotted-decimal masks, address counts, and usable host counts. The calculator highlights the active IPv4 prefix.</p>
+  <div class="snc-prefix-legend" aria-label="Prefix chart legend">
+    <span class="snc-prefix-key"><span class="snc-prefix-swatch network" aria-hidden="true"></span>Network bits</span>
+    <span class="snc-prefix-key"><span class="snc-prefix-swatch host" aria-hidden="true"></span>Host bits</span>
+  </div>
+  <div class="snc-prefix-chart" id="snc-prefix-chart" role="table" aria-label="IPv4 CIDR prefix and subnet mask reference"></div>
+</section>
+
 <script>
 (function() {
   const input = document.getElementById('snc-input');
@@ -796,6 +945,8 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   const subOut = document.getElementById('snc-sub-out');
   const subActions = document.getElementById('snc-sub-actions');
   const subCopy = document.getElementById('snc-sub-copy');
+  const prefixChart = document.getElementById('snc-prefix-chart');
+  const prefixChartRows = new Map();
   let lastV4 = null;
   let lastNet = null;
   let migrateOpen = false;
@@ -825,6 +976,77 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
 
   function prefixToMask(p) {
     return p === 0 ? 0 : (Math.pow(2, p) - 1) * Math.pow(2, 32 - p);
+  }
+
+  function compactCount(n) {
+    return n.toLocaleString('en-US');
+  }
+
+  function chartCell(className, text, role) {
+    const cell = document.createElement('div');
+    cell.className = className;
+    cell.setAttribute('role', role || 'cell');
+    cell.textContent = text;
+    return cell;
+  }
+
+  function buildPrefixChart() {
+    const header = document.createElement('div');
+    header.className = 'snc-prefix-row header';
+    header.setAttribute('role', 'row');
+    header.append(
+      chartCell('', 'Prefix', 'columnheader'),
+      chartCell('', '32-bit layout', 'columnheader'),
+      chartCell('', 'Subnet mask', 'columnheader'),
+      chartCell('', 'Addresses', 'columnheader'),
+      chartCell('', 'Usable hosts', 'columnheader')
+    );
+    prefixChart.appendChild(header);
+
+    for (let prefix = 0; prefix <= 32; prefix++) {
+      const addresses = Math.pow(2, 32 - prefix);
+      const usable = prefix <= 30 ? compactCount(addresses - 2)
+        : prefix === 31 ? '2 (point-to-point)' : '1 (host route)';
+      const row = document.createElement('div');
+      row.className = 'snc-prefix-row' + (prefix > 0 && prefix % 8 === 0 ? ' octet-boundary' : '');
+      row.setAttribute('role', 'row');
+      row.dataset.prefix = String(prefix);
+
+      const bits = document.createElement('div');
+      bits.className = 'snc-prefix-bits';
+      bits.setAttribute('role', 'cell');
+      bits.setAttribute('aria-label', prefix + ' network bits and ' + (32 - prefix) + ' host bits');
+      for (let octet = 0; octet < 4; octet++) {
+        const group = document.createElement('span');
+        group.className = 'snc-prefix-octet';
+        group.setAttribute('aria-hidden', 'true');
+        for (let bit = 0; bit < 8; bit++) {
+          const position = octet * 8 + bit;
+          const segment = document.createElement('span');
+          segment.className = 'snc-prefix-bit' + (position < prefix ? ' network' : '');
+          group.appendChild(segment);
+        }
+        bits.appendChild(group);
+      }
+
+      row.append(
+        chartCell('snc-prefix-length', '/' + prefix),
+        bits,
+        chartCell('snc-prefix-mask', v4ToStr(prefixToMask(prefix))),
+        chartCell('snc-prefix-count', compactCount(addresses)),
+        chartCell('snc-prefix-usable', usable)
+      );
+      prefixChart.appendChild(row);
+      prefixChartRows.set(prefix, row);
+    }
+  }
+
+  function highlightPrefix(prefix) {
+    prefixChartRows.forEach(function(row, rowPrefix) {
+      const active = rowPrefix === prefix;
+      row.classList.toggle('active', active);
+      row.setAttribute('aria-current', active ? 'true' : 'false');
+    });
   }
 
   function maskToPrefix(mask) {
@@ -1027,6 +1249,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   }
 
   function clear(msg) {
+    highlightPrefix(null);
     results.classList.remove('visible');
     trans.classList.remove('visible');
     transTitle.classList.remove('visible');
@@ -1051,6 +1274,7 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
     const bc = net + size - 1;
     const mask = prefixToMask(prefix);
     const wildcard = 4294967295 - mask;
+    highlightPrefix(prefix);
 
     const rows = [
       { label: 'Network', value: v4ToStr(net) + '/' + prefix },
@@ -1309,6 +1533,8 @@ h1, h2, h3, h4 { font-family: 'Nunito', sans-serif; }
   }
 
   input.addEventListener('input', render);
+
+  buildPrefixChart();
 
   document.querySelectorAll('.snc-examples button').forEach(function(btn) {
     btn.addEventListener('click', function() {
