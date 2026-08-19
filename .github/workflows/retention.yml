@@ -43,6 +43,11 @@ jobs:
           MONTH = 30 * 24 * 60 * 60 * 1000
           WARN_AFTER = 23 * MONTH
           DELETE_AFTER = 24 * MONTH
+          # An anonymous session owns no record and nothing is keyed to its uid.
+          # It exists only so a signed-out reader can contribute to the shared
+          # chess position cache, so it is pure residue once the browser stops
+          # using it. A returning visitor simply gets a new one, losing nothing.
+          ANON_MAX_AGE = 24 * 60 * 60 * 1000
           NOW = int(time.time() * 1000)
 
           cred = credentials.Certificate(json.loads(os.environ['FIREBASE_SERVICE_ACCOUNT']))
@@ -94,6 +99,7 @@ jobs:
           # would publish "this handle has been idle for two years". The
           # position in the run is enough to follow a report.
           warned = deleted = skipped = anon = seen_n = 0
+          anon_stale = []
           page = auth.list_users()
           while page:
               for user in page.users:
@@ -101,6 +107,13 @@ jobs:
                   # Anonymous sessions hold no progress and own no account record.
                   if not user.provider_data and not user.email:
                       anon += 1
+                      meta = user.user_metadata
+                      # last_refresh_timestamp moves every time the browser
+                      # renews its token, so an open tab keeps itself alive and
+                      # only genuinely abandoned sessions age out.
+                      last = int(meta.last_refresh_timestamp or meta.creation_timestamp or 0)
+                      if last > 0 and (NOW - last) >= ANON_MAX_AGE:
+                          anon_stale.append(user.uid)
                       continue
 
                   seen = last_seen(user)
@@ -132,7 +145,19 @@ jobs:
 
               page = page.get_next_page()
 
+          # Batched, because these accumulate one per browser and deleting them
+          # one request at a time would not keep up. delete_users takes 1000.
+          anon_deleted = 0
+          if anon_stale:
+              print('anonymous sessions idle over 24h: %d of %d' % (len(anon_stale), anon))
+              if APPLY:
+                  for i in range(0, len(anon_stale), 1000):
+                      res = auth.delete_users(anon_stale[i:i + 1000])
+                      anon_deleted += res.success_count
+                      if res.failure_count:
+                          print('  %d could not be deleted this run' % res.failure_count)
+
           mode = 'APPLIED' if APPLY else 'DRY RUN (set the RETENTION_APPLY variable to "true" to act)'
-          print('\n%s: %d warned, %d deleted, %d skipped, %d anonymous sessions ignored.'
-                % (mode, warned, deleted, skipped, anon))
+          print('\n%s: %d warned, %d deleted, %d skipped.' % (mode, warned, deleted, skipped))
+          print('anonymous: %d seen, %d stale, %d removed.' % (anon, len(anon_stale), anon_deleted))
           PY

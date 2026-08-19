@@ -1,9 +1,12 @@
 """Simulate a reader who completed the previous 27-lesson build, then check that
 inserting four lessons into the middle of Part One does not strand their progress."""
 import json
+from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-D = json.load(open("/home/parallels/website/_site/tools/chess-assets/course-lessons.json"))
+D = json.loads(
+    (Path(__file__).resolve().parents[2] / "_site" / "tools" / "chess-assets" / "course-lessons.json").read_text()
+)
 NEW = {"planning-read-not-invent", "planning-follow-the-board",
        "planning-three-thinkers", "planning-talk-to-the-board"}
 old = [l["id"] for l in D["lessons"] if l["id"] not in NEW]          # the 27 they finished
