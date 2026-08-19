@@ -111,9 +111,9 @@
   /* One place on the site where a planet decides what it looks like. Both the
      planetarium and the eclipse atlas draw the same bodies, and a Mars that
      is rust on one page and green on the other is two tools rather than one,
-     so the colours, the sizes and the glyphs all live here.
+     so the colors, the sizes and the glyphs all live here.
 
-     Colour is identification, the one meaning a monochrome chart cannot
+      is identification, the one meaning a monochrome chart cannot
      carry, so these are hardcoded rather than themed. Red mode is the
      exception and overrides the lot, because preserving dark adaptation is
      that mode's entire point and no hue survives it. */
@@ -153,7 +153,7 @@
     return DSO_TINT[kind] || pal.ink;
   }
 
-  /* Mixes a hex colour toward black or white, for the shadowed half of a
+  /* Mixes a hex color toward black or white, for the shadowed half of a
      phase and for the darker belts on a banded planet. */
   function shade(hex, f) {
     var m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
@@ -214,10 +214,10 @@
   }
 
   /* One body, drawn as itself. opts carries:
-       name    body name, which picks the colour and the markings
+       name    body name, which picks the color and the markings
        r       disc radius in canvas pixels
        pal     palette, for the halo and the shadowed side
-       mode    chart mode, so red can flatten the colours
+       mode    chart mode, so red can flatten the colors
        phase   terminator half-width, or null for a body drawn full
        sunAng  screen direction of the Sun, which the lit limb faces
        time    needed only by Saturn, for the ring opening */
@@ -330,7 +330,7 @@
      a tilted ellipse with a bright core, a nebula a soft lobed cloud, a
      cluster a scatter of stars, and an irregular galaxy a lopsided version of
      the first. Each shape is a caricature of the real object, enough that the
-     reader recognises which one they are looking at. */
+     reader recognizes which one they are looking at. */
   var CLUSTER_STARS = [[0, -0.75], [-0.62, -0.3], [0.58, -0.38], [-0.3, 0.28],
                        [0.36, 0.3], [0, 0.72], [-0.78, 0.62], [0.75, 0.68]];
 
@@ -442,7 +442,7 @@
   */
 
   /* view is {zoom, lon, lat}: magnification, and the lon/lat held at the
-     centre of the canvas. Zoom of 1 shows the whole world. */
+     center of the canvas. Zoom of 1 shows the whole world. */
   function equirect(w, h, view) {
     view = view || {};
     var k = view.zoom || 1;
@@ -455,7 +455,7 @@
       height: h,
       zoom: k,
       worldWidth: worldW,
-      centre: [lonC, latC],
+      center: [lonC, latC],
       clampLat: function (lat) {
         var lim = Math.max(0, 90 - 90 / k);
         return Math.max(-lim, Math.min(lim, lat));
@@ -523,7 +523,7 @@
 
     return {
       kind: 'mercator', flat: true, repeats: true,
-      width: w, height: h, zoom: k, worldWidth: worldW, centre: [lonC, latC],
+      width: w, height: h, zoom: k, worldWidth: worldW, center: [lonC, latC],
       fwd: function (lon, lat) {
         var dl = ((lon - lonC + 180) % 360 + 360) % 360 - 180;
         return [w / 2 + dl * sx, h / 2 - (my(lat) - yC) * sy];
@@ -617,7 +617,7 @@
 
     return {
       kind: 'robinson', flat: true, repeats: false,
-      width: w, height: h, zoom: k, worldWidth: w * k, centre: [lonC, latC],
+      width: w, height: h, zoom: k, worldWidth: w * k, center: [lonC, latC],
       fwd: fwd,
       fwdOffset: project,
       vis: function () { return true; },
@@ -674,7 +674,7 @@
       zoom: k,
       radius: R,
       center: [cx, cy],
-      centre: [lon0, lat0],
+      center: [lon0, lat0],
       lon0: lon0,
       lat0: lat0,
       fwd: function (lon, lat) {
@@ -719,16 +719,16 @@
   /* Draws a lon/lat ring, splitting it wherever it wraps the antimeridian so
      that equirectangular maps do not grow a horizontal streak across the
      whole width. */
-  /* The wrap seam of a flat map sits opposite the view centre, not at the
+  /* The wrap seam of a flat map sits opposite the view center, not at the
      prime meridian, and it moves as the reader pans. Splitting on the raw
      longitude difference is therefore only correct for an unpanned map: two
      neighbouring coastline vertices either side of the seam differ by a
      fraction of a degree yet project to opposite edges of the canvas, and the
      segment between them is drawn as a line straight across the world.
-     Comparing offsets from the view centre is what actually detects the jump. */
+     Comparing offsets from the view center is what actually detects the jump. */
   function ringPath(ctx, proj, ring) {
     var started = false, prevDl = null;
-    var c0 = (proj.centre && proj.centre[0]) || 0;
+    var c0 = (proj.center && proj.center[0]) || 0;
     for (var i = 0; i < ring.length; i++) {
       var lon = ring[i][0], lat = ring[i][1];
       var dl = proj.flat ? wrapLon(lon - c0) : 0;
@@ -779,7 +779,7 @@
   function viewWindow(proj) {
     var got = windowCache.get(proj);
     if (got !== undefined) return got;
-    var N = 8, c0 = (proj.centre && proj.centre[0]) || 0;
+    var N = 8, c0 = (proj.center && proj.center[0]) || 0;
     var latLo = 90, latHi = -90, dlLo = 180, dlHi = -180, any = false;
     for (var i = 0; i <= N; i++) {
       for (var j = 0; j <= N; j++) {
@@ -853,7 +853,7 @@
   }
 
   /* Lakes and rivers, available only once the detail set has loaded. Rivers
-     are the single most useful layer for recognising where you are on the
+     are the single most useful layer for recognizing where you are on the
      ground, which is why they are worth the bytes. */
   function drawWater(ctx, proj, pal, opts) {
     if (!detail.loaded) return;
@@ -958,7 +958,7 @@
      crosses the antimeridian, or that swallows a pole, is not a simple polygon
      in lon/lat and naive filling produces wedges. Scanning by latitude avoids
      that. For each row the set of longitudes inside the cap is one interval
-     about the centre meridian, in closed form, so the boundary comes out as a
+     about the center meridian, in closed form, so the boundary comes out as a
      left edge going up and a right edge coming back down. Rows that lie wholly
      inside get the full 360 degrees, which closes the polygon over the pole.
 
@@ -999,25 +999,25 @@
   function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 
   /* Boundary of a cap as unit vectors. */
-  function capRing3(centre, radiusDeg, n) {
+  function capRing3(center, radiusDeg, n) {
     var out = [];
-    // any vector not parallel to the centre gives a starting basis
-    var t = (Math.abs(centre[2]) < 0.9) ? [0, 0, 1] : [1, 0, 0];
-    var ax = [centre[1] * t[2] - centre[2] * t[1],
-              centre[2] * t[0] - centre[0] * t[2],
-              centre[0] * t[1] - centre[1] * t[0]];
+    // any vector not parallel to the center gives a starting basis
+    var t = (Math.abs(center[2]) < 0.9) ? [0, 0, 1] : [1, 0, 0];
+    var ax = [center[1] * t[2] - center[2] * t[1],
+              center[2] * t[0] - center[0] * t[2],
+              center[0] * t[1] - center[1] * t[0]];
     var am = Math.hypot(ax[0], ax[1], ax[2]);
     ax = [ax[0] / am, ax[1] / am, ax[2] / am];
-    var by = [centre[1] * ax[2] - centre[2] * ax[1],
-              centre[2] * ax[0] - centre[0] * ax[2],
-              centre[0] * ax[1] - centre[1] * ax[0]];
+    var by = [center[1] * ax[2] - center[2] * ax[1],
+              center[2] * ax[0] - center[0] * ax[2],
+              center[0] * ax[1] - center[1] * ax[0]];
     var cr = Math.cos(radiusDeg * DEG), sr = Math.sin(radiusDeg * DEG);
     for (var i = 0; i < n; i++) {
       var th = i / n * 2 * Math.PI, ct = Math.cos(th), st = Math.sin(th);
       out.push([
-        cr * centre[0] + sr * (ct * ax[0] + st * by[0]),
-        cr * centre[1] + sr * (ct * ax[1] + st * by[1]),
-        cr * centre[2] + sr * (ct * ax[2] + st * by[2])
+        cr * center[0] + sr * (ct * ax[0] + st * by[0]),
+        cr * center[1] + sr * (ct * ax[1] + st * by[1]),
+        cr * center[2] + sr * (ct * ax[2] + st * by[2])
       ]);
     }
     return out;
@@ -1041,12 +1041,12 @@
     ctx.fillStyle = style;
     if (proj.kind !== 'ortho') {
       var pts = capPolygon(lat0, radiusDeg);
-      /* Offsets are measured from the cap centre and then shifted to the
-         projection centre, so a cap covering every longitude keeps running
+      /* Offsets are measured from the cap center and then shifted to the
+         projection center, so a cap covering every longitude keeps running
          past plus or minus 180 instead of being folded back on itself. */
-      var base = wrapLon(lon0 - proj.centre[0]);
+      var base = wrapLon(lon0 - proj.center[0]);
       var step2 = proj.fwdOffset ? proj.fwdOffset
-        : function (dl, lat) { return proj.fwd(proj.centre[0] + dl, lat); };
+        : function (dl, lat) { return proj.fwd(proj.center[0] + dl, lat); };
       if (pts.length) {
         withRepeats(ctx, proj, function () {
           ctx.beginPath();
@@ -1250,7 +1250,7 @@
      plain quadratic (Montenbruck and Pfleger, second edition, p 184).
 
      Validated against Astronomy Engine's own SearchGlobalSolarEclipse to
-     sub-metre agreement on five consecutive central eclipses. */
+     sub-meter agreement on five consecutive central eclipses. */
   function shadow(time) {
     var S = A.GeoVector(A.Body.Sun, time, true);   // light-time and aberration
     var M = A.GeoMoon(time);
@@ -1330,7 +1330,7 @@
       new A.Vector(sx / sm / KM_AU, sy / sm / KM_AU, sz / sm / KM_AU, time), true);
 
     /* Does the penumbral cone touch the Earth at all? Compare the Earth's
-       centre distance from the shadow axis against the penumbral radius
+       center distance from the shadow axis against the penumbral radius
        there, plus the Earth's own radius. This is the cheap analytic test the
        time-range search runs thousands of times, so it avoids any grid. */
     var tc = -(mx * ax + my * ay + mz * az);
@@ -1368,7 +1368,7 @@
      by the projection's inverse at its corners. At cell size the warp is
      indistinguishable from an exact reprojection.
 
-     The style is deliberately the grey, label-free CARTO basemap: it sits
+     The style is deliberately the gray, label-free CARTO basemap: it sits
      quietly under a monochrome chart, and leaving the labels off means the
      tool's own place names are the only ones on screen. */
   var tileCache = new Map();
@@ -1388,7 +1388,7 @@
      Access-Control-Allow-Origin, which the canvas needs to draw the tiles
      without tainting itself. Labels cost nothing extra: they are simply a
      different variant of the same tile set, so the choice is editorial
-     rather than commercial. Each theme carries the attribution its licence
+     rather than commercial. Each theme carries the attribution its license
      requires, and its own deepest useful zoom. */
   function cartoUrl(variant, hi, z, x, y) {
     return 'https://' + 'abcd'[(x + y) % 4] + '.basemaps.cartocdn.com/' +
@@ -1396,7 +1396,7 @@
   }
 
   var TILE_THEMES = {
-    // Quiet grey wash, the one that disappears under a monochrome chart
+    // Quiet gray wash, the one that disappears under a monochrome chart
     plain: {
       label: 'Plain',
       maxZoom: 19,
@@ -1407,7 +1407,7 @@
           hi, z, x, y);
       }
     },
-    // CARTO Voyager: coloured land, blue water, green parks, drawn roads
+    // CARTO Voyager: colored land, blue water, green parks, drawn roads
     streets: {
       label: 'Streets',
       maxZoom: 19,
@@ -1471,7 +1471,7 @@
        the chart supersamples at one and a half whatever the display, so
        reading the ratio off the canvas asked every ordinary monitor to carry
        doubled tiles it then threw away on the way to the screen. A caller
-       that does not say gets the old behaviour, which is to follow the
+       that does not say gets the old behavior, which is to follow the
        canvas. */
     var screen = Math.max(1, Math.min(3, opts.screenRatio || ratio));
     var hi = screen >= 1.5 && !!th.retina;
@@ -1581,7 +1581,7 @@
     var n = Math.pow(2, z);
     var size = worldW / n;
 
-    var uC = (proj.centre[0] + 180) / 360, vC = mercV(proj.centre[1]);
+    var uC = (proj.center[0] + 180) / 360, vC = mercV(proj.center[1]);
     var W = proj.width, H = proj.height;
     var ix0 = Math.floor((uC - (W / 2) / worldW) * n);
     var ix1 = Math.floor((uC + (W / 2) / worldW) * n);
@@ -1635,7 +1635,7 @@
        gaps; only limb points actually on screen count, so a zoomed-in view
        keeps its tight window. */
     if (proj.kind === 'ortho') {
-      var c0v = proj.centre[0];
+      var c0v = proj.center[0];
       var dlLo = wrapLon(win.lon0 - c0v), dlHi = wrapLon(win.lon1 - c0v);
       for (var q = 0; q < 64; q++) {
         var th = q / 64 * 2 * Math.PI;
@@ -1738,7 +1738,7 @@
   }
 
   /* Inverse projection with a fallback for points just off the mapped area,
-     found by stepping toward the canvas centre until the inverse works. Used
+     found by stepping toward the canvas center until the inverse works. Used
      for mesh corners at the globe's limb and outside Robinson's boundary, so
      the last row of cells still gets imagery; the overdraw lands outside the
      projection's clip path and is never seen. */
@@ -1757,7 +1757,7 @@
     var m = tileMosaic(proj, onLoad, spec);
     if (!m) return false;
     var Wp = proj.width, Hp = proj.height;
-    var c0 = (proj.centre && proj.centre[0]) || 0;
+    var c0 = (proj.center && proj.center[0]) || 0;
     var CELL = 48;
     var cols = Math.ceil(Wp / CELL), rows = Math.ceil(Hp / CELL);
     var nxg = cols + 1;
@@ -2042,9 +2042,9 @@
   // --------------------------------------------------------- obscuration
 
   /* Fraction of the Sun's disc hidden by the Moon, from the angular radii of
-     the two discs and the angle between their centres. This is area overlap,
+     the two discs and the angle between their centers. This is area overlap,
      not the more commonly quoted magnitude, which measures how far across the
-     Sun's diameter the Moon has travelled. The two differ a lot: at 50 per
+     Sun's diameter the Moon has traveled. The two differ a lot: at 50 per
      cent magnitude only about 39 per cent of the light is gone. */
   function discOverlap(d, rs, rm) {
     if (d >= rs + rm) return 0;

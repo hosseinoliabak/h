@@ -6243,7 +6243,7 @@ exports.IdentityMatrix = IdentityMatrix;
 * @param {number} angle
 *      An angle in degrees indicating the amount of rotation around the specified axis.
 *      Positive angles indicate rotation counterclockwise as seen from the positive
-*      direction along that axis, looking towards the origin point of the orientation system.
+*      direction along that axis, looking toward the origin point of the orientation system.
 *      Any finite number of degrees is allowed, but best precision will result from
 *      keeping `angle` in the range [-360, +360].
 *
