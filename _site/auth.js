@@ -92,7 +92,7 @@
     })().then(function (ok) {
       if (!ok) return false;
       try {
-        // The tool pages initialise the same project; reuse their app if present.
+        // The tool pages initialize the same project; reuse their app if present.
         if (!window.firebase.apps.length) {
           window.firebase.initializeApp(CONFIG);
           window.firebase.appCheck().activate(RECAPTCHA, true);
@@ -171,7 +171,7 @@
     return 'Could not save right now. Please try again.';
   }
 
-  /* Renaming is limited so the chess leaderboard stays recognisable. The first
+  /* Renaming is limited so the chess leaderboard stays recognizable. The first
      48 hours allow three changes, because that is when a new reader notices a
      typo or settles on something better. After that it is one change per 90
      days. The database enforces this; the checks here exist only so the reason
@@ -244,8 +244,8 @@
       if (code === 'auth/popup-blocked') {
         throw new Error('Your browser blocked the sign-in window. Allow pop-ups for this site and try again.');
       }
-      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-        throw new Error('Sign-in was cancelled.');
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/canceled-popup-request') {
+        throw new Error('Sign-in was canceled.');
       }
       throw err;
     });
@@ -429,10 +429,10 @@
   }
 
   /* The popover is attached to the body rather than to the navbar item. Inside
-     the navbar it inherited the bar's own foreground and background colours
+     the navbar it inherited the bar's own foreground and background colors
      (which is why it rendered dark on a light page) and was liable to be
      clipped by the bar's bounds. Anchored to the body it picks up ordinary page
-     colours, and a fixed position keeps it beside the button. */
+     colors, and a fixed position keeps it beside the button. */
   function openMenu(anchor, items, intro) {
     var existing = document.querySelector('.site-auth-menu');
     if (existing) { existing.remove(); return; }   // second click closes it
