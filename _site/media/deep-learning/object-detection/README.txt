@@ -1,7 +1,7 @@
-Road scenes for the object detection notes
-==========================================
+Road scenes for the object detection and segmentation notes
+============================================================
 
-Four photographs, 1280 x 720, unmodified originals:
+Four Drive.ai photographs, 1280 x 720, unmodified originals.
 
   0020.jpg   one car in profile, a building behind it and road beneath it
   0055.jpg   one car close to the camera, plus a truck on the right
@@ -19,7 +19,7 @@ The files ship with the "Autonomous driving, car detection" programming
 assignment of the DeepLearning.AI Convolutional Neural Networks course
 (Course 4 of the Deep Learning Specialization), whose local copy is
 Labs/DL/CNN/05 Car detection with YOLO/images/. The full sample is 120
-frames; only the four used by a figure are hosted here.
+frames. Only the four relevant to current or retained figures are hosted here.
 
 Bounding boxes drawn on these photographs
 -----------------------------------------
@@ -41,9 +41,28 @@ The 0055.jpg crop was checked too. It holds the one car the figures box, at
 74 percent, plus a 39 percent traffic light near its upper edge. A traffic
 light is not one of the three classes, so it is correctly left unboxed.
 
-0020.jpg carries no boxes on any page. It is the frame the semantic
-segmentation notes use, where the interesting thing is the per-pixel labels in
-../semantic-segmentation/, not a rectangle.
+0020.jpg carries no boxes on any page. Its per-pixel labels remain in
+../semantic-segmentation/ so that the earlier figure can still be reproduced.
+
+car-building-pexels-10465615.jpg
+--------------------------------
+A separate 1280 x 853 photograph used by semantic-segmentation-with-u-net.qmd.
+It shows one sedan in profile, a building behind it, and road beneath it. The
+page uses a 960 x 720 crop that removes the person at the far-left edge.
+
+The photograph is by Sami Aksu and was downloaded from Pexels at 1280 pixels
+wide.
+
+  https://www.pexels.com/photo/car-in-front-of-building-on-city-street-10465615/
+
+It carries the Pexels license, https://www.pexels.com/license/. The license
+allows free use and modification without asking permission or giving
+attribution, and forbids selling unaltered copies or implying endorsement. The
+page credits the photographer even though the license does not require it.
+
+The downloaded JPEG has this SHA-256 digest.
+
+  ce02be1198dd8eaed601a2fb8e0927760d06d176d8c423e62c45492a5ed54976
 
 motorcycle-pexels-995487.jpg
 ----------------------------
