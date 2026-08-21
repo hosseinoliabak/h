@@ -439,7 +439,11 @@
        vis(lon, lat) -> boolean       whether the point faces the viewer
        inv(x, y)     -> [lon, lat] | null
        clipPath(ctx) -> void          restricts drawing to the globe
-  */
+
+     center is always the geographic [longitude, latitude] at the middle of
+     the view. Orthographic projections also expose canvasCenter for the
+     globe disc's center in canvas pixels. Keeping those coordinate spaces
+     separate prevents degree values from being used in pixel geometry. */
 
   /* view is {zoom, lon, lat}: magnification, and the lon/lat held at the
      center of the canvas. Zoom of 1 shows the whole world. */
@@ -673,7 +677,7 @@
       height: h,
       zoom: k,
       radius: R,
-      center: [cx, cy],
+      canvasCenter: [cx, cy],
       center: [lon0, lat0],
       lon0: lon0,
       lat0: lat0,
@@ -1069,7 +1073,7 @@
     var c = unitVec(lat0, lon0);
     var cr = Math.cos(radiusDeg * DEG);
     var v = proj.view, ex = proj.east, ey = proj.north;
-    var cx = proj.center[0], cy = proj.center[1], R = proj.radius;
+    var cx = proj.canvasCenter[0], cy = proj.canvasCenter[1], R = proj.radius;
 
     function screen(p) {
       return [cx + R * dot3(p, ex), cy - R * dot3(p, ey)];
@@ -1372,12 +1376,42 @@
      quietly under a monochrome chart, and leaving the labels off means the
      tool's own place names are the only ones on screen. */
   var tileCache = new Map();
+  var tileCachePixels = 0;
   /* Raster tiles are decoded images, not just their small network payloads.
-     Keeping 200 balances smooth local panning with a bounded memory footprint
-     on ordinary laptops; revisiting an older area simply asks the provider for
-     its tiles again. */
+     Bound both their count and their estimated decoded pixels: 24 million
+     RGBA pixels are about 96 MiB, whether they came from ordinary or retina
+     artwork. The count keeps a long trail of small tiles from accumulating,
+     while the pixel budget stops 200 doubled tiles from quietly reaching
+     about 200 MiB. Revisiting an older area simply asks for its tiles again. */
   var TILE_CACHE_MAX = 200;
+  var TILE_CACHE_PIXEL_MAX = 24 * 1024 * 1024;
   var LAT_MAX_MERC = 85.051129;
+
+  function estimatedTilePixels(url) {
+    return url.indexOf('@2x') >= 0 ? 512 * 512 : 256 * 256;
+  }
+
+  function trimTileCache() {
+    while (tileCache.size > TILE_CACHE_MAX || tileCachePixels > TILE_CACHE_PIXEL_MAX) {
+      var oldest = tileCache.keys().next().value;
+      var img = tileCache.get(oldest);
+      tileCache.delete(oldest);
+      tileCachePixels -= img._astroTilePixels || 0;
+    }
+    if (tileCachePixels < 0) tileCachePixels = 0;
+  }
+
+  /* Map preserves insertion order. Moving a hit to the end makes the bounded
+     cache least-recently-used, so the tiles under the current view survive a
+     long pan instead of being evicted merely because they arrived first. */
+  function cachedTile(key) {
+    var img = tileCache.get(key);
+    if (img !== undefined) {
+      tileCache.delete(key);
+      tileCache.set(key, img);
+    }
+    return img;
+  }
 
   function mercV(lat) {
     lat = Math.max(-LAT_MAX_MERC, Math.min(LAT_MAX_MERC, lat));
@@ -1485,10 +1519,14 @@
       credit: th.credit,
       // Canvas pixels one tile covers, so its artwork lands at its own size
       tilePx: 256 * ratio,
+      // Native pixels held by one source tile, before canvas supersampling
+      sourcePx: hi ? 512 : 256,
       // Whether the imagery carries names of its own no matter the switch
       bakedLabels: !!th.bakedLabels,
       // Draw from what is already held, request nothing new
       noFetch: !!opts.noFetch,
+      // A coarser but still screen-accurate mesh while the view is moving
+      moving: !!opts.moving,
       /* Everything about the request that decides which artwork comes back,
          so the mosaic below can tell one theme's tiles from another's. */
       id: (opts.theme || 'plain') + (dark ? '/d' : '/l') + (labels ? '+n' : '') +
@@ -1509,7 +1547,7 @@
 
   function getTile(urlFn, z, x, y, onLoad, noFetch) {
     var key = urlFn(z, x, y);
-    var img = tileCache.get(key);
+    var img = cachedTile(key);
     if (img === undefined) {
       /* A zoom in flight asks for nothing. Every level the animation sweeps
          through would otherwise pull a full screen of tiles that is on
@@ -1519,14 +1557,36 @@
       if (noFetch) return null;
       img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = function () { tilesArrived++; onLoad(); };
-      img.onerror = function () { };
-      img.src = key;
+      img._astroTilePixels = estimatedTilePixels(key);
+      img.onload = function () {
+        /* A tile can finish after a long pan or a theme change evicted it.
+           It no longer affects the active bounded cache, so it must not
+           invalidate the current mosaic or schedule an unrelated redraw. */
+        if (tileCache.get(key) !== img) return;
+        /* Providers normally match the estimate above. Reading the delivered
+           dimensions also keeps the bound honest for a provider variant or a
+           test fixture with a different native size. */
+        var actual = img.naturalWidth * img.naturalHeight;
+        tileCachePixels += actual - img._astroTilePixels;
+        img._astroTilePixels = actual;
+        trimTileCache();
+        if (tileCache.get(key) !== img) return;
+        tilesArrived++;
+        onLoad();
+      };
+      img.onerror = function () {
+        /* A failed image has no decoded pixel allocation. Keep the small
+           failed entry so an offline animation does not retry it every frame,
+           but release the conservative reservation from the pixel budget. */
+        if (tileCache.get(key) !== img) return;
+        tileCachePixels -= img._astroTilePixels;
+        img._astroTilePixels = 0;
+        if (tileCachePixels < 0) tileCachePixels = 0;
+      };
       tileCache.set(key, img);
-      if (tileCache.size > TILE_CACHE_MAX) {
-        var oldest = tileCache.keys().next().value;
-        tileCache.delete(oldest);
-      }
+      tileCachePixels += img._astroTilePixels;
+      trimTileCache();
+      img.src = key;
     }
     return (img.complete && img.naturalWidth) ? img : null;
   }
@@ -1544,7 +1604,7 @@
   function coarseTile(urlFn, z, x, y) {
     for (var dz = 1; dz <= 5 && z - dz >= 0; dz++) {
       var span = 1 << dz;
-      var img = tileCache.get(urlFn(z - dz, Math.floor(x / span), Math.floor(y / span)));
+      var img = cachedTile(urlFn(z - dz, Math.floor(x / span), Math.floor(y / span)));
       if (!img || !img.complete || !img.naturalWidth) continue;
       var part = img.naturalWidth / span;
       return { img: img, sx: (x % span) * part, sy: (y % span) * part, s: part };
@@ -1570,7 +1630,10 @@
   /* opts is {theme, dark, labels}, or the legacy 'light' / 'dark' string. */
   function drawTiles(ctx, proj, onLoad, opts) {
     var spec = tileSpec(opts);
-    if (proj.kind === 'mercator') return drawTilesMerc(ctx, proj, onLoad, spec);
+    if (proj.kind === 'mercator') {
+      releaseTileMosaic();
+      return drawTilesMerc(ctx, proj, onLoad, spec);
+    }
     return drawTilesWarp(ctx, proj, onLoad, spec);
   }
 
@@ -1611,8 +1674,9 @@
     return any;
   }
 
-  /* Offscreen mosaic of the tiles covering the visible window, in tile-pixel
-     coordinates: source x = (global mercator u * n - ix0) * 256.
+  /* Offscreen mosaic of the tiles covering the visible window, in native
+     tile-pixel coordinates. Source x is the global Mercator tile position
+     minus ix0, multiplied by the mosaic's 256 or 512 pixel cell.
 
      The canvas and its contents both survive between frames. What the mosaic
      holds depends on nothing but the tile theme, the zoom level and the block
@@ -1623,6 +1687,20 @@
      mosaic nobody changed was costing more than everything else the warp does
      put together. */
   var mosaic = { canvas: null, ctx: null, key: '', arrived: -1, out: null };
+
+  /* Mercator draws source tiles directly and has no use for the projection
+     mosaic. Collapse its backing store when switching back to Mercator so a
+     visit to Globe does not leave tens of megabytes resident indefinitely. */
+  function releaseTileMosaic() {
+    if (!mosaic.canvas) return;
+    if (mosaic.canvas.width !== 1 || mosaic.canvas.height !== 1) {
+      mosaic.canvas.width = 1;
+      mosaic.canvas.height = 1;
+    }
+    mosaic.key = '';
+    mosaic.arrived = -1;
+    mosaic.out = null;
+  }
 
   function tileMosaic(proj, onLoad, spec) {
     var win = viewWindow(proj);
@@ -1636,11 +1714,12 @@
        keeps its tight window. */
     if (proj.kind === 'ortho') {
       var c0v = proj.center[0];
+      var canvasCenter = proj.canvasCenter;
       var dlLo = wrapLon(win.lon0 - c0v), dlHi = wrapLon(win.lon1 - c0v);
       for (var q = 0; q < 64; q++) {
         var th = q / 64 * 2 * Math.PI;
-        var lx = proj.center[0] + Math.cos(th) * (proj.radius - 0.5);
-        var ly = proj.center[1] + Math.sin(th) * (proj.radius - 0.5);
+        var lx = canvasCenter[0] + Math.cos(th) * (proj.radius - 0.5);
+        var ly = canvasCenter[1] + Math.sin(th) * (proj.radius - 0.5);
         if (lx < 0 || lx > proj.width || ly < 0 || ly > proj.height) continue;
         var lm = proj.inv(lx, ly);
         if (!lm) continue;
@@ -1680,16 +1759,26 @@
       ix1 = Math.floor((win.lon1 + 180) / 360 * n);
       iy0 = Math.max(0, Math.floor(mercV(lat1) * n));
       iy1 = Math.min(n - 1, Math.floor(mercV(lat0) * n));
-      if (z === 0 || (ix1 - ix0 + 1) * (iy1 - iy0 + 1) <= 96) break;
+      /* Include the two seam columns and every imagery layer in the working
+         set bound. This guarantees that the active view fits inside both
+         cache limits, including retina tiles, instead of endlessly evicting
+         and requesting its own oldest tiles on a tall or polar view. */
+      var mosaicTiles = (ix1 - ix0 + 3) * (iy1 - iy0 + 1);
+      var requestedTiles = mosaicTiles * spec.layers.length;
+      var requestedPixels = requestedTiles * spec.sourcePx * spec.sourcePx;
+      if (z === 0 || (mosaicTiles <= 96 &&
+          requestedTiles <= TILE_CACHE_MAX && requestedPixels <= TILE_CACHE_PIXEL_MAX)) break;
       z--;
     }
     // One spare column each side so cells straddling the wrap seam still
     // find their pixels
     ix0--; ix1++;
 
-    /* The mosaic keeps whatever resolution the artwork arrived at, so a
-       retina tile is not thrown away before the warp samples it. */
-    var cell = Math.round(spec.tilePx);
+    /* Keep the mosaic at the artwork's native resolution. Its coordinate
+       scale is independent of the number of backing pixels the tile covers,
+       so inflating a 256 pixel source to 384 or 640 pixels here added memory
+       and sampling work without adding detail. Retina sources stay at 512. */
+    var cell = spec.sourcePx;
     var cw = (ix1 - ix0 + 1) * cell, ch = (iy1 - iy0 + 1) * cell;
 
     /* Nothing about this frame differs from the last one that built the
@@ -1758,7 +1847,12 @@
     if (!m) return false;
     var Wp = proj.width, Hp = proj.height;
     var c0 = (proj.center && proj.center[0]) || 0;
-    var CELL = 48;
+    /* The visual error belongs in CSS pixels, not backing-store pixels.
+       Scaling the mesh with the canvas pixel ratio preserves the same
+       48-pixel perceived accuracy on every display instead of multiplying
+       the number of cells on supersampled and retina canvases. */
+    var cssCell = spec.moving ? 64 : 48;
+    var CELL = Math.max(24, Math.round(cssCell * spec.tilePx / 256));
     var cols = Math.ceil(Wp / CELL), rows = Math.ceil(Hp / CELL);
     var nxg = cols + 1;
     var n256 = m.n * m.cell;
@@ -1778,6 +1872,7 @@
     ctx.save();
     proj.clipPath(ctx);
     ctx.clip();
+    var any = false;
     for (j = 0; j < rows; j++) {
       for (i = 0; i < cols; i++) {
         var x = i * CELL, y = j * CELL;
@@ -1787,8 +1882,8 @@
 
         // Cells that cannot touch the globe's disc are skipped outright
         if (proj.kind === 'ortho') {
-          var qx = Math.max(x, Math.min(proj.center[0], xr)) - proj.center[0];
-          var qy = Math.max(y, Math.min(proj.center[1], yb)) - proj.center[1];
+          var qx = Math.max(x, Math.min(proj.canvasCenter[0], xr)) - proj.canvasCenter[0];
+          var qy = Math.max(y, Math.min(proj.canvasCenter[1], yb)) - proj.canvasCenter[1];
           if (qx * qx + qy * qy > proj.radius * proj.radius) continue;
         }
 
@@ -1845,11 +1940,12 @@
         ctx.setTransform(a, b, c2, d, e, f);
         ctx.drawImage(m.canvas, bx0, by0, bx1 - bx0, by1 - by0,
           bx0, by0, bx1 - bx0, by1 - by0);
+        any = true;
         ctx.restore();
       }
     }
     ctx.restore();
-    return true;
+    return any;
   }
 
   /* Attribution for whichever theme is on screen, since each source asks for

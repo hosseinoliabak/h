@@ -245,6 +245,10 @@ ul.task-list li input[type="checkbox"] {
     <a class="dropdown-item" href="../tools/fancy-text.html">
  <span class="dropdown-text">Fancy Text</span></a>
   </li>  
+        <li>
+    <a class="dropdown-item" href="../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
         <li><hr class="dropdown-divider"></li>
         <li class="dropdown-header">Math and Writing</li>
         <li>
@@ -347,6 +351,7 @@ ul.task-list li input[type="checkbox"] {
 <script src="../auth.js"></script>
 <script src="../giscus-note.js"></script>
 <script src="../resume-reading.js"></script>
+<script src="../sidebar-active.js"></script>
 <script src="../search-scope.js"></script>
 <script src="../review-numbering.js"></script>
 <script src="../breadcrumb-path.js"></script>
@@ -920,7 +925,7 @@ ul.task-list li input[type="checkbox"] {
     elStatus.textContent = '';
     shadowCanvas.style.display = 'none';
     setScrub(0.5);
-    summarize();
+    refreshDynamicReadouts(true);
     updateHero();
     draw();
   }
@@ -1011,6 +1016,7 @@ ul.task-list li input[type="checkbox"] {
           shadowCanvas.style.display = 'none';
           setScrub(0.5);
           summarize();
+          refreshDynamicReadouts(true);
           updateHero();
           draw();
         } catch (err) {
@@ -1026,6 +1032,7 @@ ul.task-list li input[type="checkbox"] {
       shadowCanvas.style.display = 'block';
       setScrub(0.5);
       summarize();
+      refreshDynamicReadouts(true);
       updateHero();
       draw();
     }
@@ -1688,6 +1695,19 @@ ul.task-list li input[type="checkbox"] {
     ctx.restore();
   }
 
+  /* The tables depend on the selected time and site, not on projection,
+     panning, tile arrivals, or palette changes. During playback five updates
+     per second keep their numbers live without repeatedly rebuilding DOM and
+     rerunning rise, set, and local-eclipse searches on every canvas frame. */
+  var lastReadoutPaint = -Infinity;
+  function refreshDynamicReadouts(force) {
+    var now = performance.now();
+    if (!force && now - lastReadoutPaint < 200) return;
+    lastReadoutPaint = now;
+    if (state.site || force) siteReadout();
+    if (state.kind === 'free') summarize();
+  }
+
   function draw() {
     if (!state.rec) return;
     var ctx = map.getContext('2d');
@@ -1712,13 +1732,9 @@ ul.task-list li input[type="checkbox"] {
     legend(ctx, pal);
     if (state.tilesDrawn) X.drawTileCredit(ctx, proj, pal, tileOpts());
 
-    elClock.textContent = stamp(state.t.date, true);
+    var clockText = stamp(state.t.date, true);
+    if (elClock.textContent !== clockText) elClock.textContent = clockText;
     if (state.kind === 'lunar') drawShadowDiagram(pal);
-    siteReadout();
-    // The free-mode summary quotes overhead coordinates, which move with the
-    // slider, so it refreshes with the scrub. Not during play, where a table
-    // rebuild per animation frame would only fight the animation for time.
-    if (state.kind === 'free' && !state.playing) summarize();
   }
 
   /* Key in the lower left.  always means the event cannot be seen from
@@ -1962,18 +1978,30 @@ ul.task-list li input[type="checkbox"] {
      caller can drop the graticule and equator that would only clutter them.
      Finer outlines are requested as soon as the view is close enough to show
      the difference, and the map redraws itself once they arrive. */
+  function viewInMotion() {
+    return !!((typeof glide !== 'undefined' && glide && glide.active) ||
+      (typeof drag !== 'undefined' && drag) ||
+      (typeof pinch !== 'undefined' && pinch) ||
+      (typeof directZoomMoving !== 'undefined' && directZoomMoving) ||
+      (typeof flingRaf !== 'undefined' && flingRaf));
+  }
+
   /* What the tile layer is being asked for: theme, whether the dark variant
      suits the palette, and whether the imagery carries its own names. */
   function tileOpts(mode) {
+    var movingView = viewInMotion();
     return {
       theme: state.theme,
       dark: (mode || root.getAttribute('data-mode') || 'chart') !== 'chart',
       labels: state.mapLabels,
       pixelRatio: superSample(),
-      /* Nothing new is requested while a zoom is still animating. Guarded
-         because the first draws happen while this file is still being read,
-         before the glide object further down exists. */
-      noFetch: !!(typeof glide !== 'undefined' && glide && glide.active),
+      /* Nothing new is requested while a pan or zoom is still moving. The
+         settled frame asks for any sharper or newly exposed tiles it needs. */
+      noFetch: movingView,
+      /* Motion hides the tiny extra affine error of a 64 CSS pixel mesh. The
+         settled frame returns to 48 CSS pixels, while avoiding needless work
+         throughout playback and direct manipulation. */
+      moving: state.playing || movingView,
       /* The display's own ratio, which decides whether doubled tile artwork
          can actually be seen. Read fresh each time, since dragging a window
          between an ordinary monitor and a high density one changes it. */
@@ -2570,14 +2598,32 @@ ul.task-list li input[type="checkbox"] {
 
   /* Local circumstances, guarded so that a site which sees nothing of the
      selected eclipse does not silently report the next one instead. */
+  var localSolarCache = new Map();
   function localSolar(lat, lon) {
+    var key = state.rec.e.peak.ut + '/' + lat.toFixed(6) + '/' + lon.toFixed(6);
+    if (localSolarCache.has(key)) {
+      var held = localSolarCache.get(key);
+      localSolarCache.delete(key);
+      localSolarCache.set(key, held);
+      return held;
+    }
     try {
       var obs = new A.Observer(lat, lon, 0);
       var from = A.MakeTime(state.rec.e.peak.ut - 0.6);
       var lc = A.SearchLocalSolarEclipse(from, obs);
-      if (Math.abs(lc.peak.time.ut - state.rec.e.peak.ut) > 0.25) return null;
+      if (Math.abs(lc.peak.time.ut - state.rec.e.peak.ut) > 0.25) lc = null;
+      localSolarCache.set(key, lc);
+      if (localSolarCache.size > 64) {
+        localSolarCache.delete(localSolarCache.keys().next().value);
+      }
       return lc;
-    } catch (err) { return null; }
+    } catch (err) {
+      localSolarCache.set(key, null);
+      if (localSolarCache.size > 64) {
+        localSolarCache.delete(localSolarCache.keys().next().value);
+      }
+      return null;
+    }
   }
 
   function altAz(body, t, lat, lon) {
@@ -2949,12 +2995,20 @@ ul.task-list li input[type="checkbox"] {
     if (!state.rec) return;
     setScrub(parseInt(elTime.value, 10) / 1000);
     draw();
+    refreshDynamicReadouts(false);
   });
+  elTime.addEventListener('change', function () { refreshDynamicReadouts(true); });
 
   function stop() {
+    var wasPlaying = state.playing;
     state.playing = false;
     elPlay.textContent = 'Play';
     if (state.raf) { cancelAnimationFrame(state.raf); state.raf = 0; }
+    if (wasPlaying && state.rec) {
+      refreshDynamicReadouts(true);
+      // One settled 48 CSS pixel tile mesh replaces the coarser motion frame
+      draw();
+    }
   }
 
   elPlay.addEventListener('click', function () {
@@ -2962,17 +3016,26 @@ ul.task-list li input[type="checkbox"] {
     state.playing = true;
     elPlay.textContent = 'Pause';
     var last = performance.now();
+    var frameMs = 1000 / 30;
     /* The position accumulates in a float. Reading the slider back each frame
        would round away the sub-unit steps of a high refresh rate display and
        the animation would stall in place. */
     var acc = parseInt(elTime.value, 10);
     function tick(now) {
       if (!state.playing) return;
+      /* High-refresh displays can call this 120 times a second. Eclipse
+         motion carries no useful information at that rate, so keep elapsed
+         time exact while limiting the expensive full chart to 30 frames. */
+      if (now - last < frameMs) {
+        state.raf = requestAnimationFrame(tick);
+        return;
+      }
       acc += (now - last) * 0.06;
       last = now;
       if (acc >= 1000) { acc = 1000; }
       setScrub(acc / 1000);
       draw();
+      refreshDynamicReadouts(false);
       if (acc >= 1000) { stop(); return; }
       state.raf = requestAnimationFrame(tick);
     }
@@ -2991,7 +3054,11 @@ ul.task-list li input[type="checkbox"] {
 
   elTz.addEventListener('change', function () {
     syncWhen(true);
-    if (state.rec) { summarize(); draw(); }
+    if (state.rec) {
+      if (state.kind !== 'free') summarize();
+      refreshDynamicReadouts(true);
+      draw();
+    }
   });
 
   // ------------------------------------------------------- zoom and panning
@@ -3012,10 +3079,17 @@ ul.task-list li input[type="checkbox"] {
     if (p.clampLat) v.lat = p.clampLat(v.lat);
   }
 
+  var viewDrawRaf = 0;
   function afterView() {
     var z = state.view.zoom;
     elZlabel.textContent = (z < 10 ? z.toFixed(1) : Math.round(z)) + 'x';
-    draw();
+    /* Pointer and trackpad events can arrive several times between screen
+       refreshes. Keep their newest view state and paint it once. */
+    if (viewDrawRaf) return;
+    viewDrawRaf = requestAnimationFrame(function () {
+      viewDrawRaf = 0;
+      draw();
+    });
   }
 
   /* Moves the view so the given lon/lat sits at the given canvas point.
@@ -3077,6 +3151,8 @@ ul.task-list li input[type="checkbox"] {
      The tile layer needs to know, so that a level the animation only sweeps
      past is drawn from what is already held rather than fetched. */
   var glide = { raf: 0, target: 1, anchor: null, active: false };
+  var directZoomMoving = false;
+  var directZoomTimer = 0;
   function glideStop() {
     if (glide.raf) { cancelAnimationFrame(glide.raf); glide.raf = 0; }
     glide.active = false;
@@ -3167,12 +3243,16 @@ ul.task-list li input[type="checkbox"] {
         state.site = { lon: ll[0], lat: ll[1] };
         // A new pin can mean a new time zone, so the date field is restated
         syncWhen(true);
+        if (state.kind !== 'free' && elTz.value === 'pin') summarize();
+        refreshDynamicReadouts(true);
         draw();
       }
       return;
     }
     // A release straight out of a swipe flings; a hold-then-release does not
     if (ev && d.moved >= d.slop && performance.now() - d.t < 120) flingStart(d.vx, d.vy);
+    // Refine the final stationary view, or the first frame of a fling
+    afterView();
   }
 
   // ---- two-finger pinch, tracked through the same pointer events ----
@@ -3282,12 +3362,18 @@ ul.task-list li input[type="checkbox"] {
      split, every attempt to drag the map would also move the location. */
   map.addEventListener('pointerup', function (ev) {
     touchPts.delete(ev.pointerId);
-    if (pinch) { if (touchPts.size < 2) pinch = null; return; }
+    if (pinch) {
+      if (touchPts.size < 2) { pinch = null; afterView(); }
+      return;
+    }
     endDrag(ev, true);
   });
   map.addEventListener('pointercancel', function (ev) {
     touchPts.delete(ev.pointerId);
-    if (pinch) { if (touchPts.size < 2) pinch = null; return; }
+    if (pinch) {
+      if (touchPts.size < 2) { pinch = null; afterView(); }
+      return;
+    }
     endDrag(null, false);
   });
   map.addEventListener('lostpointercapture', function () {
@@ -3298,12 +3384,12 @@ ul.task-list li input[type="checkbox"] {
      canvas, alt-tab away mid drag, or have the capture quietly fail. */
   window.addEventListener('pointerup', function (ev) {
     touchPts.delete(ev.pointerId);
-    if (pinch && touchPts.size < 2) pinch = null;
+    if (pinch && touchPts.size < 2) { pinch = null; afterView(); }
     endDrag(ev, false);
   });
   window.addEventListener('blur', function () {
     touchPts.clear();
-    pinch = null;
+    if (pinch) { pinch = null; afterView(); }
     endDrag(null, false);
   });
 
@@ -3320,7 +3406,14 @@ ul.task-list li input[type="checkbox"] {
     var d = ev.deltaY * unit;
     if (ev.ctrlKey) {
       glideStop();
+      directZoomMoving = true;
+      if (directZoomTimer) window.clearTimeout(directZoomTimer);
       setZoom(state.view.zoom * Math.exp(-d * 0.01), toCanvas(ev));
+      directZoomTimer = window.setTimeout(function () {
+        directZoomTimer = 0;
+        directZoomMoving = false;
+        afterView();
+      }, 120);
     } else {
       glideZoom(glideBase() * Math.exp(-d * 0.0055), toCanvas(ev));
     }
@@ -3335,6 +3428,8 @@ ul.task-list li input[type="checkbox"] {
     if (lastPin && performance.now() - lastPin.at < 700) {
       state.site = lastPin.prev;
       lastPin = null;
+      if (state.kind !== 'free' && elTz.value === 'pin') summarize();
+      refreshDynamicReadouts(true);
     }
     glideZoom(glideBase() * (ev.shiftKey ? 0.5 : 2), toCanvas(ev));
   });
@@ -3407,6 +3502,7 @@ ul.task-list li input[type="checkbox"] {
     box.checked = state[pair[1]];
     box.addEventListener('change', function () {
       state[pair[1]] = box.checked;
+      refreshDynamicReadouts(true);
       draw();
     });
   });
@@ -3567,7 +3663,11 @@ ul.task-list li input[type="checkbox"] {
       clampView();
     }
     syncWhen(true);
-    if (state.rec) { summarize(); draw(); }
+    if (state.rec) {
+      if (state.kind !== 'free') summarize();
+      refreshDynamicReadouts(true);
+      draw();
+    }
   }
 
   /* The pin opens on the reader's own location when the browser allows it,
