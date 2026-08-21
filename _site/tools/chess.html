@@ -245,6 +245,10 @@ ul.task-list li input[type="checkbox"] {
     <a class="dropdown-item" href="../tools/fancy-text.html">
  <span class="dropdown-text">Fancy Text</span></a>
   </li>  
+        <li>
+    <a class="dropdown-item" href="../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
         <li><hr class="dropdown-divider"></li>
         <li class="dropdown-header">Math and Writing</li>
         <li>
@@ -347,6 +351,7 @@ ul.task-list li input[type="checkbox"] {
 <script src="../auth.js"></script>
 <script src="../giscus-note.js"></script>
 <script src="../resume-reading.js"></script>
+<script src="../sidebar-active.js"></script>
 <script src="../search-scope.js"></script>
 <script src="../review-numbering.js"></script>
 <script src="../breadcrumb-path.js"></script>
@@ -601,6 +606,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 .perf-line { font-size:12.5px; color:#888; margin-top:7px; border-top:1px dashed #e0e0e0; padding-top:7px; }
 .late-row { display:flex; align-items:center; gap:6px; font-size:12.5px; color:#777; margin-top:7px; cursor:pointer; }
 .late-row input { accent-color:var(--site-accent); margin:0; }
+.late-row.dim { opacity:.45; cursor:default; }
 .moves-box { max-height:190px; overflow-y:auto; font-size:13.5px; }
 .moves-box table { width:100%; border-collapse:collapse; }
 .moves-box td { padding:2.5px 4px; }
@@ -1180,6 +1186,13 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
               <div class="seg" id="anaTurnSeg" style="font-size:12.5px;">
                 <button data-v="w" class="sel">White to move</button><button data-v="b">Black to move</button>
               </div>
+            </div>
+            <div class="ana-row" id="anaCastleRow" style="align-items:center;">
+              <span style="font-size:12px;color:#888;" title="A side keeps the right to castle only while its king and the matching rook stand on their home squares. Untick a right the position has already lost.">Castling rights</span>
+              <label class="late-row" style="margin-top:0;"><input type="checkbox" data-cr="K" checked=""> White O-O</label>
+              <label class="late-row" style="margin-top:0;"><input type="checkbox" data-cr="Q" checked=""> White O-O-O</label>
+              <label class="late-row" style="margin-top:0;"><input type="checkbox" data-cr="k" checked=""> Black O-O</label>
+              <label class="late-row" style="margin-top:0;"><input type="checkbox" data-cr="q" checked=""> Black O-O-O</label>
             </div>
             <div class="ana-row">
               <button id="anaClearBtn">Clear board</button>
@@ -2910,7 +2923,8 @@ function renderBoard() {
   }
   renderHints();
   paintAssist();
-  if (mode === 'analysis' && !anaSetup) anaDrawArrows();
+  if (mode === 'analysis' && anaSetup) anaCastleSync();
+  else if (mode === 'analysis') anaDrawArrows();
 }
 function findKing(color) {
   for (const f of FILES) for (let r = 1; r <= 8; r++) {
@@ -3068,7 +3082,17 @@ boardEl.addEventListener('pointercancel', () => {
 });
 
 function tryPropose(from, to) {
-  const legal = game.moves({ square: from, verbose: true }).filter(m => m.to === to);
+  const all = game.moves({ square: from, verbose: true });
+  let legal = all.filter(m => m.to === to);
+  /* putting the king on its own rook is the other common way to ask for a castle,
+     so take it whenever that castle is legal here */
+  if (!legal.length) {
+    const side = { a: 'q', h: 'k' }[to[0]];
+    const mover = game.get(from), target = game.get(to);
+    if (side && mover && mover.type === 'k' && to[1] === from[1]
+        && target && target.type === 'r' && target.color === mover.color)
+      legal = all.filter(m => m.flags.includes(side));
+  }
   if (!legal.length) {
     const p = game.get(to);
     selected = (p && p.color === (freeMoveMode() ? game.turn() : playerColor)) ? to : null;
@@ -6209,6 +6233,40 @@ function buildAnaPal() {
   del.onclick = () => { anaPalPick = 'x'; mark('x'); };
   pal.appendChild(del);
 }
+/* Castling rights belong to the position, not to the arrangement of pieces: a FEN
+   can only carry one while that king and that rook still stand at home, and even
+   then the position may have lost it to a king move that came back. So setup works
+   out which rights the board can support and the tick boxes say which it keeps. */
+const CASTLE_RIGHTS = ['K', 'Q', 'k', 'q'];
+const CASTLE_HOME = {
+  K: { color: 'w', king: 'e1', rook: 'h1' },
+  Q: { color: 'w', king: 'e1', rook: 'a1' },
+  k: { color: 'b', king: 'e8', rook: 'h8' },
+  q: { color: 'b', king: 'e8', rook: 'a8' },
+};
+function castleSupported(right, pos = game) {
+  const h = CASTLE_HOME[right];
+  const king = pos.get(h.king), rook = pos.get(h.rook);
+  return !!(king && king.type === 'k' && king.color === h.color
+         && rook && rook.type === 'r' && rook.color === h.color);
+}
+let anaCastleWant = { K: true, Q: true, k: true, q: true };
+/* the boxes follow the pieces: a right the board cannot support is greyed out, and
+   it returns ticked the way the user left it once the pieces are home again */
+function anaCastleSync() {
+  for (const box of $('anaCastleRow').querySelectorAll('input[type=checkbox]')) {
+    const right = box.dataset.cr, ok = castleSupported(right);
+    box.disabled = !ok;
+    box.checked = ok && anaCastleWant[right];
+    box.parentElement.classList.toggle('dim', !ok);
+  }
+}
+function anaCastleField() {
+  return CASTLE_RIGHTS.filter(r => castleSupported(r) && anaCastleWant[r]).join('') || '-';
+}
+$('anaCastleRow').querySelectorAll('input[type=checkbox]').forEach(box => {
+  box.onchange = () => { anaCastleWant[box.dataset.cr] = box.checked; };
+});
 function anaSetupClick(sq) {
   if (!anaPalPick) { $('anaSetupNote').textContent = 'Pick a piece from the palette first.'; return; }
   if (anaPalPick === 'x') game.remove(sq);
@@ -6364,6 +6422,10 @@ $('anaFenIn').addEventListener('keydown', e => { if (e.key === 'Enter') { e.prev
 $('anaSetupBtn').onclick = () => {
   if (mode !== 'analysis' || anaSetup) return;
   anaSetup = true; anaPreFen = game.fen(); anaPalPick = null;
+  /* a right the position could not have held anyway says nothing about what the
+     user is about to build, so it starts ticked rather than off */
+  const held = anaPreFen.split(' ')[2];
+  for (const r of CASTLE_RIGHTS) anaCastleWant[r] = castleSupported(r) ? held.includes(r) : true;
   anaSeq++; anaStopSearches();
   $('anaSetupUI').style.display = 'block'; $('anaCtrls').style.display = 'none'; whyShow(false);
   $('anaLines').innerHTML = '';
@@ -6398,7 +6460,7 @@ $('anaDoneBtn').onclick = () => {
     return;
   }
   anaSetup = false;
-  if (!anaLoadFen(`${board} ${turn} - - 0 1`)) {
+  if (!anaLoadFen(`${board} ${turn} ${anaCastleField()} - 0 1`)) {
     anaSetup = true;
     $('anaSetupNote').textContent = 'That position could not be loaded. Adjust the pieces and try again.';
     return;
