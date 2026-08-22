@@ -1,0 +1,2483 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2022-04-25">
+<meta name="description" content="BGP path selection on NX-OS, MP-BGP for IPv6, inter-VRF route leaking, and workshops for leaf-and-spine iBGP and eBGP at an IXP.">
+
+<title>Border Gateway Protocol (BGP) – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../networking/ccie-data-center/bidirectional-forwarding-detection-bfd.html" rel="next">
+<link href="../../networking/ccie-data-center/intermediate-system-to-intermediate-system-is-is.html" rel="prev">
+<link href="../../media/favicon.ico" rel="icon">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="../../styles.css">
+<meta property="og:title" content="Border Gateway Protocol (BGP) – H’s Notes">
+<meta property="og:description" content="BGP path selection on NX-OS, MP-BGP for IPv6, inter-VRF route leaking, and workshops for leaf-and-spine iBGP and eBGP at an IXP.">
+<meta property="og:image" content="https://h.oliabak.com/media/ccie-data-center/border-gateway-protocol-bgp-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Border Gateway Protocol (BGP) – H’s Notes">
+<meta name="twitter:description" content="BGP path selection on NX-OS, MP-BGP for IPv6, inter-VRF route leaking, and workshops for leaf-and-spine iBGP and eBGP at an IXP.">
+<meta name="twitter:image" content="https://h.oliabak.com/media/ccie-data-center/border-gateway-protocol-bgp-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning: Regression and Classification</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-deep-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Deep Learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-deep-learning">    
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../networking/archive.html">
+ <span class="dropdown-text">Archive</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../networking/ccie-data-center/border-gateway-protocol-bgp.html">Border Gateway Protocol (BGP)</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">CCIE Data Center</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/introduction-to-nx-os-command-line.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to NX-OS Command Line</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/cisco-nexus-7000-series-virtual-device-contexts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Cisco Nexus 7000 Series Virtual Device Contexts (VDC)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/vlans-and-trunks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VLANs and Trunks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/inter-vlan-routing-ivr.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inter-VLAN Routing (IVR)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/rapid-spanning-tree-protocol.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Rapid Spanning-Tree Protocol</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/mst.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multiple Spanning Tree Protocol (IEEE 802.1s)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/optional-spanning-tree-features.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Optional Spanning-Tree Features</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/campus-lan-design-spine-leaf-network-design.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Campus LAN and Spine-Leaf Network Design</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/port-channel-ether-channel.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Port-Channel (Ether-Channel)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/virtual-port-channel-vpc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Virtual Port Channel (vPC)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/vpc-configuration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">vPC Configuration</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/vpc-initialization-and-failure-scenarios.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">vPC Initialization and Failure Scenarios</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/first-hop-redundancy-protocol-fhrp.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">First Hop Redundancy Protocol (FHRP)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/vpc-advances-topics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">vPC Advanced Topics</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/double-sided-vpc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Double-Sided vPC</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/introduction-to-ip-routing-and-vrf-lite.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to IP Routing and VRF Lite</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/open-shortest-path-first-ospf.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Open Shortest-Path First (OSPF)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/intermediate-system-to-intermediate-system-is-is.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Intermediate System to Intermediate System (IS-IS)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/border-gateway-protocol-bgp.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Border Gateway Protocol (BGP)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/bidirectional-forwarding-detection-bfd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bidirectional Forwarding Detection (BFD)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/infrastructure-monitoring.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Infrastructure Monitoring</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/ip-multicast.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">IP Multicast Overview</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/ip-multicast-distribution-trees.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">IP Multicast: Distribution Trees</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/ip-multicast-protocol-independent-multicast-pim.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">IP Multicast: Protocol Independent Multicast (PIM)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/ip-multicast-pim-rendezvous-point-rp.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">IP Multicast: PIM Rendezvous Point (RP)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/virtual-extensible-lan-vxlan.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Virtual eXtensible LAN (VXLAN)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/vxlan-underlay-and-overlay-consideration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VXLAN Underlay and Overlay Consideration</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/vxlan-flood-and-learn.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VXLAN Flood and Learn with Ingress Replication</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/vxlan-flood-and-learn-with-multicast.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VXLAN Flood and Learn with Multicast</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/vxlan-fabric-ingress-replication-with-bgp-evpn-as-control-plane.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VXLAN Fabric Ingress Replication with BGP EVPN as Control Plane</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/vxlan-fabric-multicast-with-mp-bgp-as-control-plane.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VXLAN Fabric Multicast with MP-BGP as Control Plane</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/vxlan-integrated-route-and-bridge-irb.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VXLAN Integrated Route and Bridge (IRB)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/bgp-evpn-route-types.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BGP EVPN Route Types</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/vxlan-fabric-external-connectivity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VXLAN Fabric External Connectivity</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../networking/ccie-data-center/vpc-in-vxlan-bgp-evpn.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">vPC in VXLAN BGP EVPN</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#bgp-overview" id="toc-bgp-overview" class="nav-link active" data-scroll-target="#bgp-overview">BGP Overview</a>
+  <ul class="collapse">
+  <li><a href="#bgp-path-attributes" id="toc-bgp-path-attributes" class="nav-link" data-scroll-target="#bgp-path-attributes">BGP Path Attributes</a></li>
+  <li><a href="#bgp-sessions-and-messages" id="toc-bgp-sessions-and-messages" class="nav-link" data-scroll-target="#bgp-sessions-and-messages">BGP Sessions and Messages</a></li>
+  <li><a href="#ebgp-and-ibgp" id="toc-ebgp-and-ibgp" class="nav-link" data-scroll-target="#ebgp-and-ibgp">eBGP and iBGP</a></li>
+  <li><a href="#address-families" id="toc-address-families" class="nav-link" data-scroll-target="#address-families">Address Families</a></li>
+  <li><a href="#loop-prevention-in-ibgp" id="toc-loop-prevention-in-ibgp" class="nav-link" data-scroll-target="#loop-prevention-in-ibgp">Loop Prevention in iBGP</a></li>
+  <li><a href="#bgp-route-reflector-rr" id="toc-bgp-route-reflector-rr" class="nav-link" data-scroll-target="#bgp-route-reflector-rr">BGP Route Reflector (RR)</a></li>
+  <li><a href="#inject-routes-into-bgp" id="toc-inject-routes-into-bgp" class="nav-link" data-scroll-target="#inject-routes-into-bgp">Inject Routes into BGP</a></li>
+  <li><a href="#bgp-routing-information-base" id="toc-bgp-routing-information-base" class="nav-link" data-scroll-target="#bgp-routing-information-base">BGP Routing Information Base</a></li>
+  <li><a href="#route-refresh-soft-reconfiguration-and-session-reset" id="toc-route-refresh-soft-reconfiguration-and-session-reset" class="nav-link" data-scroll-target="#route-refresh-soft-reconfiguration-and-session-reset">Route Refresh, Soft Reconfiguration, and session reset</a></li>
+  <li><a href="#nx-os-bgp-decision-process-to-choose-competing-routes" id="toc-nx-os-bgp-decision-process-to-choose-competing-routes" class="nav-link" data-scroll-target="#nx-os-bgp-decision-process-to-choose-competing-routes">NX-OS BGP decision process to choose competing routes</a></li>
+  <li><a href="#bgp-route-filtering" id="toc-bgp-route-filtering" class="nav-link" data-scroll-target="#bgp-route-filtering">BGP Route Filtering</a></li>
+  <li><a href="#bgp-route-aggregation" id="toc-bgp-route-aggregation" class="nav-link" data-scroll-target="#bgp-route-aggregation">BGP Route Aggregation</a></li>
+  <li><a href="#manage-large-configuration-with-bgp" id="toc-manage-large-configuration-with-bgp" class="nav-link" data-scroll-target="#manage-large-configuration-with-bgp">Manage large configuration with BGP</a></li>
+  </ul></li>
+  <li><a href="#mp-bgp-and-ipv6-advertisement" id="toc-mp-bgp-and-ipv6-advertisement" class="nav-link" data-scroll-target="#mp-bgp-and-ipv6-advertisement">MP-BGP and IPv6 Advertisement</a></li>
+  <li><a href="#inter-vrf-route-leaking-on-nx-os-with-bgp" id="toc-inter-vrf-route-leaking-on-nx-os-with-bgp" class="nav-link" data-scroll-target="#inter-vrf-route-leaking-on-nx-os-with-bgp">Inter-VRF Route Leaking on NX-OS With BGP</a></li>
+  <li><a href="#workshop-1-leaf-and-spine-with-ibgp" id="toc-workshop-1-leaf-and-spine-with-ibgp" class="nav-link" data-scroll-target="#workshop-1-leaf-and-spine-with-ibgp">Workshop 1: Leaf-and-Spine with iBGP</a>
+  <ul class="collapse">
+  <li><a href="#configuration" id="toc-configuration" class="nav-link" data-scroll-target="#configuration">Configuration</a></li>
+  </ul></li>
+  <li><a href="#workshop-2-inter-vrf-routing-with-mp-bgp" id="toc-workshop-2-inter-vrf-routing-with-mp-bgp" class="nav-link" data-scroll-target="#workshop-2-inter-vrf-routing-with-mp-bgp">Workshop 2: Inter-VRF Routing With MP-BGP</a></li>
+  <li><a href="#workshop-ebgp-route-ixp" id="toc-workshop-ebgp-route-ixp" class="nav-link" data-scroll-target="#workshop-ebgp-route-ixp">Workshop: eBGP Route IXP</a></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../theme-toggle.js"></script>
+<script src="../../auth.js"></script>
+<script src="../../giscus-note.js"></script>
+<script src="../../resume-reading.js"></script>
+<script src="../../sidebar-active.js"></script>
+<script src="../../search-scope.js"></script>
+<script src="../../review-numbering.js"></script>
+<script src="../../breadcrumb-path.js"></script>
+<script src="../../nav-columns.js"></script>
+<script src="../../activation-colors.js"></script>
+<script src="../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Border Gateway Protocol (BGP)</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">ccie-data-center</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    BGP path selection on NX-OS, MP-BGP for IPv6, inter-VRF route leaking, and workshops for leaf-and-spine iBGP and eBGP at an IXP.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">April 25, 2022</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~42 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,300 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<section id="bgp-overview" class="level2">
+<h2 class="anchored" data-anchor-id="bgp-overview">BGP Overview</h2>
+<p>Border-Gateway Protocol (BGP) is an extremely scalable routing protocol which gives you a lot of control to choose the best route. It is a path-vector, which unlike OSPF where routers individually run SPF algorithm on their Link-State Database, it advertises the routes to the network.</p>
+<p>BGP connects two autonomous systems (AS) to teach other. There is two different formats with AS Numbers (ASN): 16-bit and 32-bit. Table below depicts the ASN assignment by IANA</p>
+<table class="caption-top table">
+<caption>16-Bit ASN Assignment Categories from IANA</caption>
+<thead>
+<tr class="header">
+<th>AS Number</th>
+<th>Reason For reservation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>0</td>
+<td>Reserved by [<a href="http://www.iana.org/go/rfc7607">RFC7607</a>]</td>
+</tr>
+<tr class="even">
+<td>1-64495</td>
+<td>Assignable by IANA for public use</td>
+</tr>
+<tr class="odd">
+<td>112</td>
+<td>Used by the AS112 project to sink misdirected DNS queries; see [<a href="http://www.iana.org/go/rfc7534">RFC7534</a>]</td>
+</tr>
+<tr class="even">
+<td>23456</td>
+<td>AS_TRANS; reserved by [<a href="http://www.iana.org/go/rfc6793">RFC6793</a>]</td>
+</tr>
+<tr class="odd">
+<td>64496-64511</td>
+<td>For documentation and sample code; reserved by [<a href="http://www.iana.org/go/rfc5398">RFC5398</a>]</td>
+</tr>
+<tr class="even">
+<td>64512-65534</td>
+<td>For private use; reserved by [<a href="http://www.iana.org/go/rfc6996">RFC6996</a>]</td>
+</tr>
+<tr class="odd">
+<td>65535</td>
+<td>Reserved by [<a href="http://www.iana.org/go/rfc7300">RFC7300</a>]</td>
+</tr>
+<tr class="even">
+<td>65536-65551</td>
+<td>For documentation and sample code; reserved by [<a href="http://www.iana.org/go/rfc5398">RFC5398</a>]</td>
+</tr>
+</tbody>
+</table>
+<p>Border Gateway Protocol uses Path Attributes (PA) to make decision for choosing a route over another. BGP can advertise these PAs along with each prefix (prefix is called a Network Layer Reachability Information (NLRI)). It uses a process called the best path selection process to choose the best route between two routes.</p>
+<section id="bgp-path-attributes" class="level3">
+<h3 class="anchored" data-anchor-id="bgp-path-attributes">BGP Path Attributes</h3>
+<p>Table below shows the different BGP PAs:</p>
+<table class="caption-top table">
+<caption>BGP Path Attributes</caption>
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Attribute Class</th>
+<th>Scope and Examples</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Well-known mandatory</td>
+<td>Must be recognized by all routers. Must be included with every prefix advertisement. <strong>AS_PATH, origin, next hop</strong></td>
+</tr>
+<tr class="even">
+<td>Well-known discretionary</td>
+<td>Must be recognized by all routers. May or may not be included with a prefix advertisement. <strong>local preference, atomic aggregate</strong></td>
+</tr>
+<tr class="odd">
+<td>Optional transitive</td>
+<td>Might or might not be recognized by a router Stay with the route advertisement from AS to AS: <strong>aggregator, community</strong></td>
+</tr>
+<tr class="even">
+<td>Optional non-transitive</td>
+<td>Might or might not be recognized by a router. Cannot be shared from AS to AS. <strong>MED, RR originator ID, RR cluster list</strong></td>
+</tr>
+</tbody>
+</table>
+<p>You will later learn what these PAs are and how BGP selects the routes by these PAs. But for now, Let us start with AS_PATH which is a well-known mandatory attribute. You can think of it as a hop count, but the hop here is the entire AS. This PA performs two key functions for us:</p>
+<ul>
+<li>By default, the shortest AS_PATH (Fewest number of ASNs listed) is best path.</li>
+<li>Prevent loop</li>
+</ul>
+</section>
+<section id="bgp-sessions-and-messages" class="level3">
+<h3 class="anchored" data-anchor-id="bgp-sessions-and-messages">BGP Sessions and Messages</h3>
+<p>BGP sessions are point-to-point and unicast over TCP 179.</p>
+<p>Here is the list of BGP messages. No Hello!</p>
+<ul>
+<li>Open
+<ul>
+<li>Sends after TCP session established to request a BGP session open.</li>
+</ul></li>
+<li>Keepalive
+<ul>
+<li>Periodically (every 60 seconds) sends after the BGP session open.</li>
+<li>Hold timer is 180 seconds.</li>
+</ul></li>
+<li>Update
+<ul>
+<li>This message includes the NLRIs and PAs.</li>
+</ul></li>
+<li>Notification
+<ul>
+<li>Sends whenever an error occurs or once hold timer expires.</li>
+<li>After sending notification message, BGP always closes the session.</li>
+</ul></li>
+</ul>
+</section>
+<section id="ebgp-and-ibgp" class="level3">
+<h3 class="anchored" data-anchor-id="ebgp-and-ibgp">eBGP and iBGP</h3>
+<ul>
+<li><strong>External BGP (eBGP):</strong> when two routers in two different autonomous systems exchange BGP routing information.
+<ul>
+<li>Advertising router updates the AS_PATH by prepending its ASN to the AS_PATH variable.</li>
+<li>Receiving router checks the AS_PATH and discards the NLRI if it contains the ASN that matches its local ASN.</li>
+<li>TTL value with eBGP defaults to 1. If your peer is not directly connected, you must increase the TTL by <code>ebgp-multihop N</code> command.</li>
+</ul></li>
+<li><strong>Internal BGP (iBGP):</strong> when two routers in the same autonomous systems exchange routing information.
+<ul>
+<li>The purpose of iBGP is to <span class="sn-c-vivid-red"><strong>get the routes from one edge to another edge</strong></span> <span class="sn-c-vivid-purple"><strong>maintaining the BGP attributes</strong></span>.</li>
+<li>BGP split-horizon is loop prevention mechanism in iBGP. It says that do not forward routes learned from an iBGP peer to another iBGP peer.</li>
+<li>RFC4274 says when sending a message to an iBGP peer, if the route is not locally originated, the BGP speaker SHOULD NOT modify the NEXT_HOP attribute (NEXT_HOP is a well-known mandatory attribute).</li>
+</ul></li>
+</ul>
+<table class="caption-top table">
+<caption>iBGP versus eBGP</caption>
+<thead>
+<tr class="header">
+<th></th>
+<th>iBGP</th>
+<th>eBGP</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Update AS_PATH attribute?</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr class="even">
+<td>Loop Prevention Mechanism</td>
+<td>Split-horizon</td>
+<td><code>AS_PATH</code></td>
+</tr>
+<tr class="odd">
+<td>Change Next-hop?</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr class="even">
+<td>Default TTL Value</td>
+<td>255</td>
+<td>1</td>
+</tr>
+<tr class="odd">
+<td>Metric</td>
+<td>200</td>
+<td>20</td>
+</tr>
+</tbody>
+</table>
+<p>Here is basic configuration example of eBGP</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">feature bgp</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp </span><span class="sn-c-black sn-b-light-green-cyan">65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">neighbor 10.1.1.1 remote-as </span><span class="sn-c-black sn-b-luminous-vivid-amber">65001</span>
+</pre>
+<p>Here is an example of how we can change the TTL with eBGP from default 1 to 2. Meaning that our peer is 2 hops away.</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><b><span class="sn-c-vivid-red">configure terminal</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)#</span><span class="sn-c-vivid-red">router bgp 65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">neighbor 10.1.1.1</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor)# </span><span class="sn-c-vivid-red">ebgp-multihop 2</span>
+</pre>
+<p>Here is a sample configuration of iBGP</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><b><span class="sn-c-vivid-red">configure terminal</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">feature bgp</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp </span><b><span class="sn-c-black sn-b-pale-cyan-blue">65000</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">neighbor 10.1.1.1 remote-as </span><b><span class="sn-c-black sn-b-pale-cyan-blue">65000</span></b>
+</pre>
+<p>Here is how we can change the Next-hop attribute on an iBGP edge router:</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor-af)# </span><span class="sn-c-vivid-red">next-hop-self</span>
+</pre>
+</section>
+<section id="address-families" class="level3">
+<h3 class="anchored" data-anchor-id="address-families">Address Families</h3>
+<p>BGP originally was intended to advertise IPv4 prefixes. Later, with RFC 2858 Multi-Protocol BGP (MP-BGP) came to the mix. Each address-family maintains a separate database and configuration for each protocol.</p>
+<p><em>Address Family Identifier (AFI)</em> identifies the supported address types. We also have <em>Subsequent Address Family Identifier (SAFI)</em> which provides further information (such as unicast, multicast). Here are some AFI and SAFI codes:</p>
+<ul>
+<li>IPv4 unicast: AFI: 1, SAFI: 1</li>
+<li>IPv6 unicast: AFI: 2, SAFI: 1</li>
+<li>BGP EVPN: AFI: 25 (L2VPN), SAFI 70</li>
+</ul>
+<p>Because every address family maintain a separate RIBs, it allows for a <strong>routing policy</strong> in one address family to be different from a <strong>routing policy</strong> in a different address family. Some of those routing policies include: <code>allowas-in</code>, <code>as-override</code>, <code>default-originate</code>, <code>filter-list</code>, <code>next-hop-self</code>, <code>route-map</code>, <code>route-reflector-client</code>, <code>send-community</code>, and <code>prefix-list</code>.</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">neighbor 10.1.1.1</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor-af)# </span><span class="sn-c-vivid-red">?</span>
+<span class="sn-c-cyan-bluish-gray">  advertise               Advertise to peer</span>
+<span class="sn-c-cyan-bluish-gray">  advertise-map           Specify route-map for conditional advertisement</span>
+<span class="sn-c-cyan-bluish-gray">  advertisement-interval  Minimum interval between sending BGP routing updates</span>
+  <span class="sn-c-vivid-cyan-blue">allowas-in</span><span class="sn-c-cyan-bluish-gray">              Accept as-path with my AS present in it</span>
+  <span class="sn-c-vivid-cyan-blue">as-override</span><span class="sn-c-cyan-bluish-gray">             Override matching AS-number while sending update</span>
+<span class="sn-c-cyan-bluish-gray">  capability              Advertise capability to the peer</span>
+<span class="sn-c-cyan-bluish-gray">  default                 Inherit values from a peer template</span>
+  <span class="sn-c-vivid-cyan-blue">default-originate</span><span class="sn-c-cyan-bluish-gray">       Originate a default toward this peer</span>
+<span class="sn-c-cyan-bluish-gray">  disable-peer-as-check   Disable checking of peer AS-number while advertising</span>
+  <span class="sn-c-vivid-cyan-blue">filter-list</span><b><span class="sn-c-cyan-bluish-gray">             Apply AS-PATH filter-list</span></b>
+<b><span class="sn-c-cyan-bluish-gray">  inherit                 Inherit a template</span></b>
+<b><span class="sn-c-cyan-bluish-gray">  maximum-prefix          Maximum number of prefixes from this neighbor</span></b>
+  <span class="sn-c-vivid-cyan-blue">next-hop-self</span><span class="sn-c-cyan-bluish-gray">           Set our address as nexthop (non-reflected)</span>
+<span class="sn-c-cyan-bluish-gray">  next-hop-third-party    Compute a third-party nexthop if possible</span>
+  <span class="sn-c-vivid-cyan-blue">prefix-list</span><span class="sn-c-cyan-bluish-gray">             Apply prefix-list</span>
+  <span class="sn-c-vivid-cyan-blue">route-map</span><span class="sn-c-cyan-bluish-gray">               Apply route-map to neighbor</span>
+  <span class="sn-c-vivid-cyan-blue">route-reflector-client</span><span class="sn-c-cyan-bluish-gray">  Configure a neighbor as Route reflector client</span>
+  <span class="sn-c-vivid-cyan-blue">send-community</span><span class="sn-c-cyan-bluish-gray">          Send Community attribute to this neighbor</span>
+<span class="sn-c-cyan-bluish-gray">  soft-reconfiguration    Soft reconfiguration</span>
+<span class="sn-c-cyan-bluish-gray">  soo                     Specify Site-of-origin extcommunity</span>
+<span class="sn-c-cyan-bluish-gray">  suppress-inactive       Advertise only active routes to peer</span>
+<span class="sn-c-cyan-bluish-gray">  unsuppress-map          Route-map to selectively unsuppress suppressed routes</span>
+<span class="sn-c-cyan-bluish-gray">  weight                  Set default weight for routes from this neighbor</span>
+</pre>
+</section>
+<section id="loop-prevention-in-ibgp" class="level3">
+<h3 class="anchored" data-anchor-id="loop-prevention-in-ibgp">Loop Prevention in iBGP</h3>
+<p>Do you remember split-horizon rule which is the loop prevention mechanism in iBGP? Yes, I do. It says that do not forward routes learned from an iBGP peer to another iBGP peer. As a result, when we have two edge nodes (R1 and R3) plus one core node (R2), then the problem appears. R1 can get the routes from outside and gives it to R2 in the core, but R2 cannot give those routes to R3. Here are the solutions we could do:</p>
+<ul>
+<li>Redistribute on R1 to IGP: This one clears all BGP attributes because the IGP does not have the same packet format as BGP.</li>
+<li>Because BGP is TCP-based, we can also directly establish a neighborship between R1 and R3. So we have kept our neihgborship between R1 and R2, then we established another one between R1 and R3. If required for the other direction we also need to establish another session between R2 and R3. The end result would be a full-mesh neighborship topology which we might want to avoid due to scalability issue.</li>
+<li>Route Reflector (RR): Some routers are configured as RR servers; these servers are allowed to learn iBGP routes from their clients and then advertise them to other iBGP peers.</li>
+<li>BGP Confederation: We can break a large AS into some sub ASs and go from there depending on how many BGP edge we would be having.</li>
+</ul>
+<p>This breaks the split-horizon rule which in turn causes loop. But RR introduces two new attributes for loop prevention.</p>
+</section>
+<section id="bgp-route-reflector-rr" class="level3">
+<h3 class="anchored" data-anchor-id="bgp-route-reflector-rr">BGP Route Reflector (RR)</h3>
+<p>Route reflectors (RR) removes the need for a full mesh of iBGP peers. <strong>RR tells the clients that your next-hop is the other client (not RR).</strong></p>
+<ul>
+<li>Routes learnt from RR client can be given to anyone (even not RR’s client)</li>
+<li>Restriction is non-client to non-client which cannot exchange their routes.</li>
+</ul>
+<p>We also said that RR servers are allowed to learn iBGP routes from their clients and then advertise them to other iBGP peers - which breaks the split-horizon rule. That is why RR introduces two new attributes (optional non-transitive) for loop prevention. I am going to introduce those PAs within our R1-R2 (RR)-R3 example.</p>
+<ul>
+<li><strong>ORIGINATOR_ID:</strong> R1 learns the route from eBGP peer, advertises it to RR. RR sets ORIGINATOR_ID to R1 RID (who brought the prefix to this AS). RR then advertises it to R3 because R3 is client of RR. R3 may advertise that route to R1, then R1 discards it because it sees its RID in the advertisement. (Prevents intra-cluster loops)</li>
+<li><strong>CLUSTER_LIST:</strong> RR adds its cluster-id to the cluster list. If a router receives an NLRI with its cluster-id in the cluster list attribute, it discards the NLRI (Prevents inter-cluster loops).
+<ul>
+<li>What is a cluster? An RR with some clients is a cluster. For redundancy, we might be having two RRs - each RR with different (or same) clients. Each RR with its clients is a cluster.</li>
+</ul></li>
+</ul>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="../../media/ccie-data-center/border-gateway-protocol-bgp-1.svg" class="img-fluid figure-img" width="589"></p>
+<figcaption>Scale Route Reflectors</figcaption>
+</figure>
+</div>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">neighbor 10.1.1.1</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor-af)# </span><span class="sn-c-vivid-red">route-reflector-client</span>
+</pre>
+</section>
+<section id="inject-routes-into-bgp" class="level3">
+<h3 class="anchored" data-anchor-id="inject-routes-into-bgp">Inject Routes into BGP</h3>
+<p>We can inject routes using network command, redistribution, summarization, or default origination.</p>
+<ul>
+<li>Using <code>network</code> command.</li>
+<li>Using <code>redistribute</code> command.</li>
+<li>By injecting the default route using<code>default-information originate</code>command.</li>
+</ul>
+<section id="using-network-command" class="level4">
+<h4 class="anchored" data-anchor-id="using-network-command">Using network command</h4>
+<p>In IGPs when we use <code>network</code> command, we enabled that routing protocol on the matching interfaces with the <code>network</code> command. But in BGP when we use <code>network</code> command, the router looks in its routing table and if the exact equivalent prefix/length exists, puts that into the local BGP table.</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65500</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">network 172.16.0.0</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">network 10.90.50.0 mask 255.255.255.0</span>
+</pre>
+<ul>
+<li><strong>Connected Network:</strong> In Loc-RIB (<code>show bgp ipv4 unicast</code>), you will see the next-hop attribute is set to 0.0.0.0, origin code as <code>i</code> (IGP) and weight as 32,768.</li>
+<li><strong>Static Route or Routing Protocol:</strong> The next-hop attribute is set to the next-hop IP address, the origin attribute is set to i (IGP), the weight is set to 32,768; and the MED is set to the IGP metric.</li>
+</ul>
+</section>
+<section id="using-redistribute-command" class="level4">
+<h4 class="anchored" data-anchor-id="using-redistribute-command">Using redistribute command</h4>
+<p>It is not recommended and in most cases the <code>network</code> statement is preferable.</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">route-map </span><span class="sn-c-pale-pink">CONNECTED-TO-BGP</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-route-map)# </span><span class="sn-c-pale-pink">match interface loopback0 , loopback1, loopback2</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-route-map)# </span><span class="sn-c-vivid-red">exit</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-af)# </span><span class="sn-c-vivid-red">redistribute direct route-map </span><span class="sn-c-pale-pink">CONNECTED-TO-BGP</span>
+</pre>
+<p>In Loc-RIB (<code>show bgp ipv4 unicast</code>) you will see origin code as <code>?</code>.</p>
+</section>
+<section id="using-default-information-originate" class="level4">
+<h4 class="anchored" data-anchor-id="using-default-information-originate">Using default-information originate</h4>
+<p>If we wanted to advertise a default route to a particular neighbor, you could also use <code>default originate</code> command under a particular neighbor</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><b><span class="sn-c-vivid-red">configure terminal</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65001</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><b><span class="sn-c-vivid-red">neighbor 172.16.81.1</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor)# </span><b><span class="sn-c-vivid-red">address-family ipv4 unicast</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor-af)# </span><b><span class="sn-c-vivid-red">default-originate</span></b>
+</pre>
+<p>Should you need to advertise a default route to all your neighbors, you can use <code>default-information originate</code> under the global address-family router bgp subcommand.+</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65001</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-af)# </span><span class="sn-c-vivid-red">default-information originate</span>
+</pre>
+</section>
+</section>
+<section id="bgp-routing-information-base" class="level3">
+<h3 class="anchored" data-anchor-id="bgp-routing-information-base">BGP Routing Information Base</h3>
+<p>BGP RIB consists of 3 parts stores known prefixes:</p>
+<ul>
+<li><strong>Adj-RIBs-In:</strong> stores routes learned from incoming UPDATE message.</li>
+<li><strong>Loc-RIB:</strong> stores prefixes from <strong>Adj-RIB-in</strong> after applying inbound policy and locally injected routes.</li>
+<li><strong>Adj-RIBs-Out:</strong> takes the prefixes from the Loc-RIB and stores advertising routes to the peer via UPDATE message.</li>
+</ul>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="../../media/ccie-data-center/border-gateway-protocol-bgp-2.svg" class="img-fluid figure-img" width="800"></p>
+<figcaption>BGP Routing Information Base</figcaption>
+</figure>
+</div>
+</section>
+<section id="route-refresh-soft-reconfiguration-and-session-reset" class="level3">
+<h3 class="anchored" data-anchor-id="route-refresh-soft-reconfiguration-and-session-reset">Route Refresh, Soft Reconfiguration, and session reset</h3>
+<p>Any time you change a policy, you can send a route refresh message to a peer and request them to resend the prefixes. Route refresh capability is negotiated during the session establishment. Both peers must support this capability. You can check if the your neighbor support this capability by using <code>show ip bgp neighbor ip-address | i refresh</code>. If your peer supports Route Refresh capability the command <code>clear ipbgp{* | as-number | ip-address | peer-group-name } in</code> requests the peers to send the prefixes. (You have the option to choose between in, out, or both). In summary route refresh eliminates the need for storing the incoming prefixes as well as the need to rest the entire session.</p>
+<p>If route refresh is not supported, we’d rather use <em>soft reconfiguration</em> as opposed to the session reset. With Soft Reconfiguration enabled, you will have one Adj-RIB-In per neighbor. Note that if you enable soft reconfiguration, BGP does not send route refresh update anymore to its peer.</p>
+</section>
+<section id="nx-os-bgp-decision-process-to-choose-competing-routes" class="level3">
+<h3 class="anchored" data-anchor-id="nx-os-bgp-decision-process-to-choose-competing-routes">NX-OS BGP decision process to choose competing routes</h3>
+<p>NX-OS makes decision to chose amongst multiple paths to the same destination by the following attributes:</p>
+<ol type="1">
+<li>Is NEXT_HOP (Well-known Mandatory) in the routing table?
+<ul>
+<li>No, reject the process for that route.</li>
+<li>Yes, continue the process.</li>
+</ul></li>
+<li><span class="sn-c-vivid-purple">Highest NX-OS weight</span>
+<ul>
+<li>Weight is a Cisco-proprietary attributes which controls <strong>outbound</strong> traffic leaving the AS.</li>
+<li>Locally Significant: Not exchanged. It is not in BGP updates.</li>
+<li>The higher the value (0-65535), the better the route:
+<ul>
+<li>Directly connected default to 32768</li>
+<li>Any other route defaults to 0</li>
+</ul></li>
+</ul></li>
+<li><span class="sn-c-vivid-purple"><strong>Highest Local Preference</strong></span> (Well-known discretionary)
+<ul>
+<li>This PA is between iBGP peers and cannot leave the AS. (except using communities)</li>
+<li>Controls <strong>outbound</strong> traffic leaving the AS.</li>
+<li>All iBGP routers choose the same exit point from their AS for a particular NLRI.</li>
+</ul></li>
+<li>Locally injected? Aggregates? Received by BGP peer?
+<ul>
+<li>Preference is in the following order.
+<ul>
+<li>Locally-advertised routes</li>
+<li>Locally-aggregated routes</li>
+<li>Learnt from another BGP</li>
+</ul></li>
+</ul></li>
+<li><span class="sn-c-vivid-purple"><strong>Shortest AS_PATH</strong></span> (Well-known mandatory)
+<ul>
+<li>Used to influence inbound or outbound traffic.</li>
+</ul></li>
+<li>Origin
+<ul>
+<li>Every BGP NLRI must have an ORIGIN attribute.</li>
+<li>Meant to help with transition from EGP to BGP (No practical use now)</li>
+</ul></li>
+<li><span class="sn-c-vivid-purple">Lowest Multi-Exit Discriminator (MED)</span> (Optional Non-transitive)
+<ul>
+<li>Controls inbound traffic.</li>
+<li>If you are dual-homed with one ISP, you can give your MED to directly connected eBGP neighbor.</li>
+<li>Cannot influence incoming traffic originated in distant ASs.</li>
+<li>In case of multiple paths from different ASs, you can use AS_PATH PA.</li>
+</ul></li>
+<li>Neighbor Type:
+<ul>
+<li>Prefers eBGP routes over iBGP routes</li>
+</ul></li>
+<li>The lowest IGP metric for reaching the NEXT_HOP:</li>
+<li>Oldest (longest-known) eBGP route</li>
+<li>Lowest neighbor BGP RID</li>
+<li>Shortest CLUSTER_LIST in route reflector topologies</li>
+<li>Lowest iBGP neighbor IP address</li>
+</ol>
+</section>
+<section id="bgp-route-filtering" class="level3">
+<h3 class="anchored" data-anchor-id="bgp-route-filtering">BGP Route Filtering</h3>
+<p>With Route filtering we can selectively identifying routes that are advertised or received from neighbor routers. Here are the methods we can do route filtering with BGP:</p>
+<ul>
+<li>distribute-list (<strong>Not supported by NX-OS</strong>)
+<ul>
+<li>with Extended ACLs
+<ul>
+<li>on a neighbor-by-neighbor basis</li>
+<li>Very powerful</li>
+<li><code>neighbor A.B.C.D distribute-list ABC in/out</code></li>
+<li>permit ip <span class="sn-b-light-green-cyan">10.0.0.0 0.0.0.0</span> <span class="sn-b-pale-cyan-blue">255.255.0.0 0.0.0.0</span>
+<ul>
+<li><span class="sn-b-light-green-cyan">First portion: network portion</span></li>
+<li><span class="sn-b-pale-cyan-blue">Second portion: network mask</span></li>
+<li>Permits only the 10.0.0.0/16 network</li>
+</ul></li>
+<li>permit ip <span class="sn-b-luminous-vivid-amber">172.16.0.0 0.0.255.255</span> <span class="sn-b-pale-pink">255.255.255.128 0.0.0.127</span>
+<ul>
+<li><span class="sn-b-luminous-vivid-amber">Network Portion: 172.16.0.0</span></li>
+<li><span class="sn-b-pale-pink">Mask Portion: 255.255.255.1xxxxxxx</span></li>
+<li>Permits any 172.16.x.x network with a /25 to /32 prefix length</li>
+</ul></li>
+</ul></li>
+</ul></li>
+<li>prefix-list
+<ul>
+<li>on a neighbor-by-neighbor basis</li>
+</ul></li>
+<li>as-path access-list
+<ul>
+<li>on a neighbor-by-neighbor basis
+<ul>
+<li><code>ip as-path access-list n deny/permit regexp</code></li>
+<li>Then, we can reference it in a filter-list or a route-map</li>
+</ul></li>
+</ul></li>
+</ul>
+<section id="prefix-list" class="level4">
+<h4 class="anchored" data-anchor-id="prefix-list">prefix-list</h4>
+<p>Here is an example of prefix-list which is applied in BGP by <code>prefix-list</code> command:</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">ip prefix-list FILTER01 seq 5 deny 172.16.3.0/24</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">ip prefix-list FILTER01 seq 10 permit 0.0.0.0/0 le 32</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><b><span class="sn-c-vivid-red">neighbor 10.1.1.0</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor-af)# </span><b><span class="sn-c-vivid-red">prefix-list FILTER01 in</span></b>
+</pre>
+<p>Here is an example of prefix-list which is applied in BGP using <code>route-map</code> command:</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">ip prefix-list FILTER02 seq 5 deny 172.16.8.0/24</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">ip prefix-list FILTER02 seq 10 permit 0.0.0.0/0 le 32</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">route-map FILTER02 permit 10</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">ip prefix-list FILTER02</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">neighbor 10.1.1.0</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor-af)# </span><span class="sn-c-vivid-red">route-map FILTER02 in</span>
+</pre>
+</section>
+<section id="as-path-access-list" class="level4">
+<h4 class="anchored" data-anchor-id="as-path-access-list">as-path access-list</h4>
+<p>Sometime we do not need to identify whole routes from a specific AS number to decide what to do with. We can simply use Regular Expressions (regex) to parse through the AS Path list.</p>
+<p><strong>Here are some examples:</strong></p>
+<p><code>ip as-path access-list 1 deny .*</code></p>
+<ul>
+<li>Match NLRI with any <em>non-empty</em> AS_PATH</li>
+<li>Commonly used “AS_PATH Wild Card” (permit all or deny all statement)</li>
+</ul>
+<p><code>ip as-path access-list 2 deny ^65001_</code></p>
+<ul>
+<li>Match any NLRI received directly from AS 65001
+<ul>
+<li>[65001, 145, 1160]=MATCH</li>
+<li>[65001]=MATCH</li>
+<li>[145, 65001]=NO MATCH</li>
+</ul></li>
+</ul>
+<p><code>ip as-path access-list 3 permit _65001$</code></p>
+<ul>
+<li>Match any NLRI originated from AS 65001
+<ul>
+<li>[65001, 145, 1160]=NO MATCH</li>
+<li>[65001]=MATCH</li>
+<li>[145, 65001]=MATCH</li>
+</ul></li>
+</ul>
+<p><code>ip as-path access-list 4 deny ^65001$</code></p>
+<ul>
+<li>Match any NLRI originated from AS 65001 that has not passed through any other AS
+<ul>
+<li>[65001, 145, 1160]=NO MATCH</li>
+<li>[65001]=MATCH</li>
+<li>[145, 65001]=NO MATCH</li>
+</ul></li>
+</ul>
+<p><code>ip as-path access-list 60 deny _65001_</code></p>
+<ul>
+<li>Match any NLRI that include 65001 no matter where the occurrence is</li>
+<li>Application: Filters the traffic that originated or passed through AS 65001
+<ul>
+<li>[65001]= ONLY MATCH</li>
+</ul></li>
+</ul>
+<p><code>ip as-path access-list 70 permit ^$</code></p>
+<ul>
+<li>Match any NLRI with an empty AS_PATH: <strong>NLRI native to the local AS</strong>
+<ul>
+<li>[]= ONLY MATCH</li>
+</ul></li>
+</ul>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">feature bgp</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">ip as-path access-list ALLOW_65001 seq 10 permit _65001_</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">route-map ALLOW_65001 permit 10</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-route-map)# </span><span class="sn-c-vivid-red">match as ALLOW_65001</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">neighbor 172.16.1.1 remote-as 65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor-af)# </span><span class="sn-c-vivid-red">route-map ALLOW_65001 in</span>
+</pre>
+</section>
+</section>
+<section id="bgp-route-aggregation" class="level3">
+<h3 class="anchored" data-anchor-id="bgp-route-aggregation">BGP Route Aggregation</h3>
+<p><em>Aggregation</em> is to BGP as <em>summarization</em> is to IGPs. With route summarization, we advertise one route and suppress all other routes which fall under the summary address.</p>
+<p>One way to aggregate our routes is to manually summary our routes using a static route and sending it no the blackhole, then advertising that summary route to BGP. This is my preferred way because of its simplicity. However, there is another fancy way using <code>aggregate-address</code> which I describe here.</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-af)# </span><span class="sn-c-vivid-red">aggregate-address 11.0.0.0 252.0.0.0</span>
+</pre>
+<p>With <code>aggregate-address</code> in BGP, we advertise the aggregated address along with the specific prefixes (does not suppress the specific addresses!!!). Should you required advertising summary route only, you can add keyword <code>summary-only</code> in the end of <code>aggregate-address</code> statement.</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-af)# </span><span class="sn-c-vivid-red">aggregate-address 11.0.0.0 252.0.0.0 </span><span class="sn-c-black sn-b-light-green-cyan">summary-only</span>
+</pre>
+<ul>
+<li>When a BGP router summarizes a route, it does not advertise the PAs from before the aggregation.</li>
+<li>If you want to keep the BGP path information history, you can use the <code>as-set</code> keyword with the <code>aggregate-address</code> command.</li>
+</ul>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65000</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-af)# </span><span class="sn-c-vivid-red">aggregate-address 11.0.0.0 252.0.0.0 summary-only </span><span class="sn-c-black sn-b-light-green-cyan">as-set</span>
+</pre>
+</section>
+<section id="manage-large-configuration-with-bgp" class="level3">
+<h3 class="anchored" data-anchor-id="manage-large-configuration-with-bgp">Manage large configuration with BGP</h3>
+<p>As the BGP configuration scales up, we need to organize our configuration. To manage the BGP configuration, we have Peer Groups tool as well as Peer Session and Policy Templates. We will discuss the latter.</p>
+<section id="peer-templates" class="level4">
+<h4 class="anchored" data-anchor-id="peer-templates">Peer Templates</h4>
+<p><strong>Peer Session Template:</strong> defines any parameter relevant to the BGP session such as remote-as, session timers, TTL (ebgp-multihop). Without peer session, we usually configure these commands directly under <code>neighbor peer_id</code> command.</p>
+<p><strong>Peer Policy Templates:</strong> determines any parameters dependent to address-family such as those discussed in Address Families section of this text. Without peer policy, we configure them under the address-families themselves.</p>
+<p><strong>Peer Template:</strong> can optionally inherit the peer-session and peer-policy templates.</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01# </span><span class="sn-c-vivid-red">configure terminal</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65001</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-purple">template peer-session PS_TOP</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-stmp)# </span><span class="sn-c-vivid-purple">timers 15 45</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-stmp)# </span><span class="sn-c-vivid-purple">exit</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-luminous-vivid-orange">template peer-session PS_iBGP</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-stmp)# </span><span class="sn-c-luminous-vivid-orange">inherit peer-session </span><span class="sn-c-vivid-purple">PS_TOP</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-stmp)# </span><span class="sn-c-luminous-vivid-orange">password SMENODEPASS</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-stmp)# </span><span class="sn-c-luminous-vivid-orange">remote-as 65001</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-stmp)# </span><span class="sn-c-luminous-vivid-orange">exit</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><b><span class="sn-c-vivid-cyan-blue">template peer-session PS_BELL</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-stmp)# </span><span class="sn-c-vivid-cyan-blue">inherit peer-session </span><span class="sn-c-vivid-purple">PS_TOP</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-stmp)# </span><span class="sn-c-vivid-cyan-blue">password SMENODEPASS</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-stmp)# </span><span class="sn-c-vivid-cyan-blue">remote-as 577</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-stmp)# </span><span class="sn-c-vivid-cyan-blue">ebgp-multihop 2</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-stmp)# </span><span class="sn-c-vivid-cyan-blue">exit</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><b><span class="sn-c-vivid-green-cyan">template peer-policy PP_iBGP</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-ptmp)# </span><span class="sn-c-vivid-green-cyan">send-community both</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-ptmp)# </span><span class="sn-c-vivid-green-cyan">soft-reconfiguration inbound always</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-ptmp)# </span><span class="sn-c-vivid-green-cyan">next-hop-self</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-ptmp)# </span><b><span class="sn-c-vivid-green-cyan">exit</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-pale-pink">template peer-policy PP_eBGP</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-ptmp)# </span><span class="sn-c-pale-pink">send-community both</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-ptmp)# </span><span class="sn-c-pale-pink">soft-reconfiguration inbound always</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-ptmp)# </span><span class="sn-c-pale-pink">exit</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><b><span class="sn-c-vivid-red">neighbor 172.16.31.1</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor)# </span><span class="sn-c-vivid-red">inherit peer-session </span><span class="sn-c-luminous-vivid-orange">PS_iBGP</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor-af)# </span><span class="sn-c-vivid-red">inherit peer-policy </span><span class="sn-c-vivid-green-cyan">PP_iBGP</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><b><span class="sn-c-vivid-red">neighbor 192.190.150.1</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor)# </span><span class="sn-c-vivid-red">inherit peer-session </span><span class="sn-c-vivid-cyan-blue">PS_BELL</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-neighbor-af)# </span><span class="sn-c-vivid-red">inherit peer-policy </span><span class="sn-c-pale-pink">PP_eBGP</span>
+</pre>
+</section>
+</section>
+</section>
+<section id="mp-bgp-and-ipv6-advertisement" class="level2">
+<h2 class="anchored" data-anchor-id="mp-bgp-and-ipv6-advertisement">MP-BGP and IPv6 Advertisement</h2>
+<p>Previously we spoke about address-families with BGP. BGP initially came to advertise 32-bit IPv4 routes. Then, people with RFC-4760 introduced Multiprotocol Extensions for BGP. Now, you can advertise whatever you want with different length by using different address-families. Let us look at an example of advertising IPv6 routes over an IPv6 BGP session:</p>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">switch(config-router)# </span><b><span class="sn-c-vivid-red">router bgp 65000</span></b>
+<span class="sn-c-cyan-bluish-gray">switch(config-router)# </span><span class="sn-c-vivid-red">router-id 10.91.255.252</span>
+<b><span class="sn-c-pale-pink">! Let's advertise an IPv6 NLRI</span></b>
+<span class="sn-c-cyan-bluish-gray">switch(config-router)# </span><span class="sn-c-vivid-red">address-family ipv6 unicast</span>
+<span class="sn-c-cyan-bluish-gray">switch(config-router-af)# </span><span class="sn-c-vivid-red">network 2001:1:2:2::2/128</span>
+<b><span class="sn-c-pale-pink">! Let's establish the neighborship and activate IPv6 capability</span></b>
+<span class="sn-c-cyan-bluish-gray">switch(config-router-af)# </span><span class="sn-c-vivid-red">neighbor 2001:1:2:12::1</span>
+<span class="sn-c-cyan-bluish-gray">switch(config-router-neighbor)# </span><span class="sn-c-vivid-red">remote-as 65000</span>
+<span class="sn-c-cyan-bluish-gray">switch(config-router-neighbor)# </span><span class="sn-c-vivid-red">address-family ipv6 unicast</span>
+<span class="sn-c-cyan-bluish-gray">switch(config-router-neighbor-af)# </span><span class="sn-c-vivid-red">exit</span>
+</pre>
+</section>
+<section id="inter-vrf-route-leaking-on-nx-os-with-bgp" class="level2">
+<h2 class="anchored" data-anchor-id="inter-vrf-route-leaking-on-nx-os-with-bgp">Inter-VRF Route Leaking on NX-OS With BGP</h2>
+<p>BGP - with an extended community attribute which is called Route-Target (RT) - enables a router which have different VRFs to control importing and exporting the routes to and from a VRF/MP-BGP. Every VRF is associated with one or more Route Target(s) attribute. RT is a 64-bit long value which is in the format of <strong><em>32-bit:32-bit</em></strong> number. Commonly the first 32-bit is the BGP ASN. For example, these are valid RTs: <em>65001:1</em>, <em>1:1</em></p>
+<ul>
+<li><strong>Export RT:</strong> What routes should go from VRF to MP-BGP</li>
+<li><strong>Import RT:</strong> What routes should go from MP-BGP to VRF</li>
+</ul>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="../../media/ccie-data-center/border-gateway-protocol-bgp-3.svg" class="img-fluid figure-img" width="343"></p>
+<figcaption>Inter-VRF Routing With MP-BGP</figcaption>
+</figure>
+</div>
+<pre class="sn-term"><span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">feature bgp</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">vrf context CX-1</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-vrf)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-vrf-af-ipv4)# </span><span class="sn-c-vivid-red">route-target import 65001:1</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-vrf-af-ipv4)# </span><span class="sn-c-vivid-red">route-target import 65001:2</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-vrf-af-ipv4)# </span><span class="sn-c-vivid-red">route-target export 65001:1</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-vrf-af-ipv4)# </span><span class="sn-c-vivid-red">exit</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-vrf)# </span><span class="sn-c-vivid-red">vrf context CX-2</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-vrf)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-vrf-af-ipv4)# </span><span class="sn-c-vivid-red">route-target import 65001:1</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-vrf-af-ipv4)# </span><span class="sn-c-vivid-red">route-target import 65001:2</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-vrf-af-ipv4)# </span><span class="sn-c-vivid-red">route-target export 65001:2</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-vrf-af-ipv4)# </span><span class="sn-c-vivid-red">exit</span>
+<b><span class="sn-c-cyan-bluish-gray">N9K01(config-vrf)# </span></b><span class="sn-c-vivid-red">interface loopback 1</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-if)# </span><span class="sn-c-vivid-red">vrf member CX-1</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-if)# </span><span class="sn-c-vivid-red">ip add 172.30.30.1/24</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-if)# </span><span class="sn-c-vivid-red">interface loopback 2</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-if)# </span><span class="sn-c-vivid-red">vrf member CX-2</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-if)# </span><span class="sn-c-vivid-red">ip add 172.31.31.1/24</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config)# </span><span class="sn-c-vivid-red">router bgp 65001</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">vrf CX-1</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-vrf)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-vrf-af)# </span><span class="sn-c-vivid-red">network 172.30.30.0/24</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-vrf-af)# </span><b><span class="sn-c-vivid-red">exit</span></b>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router)# </span><span class="sn-c-vivid-red">vrf CX-2</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-vrf)# </span><span class="sn-c-vivid-red">address-family ipv4 unicast</span>
+<span class="sn-c-cyan-bluish-gray">N9K01(config-router-vrf-af)# </span><span class="sn-c-vivid-red">network 172.31.31.0/24</span>
+</pre>
+</section>
+<section id="workshop-1-leaf-and-spine-with-ibgp" class="level2">
+<h2 class="anchored" data-anchor-id="workshop-1-leaf-and-spine-with-ibgp">Workshop 1: Leaf-and-Spine with iBGP</h2>
+<p>For the purpose of this workshop we are going to consider the following leaf-and-spine topology. No stub area is designed in this workshop.</p>
+<section id="configuration" class="level3">
+<h3 class="anchored" data-anchor-id="configuration">Configuration</h3>
+<p>Here is a sample lab with BGP. Note that, OSPF is configured as IGP for transport.</p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="../../media/ccie-data-center/border-gateway-protocol-bgp-4.png" class="img-fluid figure-img" width="800"></p>
+<figcaption>Leaf-and-Spine BGP Workshop</figcaption>
+</figure>
+</div>
+<section id="configuration-1" class="level4">
+<h4 class="anchored" data-anchor-id="configuration-1">Configuration</h4>
+<p><strong>N9K01</strong>:</p>
+<pre class="sn-term">   configure terminal
+    feature bgp
+  feature ospf
+  interface Ethernet1/1
+     no switchport
+     ip address 10.1.1.0/31
+     no shutdown
+    interface Ethernet1/2
+     no switchport
+     ip address 10.1.1.2/31
+     no shutdown
+    interface Ethernet1/3
+     no switchport
+     ip address 10.1.1.4/31
+     no shutdown
+    interface Ethernet1/4
+     no switchport
+    ip address 10.1.1.6/31
+     no shutdown
+  router ospf 1
+      router-id 1.1.1.1
+    interface ethernet 1/1-4
+      ip router ospf 1 area 0
+      ip ospf network point-to-point
+    exit
+    router bgp 65000
+   log-neighbor-changes
+   address-family ipv4 unicast
+   exit
+     neighbor 10.1.1.0/27
+      remote-as 65000
+      password SMENODEPASS
+      address-family ipv4 unicast
+     route-reflector-client
+      exit
+</pre>
+<p><strong>N9K02</strong></p>
+<pre class="sn-term">configure terminal
+    feature bgp
+  feature ospf
+  interface Ethernet1/1
+     no switchport
+     ip address 10.1.1.8/31
+     no shutdown
+    interface Ethernet1/2
+     no switchport
+     ip address 10.1.1.10/31
+     no shutdown
+    interface Ethernet1/3
+     no switchport
+     ip address 10.1.1.12/31
+     no shutdown
+    interface Ethernet1/4
+     no switchport
+    ip address 10.1.1.14/31
+  router ospf 1
+    router-id 2.2.2.2
+  interface ethernet 1/1-4
+    ip router ospf 1 area 0
+    ip ospf network point-to-point
+  exit
+    router bgp 65000
+   log-neighbor-changes
+   address-family ipv4 unicast
+   exit
+     neighbor 10.1.1.0/27
+      remote-as 65000
+      password SMENODEPASS
+      address-family ipv4 unicast
+     route-reflector-client
+      exit
+</pre>
+<p><strong>N9K03</strong></p>
+<pre class="sn-term">configure terminal
+    feature bgp
+  feature ospf
+  interface Ethernet1/1
+     no switchport
+     ip address 10.1.1.1/31
+     no shutdown
+    interface Ethernet1/2
+     no switchport
+     ip address 10.1.1.9/31
+     no shutdown
+  interface Ethernet1/6
+     no switchport
+     ip address 172.16.1.1/24
+     no shutdown 
+    interface Ethernet1/7
+     no switchport
+     ip address 172.16.2.1/24
+     no shutdown
+   router ospf 1
+     router-id 3.3.3.3
+   interface ethernet 1/1-2
+     ip router ospf 1 area 0
+     ip ospf network point-to-point
+   exit
+    router bgp 65000
+   log-neighbor-changes
+   address-family ipv4 unicast
+    network 172.16.1.0 mask 255.255.255.0
+      network 172.16.2.0 mask 255.255.255.0
+     neighbor 10.1.1.0
+      remote-as 65000
+      password SMENODEPASS
+      address-family ipv4 unicast
+    exit
+     neighbor 10.1.1.8
+      remote-as 65000
+      password SMENODEPASS
+      address-family ipv4 unicast
+</pre>
+<p><strong>N9K04</strong></p>
+<pre class="sn-term">configure terminal
+    feature bgp
+  feature ospf
+  interface Ethernet1/1
+     no switchport
+     ip address 10.1.1.3/31
+     no shutdown
+    interface Ethernet1/2
+     no switchport
+     ip address 10.1.1.11/31
+     no shutdown
+  interface Ethernet1/6
+     no switchport
+     ip address 172.16.3.1/24
+     no shutdown 
+    interface Ethernet1/7
+     no switchport
+     ip address 172.16.4.1/24
+     no shutdown
+   router ospf 1
+     router-id 4.4.4.4
+   interface ethernet 1/1-2
+     ip router ospf 1 area 0
+     ip ospf network point-to-point
+   exit
+  router bgp 65000
+   log-neighbor-changes
+   address-family ipv4 unicast
+    network 172.16.3.0 mask 255.255.255.0
+      network 172.16.4.0 mask 255.255.255.0
+     neighbor 10.1.1.2
+      remote-as 65000
+      password SMENODEPASS
+       address-family ipv4 unicast
+      exit
+     neighbor 10.1.1.10
+      remote-as 65000
+      password SMENODEPASS
+    address-family ipv4 unicast
+</pre>
+<p><strong>N9K05</strong></p>
+<pre class="sn-term">configure terminal
+    feature bgp
+  feature ospf
+  interface Ethernet1/1
+     no switchport
+     ip address 10.1.1.5/31
+     no shutdown
+    interface Ethernet1/2
+     no switchport
+     ip address 10.1.1.13/31
+     no shutdown
+  interface Ethernet1/6
+     no switchport
+     ip address 172.16.5.1/24
+     no shutdown 
+    interface Ethernet1/7
+     no switchport
+     ip address 172.16.6.1/24
+     no shutdown
+   router ospf 1
+     router-id 5.5.5.5
+   interface ethernet 1/1-2
+     ip router ospf 1 area 0
+     ip ospf network point-to-point
+   exit
+  router bgp 65000
+   log-neighbor-changes
+   address-family ipv4 unicast
+    network 172.16.5.0 mask 255.255.255.0
+      network 172.16.6.0 mask 255.255.255.0
+     neighbor 10.1.1.4
+      remote-as 65000
+      password SMENODEPASS
+    address-family ipv4 unicast
+    exit
+     neighbor 10.1.1.12
+      remote-as 65000
+      password SMENODEPASS
+    address-family ipv4 unicast
+</pre>
+<p><strong>N9K06</strong></p>
+<pre class="sn-term"> configure terminal
+    feature bgp
+  feature ospf
+  interface Ethernet1/1
+     no switchport
+     ip address 10.1.1.7/31
+     no shutdown
+    interface Ethernet1/2
+     no switchport
+     ip address 10.1.1.15/31
+     no shutdown
+  interface Ethernet1/6
+     no switchport
+     ip address 172.16.7.1/24
+     no shutdown 
+    interface Ethernet1/7
+     no switchport
+     ip address 172.16.8.1/24
+     no shutdown
+   router ospf 1
+     router-id 6.6.6.6
+   interface ethernet 1/1-2
+     ip router ospf 1 area 0
+     ip ospf network point-to-point
+   exit
+  router bgp 65000
+   log-neighbor-changes
+   address-family ipv4 unicast
+    network 172.16.7.0 mask 255.255.255.0
+      network 172.16.8.0 mask 255.255.255.0
+     neighbor 10.1.1.6
+      remote-as 65000
+      password SMENODEPASS
+    address-family ipv4 unicast
+    exit
+     neighbor 10.1.1.14
+      remote-as 65000
+      password SMENODEPASS
+    address-family ipv4 unicast
+</pre>
+</section>
+<section id="verification" class="level4">
+<h4 class="anchored" data-anchor-id="verification">Verification</h4>
+<p>To verify our BGP peers:</p>
+<pre class="sn-term">N9K01# show bgp ipv4 unicast summary
+BGP summary information for VRF default, address family IPv4 Unicast
+BGP router identifier 10.1.1.0, local AS number 65000
+BGP table version is 13, IPv4 Unicast config peers 5, capable peers 4
+8 network entries and 8 paths using 2208 bytes of memory
+BGP attribute entries [1/352], BGP AS path entries [0/0]
+BGP community entries [0/0], BGP clusterlist entries [0/0]
+
+Neighbor        V    AS    MsgRcvd    MsgSent   TblVer  InQ OutQ Up/Down  State/
+PfxRcd
+10.1.1.1        4 65000         60         57       13    0    0 00:53:28 2
+
+10.1.1.3        4 65000         59         57       13    0    0 00:52:40 2
+
+10.1.1.5        4 65000         58         57       13    0    0 00:52:00 2
+
+10.1.1.7        4 65000         58         57       13    0    0 00:51:15 2
+</pre>
+<p>To verify the BGP routes in RIB:</p>
+<pre class="sn-term">N9K01# show ip route bgp
+IP Route Table for VRF "default"
+'*' denotes best ucast next-hop
+'**' denotes best mcast next-hop
+'[x/y]' denotes [preference/metric]
+'%&lt;string&gt;' in via output denotes VRF &lt;string&gt;
+
+172.16.1.0/24, ubest/mbest: 1/0
+    *via 10.1.1.1, [200/0], 00:53:51, bgp-65000, internal, tag 65000
+172.16.2.0/24, ubest/mbest: 1/0
+    *via 10.1.1.1, [200/0], 00:53:51, bgp-65000, internal, tag 65000
+172.16.3.0/24, ubest/mbest: 1/0
+    *via 10.1.1.3, [200/0], 00:53:04, bgp-65000, internal, tag 65000
+172.16.4.0/24, ubest/mbest: 1/0
+    *via 10.1.1.3, [200/0], 00:53:04, bgp-65000, internal, tag 65000
+172.16.5.0/24, ubest/mbest: 1/0
+    *via 10.1.1.5, [200/0], 00:52:22, bgp-65000, internal, tag 65000
+172.16.6.0/24, ubest/mbest: 1/0
+    *via 10.1.1.5, [200/0], 00:52:22, bgp-65000, internal, tag 65000
+172.16.7.0/24, ubest/mbest: 1/0
+    *via 10.1.1.7, [200/0], 00:51:37, bgp-65000, internal, tag 65000
+172.16.8.0/24, ubest/mbest: 1/0
+    *via 10.1.1.7, [200/0], 00:51:37, bgp-65000, internal, tag 65000
+</pre>
+<p>Advertised routes to the neighbor:</p>
+<pre class="sn-term">N9K01# show bgp ipv4 unicast neighbors 10.1.1.1 advertised-routes
+
+Peer 10.1.1.1 routes for address family IPv4 Unicast:
+BGP table version is 13, Local Router ID is 10.1.1.0
+Status: s-suppressed, x-deleted, S-stale, d-dampened, h-history, *-valid, &gt;-best
+Path type: i-internal, e-external, c-confed, l-local, a-aggregate, r-redist, I-i
+njected
+Origin codes: i - IGP, e - EGP, ? - incomplete, | - multipath, &amp; - backup, 2 - b
+est2
+
+   Network            Next Hop            Metric     LocPrf     Weight Path
+*&gt;i172.16.3.0/24      10.1.1.3                          100          0 i
+*&gt;i172.16.4.0/24      10.1.1.3                          100          0 i
+*&gt;i172.16.5.0/24      10.1.1.5                          100          0 i
+*&gt;i172.16.6.0/24      10.1.1.5                          100          0 i
+*&gt;i172.16.7.0/24      10.1.1.7                          100          0 i
+*&gt;i172.16.8.0/24      10.1.1.7                          100          0 i
+</pre>
+<p>Here is the received routes routes from the neighbor:</p>
+<pre class="sn-term">N9K01# show bgp ipv4 unicast neighbors 10.1.1.1 routes
+
+Peer 10.1.1.1 routes for address family IPv4 Unicast:
+BGP table version is 13, Local Router ID is 10.1.1.0
+Status: s-suppressed, x-deleted, S-stale, d-dampened, h-history, *-valid, &gt;-best
+Path type: i-internal, e-external, c-confed, l-local, a-aggregate, r-redist, I-i
+njected
+Origin codes: i - IGP, e - EGP, ? - incomplete, | - multipath, &amp; - backup, 2 - b
+est2
+
+   Network            Next Hop            Metric     LocPrf     Weight Path
+*&gt;i172.16.1.0/24      10.1.1.1                          100          0 i
+*&gt;i172.16.2.0/24      10.1.1.1                          100          0 i
+</pre>
+</section>
+</section>
+</section>
+<section id="workshop-2-inter-vrf-routing-with-mp-bgp" class="level2">
+<h2 class="anchored" data-anchor-id="workshop-2-inter-vrf-routing-with-mp-bgp">Workshop 2: Inter-VRF Routing With MP-BGP</h2>
+<p>Consider a single Nexus switch with two VRFs CX-1 and CX-2. The requirement is that these tenants to be able to communicate with each other over than 172.30.30.0/24 and 172.31.31.0/24.</p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="../../media/ccie-data-center/border-gateway-protocol-bgp-5.svg" class="img-fluid figure-img" width="343"></p>
+<figcaption>Inter-VRF Routing With MP-BGP</figcaption>
+</figure>
+</div>
+<pre class="sn-term">conf t
+  vrf context CX-1
+    address-family ipv4 unicast
+      route-target import 65001:1
+      route-target import 65001:2
+      route-target export 65001:1
+    exit
+  vrf context CX-2
+    address-family ipv4 unicast
+      route-target import 65001:1
+      route-target import 65001:2
+      route-target export 65001:2
+    exit
+  interface loopback 1
+    vrf member CX-1
+    ip add 172.30.30.1/24
+  interface loopback 2
+    vrf member CX-2
+    ip add 172.31.31.1/24
+  feature bgp
+  router bgp 65000
+    vrf CX-1
+      address-family ipv4 unicast
+        network 172.30.30.0/24
+    vrf CX-2
+      address-family ipv4 unicast
+        network 172.31.31.0/24
+      exit
+</pre>
+<p>Verification:</p>
+<pre class="sn-term">N9K01# show ip route vrf CX-1
+IP Route Table for VRF "CX-1"
+'*' denotes best ucast next-hop
+'**' denotes best mcast next-hop
+'[x/y]' denotes [preference/metric]
+'%&lt;string&gt;' in via output denotes VRF &lt;string&gt;
+
+172.30.30.0/24, ubest/mbest: 1/0, attached
+    *via 172.30.30.1, Lo1, [0/0], 00:03:01, direct
+172.30.30.1/32, ubest/mbest: 1/0, attached
+    *via 172.30.30.1, Lo1, [0/0], 00:03:01, local
+172.31.31.0/24, ubest/mbest: 1/0, attached
+    *via 172.31.31.1%CX-2, Lo2, [20/0], 00:02:00, bgp-65001, external, tag 65001
+
+N9K01# ping 172.31.31.1 vrf CX-1
+PING 172.31.31.1 (172.31.31.1): 56 data bytes
+64 bytes from 172.31.31.1: icmp_seq=0 ttl=255 time=0.914 ms
+64 bytes from 172.31.31.1: icmp_seq=1 ttl=255 time=1.063 ms
+64 bytes from 172.31.31.1: icmp_seq=2 ttl=255 time=1.066 ms
+64 bytes from 172.31.31.1: icmp_seq=3 ttl=255 time=1.429 ms
+64 bytes from 172.31.31.1: icmp_seq=4 ttl=255 time=1.158 ms
+
+--- 172.31.31.1 ping statistics ---
+5 packets transmitted, 5 packets received, 0.00% packet loss
+round-trip min/avg/max = 0.914/1.126/1.429 ms
+</pre>
+</section>
+<section id="workshop-ebgp-route-ixp" class="level2">
+<h2 class="anchored" data-anchor-id="workshop-ebgp-route-ixp">Workshop: eBGP Route IXP</h2>
+<p>In the workshop below, I am going configure N9K01 as a eBGP hub. The other satellites will learn the routes through that router. You will also see the peer-template configuration in action:</p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="../../media/ccie-data-center/border-gateway-protocol-bgp-6.png" class="img-fluid figure-img" width="675"></p>
+<figcaption>eBGP - IXP</figcaption>
+</figure>
+</div>
+<p>N9K01:</p>
+<pre class="sn-term">configure terminal
+    feature bgp
+    interface Ethernet1/1
+     no switchport
+     ip address 172.16.21.0/31
+     no shutdown
+    interface Ethernet1/2
+     no switchport
+     ip address 172.16.31.0/31
+     no shutdown
+    interface Ethernet1/3
+     no switchport
+     ip address 172.16.14.0/31
+     no shutdown
+    interface Ethernet1/4
+     no switchport
+    ip address 172.16.15.0/31
+     no shutdown
+    interface Ethernet1/5
+     no switchport
+     ip address 172.16.16.0/31
+     no shutdown
+    interface Ethernet1/6
+     no switchport
+     ip address 172.16.17.0/31
+     no shutdown
+    interface Ethernet1/7
+     no switchport
+     ip address 172.16.81.0/31
+     no shutdown
+    interface Ethernet1/15
+     no switchport
+     ip address 11.0.0.1/8
+     no shutdown    
+    router bgp 65001
+     log-neighbor-changes
+     address-family ipv4 unicast
+       network 11.0.0.0 mask 255.0.0.0
+     exit
+     template peer-policy PP_TOP
+       soft-reconfiguration inbound always
+     exit
+     template peer-session PS_TOP
+       password SMENODEPASS
+     exit
+     neighbor 17.16.21.1 remote-as 65002
+      inherit peer-session PS_TOP
+      address-family ipv4 unicast
+       inherit peer-policy PP_TOP 1
+     neighbor 17.16.31.1 remote-as 65003
+      inherit peer-session PS_TOP
+      address-family ipv4 unicast
+       inherit peer-policy PP_TOP 1
+     neighbor 17.16.14.1 remote-as 65004
+      inherit peer-session PS_TOP
+      address-family ipv4 unicast
+       inherit peer-policy PP_TOP 1
+     neighbor 17.16.15.1 remote-as 65005
+      inherit peer-session PS_TOP
+      address-family ipv4 unicast
+       inherit peer-policy PP_TOP 1
+     neighbor 17.16.16.1 remote-as 65006
+      inherit peer-session PS_TOP
+      address-family ipv4 unicast
+       inherit peer-policy PP_TOP 1
+     neighbor 17.16.17.1 remote-as 65007
+      inherit peer-session PS_TOP
+      address-family ipv4 unicast
+       inherit peer-policy PP_TOP 1
+     neighbor 17.16.81.1 remote-as 65008
+      inherit peer-session PS_TOP
+      address-family ipv4 unicast
+       inherit peer-policy PP_TOP 1
+</pre>
+<p>N9K02:</p>
+<pre class="sn-term">   configure terminal
+    feature bgp
+    interface Ethernet1/1
+     no switchport
+     ip address 172.16.21.1/31
+     no shutdown
+    interface Ethernet1/15
+     no switchport
+     ip address 12.0.0.1/8
+     no shutdown
+    router bgp 65002
+     log-neighbor-changes
+     address-family ipv4 unicast
+     network 12.0.0.0 mask 255.0.0.0
+     neighbor 172.16.21.0
+      password SMENODEPASS
+      remote-as 65001
+      address-family ipv4 unicast
+     exit
+</pre>
+<p>N9K03:</p>
+<pre class="sn-term">   configure terminal
+    feature bgp
+    interface Ethernet1/1
+     no switchport
+     ip address 172.16.31.1/31
+     no shutdown
+    interface Ethernet1/15
+     no switchport
+     ip address 13.0.0.1/8
+     no shutdown
+     router bgp 65003
+      log-neighbor-changes
+      address-family ipv4 unicast
+      network 13.0.0.0 mask 255.0.0.0
+      neighbor 172.16.31.0
+       password SMENODEPASS
+       remote-as 65001
+       address-family ipv4 unicast
+      exit
+</pre>
+<p>N9K04:</p>
+<pre class="sn-term">   configure terminal
+    feature bgp
+    interface Ethernet1/1
+     no switchport
+     ip address 172.16.14.1/31
+     no shutdown
+    interface Ethernet1/15
+     no switchport
+     ip address 14.0.0.1/8
+     no shutdown
+     router bgp 65004
+      log-neighbor-changes
+      address-family ipv4 unicast
+      network 14.0.0.0 mask 255.0.0.0
+      neighbor 172.16.14.0
+       password SMENODEPASS
+       remote-as 65001
+       address-family ipv4 unicast
+      exit
+</pre>
+<p>N9K05:</p>
+<pre class="sn-term">   configure terminal
+    feature bgp
+    interface Ethernet1/1
+     no switchport
+     ip address 172.16.15.1/31
+     no shutdown
+    interface Ethernet1/15
+     no switchport
+     ip address 15.0.0.1/8
+     no shutdown
+     router bgp 65005
+      log-neighbor-changes
+      address-family ipv4 unicast
+      network 15.0.0.0 mask 255.0.0.0
+      neighbor 172.16.15.0
+       password SMENODEPASS
+       remote-as 65001
+       address-family ipv4 unicast
+      exit
+</pre>
+<p>N9K06:</p>
+<pre class="sn-term">   configure terminal
+    feature bgp
+    interface Ethernet1/1
+     no switchport
+     ip address 172.16.16.1/31
+     no shutdown
+    interface Ethernet1/15
+     no switchport
+     ip address 16.0.0.1/8
+     no shutdown
+     router bgp 65006
+      log-neighbor-changes
+      address-family ipv4 unicast
+      network 16.0.0.0 mask 255.0.0.0
+      neighbor 172.16.16.0
+       password SMENODEPASS
+       remote-as 65001
+       address-family ipv4 unicast
+      exit
+</pre>
+<p>N9K07:</p>
+<pre class="sn-term">   configure terminal
+    feature bgp
+    interface Ethernet1/1
+     no switchport
+     ip address 172.16.17.1/31
+     no shutdown
+    interface Ethernet1/15
+     no switchport
+     ip address 17.0.0.1/8
+     no shutdown
+     router bgp 65007
+      log-neighbor-changes
+      address-family ipv4 unicast
+      network 17.0.0.0 mask 255.0.0.0
+      neighbor 172.16.17.0
+       password SMENODEPASS
+       remote-as 65001
+       address-family ipv4 unicast
+      exit
+</pre>
+<p>N9K08:</p>
+<pre class="sn-term">   configure terminal
+    feature bgp
+    interface Ethernet1/1
+     no switchport
+     ip address 172.16.81.1/31
+     no shutdown
+    interface Ethernet1/15
+     no switchport
+     ip address 18.0.0.1/8
+     no shutdown
+     router bgp 65008
+      log-neighbor-changes
+      address-family ipv4 unicast
+      network 18.0.0.0 mask 255.0.0.0
+      neighbor 172.16.81.0
+       password SMENODEPASS
+       remote-as 65001
+       address-family ipv4 unicast
+      exit
+</pre>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<p>It is not necessary for CCIE Datacenter curriculum, but you can refer to <a href="https://old.smenode.com/distance-vector-vs-link-state-protocols/">this</a> link to compare Link-State and Distance-Vector protocols.</p>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 58%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">58% completed (286 of 493 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../networking/ccie-data-center/intermediate-system-to-intermediate-system-is-is.html" class="pagination-link" aria-label="Intermediate System to Intermediate System (IS-IS)">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Intermediate System to Intermediate System (IS-IS)</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../networking/ccie-data-center/bidirectional-forwarding-detection-bfd.html" class="pagination-link" aria-label="Bidirectional Forwarding Detection (BFD)">
+        <span class="nav-page-text">Bidirectional Forwarding Detection (BFD)</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
