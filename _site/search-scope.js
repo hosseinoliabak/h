@@ -1,8 +1,9 @@
 (function() {
   'use strict';
 
-  // Search scopes, derived from the navbar at load time (see buildScopes)
-  var SCOPES = [{ label: 'All', prefix: '' }];
+  // Search scopes are derived from the navbar at load time.
+  // One scope can cover several content roots.
+  var SCOPES = [{ label: 'All', prefixes: [] }];
 
   // Resolve an href to a site-root-relative path, or null if external.
   // Handles relative links on deep pages and Quarto's rewriting of navbar
@@ -18,11 +19,50 @@
     }
   }
 
-  // Derive scopes from the navbar: one chip per top-level menu whose links
-  // predominantly live under a single directory (label = menu title,
-  // prefix = that directory). Tracks _quarto.yml automatically.
+  // Only a directory or index link establishes a subject scope. Regular
+  // pages remain inside their parent courses instead of becoming subjects.
+  function toScopePrefix(path) {
+    if (!path) return null;
+    if (path.charAt(path.length - 1) === '/') return path;
+
+    var slash = path.lastIndexOf('/');
+    var filename = slash === -1 ? path : path.slice(slash + 1);
+    if (/^index\.(?:html?|qmd)$/i.test(filename)) {
+      return slash === -1 ? null : path.slice(0, slash + 1);
+    }
+
+    return null;
+  }
+
+  // Remove duplicates and descendants already covered by a directory root.
+  function compactPrefixes(prefixes) {
+    var sorted = prefixes.slice().sort(function(a, b) {
+      return a.length - b.length || a.localeCompare(b);
+    });
+    var compacted = [];
+
+    sorted.forEach(function(prefix) {
+      var covered = compacted.some(function(existing) {
+        return existing === prefix ||
+          (existing.charAt(existing.length - 1) === '/' && prefix.startsWith(existing));
+      });
+      if (!covered) compacted.push(prefix);
+    });
+
+    return compacted;
+  }
+
+  function pathMatchesPrefix(path, prefix) {
+    if (prefix.charAt(prefix.length - 1) === '/') {
+      return path.startsWith(prefix);
+    }
+    return path === prefix;
+  }
+
+  // Derive one chip per top-level menu that has a section index. Every
+  // directory represented by that menu becomes part of the same scope.
   function buildScopes() {
-    var scopes = [{ label: 'All', prefix: '' }];
+    var scopes = [{ label: 'All', prefixes: [] }];
 
     document.querySelectorAll('.navbar .navbar-nav > li.nav-item').forEach(function(li) {
       var toggle = li.querySelector('.nav-link');
@@ -33,45 +73,45 @@
       var links = li.querySelectorAll('.dropdown-menu a[href]');
       if (links.length === 0) links = [toggle];
 
-      var counts = {};
-      var totalInternal = 0;
+      var prefixes = [];
+      var hasDirectoryRoot = false;
       links.forEach(function(a) {
         var path = toSitePath(a.getAttribute('data-original-href') || a.getAttribute('href'));
         if (path === null) return;
-        totalInternal++;
-        var slash = path.indexOf('/');
-        if (slash === -1) return;
-        var dir = path.slice(0, slash + 1);
-        counts[dir] = (counts[dir] || 0) + 1;
+        var prefix = toScopePrefix(path);
+        if (prefix === null) return;
+        prefixes.push(prefix);
+        if (prefix.charAt(prefix.length - 1) === '/') hasDirectoryRoot = true;
       });
 
-      var best = null;
-      var bestCount = 0;
-      Object.keys(counts).forEach(function(dir) {
-        if (counts[dir] > bestCount) { best = dir; bestCount = counts[dir]; }
-      });
-
-      // Skip mixed menus (e.g. About) where no directory holds a majority
-      if (best && bestCount * 2 > totalInternal) {
-        scopes.push({ label: label, prefix: best });
+      // Utility menus without a section index, such as About, stay unscoped.
+      if (hasDirectoryRoot) {
+        scopes.push({ label: label, prefixes: compactPrefixes(prefixes) });
       }
     });
 
     return scopes;
   }
 
-  // Active scopes — empty array means "All" (no filtering)
-  var activeScopes = [];
+  // Active scope indexes. An empty array means All with no filtering.
+  var activeScopeIndexes = [];
 
   // Detect the current section from the URL and default to it
   function detectCurrentSection() {
     var path = window.location.pathname.replace(/^\//, '');
+    var bestScopeIndex = -1;
+    var bestPrefixLength = -1;
+
     for (var i = 1; i < SCOPES.length; i++) {
-      if (path.startsWith(SCOPES[i].prefix)) {
-        return [SCOPES[i].prefix];
-      }
+      SCOPES[i].prefixes.forEach(function(prefix) {
+        if (pathMatchesPrefix(path, prefix) && prefix.length > bestPrefixLength) {
+          bestScopeIndex = i;
+          bestPrefixLength = prefix.length;
+        }
+      });
     }
-    return [];
+
+    return bestScopeIndex === -1 ? [] : [bestScopeIndex];
   }
 
   // Create the scope filter bar
@@ -79,42 +119,46 @@
     var bar = document.createElement('div');
     bar.id = 'search-scope-bar';
 
-    SCOPES.forEach(function(scope) {
+    SCOPES.forEach(function(scope, scopeIndex) {
       var pill = document.createElement('button');
       pill.type = 'button';
       pill.className = 'search-scope-pill';
       pill.textContent = scope.label;
-      pill.dataset.prefix = scope.prefix;
+      pill.dataset.scopeIndex = String(scopeIndex);
 
       // Set initial active state
-      if (scope.prefix === '' && activeScopes.length === 0) {
+      if (scopeIndex === 0 && activeScopeIndexes.length === 0) {
         pill.classList.add('active');
-      } else if (activeScopes.indexOf(scope.prefix) !== -1) {
+        pill.setAttribute('aria-pressed', 'true');
+      } else if (activeScopeIndexes.indexOf(scopeIndex) !== -1) {
         pill.classList.add('active');
+        pill.setAttribute('aria-pressed', 'true');
+      } else {
+        pill.setAttribute('aria-pressed', 'false');
       }
 
       pill.addEventListener('click', function() {
-        if (scope.prefix === '') {
+        if (scopeIndex === 0) {
           // "All" clears all other selections
-          activeScopes = [];
+          activeScopeIndexes = [];
         } else {
           // Toggle this scope
-          var idx = activeScopes.indexOf(scope.prefix);
+          var idx = activeScopeIndexes.indexOf(scopeIndex);
           if (idx !== -1) {
-            activeScopes.splice(idx, 1);
+            activeScopeIndexes.splice(idx, 1);
           } else {
-            activeScopes.push(scope.prefix);
+            activeScopeIndexes.push(scopeIndex);
           }
         }
 
         // Update pill states
         bar.querySelectorAll('.search-scope-pill').forEach(function(p) {
-          var prefix = p.dataset.prefix;
-          if (prefix === '') {
-            p.classList.toggle('active', activeScopes.length === 0);
-          } else {
-            p.classList.toggle('active', activeScopes.indexOf(prefix) !== -1);
-          }
+          var index = Number(p.dataset.scopeIndex);
+          var active = index === 0
+            ? activeScopeIndexes.length === 0
+            : activeScopeIndexes.indexOf(index) !== -1;
+          p.classList.toggle('active', active);
+          p.setAttribute('aria-pressed', String(active));
         });
 
         filterResults();
@@ -129,7 +173,7 @@
   // Filter visible search results based on active scopes
   function filterResults() {
     // No filtering when "All" is active
-    if (activeScopes.length === 0) {
+    if (activeScopeIndexes.length === 0) {
       document.querySelectorAll('.aa-Item').forEach(function(item) {
         item.style.display = '';
       });
@@ -149,8 +193,10 @@
         return;
       }
 
-      var matches = activeScopes.some(function(prefix) {
-        return normalized.startsWith(prefix);
+      var matches = activeScopeIndexes.some(function(scopeIndex) {
+        return SCOPES[scopeIndex].prefixes.some(function(prefix) {
+          return pathMatchesPrefix(normalized, prefix);
+        });
       });
 
       item.style.display = matches ? '' : 'none';
@@ -175,7 +221,7 @@
       }
 
       // Filter results whenever they update
-      if (injected && activeScopes.length > 0) {
+      if (injected && activeScopeIndexes.length > 0) {
         filterResults();
       }
     });
@@ -186,7 +232,7 @@
   // Initialize
   document.addEventListener('DOMContentLoaded', function() {
     SCOPES = buildScopes();
-    activeScopes = detectCurrentSection();
+    activeScopeIndexes = detectCurrentSection();
     injectScopeBar();
   });
 })();
