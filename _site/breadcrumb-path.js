@@ -23,16 +23,17 @@
       }
     }
 
-    // Section names carry a full course title ("Improving Deep Neural Networks:
-    // Hyperparameter Tuning, Regularization and Optimization"). A breadcrumb only
-    // needs the leading phrase.
+    // Section names can carry a full course title ("Improving Deep Neural Networks:
+    // Hyperparameter Tuning, Regularization and Optimization") or an "Overview"
+    // suffix used only to distinguish a menu entry. A breadcrumb needs neither.
     function shortLabel(text) {
-      return text.split(/[:,]/)[0].trim() || text;
+      var leading = text.split(/[:,]/)[0].trim() || text;
+      return leading.replace(/\s+Overview$/i, "").trim() || leading;
     }
 
     // --- Label lookups built from the navbar -----------------------------------
-    var pathToText = {};   // "machine-learning/.../index.html" -> "Advanced Learning Algorithms"
-    var topSegToText = {}; // "machine-learning"                -> "Machine Learning"
+    var pathToText = {};   // "ai/machine-learning/.../index.html" -> "Advanced Learning Algorithms"
+    var topSegToText = {}; // "ai"                                  -> "AI"
 
     document.querySelectorAll(".navbar a[href]").forEach(function (a) {
       // Dropdown toggles open a menu rather than pointing anywhere. Their href

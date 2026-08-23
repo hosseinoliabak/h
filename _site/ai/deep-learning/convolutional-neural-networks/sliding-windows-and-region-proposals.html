@@ -1,0 +1,1598 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-17">
+<meta name="description" content="Why classifying every window in an image is too slow, how turning fully connected layers into convolutions collapses the sweep into one forward pass, and what region proposals do instead.">
+
+<title>Sliding Windows and Region Proposals – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" rel="next">
+<link href="../../../ai/deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Sliding Windows and Region Proposals – H’s Notes">
+<meta property="og:description" content="Why classifying every window in an image is too slow, how turning fully connected layers into convolutions collapses the sweep into one forward pass, and what region proposals do instead.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Sliding Windows and Region Proposals – H’s Notes">
+<meta name="twitter:description" content="Why classifying every window in an image is too slow, how turning fully connected layers into convolutions collapses the sweep into one forward pass, and what region proposals do instead.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../infrastructure/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html">Sliding Windows and Region Proposals</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutional Neural Networks</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/convolutions-and-edge-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutions and Edge Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Strided Convolutions and Convolutions Over Volume</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/one-layer-of-a-convolutional-network.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One Layer of a Convolutional Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/pooling-layers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pooling Layers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/full-convnet-example-and-why-convolutions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Full ConvNet Example and Why Convolutions</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-convolutional-model-step-by-step.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Convolutional Model Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-convolutional-model-application.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Convolutional Model Application</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/classic-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classic Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/modern-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modern Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-residual-networks.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Residual Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/mobilenet-and-efficientnet.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MobileNet and EfficientNet</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/practical-advice-for-convnets.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Practical Advice for Using ConvNets</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-transfer-learning-with-mobilenet.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Transfer Learning with MobileNetV2</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Object Localization and Landmark Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Sliding Windows and Region Proposals</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bounding Box Predictions with YOLO</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">IoU, Non-max Suppression, and Anchor Boxes</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-car-detection-with-yolo.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Car Detection with YOLO</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Semantic Segmentation with U-Net</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-image-segmentation-with-u-net.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Image Segmentation with U-Net</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/face-recognition-and-one-shot-learning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Face Recognition and One Shot Learning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/siamese-networks-and-the-triplet-loss.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Siamese Networks and the Triplet Loss</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-face-recognition.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Face Recognition</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/neural-style-transfer.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Neural Style Transfer</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-neural-style-transfer.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Art Generation with Neural Style Transfer</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#sliding-windows-detection" id="toc-sliding-windows-detection" class="nav-link active" data-scroll-target="#sliding-windows-detection">Sliding Windows Detection</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#fully-connected-layers-as-convolutions" id="toc-fully-connected-layers-as-convolutions" class="nav-link" data-scroll-target="#fully-connected-layers-as-convolutions">Fully Connected Layers as Convolutions</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#one-pass-instead-of-four" id="toc-one-pass-instead-of-four" class="nav-link" data-scroll-target="#one-pass-instead-of-four">One Pass Instead of Four</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#region-proposals" id="toc-region-proposals" class="nav-link" data-scroll-target="#region-proposals">Region Proposals</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../breadcrumb-path.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Sliding Windows and Region Proposals</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">convolutional-neural-networks</div>
+    <div class="quarto-category">computer-vision</div>
+    <div class="quarto-category">object-detection</div>
+    <div class="quarto-category">sliding-windows</div>
+    <div class="quarto-category">r-cnn</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Why classifying every window in an image is too slow, how turning fully connected layers into convolutions collapses the sweep into one forward pass, and what region proposals do instead.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 17, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~50 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,700 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<p><a href="../../../ai/deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html">Object Localization</a> built a network that finds one object and draws a box around it. Detection asks for all of them, and the number of objects is not known in advance, so a fixed output vector no longer fits the problem.</p>
+<p>The oldest answer is also the most obvious one. If a classifier can say whether a small picture contains a car, run it on every small piece of a big picture and record where it says yes. That is <strong>sliding windows detection</strong>, and it works. It is also, done naively, far too slow to use, which is the interesting part, because the fix turns out to be a statement about convolutions rather than a faster computer.</p>
+<section id="sliding-windows-detection" class="level2">
+<h2 class="anchored" data-anchor-id="sliding-windows-detection">Sliding Windows Detection</h2>
+<p>Start by building a classifier rather than a detector. The training set is made of <strong>closely cropped</strong> images, each one cut down so that the car fills nearly the whole frame, labeled 1, along with pictures containing no car, labeled 0. A ConvNet trained on that data answers one question about a small image, whether it is a car.</p>
+<p>Now take a test image and pick a window size. Feed the region under the window into the ConvNet, record the answer, shift the window across by some stride, and repeat until the window has visited every position. Then do it again with a larger window, resizing each crop to whatever input size the ConvNet expects, and again with a larger one still. If a car is present at some position and scale, one of those crops should contain it, and the classifier should say so.</p>
+<div id="13c7f684" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="sliding-windows-and-region-proposals_files/figure-html/cell-2-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Photograph from the Drive.ai Sample Dataset, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Each panel draws four successive positions of the window, the last one in red, with an arrow along the direction of travel. Consecutive positions overlap by half, which is what makes this a sweep rather than a tiling of the frame, and it is also why only four are drawn out of the number in the caption.</p>
+<p>On this 1280 by 720 photograph, stepping the 64 pixel window by half its width takes 819 positions, and the two larger sizes add 190 and 72, so one sweep at that coarse setting is 1,081 crops. Cutting the step to 8 pixels, which is what a detector wanting decent localization would use, takes the 64 pixel window alone to 12,699 positions and all three sizes to 32,753. Every one of those is a separate forward pass through the ConvNet.</p>
+<p>The stride is the only dial available, and it does not help. A coarse stride cuts the number of windows, but the window then lands further from where the object actually is, so the reported position gets worse and the classifier sees badly framed crops. A fine stride frames objects well and multiplies the cost.</p>
+<p>This is worth putting in historical order, because sliding windows was not always a bad idea. Before neural networks took over, detectors used simple classifiers, often a linear function over hand engineered features. Each window cost almost nothing to evaluate, so sweeping thousands of them was ordinary practice and the method performed respectably. A ConvNet is a far better classifier and a far more expensive one, and running it thousands of times per image is infeasibly slow.</p>
+<p>So the choice looks like a trade between accuracy and speed. It is not, and the next section explains why.</p>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. Why is the training set for a sliding windows classifier made of closely cropped images?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because that is what the classifier will be shown at test time. Each window hands it a small region that either frames an object tightly or contains no object at all, so the training data has to look the same, meaning positives cropped down to the object and negatives containing nothing of interest. A classifier trained on wide scenes containing a small car would learn to answer a different question, namely whether a car appears somewhere in a large picture, which says nothing about where.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Both a coarse stride and a fine stride cause a problem. What are the two problems, and why can a single stride value not avoid both?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>A coarse stride reduces the number of windows and therefore the cost, but the window grid becomes sparse, so no window frames the object well and the position that comes back is imprecise. A fine stride frames objects closely and localizes better, but the number of windows grows roughly with the square of the reduction in stride, and every window is a full ConvNet evaluation. The stride sets cost and localization accuracy at the same time and pulls them in opposite directions, so no single value escapes both.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Sliding windows worked acceptably before ConvNets. What changed?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The cost of one classification. Earlier detectors ran a simple classifier, often linear, over hand engineered features, and evaluating it on a window was cheap enough that thousands of windows per image were affordable. A ConvNet classifies far more accurately and costs orders of magnitude more per evaluation, so the same sweep becomes impractical. The algorithm did not get worse, the thing being repeated got heavier.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="fully-connected-layers-as-convolutions" class="level2">
+<h2 class="anchored" data-anchor-id="fully-connected-layers-as-convolutions">Fully Connected Layers as Convolutions</h2>
+<p>The way out begins with an observation about the network itself, before any sliding happens. A fully connected layer can be written as a convolution, and once it is, the whole network becomes convolutional, which is what lets the sweep collapse.</p>
+<p>Take a small classifier of the kind sliding windows would use. It accepts a 14 by 14 by 3 image, applies 16 filters of size 5 by 5, which gives 10 by 10 by 16, then a 2 by 2 max pooling, which gives 5 by 5 by 16. Two fully connected layers of 400 units follow, and a softmax outputs four numbers, one per class, for pedestrian, car, motorcycle, and background.</p>
+<p>Now replace the first fully connected layer with a convolution. Use 400 filters, each of size 5 by 5 by 16, matching the volume exactly. A filter that covers the entire input has only one position to sit in, so each filter produces a single number, and 400 filters produce a 1 by 1 by 400 volume.</p>
+<p>That is not an approximation of the fully connected layer. It is the same arithmetic. A fully connected unit computes one linear function of all <span class="math inline">\(5 \times 5 \times 16 = 400\)</span> activations, and so does a filter of that size, so the two layers have the same parameters and produce the same values, only arranged as a volume rather than as a list.</p>
+<p>The remaining layers convert the same way. The second fully connected layer becomes 400 filters of size 1 by 1, giving another 1 by 1 by 400, and the output layer becomes 4 filters of size 1 by 1 followed by the softmax, giving 1 by 1 by 4.</p>
+<div id="44ee2048" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="sliding-windows-and-region-proposals_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Nothing has been gained yet. The two networks compute the same four numbers from the same 14 by 14 input, at the same cost. What has changed is that the network no longer contains a layer that insists on a fixed input size, and that is what the next section spends.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. Why does a convolution with 400 filters of size 5 by 5 by 16 produce a 1 by 1 by 400 volume rather than something larger?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the filter is exactly as large as the volume it slides over. A 5 by 5 by 16 filter on a 5 by 5 by 16 input has one valid position, so each filter emits a single number, and 400 of them emit 400 numbers, arranged as a 1 by 1 by 400 volume. The convention that a filter always spans every channel is what makes the depth match, so the 16 in the filter and the 16 in the volume must be equal.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In what sense is the converted layer the same as the fully connected layer, rather than an approximation of it?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>In the exact sense. A fully connected unit computes a weighted sum of all <span class="math inline">\(5 \times 5 \times 16 = 400\)</span> input activations plus a bias, and a 5 by 5 by 16 filter applied at its single valid position computes precisely the same weighted sum. The two layers have the same number of parameters and produce the same numbers for the same input. Only the shape of the output changes, from a list of 400 values to a 1 by 1 by 400 volume.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. After the conversion, what stops the network from insisting on a 14 by 14 input?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Nothing does, which is the point. A fully connected layer has a fixed number of weights tied to a fixed number of input activations, so the input size cannot change. A convolutional layer applies the same filter at every position that fits, so a larger input simply produces more positions and a larger output volume. Every layer in the converted network is now of that kind, so the network accepts any input at least as large as the one it was designed for.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="one-pass-instead-of-four" class="level2">
+<h2 class="anchored" data-anchor-id="one-pass-instead-of-four">One Pass Instead of Four</h2>
+<p>Now feed the converted network something bigger than it was trained on. The classifier expects 14 by 14, so consider a 16 by 16 test image, which contains four 14 by 14 windows at a stride of 2, one in each corner.</p>
+<p>The naive method runs the ConvNet four times, once per window. Watch what the converted network does with the whole 16 by 16 image in a single pass. The first convolution gives 12 by 12 by 16, the max pooling gives 6 by 6 by 16, the 400 filters of size 5 by 5 give <strong>2 by 2 by 400</strong>, the two 1 by 1 convolutions preserve that grid, and the output is 2 by 2 by 4.</p>
+<p>That output is not four numbers, it is four sets of four numbers, and each set is exactly what the network would have produced for one of the four windows. The upper left 1 by 1 by 4 is the result for the upper left window, the upper right for the upper right window, and so on.</p>
+<div id="06774eb2" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="sliding-windows-and-region-proposals_files/figure-html/cell-4-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The saving comes from overlap. Those four windows share most of their pixels, so running them separately recomputes the same convolutions over the same regions four times. A convolution over the full image computes each of those shared responses once and lets every window that needs it read the same value. The four passes become one, and nothing is approximated.</p>
+<p>The same arithmetic scales to a realistic input. A 28 by 28 image produces an 8 by 8 by 4 output, which is 64 window positions evaluated in one forward pass.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 16%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Input</th>
+<th>5 by 5 conv, 16 filters</th>
+<th>2 by 2 max pool</th>
+<th>5 by 5 conv, 400 filters</th>
+<th>1 by 1 conv, 400</th>
+<th>1 by 1 conv, 4</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>14 x 14 x 3</td>
+<td>10 x 10 x 16</td>
+<td>5 x 5 x 16</td>
+<td>1 x 1 x 400</td>
+<td>1 x 1 x 400</td>
+<td>1 x 1 x 4</td>
+</tr>
+<tr class="even">
+<td>16 x 16 x 3</td>
+<td>12 x 12 x 16</td>
+<td>6 x 6 x 16</td>
+<td>2 x 2 x 400</td>
+<td>2 x 2 x 400</td>
+<td>2 x 2 x 4</td>
+</tr>
+<tr class="odd">
+<td>28 x 28 x 3</td>
+<td>24 x 24 x 16</td>
+<td>12 x 12 x 16</td>
+<td>8 x 8 x 400</td>
+<td>8 x 8 x 400</td>
+<td>8 x 8 x 4</td>
+</tr>
+</tbody>
+</table>
+<p>Reading down the first column shows where the window stride went. The input grew by 2 pixels from 14 to 16 and the output grew by one position, so one output step corresponds to two input pixels. That factor of 2 is the max pooling layer, and nothing else. The stride of the sweep is not a parameter of this method at all, it is whatever the pooling and strided layers of the network multiply out to.</p>
+<p>This is the OverFeat construction, from <a href="https://doi.org/10.48550/arXiv.1312.6229">Sermanet, Eigen, Zhang, Mathieu, Fergus, and LeCun (2013)</a>.</p>
+<p>One weakness survives all of this, and it is about accuracy rather than speed. The boxes this method can report are exactly the window positions, so they sit on a grid whose spacing is set by the pooling, and they have the aspect ratio of the window. A car that is neither square nor aligned to that grid will not have a window that fits it well, so the box comes back close but not right.</p>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. Where does the factor of 2 between input pixels and output positions come from?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>From the 2 by 2 max pooling layer, which is the only place the resolution is reduced in this network. Every other layer either preserves the grid or shrinks it by the filter size in a way that shifts positions one for one. The consequence is that the effective stride of the sweep is not something chosen separately, it is the product of the strides and pooling factors of the network, so changing the stride means changing the architecture.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Four 14 by 14 windows inside a 16 by 16 image contain 784 pixels each, 3,136 in total, while the image has only 256. What does that arithmetic say about the naive method?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>That it recomputes the same work many times over. The windows overlap so heavily that the four crops together contain more than twelve times as many pixels as the image itself, which means most pixels are convolved with the same filters repeatedly, once per window that covers them. The convolutional implementation computes each filter response once at each image position and lets every window that needs it share the result, which is why the saving grows as the windows overlap more, meaning as the stride gets finer.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The convolutional implementation removes the speed problem. Which problem does it leave untouched, and why?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The accuracy of the box. The output positions correspond to window positions, so the boxes available are those of a fixed size and aspect ratio, spaced by the effective stride of the network. Nothing in this construction lets a box be reported at an arbitrary position, or with a shape that differs from the window’s. Making the sweep cheap does not make the grid finer or the window shapes more varied, so a box that fits an object closely is still not expressible.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="region-proposals" class="level2">
+<h2 class="anchored" data-anchor-id="region-proposals">Region Proposals</h2>
+<p>Convolutional sliding windows answers the cost problem by making the sweep cheap. A different line of work answers the same problem by making the sweep shorter, and the reasoning is easy to sympathize with. Most of the windows in a sweep contain nothing at all, blank road or plain sky, and running a classifier there is wasted effort.</p>
+<p><a href="https://doi.org/10.1109/CVPR.2014.81">Girshick, Donahue, Darrell, and Malik (2014)</a> proposed <strong>R-CNN</strong>, meaning regions with convolutional networks. Rather than classify every window, run a segmentation algorithm first, which groups pixels into regions that look like they belong together, and take a bounding box around each blob. Those boxes are the <strong>region proposals</strong>, and the classifier runs only on them, around two thousand per image rather than tens of thousands of windows.</p>
+<div id="2adafc73" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="sliding-windows-and-region-proposals_files/figure-html/cell-5-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Photograph from the Drive.ai Sample Dataset, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The right hand panel is a real segmentation of that photograph rather than an illustration of one, and it shows both what the idea buys and where it strains. Seventy proposals replace 12,699 windows, which is the saving. The proposal that lands on the car, drawn solid, overlaps the true box, drawn dashed, by 44 percent, which is the strain. A blob that groups pixels by color and texture does not know where an object ends.</p>
+<p>That is why R-CNN does not trust the box it was handed. For each proposed region it outputs a class <strong>and</strong> its own bounding box, <span class="math inline">\(b_x, b_y, b_h, b_w\)</span>, refining the rough proposal into something that fits. The proposal decides where to look, and the network decides what is actually there and exactly where.</p>
+<p>R-CNN was accurate and slow, and the work that followed chipped away at the slowness in two steps.</p>
+<p><strong>Fast R-CNN</strong>, from <a href="https://doi.org/10.1109/ICCV.2015.169">Girshick (2015)</a>, keeps the proposal step but classifies the regions with the convolutional implementation of sliding windows from the previous section, so the shared computation is shared once again rather than repeated per region. That removes most of the classification cost and leaves the proposal step as the bottleneck, because the segmentation is itself slow.</p>
+<p><strong>Faster R-CNN</strong>, from <a href="https://doi.org/10.1109/TPAMI.2016.2577031">Ren, He, Girshick, and Sun (2017)</a>, replaces the segmentation with a convolutional network that proposes the regions, so the proposals come from the same kind of computation as everything else and can run on the same hardware. It is considerably quicker than Fast R-CNN, and most implementations are still slower than the single pass method the next section builds toward.</p>
+<p>The three steps of that story are worth keeping side by side, because each one removes the bottleneck the previous one left behind.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Approach</th>
+<th>Main change</th>
+<th>Remaining bottleneck</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>R-CNN</td>
+<td>Propose regions with a segmentation, then classify each region separately</td>
+<td>Thousands of separate ConvNet evaluations</td>
+</tr>
+<tr class="even">
+<td>Fast R-CNN</td>
+<td>Classify the proposals with the convolutional implementation, sharing the work</td>
+<td>The segmentation that proposes the regions is still slow</td>
+</tr>
+<tr class="odd">
+<td>Faster R-CNN</td>
+<td>Propose the regions with a convolutional network too</td>
+<td>Proposing and detecting remain two separate steps</td>
+</tr>
+</tbody>
+</table>
+<p>The course offers a view here, and flags it as a personal one rather than a settled matter. Proposing regions is an interesting idea, but doing detection in two steps, first propose and then classify, looks less promising in the long run than doing everything at once. That is worth knowing as an opinion held while the field was still deciding, and worth knowing because the R-CNN family remains common enough that the names come up constantly.</p>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. Region proposals and convolutional sliding windows attack the same problem. How do their answers differ?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Both are responses to the cost of classifying many windows. The convolutional implementation keeps every window and makes them collectively cheap, by computing shared filter responses once and reading a result per position out of one forward pass. Region proposals keep the classifier expensive per region and cut the number of regions instead, using a segmentation to guess where objects might be. The first changes how the sweep is computed, the second changes what gets swept.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does R-CNN output its own bounding box rather than reporting the proposed region?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because a proposal is only a guess about where something interesting is. The segmentation groups pixels by appearance and knows nothing about object boundaries, so its box is typically offset, too large, or too small, as in the figure above where the best proposal for the car overlaps the true box by 44 percent. Predicting <span class="math inline">\(b_x, b_y, b_h, b_w\)</span> for the region lets the network correct the proposal into a box that fits, which is the same regression the localization page introduced, applied to a region rather than to a whole image.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Fast R-CNN sped up the classification step, and the algorithm was still slow. Why, and how did Faster R-CNN respond?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the proposal step was not touched. Fast R-CNN classifies the proposed regions with the convolutional implementation, which removes the repeated work, but the segmentation that produces the proposals is a separate and slow algorithm, so it becomes the bottleneck once everything around it gets faster. Faster R-CNN removes that bottleneck by having a convolutional network propose the regions, so proposal and classification are the same kind of computation.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li>Girshick, R. (2015). Fast R-CNN. In <em>2015 IEEE International Conference on Computer Vision (ICCV)</em> (pp.&nbsp;1440-1448). IEEE. <a href="https://doi.org/10.1109/ICCV.2015.169" class="uri">https://doi.org/10.1109/ICCV.2015.169</a></li>
+<li>Girshick, R., Donahue, J., Darrell, T., &amp; Malik, J. (2014). Rich feature hierarchies for accurate object detection and semantic segmentation. In <em>2014 IEEE Conference on Computer Vision and Pattern Recognition</em> (pp.&nbsp;580-587). IEEE. <a href="https://doi.org/10.1109/CVPR.2014.81" class="uri">https://doi.org/10.1109/CVPR.2014.81</a></li>
+<li>Ren, S., He, K., Girshick, R., &amp; Sun, J. (2017). Faster R-CNN: Towards real-time object detection with region proposal networks. <em>IEEE Transactions on Pattern Analysis and Machine Intelligence, 39</em>(6), 1137-1149. <a href="https://doi.org/10.1109/TPAMI.2016.2577031" class="uri">https://doi.org/10.1109/TPAMI.2016.2577031</a></li>
+<li>Sermanet, P., Eigen, D., Zhang, X., Mathieu, M., Fergus, R., &amp; LeCun, Y. (2013). <em>OverFeat: Integrated recognition, localization and detection using convolutional networks</em>. arXiv. <a href="https://doi.org/10.48550/arXiv.1312.6229" class="uri">https://doi.org/10.48550/arXiv.1312.6229</a></li>
+</ul>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 57%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">57% completed (1179 of 2042 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html" class="pagination-link" aria-label="Object Localization and Landmark Detection">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Object Localization and Landmark Detection</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../../ai/deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" class="pagination-link" aria-label="Bounding Box Predictions with YOLO">
+        <span class="nav-page-text">Bounding Box Predictions with YOLO</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

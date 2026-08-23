@@ -1,0 +1,1662 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-06">
+<meta name="description" content="How batch norm normalizes hidden unit values with learnable mean and variance, fits into training, why it works, and what changes at test time.">
+
+<title>Batch Normalization – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/improving-deep-neural-networks/softmax-regression.html" rel="next">
+<link href="../../../ai/deep-learning/improving-deep-neural-networks/hyperparameter-tuning.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Batch Normalization – H’s Notes">
+<meta property="og:description" content="How batch norm normalizes hidden unit values with learnable mean and variance, fits into training, why it works, and what changes at test time.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/improving-deep-neural-networks/batch-normalization_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Batch Normalization – H’s Notes">
+<meta name="twitter:description" content="How batch norm normalizes hidden unit values with learnable mean and variance, fits into training, why it works, and what changes at test time.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/improving-deep-neural-networks/batch-normalization_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../infrastructure/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/improving-deep-neural-networks/batch-normalization.html">Batch Normalization</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Improving Deep Neural Networks</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-machine-learning-application.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Setting Up Your Machine Learning Application</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regularizing Your Neural Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Setting Up Your Optimization Problem</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-initialization.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Initialization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-regularization.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Regularization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-gradient-checking.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Gradient Checking</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/mini-batch-gradient-descent.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mini-batch Gradient Descent</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/exponentially-weighted-averages.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Exponentially Weighted Averages</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/momentum-rmsprop-and-adam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Momentum, RMSprop, and Adam</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-optimization-methods.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Optimization Methods</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/hyperparameter-tuning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hyperparameter Tuning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/batch-normalization.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Batch Normalization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/softmax-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Softmax Regression</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/deep-learning-frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Deep Learning Frameworks and TensorFlow</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-introduction-to-tensorflow.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Introduction to TensorFlow</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#normalizing-activations-in-a-network" id="toc-normalizing-activations-in-a-network" class="nav-link active" data-scroll-target="#normalizing-activations-in-a-network">Normalizing Activations in a Network</a>
+  <ul class="collapse">
+  <li><a href="#batch-norm-for-a-single-layer" id="toc-batch-norm-for-a-single-layer" class="nav-link" data-scroll-target="#batch-norm-for-a-single-layer">Batch Norm for a Single Layer</a></li>
+  <li><a href="#why-learnable-mean-and-variance" id="toc-why-learnable-mean-and-variance" class="nav-link" data-scroll-target="#why-learnable-mean-and-variance">Why Learnable Mean and Variance</a></li>
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#fitting-batch-norm-into-a-neural-network" id="toc-fitting-batch-norm-into-a-neural-network" class="nav-link" data-scroll-target="#fitting-batch-norm-into-a-neural-network">Fitting Batch Norm into a Neural Network</a>
+  <ul class="collapse">
+  <li><a href="#batch-norm-with-mini-batches" id="toc-batch-norm-with-mini-batches" class="nav-link" data-scroll-target="#batch-norm-with-mini-batches">Batch Norm with Mini-Batches</a></li>
+  <li><a href="#the-bias-parameter-drops-out" id="toc-the-bias-parameter-drops-out" class="nav-link" data-scroll-target="#the-bias-parameter-drops-out">The Bias Parameter Drops Out</a></li>
+  <li><a href="#gradient-descent-with-batch-norm" id="toc-gradient-descent-with-batch-norm" class="nav-link" data-scroll-target="#gradient-descent-with-batch-norm">Gradient Descent with Batch Norm</a></li>
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#why-batch-norm-works" id="toc-why-batch-norm-works" class="nav-link" data-scroll-target="#why-batch-norm-works">Why Batch Norm Works</a>
+  <ul class="collapse">
+  <li><a href="#robustness-to-covariate-shift" id="toc-robustness-to-covariate-shift" class="nav-link" data-scroll-target="#robustness-to-covariate-shift">Robustness to Covariate Shift</a></li>
+  <li><a href="#slight-regularization-effect" id="toc-slight-regularization-effect" class="nav-link" data-scroll-target="#slight-regularization-effect">Slight Regularization Effect</a></li>
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#batch-norm-at-test-time" id="toc-batch-norm-at-test-time" class="nav-link" data-scroll-target="#batch-norm-at-test-time">Batch Norm at Test Time</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../breadcrumb-path.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Batch Normalization</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">batch-normalization</div>
+    <div class="quarto-category">covariate-shift</div>
+    <div class="quarto-category">regularization</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    How batch norm normalizes hidden unit values with learnable mean and variance, fits into training, why it works, and what changes at test time.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 6, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~86 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~5,600 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<p>The <a href="../../../ai/deep-learning/improving-deep-neural-networks/hyperparameter-tuning.html">previous page</a> closed by promising a technique that makes a neural network much more robust to the choice of hyperparameters. In the rise of deep learning, one of the most important ideas has been an algorithm called batch normalization, created by two researchers, Sergey Ioffe and Christian Szegedy. Batch normalization makes your hyperparameter search problem much easier, makes a much bigger range of hyperparameters work well, and also enables you to much more easily train even very deep networks.</p>
+<section id="normalizing-activations-in-a-network" class="level2">
+<h2 class="anchored" data-anchor-id="normalizing-activations-in-a-network">Normalizing Activations in a Network</h2>
+<p>When training a model such as logistic regression, you may remember that <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem.html#normalizing-inputs">normalizing the input features can speed up learning</a>. You compute the mean and subtract it off from your training set, compute the variance with an element-wise squaring, and then normalize your dataset by dividing by the standard deviation,</p>
+<p><span class="math display">\[
+\mu = \frac{1}{m} \sum_{i=1}^{m} x^{(i)}, \qquad
+x := x - \mu, \qquad
+\sigma^2 = \frac{1}{m} \sum_{i=1}^{m} x^{(i)2}, \qquad
+x := \frac{x}{\sigma}
+\]</span></p>
+<p>We saw earlier how this can turn the contours of your learning problem from something very elongated into something more round, and easier for an algorithm like gradient descent to optimize. So this works for normalizing the input feature values to a neural network or to logistic regression.</p>
+<p>Now, how about a deeper model? You have not just input features <span class="math inline">\(x\)</span>; layer 1 has activations <span class="math inline">\(a^{[1]}\)</span>, layer 2 has activations <span class="math inline">\(a^{[2]}\)</span>, and so on. If you want to train the parameters <span class="math inline">\(w^{[3]}, b^{[3]}\)</span>, would it not be nice if you could normalize the mean and variance of <span class="math inline">\(a^{[2]}\)</span> to make the training of <span class="math inline">\(w^{[3]}, b^{[3]}\)</span> more efficient? In logistic regression we saw how normalizing <span class="math inline">\(x_1, x_2, x_3\)</span> helps you train <span class="math inline">\(w\)</span> and <span class="math inline">\(b\)</span> more efficiently. Here the question is, for any hidden layer, can we normalize the values of <span class="math inline">\(a\)</span>, say <span class="math inline">\(a^{[2]}\)</span> in this example but really any hidden layer, so as to train <span class="math inline">\(w^{[3]}, b^{[3]}\)</span> faster? Since <span class="math inline">\(a^{[2]}\)</span> is the input to the next layer, it affects the training of <span class="math inline">\(w^{[3]}\)</span> and <span class="math inline">\(b^{[3]}\)</span>. This is what batch normalization, or batch norm for short, does.</p>
+<div id="b5f455e1" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="batch-normalization_files/figure-html/cell-2-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Technically, we will actually normalize the values of <span class="math inline">\(z^{[2]}\)</span>, not <span class="math inline">\(a^{[2]}\)</span>. There is some debate in the deep learning literature about whether you should normalize the value before the activation function, <span class="math inline">\(z^{[2]}\)</span>, or after applying the activation function, <span class="math inline">\(a^{[2]}\)</span>. In practice, normalizing <span class="math inline">\(z^{[2]}\)</span> is done much more often, so that is the version presented here and the recommended default choice.</p>
+<section id="batch-norm-for-a-single-layer" class="level3">
+<h3 class="anchored" data-anchor-id="batch-norm-for-a-single-layer">Batch Norm for a Single Layer</h3>
+<p>Here is how you implement batch norm. Given some intermediate values in your neural net, say hidden unit values <span class="math inline">\(z^{(1)}\)</span> up to <span class="math inline">\(z^{(m)}\)</span> from some hidden layer <span class="math inline">\(l\)</span> (to reduce writing, the <span class="math inline">\(^{[l]}\)</span> is omitted in these equations, but everything here is specific to one layer), you compute the mean and variance, and then normalize each <span class="math inline">\(z^{(i)}\)</span> by subtracting the mean and dividing by the standard deviation,</p>
+<p><span class="math display">\[
+\mu = \frac{1}{m} \sum_{i} z^{(i)}, \qquad
+\sigma^2 = \frac{1}{m} \sum_{i} \left(z^{(i)} - \mu\right)^2
+\]</span></p>
+<p><span class="math display">\[
+z^{(i)}_{\text{norm}} = \frac{z^{(i)} - \mu}{\sqrt{\sigma^2 + \varepsilon}}
+\]</span></p>
+<p>For numerical stability, <span class="math inline">\(\varepsilon\)</span> is added to the denominator, just in case <span class="math inline">\(\sigma^2\)</span> turns out to be zero in some estimate. So now these values <span class="math inline">\(z\)</span> have been normalized to mean 0 and standard unit variance, every component of <span class="math inline">\(z\)</span> has mean 0 and variance 1.</p>
+<p>But we do not want the hidden units to always have mean 0 and variance 1. Maybe it makes sense for hidden units to have a different distribution. So what we do instead is compute</p>
+<p><span class="math display">\[
+\tilde{z}^{(i)} = \gamma\, z^{(i)}_{\text{norm}} + \beta
+\]</span></p>
+<p>Here <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span> are learnable parameters of your model. Using gradient descent, or some other algorithm like gradient descent with momentum, RMSprop, or Adam, you update the parameters <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span> just as you would update the weights of your neural network.</p>
+<p>Notice that the effect of <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span> is that they allow you to set the mean of <span class="math inline">\(\tilde{z}\)</span> to be whatever you want it to be. In fact, if</p>
+<p><span class="math display">\[
+\gamma = \sqrt{\sigma^2 + \varepsilon}, \qquad \beta = \mu
+\]</span></p>
+<p>so if <span class="math inline">\(\gamma\)</span> were equal to the denominator term and <span class="math inline">\(\beta\)</span> were equal to the mean, then <span class="math inline">\(\gamma z^{(i)}_{\text{norm}} + \beta\)</span> would exactly invert the normalization, and <span class="math inline">\(\tilde{z}^{(i)} = z^{(i)}\)</span>. With that particular setting of <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span>, these four equations are just computing the identity function. By choosing other values of <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span>, you can make the hidden unit values have other means and variances as well.</p>
+<p>The way this fits into your neural network is that, whereas previously you were using the values <span class="math inline">\(z^{(1)}, z^{(2)}, \ldots\)</span>, you now use <span class="math inline">\(\tilde{z}^{(i)}\)</span> instead of <span class="math inline">\(z^{(i)}\)</span> for the later computations in the network. And if you want to denote explicitly which layer this belongs to, you put the <span class="math inline">\(^{[l]}\)</span> back in.</p>
+</section>
+<section id="why-learnable-mean-and-variance" class="level3">
+<h3 class="anchored" data-anchor-id="why-learnable-mean-and-variance">Why Learnable Mean and Variance</h3>
+<p>The intuition to take away is that we saw how normalizing the input features <span class="math inline">\(x\)</span> can help learning in a neural network, and what batch norm does is apply that normalization process not just to the input layer but to values deep in some hidden layer. One difference from the training input, though, is that you might not want your hidden unit values to be forced to have mean 0 and variance 1. For example, if you have a sigmoid activation function, you do not want your values to always be clustered near 0. You might want them to have a larger variance, or a mean different from 0, in order to better take advantage of the nonlinearity of the sigmoid function, rather than have all your values sit in the roughly linear regime around the middle.</p>
+<div id="65d4909f" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="batch-normalization_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>So what batch norm really does is normalize the mean and variance of the hidden unit values, really the <span class="math inline">\(z\)</span> values, to have some fixed mean and variance. That mean and variance could be 0 and 1, or it could be some other value, and it is controlled by the two explicit parameters <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span>, which the learning algorithm can set to whatever it wants. That is the mechanics of implementing batch norm for a single layer of the network; the next section fits it into a deep network with many layers.</p>
+</section>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. Write the four batch norm equations for one layer. What roles do <span class="math inline">\(\varepsilon\)</span>, <span class="math inline">\(\gamma\)</span>, and <span class="math inline">\(\beta\)</span> play?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math display">\[
+\mu = \frac{1}{m} \sum_i z^{(i)}, \qquad
+\sigma^2 = \frac{1}{m} \sum_i (z^{(i)} - \mu)^2
+\]</span> <span class="math display">\[
+z^{(i)}_{\text{norm}} = \frac{z^{(i)} - \mu}{\sqrt{\sigma^2 + \varepsilon}}, \qquad
+\tilde{z}^{(i)} = \gamma z^{(i)}_{\text{norm}} + \beta
+\]</span> <span class="math inline">\(\varepsilon\)</span> is a small constant added for numerical stability in case <span class="math inline">\(\sigma^2\)</span> is close to zero. <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span> are learnable parameters, updated by gradient descent (or momentum, RMSprop, Adam) like any other parameter, that set the standard deviation and mean of <span class="math inline">\(\tilde{z}\)</span> so the hidden units are not forced to keep mean 0 and variance 1.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. For what setting of <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span> does batch norm compute the identity function, and why would a network ever want hidden units with a mean different from 0?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>If <span class="math inline">\(\gamma = \sqrt{\sigma^2 + \varepsilon}\)</span> and <span class="math inline">\(\beta = \mu\)</span>, the rescaling exactly inverts the normalization, so <span class="math inline">\(\tilde{z}^{(i)} = z^{(i)}\)</span>. A different mean or variance can be preferable because forcing values to cluster around 0 with unit variance can keep, for example, a sigmoid unit in its roughly linear middle regime; a larger variance or shifted mean lets the unit take better advantage of the nonlinearity.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Does batch norm normalize <span class="math inline">\(z^{[l]}\)</span> or <span class="math inline">\(a^{[l]}\)</span>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>There is some debate in the literature about normalizing before the activation function (<span class="math inline">\(z^{[l]}\)</span>) or after it (<span class="math inline">\(a^{[l]}\)</span>), but in practice normalizing <span class="math inline">\(z^{[l]}\)</span> is done much more often and is the recommended default.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Which of the following statements about the batch norm parameters <span class="math inline">\(\gamma^{[l]}\)</span> and <span class="math inline">\(\beta^{[l]}\)</span> are true? Check all that apply.</strong></p>
+<ol type="a">
+<li><p>There is one global value of <span class="math inline">\(\gamma \in \mathbb{R}\)</span> and one global value of <span class="math inline">\(\beta \in \mathbb{R}\)</span> for each layer, and these apply to all the hidden units in that layer.</p></li>
+<li><p>They are hyperparameters of the algorithm, tuned by random sampling on a logarithmic scale.</p></li>
+<li><p>Batch normalization introduces them as two new parameters that must be learned during training.</p></li>
+<li><p>They set the variance and mean of the linear variable <span class="math inline">\(\tilde{z}^{[l]}\)</span> of a given layer.</p></li>
+<li><p>They can be learned using Adam, gradient descent with momentum, or RMSprop, not only with plain gradient descent.</p></li>
+<li><p>The optimal values are <span class="math inline">\(\gamma = \sqrt{\sigma^2 + \varepsilon}\)</span> and <span class="math inline">\(\beta = \mu\)</span>.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>c, d, and e.</strong> The transformation <span class="math inline">\(\tilde{z}^{(i)} = \gamma z^{(i)}_{\text{norm}} + \beta\)</span> makes <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span> exactly the knobs that set the variance and mean of <span class="math inline">\(\tilde{z}^{[l]}\)</span>, and they are ordinary learnable parameters, updated by whatever optimizer trains the weights. Option a is false because their dimension is <span class="math inline">\((n^{[l]}, 1)\)</span>, one scale and one shift per hidden unit, not one shared value per layer. Option b is false because they are learned, not tuned as hyperparameters. Option f is false because that particular setting exactly inverts the normalization, turning the whole batch norm step into the identity function, which defeats its purpose; the right values are whatever the learning algorithm discovers.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="fitting-batch-norm-into-a-neural-network" class="level2">
+<h2 class="anchored" data-anchor-id="fitting-batch-norm-into-a-neural-network">Fitting Batch Norm into a Neural Network</h2>
+<p>You have seen the equations for one hidden layer. In a deep network, batch norm is applied between computing <span class="math inline">\(z\)</span> and applying the activation function, in every layer where you use it. In each layer <span class="math inline">\(l\)</span>, you first compute <span class="math inline">\(z^{[l]}\)</span> from the previous layer’s activations as usual, then the batch norm step, governed by the parameters <span class="math inline">\(\beta^{[l]}\)</span> and <span class="math inline">\(\gamma^{[l]}\)</span> of that layer, turns <span class="math inline">\(z^{[l]}\)</span> into the normalized and rescaled <span class="math inline">\(\tilde{z}^{[l]}\)</span>, and only then do you apply the activation function,</p>
+<p><span class="math display">\[
+x \xrightarrow{\;w^{[1]}\;} z^{[1]}
+\xrightarrow[\;\beta^{[1]},\, \gamma^{[1]}\;]{\text{BN}} \tilde{z}^{[1]}
+\longrightarrow a^{[1]} = g^{[1]}(\tilde{z}^{[1]})
+\xrightarrow{\;w^{[2]}\;} z^{[2]}
+\xrightarrow[\;\beta^{[2]},\, \gamma^{[2]}\;]{\text{BN}} \tilde{z}^{[2]}
+\longrightarrow a^{[2]} \longrightarrow \cdots
+\]</span></p>
+<p>So the parameters of the network are the usual <span class="math inline">\(w^{[1]}, b^{[1]}, \ldots, w^{[L]}, b^{[L]}\)</span>, and added to them the new parameters <span class="math inline">\(\beta^{[1]}, \gamma^{[1]}, \beta^{[2]}, \gamma^{[2]}\)</span>, and so on, for each layer in which you apply batch norm.</p>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Warning</span>This <span class="math inline">\(\beta\)</span> Is Not the Momentum <span class="math inline">\(\beta\)</span>
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>These <span class="math inline">\(\beta\)</span> parameters have nothing to do with the hyperparameter <span class="math inline">\(\beta\)</span> used for <a href="../../../ai/deep-learning/improving-deep-neural-networks/momentum-rmsprop-and-adam.html">momentum</a> and the exponentially weighted averages. The authors of the Adam paper used <span class="math inline">\(\beta\)</span> to denote their hyperparameters, and the authors of the batch norm paper used <span class="math inline">\(\beta\)</span> to denote this parameter; both notations are kept here in case you read the original papers. The <span class="math inline">\(\beta^{[l]}\)</span> that batch norm learns is a completely different <span class="math inline">\(\beta\)</span> from the hyperparameter in momentum, RMSprop, and Adam.</p>
+</div>
+</div>
+<p>Since <span class="math inline">\(\beta^{[l]}\)</span> and <span class="math inline">\(\gamma^{[l]}\)</span> are now parameters of your algorithm, you update them with whatever optimization algorithm you are using. With gradient descent you would compute <span class="math inline">\(d\beta^{[l]}\)</span> for a given layer and update <span class="math inline">\(\beta^{[l]} := \beta^{[l]} - \alpha\, d\beta^{[l]}\)</span>, and you can equally use Adam, RMSprop, or momentum to update <span class="math inline">\(\beta^{[l]}\)</span> and <span class="math inline">\(\gamma^{[l]}\)</span>, not just plain gradient descent.</p>
+<p>If you are using a deep learning programming framework, you usually will not have to implement the batch norm layer yourself. In TensorFlow, for example, it can be one line of code, <code>tf.nn.batch_normalization</code>. Frameworks are discussed in a later section, but in practice you may not need to implement all these details yourself; knowing how it works simply gives you a better understanding of what your code is doing.</p>
+<section id="batch-norm-with-mini-batches" class="level3">
+<h3 class="anchored" data-anchor-id="batch-norm-with-mini-batches">Batch Norm with Mini-Batches</h3>
+<p>So far we have talked about batch norm as if you were training on the entire training set at a time, as if using batch gradient descent. In practice, batch norm is usually applied with <a href="../../../ai/deep-learning/improving-deep-neural-networks/mini-batch-gradient-descent.html">mini-batches</a> of your training set. You take your first mini-batch <span class="math inline">\(X^{\{1\}}\)</span> and compute <span class="math inline">\(z^{[1]}\)</span> as before, using <span class="math inline">\(w^{[1]}\)</span>. Then, using just this mini-batch, you compute the mean and variance of the <span class="math inline">\(z^{[1]}\)</span> values, subtract the mean, divide by the standard deviation, and rescale by <span class="math inline">\(\beta^{[1]}, \gamma^{[1]}\)</span> to get <span class="math inline">\(\tilde{z}^{[1]}\)</span>; all of this is on the first mini-batch. Then you apply the activation function to get <span class="math inline">\(a^{[1]}\)</span>, compute <span class="math inline">\(z^{[2]}\)</span> using <span class="math inline">\(w^{[2]}\)</span>, and so on, to perform one step of gradient descent on the first mini-batch. Then you move to the second mini-batch <span class="math inline">\(X^{\{2\}}\)</span> and do the same thing, normalizing using just the data in the second mini-batch, then the third mini-batch, and you keep training.</p>
+</section>
+<section id="the-bias-parameter-drops-out" class="level3">
+<h3 class="anchored" data-anchor-id="the-bias-parameter-drops-out">The Bias Parameter Drops Out</h3>
+<p>There is one detail of the parameterization to clean up. We said the parameters are <span class="math inline">\(w^{[l]}, b^{[l]}\)</span> plus <span class="math inline">\(\beta^{[l]}, \gamma^{[l]}\)</span>, with</p>
+<p><span class="math display">\[
+z^{[l]} = w^{[l]} a^{[l-1]} + b^{[l]}
+\]</span></p>
+<p>But batch norm looks at the mini-batch and normalizes <span class="math inline">\(z^{[l]}\)</span> to mean 0 first. That means whatever the value of <span class="math inline">\(b^{[l]}\)</span> is, it just gets subtracted out, because adding any constant to all the examples in the mini-batch changes nothing; any constant you add is canceled by the mean subtraction step. So if you are using batch norm, you can eliminate the parameter <span class="math inline">\(b^{[l]}\)</span>, or if you prefer, think of it as permanently set to 0. The parameterization becomes</p>
+<p><span class="math display">\[
+z^{[l]} = w^{[l]} a^{[l-1]}, \qquad
+z^{[l]}_{\text{norm}}, \qquad
+\tilde{z}^{[l]} = \gamma^{[l]} z^{[l]}_{\text{norm}} + \beta^{[l]}
+\]</span></p>
+<p>and <span class="math inline">\(\beta^{[l]}\)</span> is what ends up deciding the mean of <span class="math inline">\(\tilde{z}^{[l]}\)</span>, taking over the role of the shift or bias term.</p>
+<p>Finally, the dimensions. On one example, <span class="math inline">\(z^{[l]}\)</span> has dimension <span class="math inline">\((n^{[l]}, 1)\)</span>, where <span class="math inline">\(n^{[l]}\)</span> is the number of hidden units in layer <span class="math inline">\(l\)</span>, and so <span class="math inline">\(b^{[l]}\)</span> had dimension <span class="math inline">\((n^{[l]}, 1)\)</span>. The dimensions of <span class="math inline">\(\beta^{[l]}\)</span> and <span class="math inline">\(\gamma^{[l]}\)</span> are also <span class="math inline">\((n^{[l]}, 1)\)</span>, because they scale the mean and variance of each of the <span class="math inline">\(n^{[l]}\)</span> hidden units to whatever the network wants to set them to.</p>
+</section>
+<section id="gradient-descent-with-batch-norm" class="level3">
+<h3 class="anchored" data-anchor-id="gradient-descent-with-batch-norm">Gradient Descent with Batch Norm</h3>
+<p>Pulling it all together, here is how you implement gradient descent using batch norm, assuming mini-batch gradient descent.</p>
+<p>For <span class="math inline">\(t = 1, \ldots,\)</span> number of mini-batches:</p>
+<ol type="1">
+<li>Implement forward propagation on mini-batch <span class="math inline">\(X^{\{t\}}\)</span>, and in each hidden layer use batch norm to replace <span class="math inline">\(z^{[l]}\)</span> with <span class="math inline">\(\tilde{z}^{[l]}\)</span>, so that within the mini-batch the <span class="math inline">\(z\)</span> values have a normalized mean and variance.</li>
+<li>Use backpropagation to compute <span class="math inline">\(dW^{[l]}\)</span>, <span class="math inline">\(d\beta^{[l]}\)</span>, <span class="math inline">\(d\gamma^{[l]}\)</span> for each layer (technically <span class="math inline">\(db^{[l]}\)</span> goes away, since <span class="math inline">\(b^{[l]}\)</span> has been eliminated).</li>
+<li>Update the parameters, <span class="math inline">\(W^{[l]} := W^{[l]} - \alpha\, dW^{[l]}\)</span>, <span class="math inline">\(\beta^{[l]} := \beta^{[l]} - \alpha\, d\beta^{[l]}\)</span>, and similarly for <span class="math inline">\(\gamma^{[l]}\)</span>.</li>
+</ol>
+<p>This is written for plain gradient descent, but it works equally with gradient descent with momentum, RMSprop, or Adam, where instead of this update you use the updates given by those algorithms to the parameters <span class="math inline">\(W^{[l]}\)</span>, <span class="math inline">\(\beta^{[l]}\)</span>, and <span class="math inline">\(\gamma^{[l]}\)</span>.</p>
+</section>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. With batch norm, why can the bias parameter <span class="math inline">\(b^{[l]}\)</span> be eliminated, and what takes over its role?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Batch norm computes the mean of the <span class="math inline">\(z^{[l]}\)</span> values over the mini-batch and subtracts it, so any constant added to every example, which is exactly what <span class="math inline">\(b^{[l]}\)</span> does, is canceled by the mean subtraction. You can remove <span class="math inline">\(b^{[l]}\)</span> (or think of it as permanently 0), leaving <span class="math inline">\(z^{[l]} = w^{[l]} a^{[l-1]}\)</span>. The batch norm shift parameter <span class="math inline">\(\beta^{[l]}\)</span> takes over the role of the bias, deciding the mean of <span class="math inline">\(\tilde{z}^{[l]}\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What are the dimensions of <span class="math inline">\(\beta^{[l]}\)</span> and <span class="math inline">\(\gamma^{[l]}\)</span>, and how are they updated during training?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Both are <span class="math inline">\((n^{[l]}, 1)\)</span>, one scale and one shift per hidden unit of layer <span class="math inline">\(l\)</span>, the same dimension the bias <span class="math inline">\(b^{[l]}\)</span> had. They are ordinary learnable parameters. Backpropagation computes <span class="math inline">\(d\beta^{[l]}\)</span> and <span class="math inline">\(d\gamma^{[l]}\)</span>, and they are updated with the same optimizer as the weights, plain gradient descent, momentum, RMSprop, or Adam. They are not related to the momentum or Adam hyperparameter <span class="math inline">\(\beta\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. When training with mini-batches, on what data are the batch norm mean <span class="math inline">\(\mu\)</span> and variance <span class="math inline">\(\sigma^2\)</span> computed?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>On the current mini-batch only. For each mini-batch <span class="math inline">\(X^{\{t\}}\)</span>, each batch-normalized layer computes the mean and variance of its <span class="math inline">\(z^{[l]}\)</span> values over just the examples in that mini-batch, normalizes with them, and rescales with <span class="math inline">\(\beta^{[l]}, \gamma^{[l]}\)</span> before the activation function.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. When using batch normalization, it is OK to drop the parameter <span class="math inline">\(b^{[l]}\)</span> from forward propagation, because it is effectively canceled out during the normalization step, where we compute <span class="math inline">\(z^{[l]}_{\text{norm}} = \frac{z^{[l]} - \mu}{\sqrt{\sigma^2 + \varepsilon}}\)</span>. True or False?</strong></p>
+<ol type="a">
+<li><p>True</p></li>
+<li><p>False</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a. True.</strong> The bias adds the same constant to every example in the mini-batch, and the mean subtraction removes any such constant, so <span class="math inline">\(b^{[l]}\)</span> has no effect and can be eliminated, or thought of as permanently set to 0. Its role of setting the mean is taken over by <span class="math inline">\(\beta^{[l]}\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. When using batch normalization, it is OK to drop the parameter <span class="math inline">\(W^{[l]}\)</span> from forward propagation, since it will be subtracted out when we compute <span class="math inline">\(\tilde{z}^{[l]} = \gamma^{[l]} z^{[l]}_{\text{norm}} + \beta^{[l]}\)</span>. True or False?</strong></p>
+<ol type="a">
+<li><p>True</p></li>
+<li><p>False</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b. False.</strong> The weight matrix does not get subtracted out during the batch normalization process, although it gets re-scaled. <span class="math inline">\(W^{[l]}\)</span> still determines the value <span class="math inline">\(z^{[l]} = W^{[l]} a^{[l-1]}\)</span> that the normalization acts on, and it remains a trained parameter of the layer. Only the bias <span class="math inline">\(b^{[l]}\)</span> drops out, because only a constant added to every example is canceled by the mean subtraction.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="why-batch-norm-works" class="level2">
+<h2 class="anchored" data-anchor-id="why-batch-norm-works">Why Batch Norm Works</h2>
+<p>Here is one reason. You have seen how normalizing the input features <span class="math inline">\(x\)</span> to mean 0 and variance 1 can speed up learning; rather than having some features ranging from 0 to 1 and some from 1 to 1,000, normalizing all input features to a similar range of values speeds up learning. One intuition behind batch norm is that it is doing a similar thing, but for the values in your hidden units and not just for the inputs. This is only a partial picture, though; a couple of further intuitions give a deeper understanding of what batch norm is doing.</p>
+<section id="robustness-to-covariate-shift" class="level3">
+<h3 class="anchored" data-anchor-id="robustness-to-covariate-shift">Robustness to Covariate Shift</h3>
+<p>A second reason batch norm works is that it makes the weights later or deeper in your network, say the weights in layer 10, more robust to changes in the weights of earlier layers, say layer 1.</p>
+<p>Here is a vivid example. Suppose you have trained a network on the famous cat detection task, but your training set contains only images of black cats. If you now try to apply this network to data with colored cats as the positive examples, your classifier might not do very well. In pictures, if your training set has positive and negative examples in one arrangement, but the dataset you generalize to has positives and negatives located elsewhere, you would not expect a model trained on the left data to do well on the right data. There might be one decision boundary that works well for both, but the learning algorithm cannot be expected to discover it just by looking at the data on the left.</p>
+<div id="bbf5610d" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="batch-normalization_files/figure-html/cell-4-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>This idea of the data distribution changing goes by the somewhat fancy name covariate shift. The idea is that if you have learned some <span class="math inline">\(x \to y\)</span> mapping and the distribution of <span class="math inline">\(x\)</span> changes, you might need to retrain your learning algorithm. This is true even if the ground truth function mapping <span class="math inline">\(x\)</span> to <span class="math inline">\(y\)</span> remains unchanged, as it does in this example, because the ground truth function is simply whether the picture is a cat or not. The need to retrain becomes even more acute if the ground truth function shifts as well.</p>
+<p>How does covariate shift apply to a neural network? Consider a deep network and look at the learning process from the perspective of, say, the third hidden layer. This layer has learned some parameters <span class="math inline">\(w^{[3]}, b^{[3]}\)</span>. It gets some set of values from the earlier layers, call them <span class="math inline">\(a^{[2]}_1, a^{[2]}_2, a^{[2]}_3, a^{[2]}_4\)</span>, and has to do some stuff with them to hopefully make the output <span class="math inline">\(\hat{y}\)</span> close to the ground truth <span class="math inline">\(y\)</span>. If you cover up everything to the left, these values might as well be features <span class="math inline">\(x_1, x_2, x_3, x_4\)</span>, and the job of the third hidden layer is to take them and find a way to map them to <span class="math inline">\(\hat{y}\)</span>, learning <span class="math inline">\(w^{[3]}, b^{[3]}\)</span>, maybe <span class="math inline">\(w^{[4]}, b^{[4]}\)</span> and <span class="math inline">\(w^{[5]}, b^{[5]}\)</span> too, so the network maps these values to the output well.</p>
+<div id="2bd2ae56" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="batch-normalization_files/figure-html/cell-5-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>But now uncover the left side. The network is also adapting the parameters <span class="math inline">\(w^{[2]}, b^{[2]}\)</span> and <span class="math inline">\(w^{[1]}, b^{[1]}\)</span>, and as those change, the values <span class="math inline">\(a^{[2]}\)</span> also change. So from the perspective of the third hidden layer, its input values are changing all the time, and it suffers from exactly the covariate shift problem described above.</p>
+<p>What batch norm does is reduce the amount that the distribution of these hidden unit values shifts around. If you plotted the distribution of two of these values, technically the normalized <span class="math inline">\(z^{[2]}_1\)</span> and <span class="math inline">\(z^{[2]}_2\)</span>, you would see that their values can change, and indeed they will change as the network updates the earlier layers’ parameters. But batch norm ensures that no matter how they change, their mean and variance remain the same, mean 0 and variance 1, or not necessarily that, but whatever values are governed by <span class="math inline">\(\beta^{[2]}\)</span> and <span class="math inline">\(\gamma^{[2]}\)</span>, which the network can force to mean 0 and variance 1 or really any other mean and variance. This limits the amount to which updating the parameters in the earlier layers can affect the distribution of values that the third layer sees and has to learn on.</p>
+<div id="9e9c23d2" class="cell" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="batch-normalization_files/figure-html/cell-6-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>So batch norm reduces the problem of the input values changing. It causes these values to become more stable, so the later layers of the network have more firm ground to stand on. Even though the input distribution still changes a bit, it changes less, and this weakens the coupling between what the early layers’ parameters do and what the later layers’ parameters have to do. It allows each layer of the network to learn a little bit more independently of the other layers, and this has the effect of speeding up learning in the whole network. The takeaway is that, especially from the perspective of one of the later layers, the earlier layers do not get to shift around as much, because they are constrained to have the same mean and variance, and this makes the job of learning in the later layers easier.</p>
+</section>
+<section id="slight-regularization-effect" class="level3">
+<h3 class="anchored" data-anchor-id="slight-regularization-effect">Slight Regularization Effect</h3>
+<p>Batch norm also has a second, slight regularization effect. One non-intuitive thing is that each mini-batch <span class="math inline">\(X^{\{t\}}\)</span> has its <span class="math inline">\(z^{[l]}\)</span> values scaled by the mean and variance computed on just that one mini-batch. Because the mean and variance are computed on the mini-batch rather than on the entire dataset, estimated from a relatively small sample of, say, 64, 128, or 256 examples, they contain a little bit of noise, and so the scaling from <span class="math inline">\(z^{[l]}\)</span> to <span class="math inline">\(\tilde{z}^{[l]}\)</span> is a little bit noisy as well.</p>
+<p>Similar to <a href="../../../ai/deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html#dropout-regularization">dropout</a>, this adds some noise to each hidden layer’s activations. Dropout adds multiplicative noise, multiplying a hidden unit by 0 with some probability and by 1 otherwise. Batch norm adds multiplicative noise through the division by the noisy standard deviation, and additive noise through the subtraction of the noisy mean. By adding noise to the hidden units, it forces the downstream hidden units not to rely too much on any one hidden unit, and so, like dropout, it has a slight regularization effect. Because the noise added is quite small, this is not a huge regularization effect, and you might choose to use batch norm together with dropout if you want dropout’s more powerful regularization.</p>
+<p>One other slightly non-intuitive effect follows from this. If you use a bigger mini-batch size, say 512 instead of 64, you reduce the noise in the mean and variance estimates, and therefore also reduce the regularization effect.</p>
+<p>Having said all this, do not turn to batch norm as a regularizer. That is really not its intent. Use it as a way to normalize your hidden unit activations and therefore speed up learning; the regularization is an almost unintended side effect.</p>
+<p>One more detail remains. Batch norm handles data one mini-batch at a time, computing means and variances on mini-batches. At test time, when you try to make predictions and evaluate the network, you might not have a mini-batch of examples; you might be processing a single example at a time. The next section covers what to do so your predictions still make sense.</p>
+</section>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. What is covariate shift, and how does it show up inside a deep network even when the training data never changes?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Covariate shift is the situation where the distribution of the inputs <span class="math inline">\(x\)</span> to a learned <span class="math inline">\(x \to y\)</span> mapping changes, so the model may need retraining even if the ground truth mapping stays the same, like a cat classifier trained only on black cats being applied to colored cats. Inside a deep network, a later layer, say layer 3, treats the activations <span class="math inline">\(a^{[2]}\)</span> coming from earlier layers as its inputs. As gradient descent updates <span class="math inline">\(w^{[1]}, b^{[1]}, w^{[2]}, b^{[2]}\)</span>, those activation values keep changing, so from layer 3’s perspective its input distribution shifts constantly, which is exactly covariate shift.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. How does batch norm reduce the covariate shift problem for later layers, and what effect does this have on learning?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Batch norm guarantees that however the earlier layers’ updates change the exact values of a layer’s <span class="math inline">\(z\)</span> values, their mean and variance stay fixed at whatever <span class="math inline">\(\beta^{[l]}\)</span> and <span class="math inline">\(\gamma^{[l]}\)</span> specify. This limits how much earlier-layer updates can change the distribution the later layer sees, giving it firmer ground to stand on. It weakens the coupling between early and later layers, lets each layer learn somewhat independently, and speeds up learning in the whole network.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does batch norm have a slight regularization effect, and why does a larger mini-batch size reduce it?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The mean and variance used for normalization are estimated on one mini-batch, a small sample, so they are noisy. The scaling therefore adds a little multiplicative noise (division by the noisy standard deviation) and additive noise (subtraction of the noisy mean) to each hidden layer’s activations, forcing downstream units not to rely too much on any one unit, similar to dropout but weaker. A larger mini-batch, say 512 instead of 64, gives less noisy estimates, so less noise and less regularization. Batch norm should not be used as a regularizer; that is a side effect, not its purpose.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Which of the following are true about batch normalization?</strong></p>
+<ol type="a">
+<li><p>There is a global value of <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span> that is used for all the hidden layers where batch normalization is applied.</p></li>
+<li><p>The parameter <span class="math inline">\(\varepsilon\)</span> in the batch normalization formula is used to accelerate the convergence of the model.</p></li>
+<li><p>The parameters <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span> of batch normalization cannot be trained using Adam or RMSprop.</p></li>
+<li><p>One intuition behind why batch normalization works is that it helps reduce the internal covariate shift, the changing distribution of the hidden unit values.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-14" class="callout-14-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>d.</strong> After each iteration of gradient descent the parameters of the earlier layers change, so the distribution of activations that a later layer sees keeps shifting; batch norm limits that shift by pinning the mean and variance. Option a is false because every batch-normalized layer has its own <span class="math inline">\(\gamma^{[l]}, \beta^{[l]}\)</span>. Option b is false because <span class="math inline">\(\varepsilon\)</span> is only there for numerical stability in case <span class="math inline">\(\sigma^2\)</span> is close to zero. Option c is false because <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span> can be trained with any of the optimizers, including momentum, RMSprop, and Adam.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="batch-norm-at-test-time" class="level2">
+<h2 class="anchored" data-anchor-id="batch-norm-at-test-time">Batch Norm at Test Time</h2>
+<p>Batch norm processes your data one mini-batch at a time, but at test time you might need to process examples one at a time. Recall that during training the equations are</p>
+<p><span class="math display">\[
+\mu = \frac{1}{m} \sum_{i} z^{(i)}, \qquad
+\sigma^2 = \frac{1}{m} \sum_{i} \left(z^{(i)} - \mu\right)^2, \qquad
+z^{(i)}_{\text{norm}} = \frac{z^{(i)} - \mu}{\sqrt{\sigma^2 + \varepsilon}}, \qquad
+\tilde{z}^{(i)} = \gamma z^{(i)}_{\text{norm}} + \beta
+\]</span></p>
+<p>where the sums are over the examples in one mini-batch, and <span class="math inline">\(m\)</span> here is the number of examples in the mini-batch, not in the whole training set. Notice that the <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span> needed for the scaling are computed on the entire mini-batch. But at test time you might not have a mini-batch of 64, 128, or 256 examples to process at the same time, and if you have just one example, taking the mean and variance of that one example does not make sense.</p>
+<p>What is actually done is to come up with a separate estimate of <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span>, and in typical implementations this is estimated using an <a href="../../../ai/deep-learning/improving-deep-neural-networks/exponentially-weighted-averages.html">exponentially weighted average</a>, where the average runs across the mini-batches seen during training. Concretely, pick some layer <span class="math inline">\(l\)</span> and suppose you are going through mini-batches <span class="math inline">\(X^{\{1\}}, X^{\{2\}}, \ldots\)</span> Training on <span class="math inline">\(X^{\{1\}}\)</span> gives some value <span class="math inline">\(\mu^{\{1\}[l]}\)</span> for that layer, the second mini-batch gives a second value <span class="math inline">\(\mu^{\{2\}[l]}\)</span>, the third gives a third value, and just as an exponentially weighted average kept track of the latest average of daily temperatures, you use one here to keep track of the latest average of this mean vector. Similarly, you use an exponentially weighted average to keep track of the <span class="math inline">\(\sigma^2\)</span> values seen on each mini-batch in that layer. So during training you keep a running average of the <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span> for each layer.</p>
+<p>Then at test time, you compute <span class="math inline">\(z_{\text{norm}}\)</span> using whatever your <span class="math inline">\(z\)</span> value is, scaled by the exponentially weighted averages of <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span>, whatever their latest values were during training, and you compute <span class="math inline">\(\tilde{z}\)</span> on your one test example using that <span class="math inline">\(z_{\text{norm}}\)</span> and the <span class="math inline">\(\beta\)</span> and <span class="math inline">\(\gamma\)</span> parameters learned during training,</p>
+<p><span class="math display">\[
+z_{\text{norm}} = \frac{z - \mu_{\text{running}}}{\sqrt{\sigma^2_{\text{running}} + \varepsilon}}, \qquad
+\tilde{z} = \gamma\, z_{\text{norm}} + \beta
+\]</span></p>
+<p>where <span class="math inline">\(\mu_{\text{running}}\)</span> and <span class="math inline">\(\sigma^2_{\text{running}}\)</span> are the exponentially weighted averages kept during training, and <span class="math inline">\(\gamma, \beta\)</span> are the learned parameters, used exactly as they are.</p>
+<p>The takeaway is that during training, <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span> are computed on an entire mini-batch, but at test time you estimate them from the training set instead. There are many ways to do that. In theory you could run your whole training set through the final network to get <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span>, but in practice people usually implement the exponentially weighted average, also sometimes called the running average, to get a rough estimate. In practice this process is pretty robust to the exact way you estimate <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span>, so do not worry too much about exactly how you do it, and if you are using a deep learning framework, it will usually have some default way of estimating them that works reasonably well.</p>
+<p>That is it for batch norm and using it. With it, you will be able to train much deeper networks and get your learning algorithm to run much more quickly. The thoughts on deep learning frameworks mentioned above are the subject of a later section.</p>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. Why can the training-time batch norm equations not be applied directly at test time, and what is used instead of the mini-batch <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>At training time <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span> are computed over the examples of a mini-batch, but at test time you may be processing a single example, and the mean and variance of one example make no sense. Instead you keep, for each batch-normalized layer, an exponentially weighted (running) average of the <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span> values observed across mini-batches during training, and at test time you normalize with those running averages, then rescale with the learned <span class="math inline">\(\beta\)</span> and <span class="math inline">\(\gamma\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Is the exponentially weighted average the only valid way to get the test-time <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-16-contents" aria-controls="callout-16" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-16" class="callout-16-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>No.&nbsp;Any reasonable estimate of the mean and variance of the hidden unit values from the training set works fine; in theory you could even run the whole training set through the final network to compute them. The exponentially weighted average is what typical implementations use because it falls out of training for free, the process is robust to the exact estimation method, and deep learning frameworks provide sensible defaults.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. A neural network is trained with batch norm. At test time, to evaluate the network on a new example, you should perform the normalization using <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span> estimated with an exponentially weighted average across the mini-batches seen during training. True or False?</strong></p>
+<ol type="a">
+<li><p>True</p></li>
+<li><p>False</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-17-contents" aria-controls="callout-17" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-17" class="callout-17-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a. True.</strong> At test time you might not be predicting over a batch of the same size as in training, and it might even be a single example, whose own mean and variance make no sense to use. The running averages of <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma^2\)</span> kept during training provide the estimates for the normalization, together with the learned <span class="math inline">\(\gamma\)</span> and <span class="math inline">\(\beta\)</span>.</p>
+</div>
+</div>
+</div>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 83%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">83% completed (953 of 1137 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/improving-deep-neural-networks/hyperparameter-tuning.html" class="pagination-link" aria-label="Hyperparameter Tuning">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Hyperparameter Tuning</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../../ai/deep-learning/improving-deep-neural-networks/softmax-regression.html" class="pagination-link" aria-label="Softmax Regression">
+        <span class="nav-page-text">Softmax Regression</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

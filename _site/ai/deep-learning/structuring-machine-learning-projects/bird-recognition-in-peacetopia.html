@@ -1,0 +1,1518 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-09">
+<meta name="description" content="A machine learning flight simulator case study covering metric choice, dev and test splits, bias and variance diagnosis, and when to change the target.">
+
+<title>Case Study: Bird Recognition in the City of Peacetopia – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/structuring-machine-learning-projects/error-analysis.html" rel="next">
+<link href="../../../ai/deep-learning/structuring-machine-learning-projects/comparing-to-human-level-performance.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Case Study: Bird Recognition in the City of Peacetopia – H’s Notes">
+<meta property="og:description" content="A machine learning flight simulator case study covering metric choice, dev and test splits, bias and variance diagnosis, and when to change the target.">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Case Study: Bird Recognition in the City of Peacetopia – H’s Notes">
+<meta name="twitter:description" content="A machine learning flight simulator case study covering metric choice, dev and test splits, bias and variance diagnosis, and when to change the target.">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../infrastructure/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/structuring-machine-learning-projects/bird-recognition-in-peacetopia.html">Case Study: Bird Recognition in the City of Peacetopia</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Structuring Machine Learning Projects</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/introduction-to-ml-strategy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to ML Strategy</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/setting-up-your-goal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Setting Up Your Goal</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/comparing-to-human-level-performance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Comparing to Human-Level Performance</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/bird-recognition-in-peacetopia.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Case Study: Bird Recognition in the City of Peacetopia</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/error-analysis.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Error Analysis</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/mismatched-training-and-dev-test-sets.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mismatched Training and Dev/Test Sets</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/learning-from-multiple-tasks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning from Multiple Tasks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/end-to-end-deep-learning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">End-to-End Deep Learning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/autonomous-driving.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Case Study: Autonomous Driving</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#problem-statement" id="toc-problem-statement" class="nav-link active" data-scroll-target="#problem-statement">Problem Statement</a></li>
+  <li><a href="#choosing-a-metric" id="toc-choosing-a-metric" class="nav-link" data-scroll-target="#choosing-a-metric">Choosing a Metric</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#sizing-the-splits" id="toc-sizing-the-splits" class="nav-link" data-scroll-target="#sizing-the-splits">Sizing the Splits</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#bias-variance-and-human-level-performance" id="toc-bias-variance-and-human-level-performance" class="nav-link" data-scroll-target="#bias-variance-and-human-level-performance">Bias, Variance, and Human-Level Performance</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#changing-the-target-and-keeping-iteration-fast" id="toc-changing-the-target-and-keeping-iteration-fast" class="nav-link" data-scroll-target="#changing-the-target-and-keeping-iteration-fast">Changing the Target and Keeping Iteration Fast</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../breadcrumb-path.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Case Study: Bird Recognition in the City of Peacetopia</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">ml-strategy</div>
+    <div class="quarto-category">case-study</div>
+    <div class="quarto-category">flight-simulator</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    A machine learning flight simulator case study covering metric choice, dev and test splits, bias and variance diagnosis, and when to change the target.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 9, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~39 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,500 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<p>Pilots train in flight simulators, where they practice many different flying scenarios safely and in a short amount of time. That gives them valuable experience far faster than flying real planes ever could.</p>
+<p>This case study works the same way. It presents one machine learning project as a running story and asks you to make the decisions a real team faces, so you can practice the judgment calls that might otherwise take years on the job to encounter. The scenario below is adapted from a real production application, with details modified for confidentiality.</p>
+<section id="problem-statement" class="level2">
+<h2 class="anchored" data-anchor-id="problem-statement">Problem Statement</h2>
+<p>You are a researcher in the city of Peacetopia. The residents of Peacetopia share a unique characteristic, which is that they are afraid of birds. To protect them, you are tasked with developing an algorithm that will detect any bird flying over Peacetopia and alert the population.</p>
+<p>The City Council provides you with a dataset of 10,000,000 images of the sky above Peacetopia, captured by the city security cameras. They are labeled as follows.</p>
+<ul>
+<li><span class="math inline">\(y = 0\)</span>, there is no bird in the image</li>
+<li><span class="math inline">\(y = 1\)</span>, there is a bird in the image</li>
+</ul>
+<p>Your goal is to create an algorithm capable of classifying new images taken by the security cameras in Peacetopia. You have several decisions to make regarding the evaluation metric and how to structure your data into train, dev, and test sets.</p>
+</section>
+<section id="choosing-a-metric" class="level2">
+<h2 class="anchored" data-anchor-id="choosing-a-metric">Choosing a Metric</h2>
+<p>The City Council specifies that they want an algorithm that has high accuracy, that operates quickly and takes only a short time to classify a new image, and that requires minimal memory so it can run on a small processor attached to the various security cameras.</p>
+<p>The ideas behind this first group of questions come from <a href="../../../ai/deep-learning/structuring-machine-learning-projects/setting-up-your-goal.html">Setting Up Your Goal</a>.</p>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. True or False: You discuss with them the need for a singular evaluation metric to guide development.</strong></p>
+<ol type="a">
+<li><p>True</p></li>
+<li><p>False</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a. True.</strong> Three separate numbers give you no way to rank two candidate models, so the team cannot quickly tell whether a new idea helped or hurt, and every comparison turns into a debate. Agreeing on one number to optimize before development starts is what keeps the iteration loop fast. Here that means treating accuracy as the optimizing metric and turning runtime and memory into satisficing thresholds.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The city revises its criteria to “we need an algorithm that can let us know a bird is flying over Peacetopia as accurately as possible”, “we want the trained model to take no more than 10 seconds to classify a new image”, and “we want the model to fit in 10MB of memory”. Given models with different accuracies, runtimes, and memory sizes, how would you choose one?</strong></p>
+<ol type="a">
+<li><p>Accuracy is an optimizing metric, therefore the most accurate model is the best choice.</p></li>
+<li><p>Take the model with the smallest runtime because that will provide the most overhead to increase accuracy.</p></li>
+<li><p>Find the subset of models that meet the runtime and memory criteria. Then, choose the highest accuracy.</p></li>
+<li><p>Create one metric by combining the three metrics and choose the best performing model.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>c.</strong> The revised wording turns runtime and memory into satisficing metrics, since the council asks only that they stay under 10 seconds and 10MB rather than asking for them to be as small as possible. Accuracy is the optimizing metric. So you first discard every model that violates a threshold, then pick the most accurate survivor. Option a ignores the two constraints, and option d would let a small accuracy gain buy its way past a hard limit the hardware cannot exceed.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. True or False: The essential difference between an optimizing metric and satisficing metrics is the priority assigned by the stakeholders.</strong></p>
+<ol type="a">
+<li><p>False</p></li>
+<li><p>True</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a. False.</strong> The difference lies in the nature of the metrics themselves rather than in stakeholder priority. An optimizing metric is unbounded, meaning you want it as good as you can possibly get it and there is no point at which you stop caring. A satisficing metric has a specific threshold, and once that threshold is met, further improvement buys you nothing. Accuracy has no natural stopping point, while a 10 second runtime limit does, and that structural difference is what puts each metric in its role. Stakeholders do influence which quantity goes where, but priority is not what separates the two kinds.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="sizing-the-splits" class="level2">
+<h2 class="anchored" data-anchor-id="sizing-the-splits">Sizing the Splits</h2>
+<p>With the metric settled, the next decision is how to divide 10,000,000 images into training, dev, and test sets, and what to do when more data arrives later.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. You propose a 95% / 2.5% / 2.5% split for train / dev / test to the City Council. They ask for your reasoning. Which of the following best justifies your proposal, given that the total data set contains 10,000,000 data points?</strong></p>
+<ol type="a">
+<li><p>The emphasis on the training set provides the most accurate model, supporting the memory and processing efficiency.</p></li>
+<li><p>The emphasis on the training set will allow us to iterate faster.</p></li>
+<li><p>The most important goal is achieving the highest accuracy, and that can be done by allocating the maximum amount of data to the training set.</p></li>
+<li><p>With a dataset comprising 10,000,000 individual samples, 2.5% represents 250,000 samples, which should be more than enough for dev and testing to evaluate bias and variance.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>d.</strong> The old 60/20/20 rule of thumb was built for datasets of a few thousand examples. What actually matters is that the dev set is large enough to distinguish between the algorithms you are trying, and that the test set is large enough to give high confidence in the final system. At 250,000 images each, both are comfortably past that point, so everything left over is better spent on training. The justification is about absolute counts, not about percentages.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Now that you have set up your train, dev, and test sets, the City Council comes across another 1,000,000 images from social media and offers them to you. These images have a different distribution from the images the City Council originally provided, but you think they could help your algorithm. Should you add this data to the training set?</strong></p>
+<ol type="a">
+<li><p>No.</p></li>
+<li><p>Yes.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b. Yes.</strong> The training set does not have to match the distribution you care about, so extra data is usually worth having even when it comes from somewhere else. What must match is the dev and test sets, which have to be drawn from the security camera images that the deployed system will actually see. So add the social media images to the training set and leave dev and test untouched. Mixing them into dev or test would move the target away from the real problem.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. One member of the City Council wants to add 1,000,000 citizen data images to the development (dev) set. Your original data is from security cameras, and you object to adding the citizen data because of which of the following? Choose all that apply.</strong></p>
+<ol type="a">
+<li><p>The 1,000,000 citizen data images do not have a consistent input-output relationship as the security camera data.</p></li>
+<li><p>This would cause the dev and test set distributions to become different. This is a bad idea because you are not aiming where you want to hit.</p></li>
+<li><p>A bigger test set will slow down the speed of iterating because of the computational expense of evaluating models on the test set.</p></li>
+<li><p>The dev set no longer reflects the distribution of data (security cameras) you most care about.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b and d.</strong> This is the same 1,000,000 extra images as the previous question, and the answer flips purely because of which set they go into. Dev and test have to come from the same distribution, and that distribution has to be the one you actually care about. Adding citizen photos to the dev set alone breaks both conditions at once, so the team would spend months tuning toward a target that does not match what the deployed cameras see. Option a claims the labels mean something different in the two sources, which is not true, since a bird is a bird in either kind of photo. Option c talks about the test set, which is not what was proposed, and evaluation cost is not the reason to object anyway.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="bias-variance-and-human-level-performance" class="level2">
+<h2 class="anchored" data-anchor-id="bias-variance-and-human-level-performance">Bias, Variance, and Human-Level Performance</h2>
+<p>Training is under way and the numbers start coming in. This group of questions comes from <a href="../../../ai/deep-learning/structuring-machine-learning-projects/comparing-to-human-level-performance.html">Comparing to Human-Level Performance</a>.</p>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. You train a system and its errors are as follows, where error = 100% - accuracy.</strong></p>
+<table class="caption-top table">
+<tbody>
+<tr class="odd">
+<td>Training set error</td>
+<td>4.0%</td>
+</tr>
+<tr class="even">
+<td>Dev set error</td>
+<td>4.5%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>This suggests that one good avenue for improving performance is to train a bigger network to reduce the 4.0% training error. Do you agree?</strong></p>
+<ol type="a">
+<li><p>No, because this shows your variance is higher than your bias.</p></li>
+<li><p>Yes, because having a 4.0% training error shows you have a high bias.</p></li>
+<li><p>No, because there is insufficient information to tell.</p></li>
+<li><p>Yes, because this shows your bias is higher than your variance.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>c.</strong> A 4.0% training error means nothing on its own, because bias is measured against Bayes error rather than against zero. If human-level performance is 0.5%, the avoidable bias is 3.5% and a bigger network is exactly right. If human-level performance is 4.0%, the avoidable bias is zero and the whole 0.5% gap to the dev set is a variance problem. Without an estimate of Bayes error you cannot tell which situation you are in.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. If your goal is to use “human-level performance” as an estimate for Bayes error in a bird species identification task, how would you define “human-level performance”?</strong></p>
+<ol type="a">
+<li><p>The performance of volunteer amateur ornithologists.</p></li>
+<li><p>The best performance of a specialist (ornithologist) or a group of specialists.</p></li>
+<li><p>The performance of the head of the City Council.</p></li>
+<li><p>The performance of the average citizen.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b.</strong> Bayes error is the best error any mapping from image to label could achieve, so the proxy for it has to be the best error humans can achieve, which is a team of experienced specialists discussing and debating the hard cases. Amateurs, average citizens, and council members all sit well above that, and using one of them would make you believe you have less avoidable bias than you really do. A looser proxy hides real opportunity.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Which of the below shows the optimal order of accuracy from worst to best?</strong></p>
+<ol type="a">
+<li><p>The learning algorithm’s performance -&gt; Bayes error -&gt; human-level performance.</p></li>
+<li><p>Human-level performance -&gt; Bayes error -&gt; the learning algorithm’s performance.</p></li>
+<li><p>Human-level performance -&gt; the learning algorithm’s performance -&gt; Bayes error.</p></li>
+<li><p>The learning algorithm’s performance -&gt; human-level performance -&gt; Bayes error.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>c.</strong> Bayes error is the ceiling that nothing can pass, so it is the most accurate entry in any ordering and belongs at the “best” end. The word optimal is what settles the other two. In the best case the algorithm has already surpassed human-level performance, which is possible and happens often, so human-level performance is the least accurate of the three. The ordering worst to best is therefore human-level performance, then the learning algorithm, then Bayes error. Option d describes a system that is still catching up to people, which is the common situation but not the optimal one.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Which of the following best describes the most effective next step in your project, given human-level performance of 0.1%, training set error of 2.0%, and dev set error of 2.1%?</strong></p>
+<ol type="a">
+<li><p>Continue tuning until the training set error matches human-level performance, focusing solely on the optimizing metric.</p></li>
+<li><p>Prioritize actions to decrease bias by increasing model complexity, as the training error significantly exceeds human-level performance.</p></li>
+<li><p>Deploy the model to target devices to evaluate against satisficing metrics.</p></li>
+<li><p>Evaluate the test set to determine the variance.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b.</strong> The avoidable bias is 2.0% minus 0.1%, which is 1.9%, while the variance is only 2.1% minus 2.0%, which is 0.1%. Avoidable bias is nineteen times larger, so the effort belongs there. Bias tactics include a bigger model, longer training or a better optimization algorithm, and a search over architectures and hyperparameters. Variance work such as regularization or more data would be attacking the smaller of the two gaps.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You have now also run your model on the test set and find that the error rate is 7.0% compared to a 2.1% error rate for the dev set. What should you do? Choose all that apply.</strong></p>
+<ol type="a">
+<li><p>Increase the size of the dev set.</p></li>
+<li><p>Try decreasing regularization for better generalization with the dev set.</p></li>
+<li><p>Get a bigger test set to increase its accuracy.</p></li>
+<li><p>Try increasing regularization to reduce overfitting to the dev set.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a and d.</strong> A large gap between dev error and test error means you have overfit to the dev set, which happens naturally because every hyperparameter decision was made by looking at that set. A bigger dev set makes it harder to overfit and gives a more reliable signal, and more regularization reduces the overfitting directly. Option b would make the overfitting worse. Option c does not help, because the test set was never tuned against, so its size is not the problem.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. After working on this project for a year, you finally achieve the following. What can you conclude? Check all that apply.</strong></p>
+<table class="caption-top table">
+<tbody>
+<tr class="odd">
+<td>Human-level performance</td>
+<td>0.10%</td>
+</tr>
+<tr class="even">
+<td>Training set error</td>
+<td>0.05%</td>
+</tr>
+<tr class="odd">
+<td>Dev set error</td>
+<td>0.05%</td>
+</tr>
+</tbody>
+</table>
+<ol type="a">
+<li><p>With only 0.05% further progress to make, you should quickly be able to close the remaining gap to 0%.</p></li>
+<li><p>If the test set is big enough for the 0.05% error estimate to be accurate, this implies Bayes error is <span class="math inline">\(\le 0.05\%\)</span>.</p></li>
+<li><p>It is highly unlikely this result is purely a statistical anomaly, but statistical noise may still contribute to the error.</p></li>
+<li><p>It is now harder to measure avoidable bias, thus progress will be slower going forward.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b and d.</strong> Achieving 0.05% error proves that error of 0.05% is attainable, so Bayes error can be no larger than that, which is what makes b correct. And now that training error has passed the human-level estimate of 0.10%, that estimate is no longer usable as a proxy for Bayes error. You cannot tell whether the true Bayes error is 0.05%, 0.03%, or 0.01%, so you cannot tell how much avoidable bias is left or whether to work on bias or variance, which is what makes d correct. Option a assumes Bayes error is zero, and nothing here says it is. Option c states the opposite of what the numbers support, since a matching 0.05% on both training and dev sets is a consistent result rather than an unlikely one.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="changing-the-target-and-keeping-iteration-fast" class="level2">
+<h2 class="anchored" data-anchor-id="changing-the-target-and-keeping-iteration-fast">Changing the Target and Keeping Iteration Fast</h2>
+<p>The system is working, and the remaining decisions are about what to do when the world moves out from under your metric.</p>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. Your system is now very accurate but has a higher false negative rate than the City Council of Peacetopia would like. What is your best next step?</strong></p>
+<ol type="a">
+<li><p>Reset your “target” (metric) for the team and tune to it.</p></li>
+<li><p>Pick false negative rate as the new metric, and use this new metric to drive all further development.</p></li>
+<li><p>Look at all the models you have developed during the development process and find the one with the lowest false negative error rate.</p></li>
+<li><p>Expand your model size to account for more corner cases.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a.</strong> A missed bird costs the residents far more than a false alarm does, so the current metric no longer reflects what the council actually cares about. When your metric and your dev set stop ranking systems the way you want them ranked, that is the signal to move the target and then aim at the new one. In practice that means putting a heavier weight on false negatives in the error calculation. Option b throws away accuracy altogether, and option c picks a winner using a metric that was never optimized for.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You have handily beaten your competitor, and your system is now deployed in Peacetopia and is protecting the citizens from birds. But over the last few months, a new species of bird has been slowly migrating into the area, so the performance of your system slowly degrades because your data is being tested on a new type of data. You have only 1,000 images of the new species of bird, and the city expects a better system from you within the next 3 months. Which of these should you do first?</strong></p>
+<ol type="a">
+<li><p>Use the data you have to define a new evaluation metric (using a new dev/test set) that accounts for the new species, and use that metric to guide further improvements.</p></li>
+<li><p>Try data augmentation or data synthesis to get more images of the new type of bird.</p></li>
+<li><p>Put the 1,000 images into the training set so as to try to do better on these birds.</p></li>
+<li><p>Add the 1,000 images into your dataset and reshuffle into a new train/dev/test split.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-14" class="callout-14-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a.</strong> The distribution you care about has changed, so the first move is to point the target at it. Until the dev and test sets contain the new species, you have no way to measure whether anything you try afterwards actually helps. Options b and c are reasonable things to do later, but doing them first leaves you improving a number that no longer describes the problem. Option d would mix the new distribution into all three sets and still leave the dev and test sets dominated by the old one.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The City Council thinks that having more cats in the city would help scare off birds. They are so happy with your work on the bird detector that they also hire you to build a cat detector. Because of years of working on cat detectors, you have such a huge dataset of 100,000,000 cat images that training on this data takes about two weeks. Which of the statements do you agree with? Check all that agree.</strong></p>
+<ol type="a">
+<li><p>Needing two weeks to train will limit the speed at which you can iterate.</p></li>
+<li><p>Buying faster computers could speed up your team’s iteration speed and thus your team’s productivity.</p></li>
+<li><p>If 100,000,000 examples is enough to build a good enough cat detector, you might be better off training with just 10,000,000 examples to gain a roughly 10x improvement in how quickly you can run experiments, even if each model performs a bit worse because it is trained on less data.</p></li>
+<li><p>Having built a good bird detector, you should be able to take the same model and hyperparameters and just apply it to the cat dataset, so there is no need to iterate.</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a, b, and c.</strong> Applied machine learning is an empirical loop of idea, code, and experiment, so anything that shortens one lap through the loop buys you more ideas tested per month. A two week training run is a hard cap on that. Faster hardware and a smaller subset of the data both attack the same bottleneck, and trading a little final accuracy for ten times the experiments is usually a good trade while you are still exploring. Option d is wrong because a good architecture for one task rarely transfers unchanged to another, and the only way to find out is to iterate.</p>
+</div>
+</div>
+</div>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 44%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">44% completed (196 of 436 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/structuring-machine-learning-projects/comparing-to-human-level-performance.html" class="pagination-link" aria-label="Comparing to Human-Level Performance">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Comparing to Human-Level Performance</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../../ai/deep-learning/structuring-machine-learning-projects/error-analysis.html" class="pagination-link" aria-label="Error Analysis">
+        <span class="nav-page-text">Error Analysis</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

@@ -1,0 +1,1512 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-10">
+<meta name="description" content="Splitting data when training comes from a different distribution than dev and test, using a training-dev set to spot data mismatch, and how to address it.">
+
+<title>Mismatched Training and Dev/Test Sets – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/structuring-machine-learning-projects/learning-from-multiple-tasks.html" rel="next">
+<link href="../../../ai/deep-learning/structuring-machine-learning-projects/error-analysis.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Mismatched Training and Dev/Test Sets – H’s Notes">
+<meta property="og:description" content="Splitting data when training comes from a different distribution than dev and test, using a training-dev set to spot data mismatch, and how to address it.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/structuring-machine-learning-projects/mismatched-training-and-dev-test-sets_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Mismatched Training and Dev/Test Sets – H’s Notes">
+<meta name="twitter:description" content="Splitting data when training comes from a different distribution than dev and test, using a training-dev set to spot data mismatch, and how to address it.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/structuring-machine-learning-projects/mismatched-training-and-dev-test-sets_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../infrastructure/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/structuring-machine-learning-projects/mismatched-training-and-dev-test-sets.html">Mismatched Training and Dev/Test Sets</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Structuring Machine Learning Projects</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/introduction-to-ml-strategy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to ML Strategy</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/setting-up-your-goal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Setting Up Your Goal</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/comparing-to-human-level-performance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Comparing to Human-Level Performance</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/bird-recognition-in-peacetopia.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Case Study: Bird Recognition in the City of Peacetopia</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/error-analysis.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Error Analysis</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/mismatched-training-and-dev-test-sets.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Mismatched Training and Dev/Test Sets</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/learning-from-multiple-tasks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning from Multiple Tasks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/end-to-end-deep-learning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">End-to-End Deep Learning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/structuring-machine-learning-projects/autonomous-driving.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Case Study: Autonomous Driving</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#training-and-testing-on-different-distributions" id="toc-training-and-testing-on-different-distributions" class="nav-link active" data-scroll-target="#training-and-testing-on-different-distributions">Training and Testing on Different Distributions</a>
+  <ul class="collapse">
+  <li><a href="#option-that-shuffles-everything-together" id="toc-option-that-shuffles-everything-together" class="nav-link" data-scroll-target="#option-that-shuffles-everything-together">Option That Shuffles Everything Together</a></li>
+  <li><a href="#option-that-aims-at-the-mobile-app-distribution" id="toc-option-that-aims-at-the-mobile-app-distribution" class="nav-link" data-scroll-target="#option-that-aims-at-the-mobile-app-distribution">Option That Aims at the Mobile App Distribution</a></li>
+  <li><a href="#speech-activated-rearview-mirror" id="toc-speech-activated-rearview-mirror" class="nav-link" data-scroll-target="#speech-activated-rearview-mirror">Speech Activated Rearview Mirror</a></li>
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#bias-and-variance-with-mismatched-data-distributions" id="toc-bias-and-variance-with-mismatched-data-distributions" class="nav-link" data-scroll-target="#bias-and-variance-with-mismatched-data-distributions">Bias and Variance with Mismatched Data Distributions</a>
+  <ul class="collapse">
+  <li><a href="#training-dev-set" id="toc-training-dev-set" class="nav-link" data-scroll-target="#training-dev-set">Training-Dev Set</a></li>
+  <li><a href="#general-principles" id="toc-general-principles" class="nav-link" data-scroll-target="#general-principles">General Principles</a></li>
+  <li><a href="#more-general-formulation" id="toc-more-general-formulation" class="nav-link" data-scroll-target="#more-general-formulation">More General Formulation</a></li>
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#addressing-data-mismatch" id="toc-addressing-data-mismatch" class="nav-link" data-scroll-target="#addressing-data-mismatch">Addressing Data Mismatch</a>
+  <ul class="collapse">
+  <li><a href="#manual-error-analysis-first" id="toc-manual-error-analysis-first" class="nav-link" data-scroll-target="#manual-error-analysis-first">Manual Error Analysis First</a></li>
+  <li><a href="#artificial-data-synthesis" id="toc-artificial-data-synthesis" class="nav-link" data-scroll-target="#artificial-data-synthesis">Artificial Data Synthesis</a></li>
+  <li><a href="#caution-about-synthesizing-from-a-small-subset" id="toc-caution-about-synthesizing-from-a-small-subset" class="nav-link" data-scroll-target="#caution-about-synthesizing-from-a-small-subset">Caution About Synthesizing From a Small Subset</a></li>
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../breadcrumb-path.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Mismatched Training and Dev/Test Sets</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">ml-strategy</div>
+    <div class="quarto-category">data-mismatch</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Splitting data when training comes from a different distribution than dev and test, using a training-dev set to spot data mismatch, and how to address it.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 10, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~71 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~6,000 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<p>Deep learning algorithms have a huge hunger for training data. They often work best when you can find enough labeled training data to put into the training set. This has led many teams to take whatever data they can find and shove it into the training set just to have more of it, even when some of that data, or maybe a lot of it, does not come from the same distribution as the dev and test data. So more and more teams now train on data that comes from a different distribution than their dev and test sets. There are some subtleties and some best practices for dealing with that situation, and this page covers them.</p>
+<section id="training-and-testing-on-different-distributions" class="level2">
+<h2 class="anchored" data-anchor-id="training-and-testing-on-different-distributions">Training and Testing on Different Distributions</h2>
+<p>Say you are building a mobile app where users upload pictures taken from their cell phones, and you want to recognize whether each uploaded picture is a cat or not. You can get two sources of data. One is the distribution you really care about, the pictures from the mobile app, which tend to be less professionally shot, less well framed, and maybe blurrier because they were taken by amateur users. The other source is the web. You can crawl it and download a lot of very professionally framed, high resolution, professionally taken images of cats.</p>
+<p>Suppose you do not have many users yet, so you have 10,000 pictures uploaded from the mobile app. By crawling the web you have downloaded 200,000 pictures of cats.</p>
+<p>What you really care about is that your final system does well on the mobile app distribution of images, because in the end your users will be uploading pictures like those and you need your classifier to do well on them. But now you have a dilemma. You have a relatively small data set drawn from the distribution you care about, and a much bigger data set drawn from a different distribution, where the images simply look different from the ones you actually want. You do not want to use only the 10,000 mobile images, because that leaves you with a small training set. Using the 200,000 web images seems helpful, but they are not from the distribution you want.</p>
+<section id="option-that-shuffles-everything-together" class="level3">
+<h3 class="anchored" data-anchor-id="option-that-shuffles-everything-together">Option That Shuffles Everything Together</h3>
+<p>Here is one thing you could do. Put both data sets together so that you have 210,000 images, then randomly shuffle them into a train, dev, and test set. Say you have decided your dev and test sets will be 2,500 examples each, which leaves 205,000 examples for training.</p>
+<p>Setting up your data this way has one advantage. Your training, dev, and test sets now all come from the same distribution, which makes things easier to manage. But it has a huge disadvantage. Of the 2,500 examples in your dev set, most will come from the web page distribution rather than from the mobile app distribution you actually care about. Out of your total of 210,000 images, 200,000 come from web pages, so in expectation about 2,381 of the 2,500 dev examples come from web pages and only about 119 come from mobile app uploads. The exact numbers vary depending on how the random shuffle went, but that is the average.</p>
+<p>Remember that <a href="../../../ai/deep-learning/structuring-machine-learning-projects/setting-up-your-goal.html#train-dev-and-test-distributions">setting up your dev set is telling your team where to aim the target</a>. Aiming it this way tells the team to spend most of its effort optimizing for the web page distribution of images, which is not what you want. So this first option is a bad idea, because it points the team at a different distribution of data than the one that matters.</p>
+</section>
+<section id="option-that-aims-at-the-mobile-app-distribution" class="level3">
+<h3 class="anchored" data-anchor-id="option-that-aims-at-the-mobile-app-distribution">Option That Aims at the Mobile App Distribution</h3>
+<p>Instead, take the second option. The training set is still 205,000 images, but now it holds all 200,000 images from the web plus 5,000 images from the mobile app. The dev set is 2,500 images from the mobile app, and the test set is 2,500 images also from the mobile app.</p>
+<div id="6e1f0d1b" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="mismatched-training-and-dev-test-sets_files/figure-html/cell-2-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The advantage of this second split is that you are now aiming the target where you want it to be. You are telling your team that the dev set holds data uploaded from the mobile app, that this is the distribution of images you really care about, and that the job is to build a system that does really well on it.</p>
+<div id="3bfab3d9" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="mismatched-training-and-dev-test-sets_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Put the two options side by side and the difference is where the bullseye sits. Under option 1 almost every arrow the team fires is aimed at web page images, because that is what almost the whole dev set is made of, while the distribution the product is judged on sits off to the side barely represented. Under option 2 every arrow is aimed at the mobile app distribution, which is exactly the one your users generate. The disadvantage is that your training distribution is now different from your dev and test distributions. But this split gets you better performance over the long term, and there are specific techniques for handling a training set that comes from a different distribution than the dev and test sets, which the rest of this page covers.</p>
+</section>
+<section id="speech-activated-rearview-mirror" class="level3">
+<h3 class="anchored" data-anchor-id="speech-activated-rearview-mirror">Speech Activated Rearview Mirror</h3>
+<p>Here is another example. Say you are building a brand new product, a speech activated rearview mirror for a car. This is a real product in China that is making its way into other countries. You replace the mirror with one you can talk to, so you can say something like “dear rearview mirror, please help me find navigational directions to the nearest gas station” and it handles the request.</p>
+<p>How do you get data to train a speech recognition system for this product? Maybe you have worked on speech recognition for a long time, so you have a lot of data from other speech recognition applications, just not from a speech activated rearview mirror.</p>
+<p>For the training set, you can take all the speech data you have accumulated from working on other speech problems. That includes data you purchased over the years from speech recognition data vendors, who sell <span class="math inline">\(x\)</span>, <span class="math inline">\(y\)</span> pairs where <span class="math inline">\(x\)</span> is an audio clip and <span class="math inline">\(y\)</span> is a transcript. Maybe you have worked on smart voice activated speakers, so you have data from that. Maybe you have worked on voice activated keyboards. Say all of these sources together give you 500,000 utterances.</p>
+<p>For the dev and test sets you have a much smaller data set that actually came from a speech activated rearview mirror. Because users are asking for navigational queries or trying to find directions, this data has many more street addresses in it. That distribution is very different from the one on the left, but it is the data you care about, because it is what your product needs to do well on, so it is what your dev and test sets should be.</p>
+<p>One reasonable split is to set the training set to the 500,000 utterances and make the dev and test sets 10,000 utterances each, drawn from the actual speech activated rearview mirror. Alternatively, if you do not need all 20,000 rearview mirror examples in the dev and test sets, you can move half of them into the training set. Then the training set is 510,000 utterances, including all 500,000 from the other sources and 10,000 from the rearview mirror, while the dev and test sets are 5,000 utterances each. This gives you a much bigger training set than if you had used only rearview mirror data for training.</p>
+<p>In both of these examples, allowing the training set to come from a different distribution than the dev and test sets gives you much more training data, and that causes the learning algorithm to perform better. One question you might ask is whether you should always use all the data you have. The answer is subtle, and it is not always yes.</p>
+</section>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. You have 10,000 mobile app images and 200,000 web images, and you shuffle all 210,000 together before splitting off a 2,500 example dev set. Roughly how much of that dev set comes from the mobile app, and why does this matter?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>About 119 of the 2,500 examples, because mobile images are only 10,000 out of 210,000, and the other 2,381 or so come from web pages. It matters because the dev set is where you tell your team to aim. A dev set that is 95 percent web images points months of work at the web distribution, when the product actually has to work on blurry, amateur mobile photos.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What do you give up by putting all the mobile app images into the dev and test sets and leaving the training set dominated by web images?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>You give up the guarantee that the training distribution matches the dev and test distributions. That is a real cost, because it breaks the usual way of reading the gap between training error and dev error, and it introduces a new failure mode called data mismatch. The trade is worth making, because the target now sits where you actually want to hit, and it buys much better performance over the long term.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In the speech activated rearview mirror example, why put 10,000 of the 20,000 rearview mirror utterances into the training set instead of splitting all 20,000 between dev and test?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because dev and test sets of 5,000 utterances each are still large enough to evaluate against, and the 10,000 that move into the training set let the algorithm see some data from the distribution it will actually be judged on. The training set grows to 510,000 utterances while the dev and test sets still consist entirely of rearview mirror data, so the target does not move.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="bias-and-variance-with-mismatched-data-distributions" class="level2">
+<h2 class="anchored" data-anchor-id="bias-and-variance-with-mismatched-data-distributions">Bias and Variance with Mismatched Data Distributions</h2>
+<p>Estimating the bias and variance of your learning algorithm helps you prioritize what to work on next. But the way you analyze bias and variance changes when your training set comes from a different distribution than your dev and test sets.</p>
+<p>Keep using the cat classification example, and say humans get near perfect performance on it, so <a href="../../../ai/deep-learning/structuring-machine-learning-projects/comparing-to-human-level-performance.html#avoidable-bias">Bayes error is nearly 0 percent</a>. To carry out error analysis you usually look at the training error and at the error on the dev set. Say in this example the training error is 1 percent and the dev error is 10 percent.</p>
+<p>If your dev data came from the same distribution as your training set, you would say you have a large variance problem, because the algorithm is not generalizing well from the training set, which it does well on, to the dev set, which it suddenly does much worse on. But when the training data and the dev data come from different distributions, you can no longer safely draw that conclusion. Maybe the algorithm is doing just fine on the dev set, and the training set was simply easy because it held high resolution, very clear images, while the dev set is much harder. So maybe there is no variance problem at all, and the gap just reflects a dev set full of images that are more difficult to classify.</p>
+<p>The problem with this analysis is that going from the training error to the dev error changes two things at once. First, the algorithm saw the data in the training set but not the data in the dev set. Second, the distribution of data in the dev set is different. Because two things changed at the same time, it is hard to tell how much of that 9 percentage point increase in error comes from the algorithm not having seen the dev data, which is the variance part of the problem, and how much comes from the dev data simply being different.</p>
+<section id="training-dev-set" class="level3">
+<h3 class="anchored" data-anchor-id="training-dev-set">Training-Dev Set</h3>
+<p>To tease these two effects apart, define a new piece of data called the <strong>training-dev set</strong>. It is a subset carved out of the training data, so it has the same distribution as the training set, but you do not train your neural network on it.</p>
+<p>Previously you had a training set with one distribution and dev and test sets sharing a different distribution. Now randomly shuffle the training set and carve out a piece of it to be the training-dev set. Just as the dev and test sets share a distribution, the training set and the training-dev set share a distribution. The difference is that you train your network only on the training set proper. You do not run backpropagation on the training-dev portion.</p>
+<div id="21189f74" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="mismatched-training-and-dev-test-sets_files/figure-html/cell-4-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>To carry out error analysis, look at the error of your classifier on the training set, on the training-dev set, and on the dev set.</p>
+<p>Say the training error is 1 percent, the error on the training-dev set is 9 percent, and the error on the dev set is 10 percent, the same as before. Going from the training data to the training-dev data, the error jumped a lot. The only difference between those two sets is that the network was trained explicitly on the first and not on the second. So this tells you that you have a variance problem. The training-dev error was measured on data from the same distribution as the training set, so even though the network does well on the training set, it is not generalizing to data from that same distribution that it had not seen before.</p>
+<p>Now look at a different example. The training error is 1 percent, the training-dev error is 1.5 percent, and the dev error is 10 percent. Now you have a fairly small variance problem, because moving from data the network has seen to data from the same distribution that it has not seen raises the error only slightly. The error really jumps when you move to the dev set. This is a <strong>data mismatch</strong> problem. The learning algorithm was not trained explicitly on either the training-dev data or the dev data, but those two sets come from different distributions. Whatever the algorithm has learned works great on training-dev and does not work well on dev, so it has learned to do well on a different distribution than the one you care about.</p>
+<p>Here are two more examples. Say the training error is 10 percent, the training-dev error is 11 percent, and the dev error is 12 percent, while human level performance as a proxy for Bayes error is roughly 0 percent. With that performance you have an avoidable bias problem, because you are doing much worse than human level. This is a high bias setting.</p>
+<p>For the last example, say the training error is 10 percent, the training-dev error is 11 percent, and the dev error is 20 percent. This has two issues. The avoidable bias is quite high, because humans get nearly 0 percent error while you get 10 percent on the training set. The variance seems quite small, but the data mismatch is large. So this example has both a large avoidable bias problem and a data mismatch problem.</p>
+<div id="b24c13af" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="mismatched-training-and-dev-test-sets_files/figure-html/cell-5-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="general-principles" class="level3">
+<h3 class="anchored" data-anchor-id="general-principles">General Principles</h3>
+<p>The key quantities to look at are the human level error, the training set error, the training-dev set error, which comes from the same distribution as the training set but was not trained on, and the dev set error. The differences between these numbers tell you how big the avoidable bias, the variance, and the data mismatch problems are.</p>
+<p>Say human level error is 4 percent, the training error is 7 percent, the training-dev error is 10 percent, and the dev error is 12 percent.</p>
+<div id="6429de8b" class="cell" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="mismatched-training-and-dev-test-sets_files/figure-html/cell-6-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The gap from human level to the training error gives you a sense of the avoidable bias, because you would like your algorithm to do at least as well as, or to approach, human level performance on the training set. The gap from the training error to the training-dev error gives you a sense of the variance, meaning how well you generalize from the training set to held out data from the same distribution. The gap from the training-dev error to the dev error tells you how much of a data mismatch problem you have.</p>
+<p>You could technically add one more number, the test set error. You should not be doing development on your test set, because you do not want to overfit it. But the gap between the dev error and the test error tells you the degree of overfitting to the dev set. Your dev set and test set come from the same distribution, so the only way to get a large gap there, doing much better on the dev set than on the test set, is by having overfit the dev set. If that happens, consider going back and getting more dev set data.</p>
+<p>In the numbers above, each value goes up as you move down the list. That does not always happen. Say human level performance is 4 percent, the training error is 7 percent, and the training-dev error is 10 percent, but on the dev set you surprisingly do much better, at 6 percent. This shows up in practice, for example on speech recognition tasks where the training data turned out to be much harder than the dev and test sets. The first two numbers were evaluated on the training set distribution and the last two on the dev and test distribution, so if your dev and test distribution happens to be much easier for your application, these numbers can go down.</p>
+</section>
+<section id="more-general-formulation" class="level3">
+<h3 class="anchored" data-anchor-id="more-general-formulation">More General Formulation</h3>
+<p>When you see numbers behaving that way, a more general version of this analysis helps. Take the speech activated rearview mirror example. The numbers you have been writing down fit into a table. Along the horizontal axis, vary the data set. One column is your general speech recognition data, collected from many speech problems you have worked on, from smart speakers, from data you purchased. The other column is the rearview mirror specific speech data recorded inside the car.</p>
+<p>Along the vertical axis, vary the way of examining the data. The first row is human level performance, meaning how accurate humans are on each of these data sets. The second row is the error on examples your neural network has trained on. The third row is the error on examples your network has not trained on.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th></th>
+<th style="text-align: center;">General speech recognition data</th>
+<th style="text-align: center;">Rearview mirror speech data</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Human level</strong></td>
+<td style="text-align: center;">4%</td>
+<td style="text-align: center;">6%</td>
+</tr>
+<tr class="even">
+<td><strong>Error on examples trained on</strong></td>
+<td style="text-align: center;">7%</td>
+<td style="text-align: center;">6%</td>
+</tr>
+<tr class="odd">
+<td><strong>Error on examples not trained on</strong></td>
+<td style="text-align: center;">10%</td>
+<td style="text-align: center;">6%</td>
+</tr>
+</tbody>
+</table>
+<p>What was called human level in the earlier list is the top left box, which is how well humans do on the 500,000 utterances that went into your training set, and in the earlier example it was 4 percent. The middle left box is the training error, 7 percent in the earlier example. That is what your algorithm gets on examples it performed gradient descent on, drawn from the general speech recognition distribution. Below it is the training-dev error, usually a bit higher, which is what the algorithm gets on data from the same general distribution that it did not train on. Moving to the right, the bottom right box is the dev set error, or the test set error, which was 6 percent just now. Dev and test error are technically two numbers, but either one can go in that box. This is the error on data recorded in the car from the rearview mirror application that your network did not perform backpropagation on.</p>
+<p>The analysis in the previous section looked at the differences down the left column and then across the bottom row. The gap from 4 to 7 measures avoidable bias, the gap from 7 to 10 measures variance, and the gap from 10 to 6 measures data mismatch.</p>
+<p>It can be useful to fill in the remaining two entries as well. The top right box comes from asking some humans to label rearview mirror speech data and measuring how good they are at the task, and maybe that also turns out to be 6 percent. The middle right box comes from putting some rearview mirror speech data into the training set so the network learns on it as well, then measuring the error on that subset, and maybe that is 6 percent too. If those are the numbers, you are already performing at the level of humans on rearview mirror speech data, so you are doing quite well on that distribution.</p>
+<p>Filling out the whole table does not always give you one clear path forward, but it sometimes gives you additional insights. Comparing the two human level numbers in this case tells you that rearview mirror speech data is actually harder for humans than general speech recognition, because they get 6 percent error rather than 4 percent. For most problems, examining just the left column and the bottom row is enough to point you in a promising direction, but sometimes the whole table is worth filling in.</p>
+<p>You have already seen many ideas for addressing bias and many techniques for addressing variance. Data mismatch is the new problem here. Training on data from a different distribution than your dev and test sets gets you more data and really helps performance, but it introduces this third possible source of error, and the next section covers what to do about it.</p>
+</section>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. Why can you not conclude that a 1 percent training error and a 10 percent dev error means high variance when the training and dev sets come from different distributions?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because two things changed at once between those two numbers. The algorithm saw the training data and not the dev data, which is the variance effect, and the dev data comes from a different distribution, which may simply be harder. The 9 percentage point gap could be caused by either effect, or by both, and the two numbers alone cannot separate them.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What is a training-dev set, and what makes it different from the dev set?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>It is a piece carved out of the training data after shuffling, so it has the same distribution as the training set, and the network is never trained on it. The dev set is also held out, but it comes from the distribution you care about, which is different. Holding both out means the only difference between the training-dev error and the dev error is the distribution, so the gap between them isolates data mismatch.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Training error is 1 percent, training-dev error is 1.5 percent, and dev error is 10 percent. What is the diagnosis?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Data mismatch. Moving to unseen data from the same distribution costs only half a percentage point, so variance is small. The error then jumps 8.5 points when the distribution changes, which means the algorithm has learned to do well on a distribution other than the one you care about.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Human level is 4 percent, training error is 7 percent, training-dev error is 10 percent, and dev error is 12 percent. How large is each of the three problems?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Avoidable bias is 3 percentage points, from human level to training error. Variance is 3 percentage points, from training error to training-dev error. Data mismatch is 2 percentage points, from training-dev error to dev error. All three are present, and the first two are the larger ones.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What does a large gap between dev error and test error tell you, given that the two sets come from the same distribution?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>That you have overfit the dev set. Since both sets are drawn from the same distribution, there is no distribution effect to explain the gap, so doing much better on dev than on test means you tuned too many decisions against the dev set. The usual response is to go and get more dev set data.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Human level is 4 percent, training error is 7 percent, training-dev error is 10 percent, and dev error is 6 percent. Why do the numbers go down, and what should you do?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The first three numbers are measured on the training distribution and the last one on the dev and test distribution, so a dev set that is easier than the training set can produce a lower error. Nothing is broken. This is the case where the fuller table is worth building, adding human level performance on the dev distribution and the error on dev distribution examples the network did train on, so that the two distributions can be compared row by row.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="addressing-data-mismatch" class="level2">
+<h2 class="anchored" data-anchor-id="addressing-data-mismatch">Addressing Data Mismatch</h2>
+<p>If your training set comes from a different distribution than your dev and test sets, and error analysis shows that you have a data mismatch problem, what can you do? There are no completely systematic solutions to this, but there are some things worth trying.</p>
+<section id="manual-error-analysis-first" class="level3">
+<h3 class="anchored" data-anchor-id="manual-error-analysis-first">Manual Error Analysis First</h3>
+<p>When there is a large data mismatch problem, the usual first step is to <a href="../../../ai/deep-learning/structuring-machine-learning-projects/error-analysis.html#carrying-out-error-analysis">carry out manual error analysis</a> and try to understand the differences between the training set and the dev and test sets. To avoid overfitting the test set, you should manually look only at the dev set and not at the test set.</p>
+<p>As a concrete example, if you are building the speech activated rearview mirror application, you would listen to examples in your dev set to figure out how it differs from your training set. You might find that a lot of dev set examples are very noisy and full of car noise, which is one way the dev set differs from the training set. You might also find other categories of errors. Perhaps the system often misrecognizes street numbers, because there are many more navigational queries with street addresses in them, so getting street numbers right is really important.</p>
+<p>Once you have insight into the nature of the dev set errors, or into how the dev set may be different from or harder than the training set, you can try to find ways to make the training data more similar, or to collect more data similar to your dev and test sets. If car noise in the background is a major source of error, one thing you could do is simulate noisy in-car data. If street numbers are hard to recognize, you could deliberately go and get more data of people speaking out numbers and add it to your training set.</p>
+<p>This is a rough guideline rather than a systematic process, and there is no guarantee you get the insights you need to make progress. But this kind of manual insight, combined with an effort to make the data more similar along the dimensions that matter, often helps on a lot of problems.</p>
+</section>
+<section id="artificial-data-synthesis" class="level3">
+<h3 class="anchored" data-anchor-id="artificial-data-synthesis">Artificial Data Synthesis</h3>
+<p>If your goal is to make the training data more similar to your dev set, one of the techniques available is <strong>artificial data synthesis</strong>. Take the car noise problem. To build a speech recognition system you may not have much audio that was actually recorded inside a car with the background noise of a car or a highway.</p>
+<p>But there is a way to synthesize it. Say you have recorded a large amount of clean audio without the car background noise, so your training set contains a clip of someone saying “the quick brown fox jumps over the lazy dog.” That sentence gets used a lot in AI for testing, because it is a short sentence that contains every letter of the alphabet. Separately you can get a recording of car noise, which is what the inside of a car sounds like when you are driving in silence. Add the two audio clips together and you have synthesized what that sentence would sound like if it were spoken in a noisy car.</p>
+<p>That is a relatively simple audio synthesis example. In practice you might synthesize other audio effects too, such as the reverberation of your voice bouncing off the walls of the car. Through artificial data synthesis you can quickly create a lot of data that sounds like it was recorded inside a car, without going out and collecting thousands or tens of thousands of hours of data in a car that is actually driving. So if your error analysis says you should make your data sound more like it was recorded inside a car, this is a reasonable way to produce it.</p>
+</section>
+<section id="caution-about-synthesizing-from-a-small-subset" class="level3">
+<h3 class="anchored" data-anchor-id="caution-about-synthesizing-from-a-small-subset">Caution About Synthesizing From a Small Subset</h3>
+<p>There is one note of caution about artificial data synthesis. Say you have 10,000 hours of data recorded against a quiet background, and just one hour of car noise. One thing you could try is taking that one hour of car noise and repeating it 10,000 times so that it can be added to all 10,000 hours of clean audio. If you do that, the audio sounds perfectly fine to the human ear, but there is a risk that your learning algorithm overfits to that single hour of car noise.</p>
+<p>Think of the set of all car noise backgrounds you could imagine recording. With just one hour of it, you may be simulating a very small subset of that space. To the human ear all of this audio sounds fine, because one hour of car noise sounds like any other hour of car noise. But you might be synthesizing from a very small subset of the space, and the network might overfit to that hour.</p>
+<div id="7a8a6063" class="cell" data-execution_count="6">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="mismatched-training-and-dev-test-sets_files/figure-html/cell-7-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>It may not be practically feasible to inexpensively collect 10,000 unique hours of car noise so that you never repeat the same hour. But if you could, it is possible that using 10,000 unique hours rather than one would give better performance. The challenge is that as far as your ears can tell, those 10,000 hours all sound the same as the one hour, so you can end up creating an impoverished synthesized data set drawn from a much smaller subset of the space without realizing it.</p>
+<p>Here is another example of artificial data synthesis. Say you are building a self driving car and you want to detect vehicles and put a bounding box around each one. An idea many people have raised is to use computer graphics to simulate huge numbers of images of cars. The graphics can be quite good, and you can imagine training a decent computer vision system for detecting cars from synthesized pictures like these.</p>
+<p>Unfortunately the same picture applies. Consider the set of all cars. If you synthesize only a very small subset of them, the images may look fine to the human eye, but you might overfit to that small subset. One idea people raise independently is to find a video game with good computer graphics of cars, grab images from it, and get a huge data set of pictures of cars. It turns out that if the video game has just 20 unique cars in it, the game still looks fine, because driving around and seeing those 20 other cars feels like a realistic simulation. But the world has many more than 20 unique car designs, and if your entire synthesized training set has only 20 distinct cars, your network will probably overfit to those 20. It is hard for a person to notice that, because even though the images look realistic, they cover such a tiny subset of all possible cars.</p>
+<p>To summarize, if you think you have a data mismatch problem, carry out error analysis, look at the training set and at the dev set, and try to gain insight into how the two distributions differ. Then see whether you can get more training data that looks more like your dev set. One of the ways to do that is artificial data synthesis, and it does work. In speech recognition, artificial data synthesis has significantly boosted the performance of systems that were already very good. But if you use it, be cautious and bear in mind that you might be accidentally simulating data from only a tiny subset of the space of all possible examples.</p>
+</section>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. Why should manual error analysis for data mismatch look at the dev set rather than the test set?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because looking closely at the test set and then making decisions based on what you see is a way of overfitting it, which destroys the test set as an unbiased estimate of final performance. The dev set exists to be looked at and tuned against, so that is where the manual examination belongs.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You listen to dev set examples and find that most of them are full of car noise. What are the two directions this suggests?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Make the training data more similar to the dev set, for example by synthesizing noisy in-car audio from the clean audio you already have. Or collect more real data that resembles the dev and test sets. The point of the manual analysis is to identify which specific dimension, in this case background noise, is worth matching.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You have 10,000 hours of clean audio and one hour of car noise, and you plan to repeat that hour 10,000 times to synthesize a noisy training set. What is the risk?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The network can overfit to that single hour of car noise. One hour covers only a tiny subset of the space of all car noise, and repeating it does not add any new information. It sounds fine to a human, since one hour of car noise is indistinguishable from another, which is exactly what makes this failure hard to notice.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why can a video game with excellent graphics still make a poor source of synthesized training images for a car detector?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the game may contain only 20 unique car models. That is enough for the game to look realistic while driving around, but the real world has far more car designs, so a training set built entirely from those images covers a tiny slice of the space. The network learns those 20 cars rather than cars in general, and the realism of each individual image hides the problem.</p>
+</div>
+</div>
+</div>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 70%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">70% completed (308 of 436 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/structuring-machine-learning-projects/error-analysis.html" class="pagination-link" aria-label="Error Analysis">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Error Analysis</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../../ai/deep-learning/structuring-machine-learning-projects/learning-from-multiple-tasks.html" class="pagination-link" aria-label="Learning from Multiple Tasks">
+        <span class="nav-page-text">Learning from Multiple Tasks</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

@@ -1,0 +1,2424 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-19">
+<meta name="description" content="Build a U-Net in Keras from an encoder block and a decoder block, then train it to label every pixel of a driving scene with one of 23 classes.">
+
+<title>Lab: Image Segmentation with U-Net – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/convolutional-neural-networks/face-recognition-and-one-shot-learning.html" rel="next">
+<link href="../../../ai/deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Lab: Image Segmentation with U-Net – H’s Notes">
+<meta property="og:description" content="Build a U-Net in Keras from an encoder block and a decoder block, then train it to label every pixel of a driving scene with one of 23 classes.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/convolutional-neural-networks/lab-image-segmentation-with-u-net_files/figure-html/cell-4-output-1.png">
+<meta property="og:site_name" content="H’s Notes">
+<meta property="og:image:height" content="495">
+<meta property="og:image:width" content="1330">
+<meta name="twitter:title" content="Lab: Image Segmentation with U-Net – H’s Notes">
+<meta name="twitter:description" content="Build a U-Net in Keras from an encoder block and a decoder block, then train it to label every pixel of a driving scene with one of 23 classes.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/convolutional-neural-networks/lab-image-segmentation-with-u-net_files/figure-html/cell-4-output-1.png">
+<meta name="twitter:image-height" content="495">
+<meta name="twitter:image-width" content="1330">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../infrastructure/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/convolutional-neural-networks/lab-image-segmentation-with-u-net.html">Image Segmentation with U-Net</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutional Neural Networks</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/convolutions-and-edge-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutions and Edge Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Strided Convolutions and Convolutions Over Volume</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/one-layer-of-a-convolutional-network.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One Layer of a Convolutional Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/pooling-layers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pooling Layers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/full-convnet-example-and-why-convolutions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Full ConvNet Example and Why Convolutions</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-convolutional-model-step-by-step.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Convolutional Model Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-convolutional-model-application.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Convolutional Model Application</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/classic-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classic Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/modern-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modern Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-residual-networks.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Residual Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/mobilenet-and-efficientnet.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MobileNet and EfficientNet</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/practical-advice-for-convnets.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Practical Advice for Using ConvNets</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-transfer-learning-with-mobilenet.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Transfer Learning with MobileNetV2</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Object Localization and Landmark Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sliding Windows and Region Proposals</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bounding Box Predictions with YOLO</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">IoU, Non-max Suppression, and Anchor Boxes</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-car-detection-with-yolo.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Car Detection with YOLO</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Semantic Segmentation with U-Net</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-image-segmentation-with-u-net.html" class="sidebar-item-text sidebar-link active"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Image Segmentation with U-Net</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/face-recognition-and-one-shot-learning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Face Recognition and One Shot Learning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/siamese-networks-and-the-triplet-loss.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Siamese Networks and the Triplet Loss</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-face-recognition.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Face Recognition</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/neural-style-transfer.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Neural Style Transfer</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-neural-style-transfer.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Art Generation with Neural Style Transfer</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#packages" id="toc-packages" class="nav-link active" data-scroll-target="#packages">Packages</a></li>
+  <li><a href="#loading-the-frames-and-masks" id="toc-loading-the-frames-and-masks" class="nav-link" data-scroll-target="#loading-the-frames-and-masks">Loading the Frames and Masks</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#input-pipeline" id="toc-input-pipeline" class="nav-link" data-scroll-target="#input-pipeline">Input Pipeline</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#encoder-block" id="toc-encoder-block" class="nav-link" data-scroll-target="#encoder-block">Encoder Block</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#decoder-block" id="toc-decoder-block" class="nav-link" data-scroll-target="#decoder-block">Decoder Block</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#assembling-u-net" id="toc-assembling-u-net" class="nav-link" data-scroll-target="#assembling-u-net">Assembling U-Net</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-4" id="toc-review-questions-4" class="nav-link" data-scroll-target="#review-questions-4">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#loss-for-per-pixel-classification" id="toc-loss-for-per-pixel-classification" class="nav-link" data-scroll-target="#loss-for-per-pixel-classification">Loss for Per-Pixel Classification</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-5" id="toc-review-questions-5" class="nav-link" data-scroll-target="#review-questions-5">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#training" id="toc-training" class="nav-link" data-scroll-target="#training">Training</a></li>
+  <li><a href="#reading-the-predictions" id="toc-reading-the-predictions" class="nav-link" data-scroll-target="#reading-the-predictions">Reading the Predictions</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-6" id="toc-review-questions-6" class="nav-link" data-scroll-target="#review-questions-6">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#summary" id="toc-summary" class="nav-link" data-scroll-target="#summary">Summary</a></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../breadcrumb-path.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title"><span class="bi bi-flask lab-title-icon" aria-hidden="true"></span><span class="visually-hidden">Lab:</span> Image Segmentation with U-Net</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">convolutional-neural-networks</div>
+    <div class="quarto-category">computer-vision</div>
+    <div class="quarto-category">semantic-segmentation</div>
+    <div class="quarto-category">u-net</div>
+    <div class="quarto-category">transpose-convolution</div>
+    <div class="quarto-category">tensorflow</div>
+    <div class="quarto-category">keras</div>
+    <div class="quarto-category">lab</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Build a U-Net in Keras from an encoder block and a decoder block, then train it to label every pixel of a driving scene with one of 23 classes.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 19, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~165 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~6,300 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<p><a href="../../../ai/deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html">Semantic Segmentation with U-Net</a> argued the case for labeling every pixel rather than drawing a box, introduced the transpose convolution that grows a representation back to full size, and drew the U. This lab builds that U in Keras and trains it.</p>
+<p>The data is a run of 1060 frames from a camera on a car, rendered by a driving simulator, and every frame comes with a mask that records what each of its pixels belongs to. Road, sky, building, vegetation, and 18 other categories. Nothing is approximate about these labels, because the simulator knew what it was drawing when it drew each pixel, so the boundaries are exact.</p>
+<p>Two functions carry the whole architecture. <code>conv_block</code> is one step down the contracting path, and <code>upsampling_block</code> is one step up the expanding path. Chaining five of the first and four of the second, plus two convolutions at the end, is the entire model. Everything after that is a standard Keras training loop, with one detail that is specific to segmentation, namely the loss.</p>
+<section id="packages" class="level2">
+<h2 class="anchored" data-anchor-id="packages">Packages</h2>
+<p>The imports are the layers the model is built from, and nothing else. <code>Conv2D</code> and <code>MaxPooling2D</code> build the contracting path, <code>Conv2DTranspose</code> and <code>concatenate</code> build the expanding path, and <code>Dropout</code> regularizes the two deepest blocks.</p>
+<p>Seeding is done with <code>tf.keras.utils.set_random_seed</code>, which covers the Python, NumPy, and TensorFlow generators in one call, and <code>enable_op_determinism</code> goes further by forcing individual TensorFlow operations to produce the same result every time they run on the same input. Together they fix the weight initialization, the shuffle order, and the dropout masks, so the numbers printed on this page are the numbers you get. This is the recipe the original assignment supplies for reproducible runs, and on this model it costs about one second per epoch.</p>
+<div id="0d3bf4d1" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>os.environ[<span class="st">"TF_CPP_MIN_LOG_LEVEL"</span>] <span class="op">=</span> <span class="st">"3"</span>      <span class="co"># quieten TensorFlow's startup logging</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> matplotlib.colors <span class="im">import</span> ListedColormap, BoundaryNorm</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> matplotlib.patches <span class="im">import</span> Patch</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> PIL <span class="im">import</span> Image</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tensorflow <span class="im">as</span> tf</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tensorflow.keras.layers <span class="im">import</span> Input</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tensorflow.keras.layers <span class="im">import</span> Conv2D</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tensorflow.keras.layers <span class="im">import</span> MaxPooling2D</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tensorflow.keras.layers <span class="im">import</span> Dropout</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tensorflow.keras.layers <span class="im">import</span> Conv2DTranspose</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tensorflow.keras.layers <span class="im">import</span> concatenate</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>tf.keras.utils.set_random_seed(<span class="dv">1</span>)</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>tf.config.experimental.enable_op_determinism()</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"TensorFlow"</span>, tf.__version__)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>TensorFlow 2.21.0</code></pre>
+</div>
+</div>
+</section>
+<section id="loading-the-frames-and-masks" class="level2">
+<h2 class="anchored" data-anchor-id="loading-the-frames-and-masks">Loading the Frames and Masks</h2>
+<p>The dataset is two folders with matching filenames. <code>CameraRGB/000026.png</code> is a camera frame, and <code>CameraMask/000026.png</code> is the label mask for that exact frame. Pairing them is therefore a matter of listing one folder and building both paths from the same names.</p>
+<p>Listing one folder rather than two is not laziness, it is the thing that guarantees the pairing. Two separate <code>os.listdir</code> calls would return two lists in whatever order the filesystem chose, and a frame could end up trained against another frame’s mask.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Lab Files Download
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>This lab needs the camera frames and their masks, and nothing else. There is no pretrained weight file, because the model here is trained from scratch.</p>
+<p>The 2120 images run to 526 MB, which is far too large to host with the site, so they live on Google Drive as one folder per kind.</p>
+<ul>
+<li><a href="https://drive.google.com/drive/folders/1GvzbXt1YgUxTW9aby1W_1PeWj9hboLya?usp=sharing">CameraRGB</a>, 1060 camera frames, 640 by 480 PNG</li>
+<li><a href="https://drive.google.com/drive/folders/1AUCbPQE2VwHWg1iNlj0AlLDW_Ygz159V?usp=sharing">CameraMask</a>, 1060 label masks, one per frame, same filenames</li>
+<li><a href="../../../media/deep-learning/image-segmentation-unet/README.txt">README.txt</a> records the class numbering, the pixel frequency of every class, and where the data comes from</li>
+</ul>
+<p>Download both folders and arrange them next to your notebook as <code>data/CameraRGB/</code> and <code>data/CameraMask/</code>, keeping the folder names exactly as they are, because the code below builds its paths from them.</p>
+</div>
+</div>
+<div id="b6c08f84" class="cell" data-execution_count="2">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>path <span class="op">=</span> <span class="st">''</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>image_path <span class="op">=</span> os.path.join(path, <span class="st">'../../../media/deep-learning/image-segmentation-unet/data/CameraRGB/'</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>mask_path <span class="op">=</span> os.path.join(path, <span class="st">'../../../media/deep-learning/image-segmentation-unet/data/CameraMask/'</span>)</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>image_list_orig <span class="op">=</span> <span class="bu">sorted</span>(os.listdir(image_path))</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>image_list <span class="op">=</span> [image_path <span class="op">+</span> i <span class="cf">for</span> i <span class="kw">in</span> image_list_orig]</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>mask_list <span class="op">=</span> [mask_path <span class="op">+</span> i <span class="cf">for</span> i <span class="kw">in</span> image_list_orig]</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"frames:"</span>, <span class="bu">len</span>(image_list))</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"first three:"</span>, image_list_orig[:<span class="dv">3</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>frames: 1060
+first three: ['000026.png', '000027.png', '000028.png']</code></pre>
+</div>
+</div>
+<p>Looking at one pair before anything else is the habit worth keeping. The frame is an ordinary picture. The mask is not, and the figure below is what makes that clear.</p>
+<div id="a6282b84" class="cell" data-execution_count="3">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>N <span class="op">=</span> <span class="dv">2</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>img <span class="op">=</span> np.array(Image.<span class="bu">open</span>(image_list[N]))       <span class="co"># the original notebook uses imageio.imread</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>mask <span class="op">=</span> np.array(Image.<span class="bu">open</span>(mask_list[N]))</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>fig, arr <span class="op">=</span> plt.subplots(<span class="dv">1</span>, <span class="dv">2</span>, figsize<span class="op">=</span>(<span class="dv">12</span>, <span class="fl">4.2</span>))</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>arr[<span class="dv">0</span>].imshow(img)</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>arr[<span class="dv">0</span>].set_title(<span class="st">'Image'</span>, fontsize<span class="op">=</span><span class="dv">12</span>, color<span class="op">=</span><span class="st">'gray'</span>)</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>arr[<span class="dv">1</span>].imshow(mask[:, :, <span class="dv">0</span>])</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>arr[<span class="dv">1</span>].set_title(<span class="st">'Segmentation'</span>, fontsize<span class="op">=</span><span class="dv">12</span>, color<span class="op">=</span><span class="st">'gray'</span>)</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> ax <span class="kw">in</span> arr:</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    ax.axis(<span class="st">'off'</span>)</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>plt.tight_layout()</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"frame shape:"</span>, img.shape, img.dtype)</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"mask shape: "</span>, mask.shape, mask.dtype)</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"values in mask channel 0:"</span>, np.unique(mask[:, :, <span class="dv">0</span>]))</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"values in mask channel 1:"</span>, np.unique(mask[:, :, <span class="dv">1</span>]),</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>      <span class="st">" channel 2:"</span>, np.unique(mask[:, :, <span class="dv">2</span>]))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-image-segmentation-with-u-net_files/figure-html/cell-4-output-1.png" class="img-fluid figure-img"></p>
+<figcaption>One frame of the run and the mask that goes with it. The mask is drawn with matplotlib’s default colormap, which maps its smallest value to dark and its largest to bright, so the colors here are a reading aid rather than anything stored in the file.</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>frame shape: (480, 640, 4) uint8
+mask shape:  (480, 640, 4) uint8
+values in mask channel 0: [ 1  5  6  7  9 11 12 13 14 17 18 19 21 22]
+values in mask channel 1: [0]  channel 2: [0]</code></pre>
+</div>
+</div>
+<p>Both files are 480 by 640 with four channels, and the frame is exactly what the camera saw. The mask only looks like a picture. Channel 0 of each of its pixels holds a <strong>class index</strong>, channels 1 and 2 are zero everywhere, and the fourth channel is the alpha channel that PNG carries whether or not anything uses it. The value 7 in the mask does not mean a dark grey pixel, it means road.</p>
+<p>Opened in an image viewer the file would look almost black, since the largest index in use is 22 out of the 255 a byte can hold. That is expected, and it is why the figure above passes the mask through a colormap.</p>
+<p>The index values are the semantic tags of the CARLA driving simulator, version 0.9.11, which is where the number 23 in the model comes from. There are 23 of them, numbered 0 to 22.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Class Numbering
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The original assignment states that there are 23 classes without saying what any of them are, so the table below was verified against the <a href="https://carla.readthedocs.io/en/0.9.11/ref_sensors/">CARLA 0.9.11 sensor reference</a> rather than taken from the notebook. It matters which version, because CARLA renumbered its tags in 0.9.12 and the table in the current documentation does not describe these files.</p>
+<table class="caption-top table">
+<tbody>
+<tr class="odd">
+<td>0</td>
+<td>Unlabeled</td>
+<td>6</td>
+<td>RoadLine</td>
+<td>12</td>
+<td>TrafficSign</td>
+<td>18</td>
+<td>TrafficLight</td>
+</tr>
+<tr class="even">
+<td>1</td>
+<td>Building</td>
+<td>7</td>
+<td>Road</td>
+<td>13</td>
+<td>Sky</td>
+<td>19</td>
+<td>Static</td>
+</tr>
+<tr class="odd">
+<td>2</td>
+<td>Fence</td>
+<td>8</td>
+<td>SideWalk</td>
+<td>14</td>
+<td>Ground</td>
+<td>20</td>
+<td>Dynamic</td>
+</tr>
+<tr class="even">
+<td>3</td>
+<td>Other</td>
+<td>9</td>
+<td>Vegetation</td>
+<td>15</td>
+<td>Bridge</td>
+<td>21</td>
+<td>Water</td>
+</tr>
+<tr class="odd">
+<td>4</td>
+<td>Pedestrian</td>
+<td>10</td>
+<td>Vehicles</td>
+<td>16</td>
+<td>RailTrack</td>
+<td>22</td>
+<td>Terrain</td>
+</tr>
+<tr class="even">
+<td>5</td>
+<td>Pole</td>
+<td>11</td>
+<td>Wall</td>
+<td>17</td>
+<td>GuardRail</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>Counting how often each index occurs across all 1060 masks says something about the problem that the architecture cannot.</p>
+<div id="e56cda27" class="cell" data-execution_count="4">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>CARLA_CLASSES <span class="op">=</span> [<span class="st">'Unlabeled'</span>, <span class="st">'Building'</span>, <span class="st">'Fence'</span>, <span class="st">'Other'</span>, <span class="st">'Pedestrian'</span>, <span class="st">'Pole'</span>,</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>                 <span class="st">'RoadLine'</span>, <span class="st">'Road'</span>, <span class="st">'SideWalk'</span>, <span class="st">'Vegetation'</span>, <span class="st">'Vehicles'</span>, <span class="st">'Wall'</span>,</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>                 <span class="st">'TrafficSign'</span>, <span class="st">'Sky'</span>, <span class="st">'Ground'</span>, <span class="st">'Bridge'</span>, <span class="st">'RailTrack'</span>, <span class="st">'GuardRail'</span>,</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>                 <span class="st">'TrafficLight'</span>, <span class="st">'Static'</span>, <span class="st">'Dynamic'</span>, <span class="st">'Water'</span>, <span class="st">'Terrain'</span>]</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="co"># counted once over all 1060 masks; see the README beside the data</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>SHARE <span class="op">=</span> [<span class="fl">0.0</span>, <span class="fl">7.421</span>, <span class="fl">0.358</span>, <span class="fl">0.052</span>, <span class="fl">0.042</span>, <span class="fl">0.404</span>, <span class="fl">1.507</span>, <span class="fl">43.402</span>, <span class="fl">1.899</span>, <span class="fl">6.395</span>,</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>         <span class="fl">0.568</span>, <span class="fl">1.216</span>, <span class="fl">0.012</span>, <span class="fl">32.173</span>, <span class="fl">0.101</span>, <span class="fl">0.175</span>, <span class="fl">0.085</span>, <span class="fl">1.028</span>, <span class="fl">0.036</span>, <span class="fl">0.258</span>,</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>         <span class="fl">0.072</span>, <span class="fl">0.003</span>, <span class="fl">2.794</span>]</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> index <span class="kw">in</span> np.argsort(SHARE)[::<span class="op">-</span><span class="dv">1</span>][:<span class="dv">8</span>]:</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"</span><span class="sc">{</span>index<span class="sc">:&gt;3}</span><span class="ss">  </span><span class="sc">{</span>CARLA_CLASSES[index]<span class="sc">:&lt;12}</span><span class="ss"> </span><span class="sc">{</span>SHARE[index]<span class="sc">:&gt;7.3f}</span><span class="ss"> %"</span>)</span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"</span><span class="ch">\n</span><span class="ss">top two classes together: </span><span class="sc">{</span>SHARE[<span class="dv">7</span>] <span class="op">+</span> SHARE[<span class="dv">13</span>]<span class="sc">:.1f}</span><span class="ss"> % of all pixels"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>  7  Road          43.402 %
+ 13  Sky           32.173 %
+  1  Building       7.421 %
+  9  Vegetation     6.395 %
+ 22  Terrain        2.794 %
+  8  SideWalk       1.899 %
+  6  RoadLine       1.507 %
+ 11  Wall           1.216 %
+
+top two classes together: 75.6 % of all pixels</code></pre>
+</div>
+</div>
+<p>Road and sky are three quarters of every pixel in the dataset, and pedestrians are four hundredths of one percent. A model that learned nothing except “bright things at the top are sky, flat things at the bottom are road” would already score around 75 percent pixel accuracy. Keep that number in mind when the accuracy curve appears later, because it is the score to beat, not zero.</p>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. Why does the code list only <code>CameraRGB</code> and build the mask paths from those names, instead of listing both folders?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the pairing between a frame and its mask is carried by the filename, and building both paths from one list makes that pairing structural. Two separate <code>os.listdir</code> calls return two independently ordered lists, and nothing guarantees that position <span class="math inline">\(i\)</span> in one corresponds to position <span class="math inline">\(i\)</span> in the other. If the orders differed, every training example would be a frame supervised by some other frame’s mask, and the model would be fitting noise while the code ran without complaint.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The mask file has three color channels, yet only one of them holds information. Why is the label stored as an image at all?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because a mask is a value per pixel on the same grid as the frame, which is exactly what an image file stores, and PNG is lossless so the integers survive the round trip unchanged. A lossy format would be fatal here, since a JPEG artifact that turned a 7 into an 8 would silently relabel road as sidewalk. The two unused channels are the price of a standard format, and they cost nothing once the loading code collapses them.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Road and sky account for 75 percent of the pixels. What does that imply about using pixel accuracy to judge the model?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>That accuracy has a high floor and a compressed useful range. Getting the two dominant classes roughly right already yields about 75 percent, so the informative part of the scale runs from there to 100 rather than from 0. It also means accuracy is nearly blind to the classes that matter most for driving, since pedestrians are 0.042 percent of the pixels and a model could miss every one of them while its accuracy moved in the fourth decimal place. Segmentation work usually reports intersection over union averaged over classes for that reason, which gives a rare class the same weight as a common one.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="input-pipeline" class="level2">
+<h2 class="anchored" data-anchor-id="input-pipeline">Input Pipeline</h2>
+<p>Keras is given a <code>tf.data.Dataset</code> rather than an array of images. The reason is size. 1060 frames at 480 by 640 by 3 floats is over 3 GB if held in memory at once, so the pipeline streams instead, reading and decoding files as batches are needed.</p>
+<p>The dataset starts as pairs of <strong>file paths</strong>, not pixels. <code>from_tensor_slices</code> takes the two lists of strings and produces a dataset whose elements are one path and one path.</p>
+<div id="722eb106" class="cell" data-execution_count="5">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>image_filenames <span class="op">=</span> tf.constant(image_list)</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>masks_filenames <span class="op">=</span> tf.constant(mask_list)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>dataset <span class="op">=</span> tf.data.Dataset.from_tensor_slices((image_filenames, masks_filenames))</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> image, mask <span class="kw">in</span> dataset.take(<span class="dv">1</span>):</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(image.numpy().decode())</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(mask.numpy().decode())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>../../../media/deep-learning/image-segmentation-unet/data/CameraRGB/000026.png
+../../../media/deep-learning/image-segmentation-unet/data/CameraMask/000026.png</code></pre>
+</div>
+</div>
+<p>Turning a pair of paths into a pair of tensors is the job of <code>process_path</code>, and three of its lines deserve attention.</p>
+<p><code>tf.image.convert_image_dtype(img, tf.float32)</code> does two things in one call. It changes the type and it rescales, mapping the byte range 0 to 255 onto the float range 0 to 1, so there is no separate division by 255 to remember. Doing it through this function rather than by hand is the safer habit, since it takes the scale factor from the input type rather than from an assumption about it.</p>
+<p><code>decode_png(mask, channels=3)</code> forces the mask to three channels, which drops the alpha channel. <code>tf.math.reduce_max(mask, axis=-1, keepdims=True)</code> then collapses those three to one by taking the largest. Since channels 1 and 2 are zero, the largest is always channel 0, which is the class index. <code>keepdims=True</code> leaves a trailing axis of length 1, so the mask stays a rank 3 tensor of shape height by width by 1 rather than collapsing to a flat grid.</p>
+<p>The mask is deliberately <strong>not</strong> converted to float. It stays an integer class index, because that is what the loss will expect.</p>
+<div id="6eec2b55" class="cell" data-execution_count="6">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> process_path(image_path, mask_path):</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    img <span class="op">=</span> tf.io.read_file(image_path)</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    img <span class="op">=</span> tf.image.decode_png(img, channels<span class="op">=</span><span class="dv">3</span>)</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    img <span class="op">=</span> tf.image.convert_image_dtype(img, tf.float32)</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    mask <span class="op">=</span> tf.io.read_file(mask_path)</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    mask <span class="op">=</span> tf.image.decode_png(mask, channels<span class="op">=</span><span class="dv">3</span>)</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>    mask <span class="op">=</span> tf.math.reduce_max(mask, axis<span class="op">=-</span><span class="dv">1</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> img, mask</span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> preprocess(image, mask):</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>    input_image <span class="op">=</span> tf.image.resize(image, (<span class="dv">96</span>, <span class="dv">128</span>), method<span class="op">=</span><span class="st">'nearest'</span>)</span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>    input_mask <span class="op">=</span> tf.image.resize(mask, (<span class="dv">96</span>, <span class="dv">128</span>), method<span class="op">=</span><span class="st">'nearest'</span>)</span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> input_image, input_mask</span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>image_ds <span class="op">=</span> dataset.<span class="bu">map</span>(process_path)</span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>processed_image_ds <span class="op">=</span> image_ds.<span class="bu">map</span>(preprocess)</span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"after process_path:"</span>, image_ds.element_spec)</span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"after preprocess:  "</span>, processed_image_ds.element_spec)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>after process_path: (TensorSpec(shape=(None, None, 3), dtype=tf.float32, name=None), TensorSpec(shape=(None, None, 1), dtype=tf.uint8, name=None))
+after preprocess:   (TensorSpec(shape=(96, 128, 3), dtype=tf.float32, name=None), TensorSpec(shape=(96, 128, 1), dtype=tf.uint8, name=None))</code></pre>
+</div>
+</div>
+<p><code>preprocess</code> shrinks both to 96 by 128, which is one fifth of the original in each direction and one twenty fifth of the pixels. That is a concession to computation, not a design choice, and it is the single reason this lab trains in minutes rather than hours.</p>
+<p>The <code>method='nearest'</code> on the mask is not optional. Every other resizing method averages neighboring pixels, and averaging class indices produces nonsense. Halfway between 7 for road and 9 for vegetation is 8, which is sidewalk, a class that was never there. Nearest neighbor copies the value of the closest source pixel, so every output value is a class that genuinely occurred. The frame is resized the same way for no reason other than symmetry, since averaging colors would have been fine.</p>
+<p>Looking at the pair before and after preprocessing confirms both the shrink and the type change.</p>
+<div id="6cc7cfb2" class="cell" data-execution_count="7">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> show_pair(image, mask, title):</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""One frame beside its mask, with the mask passed through a colormap."""</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    fig, arr <span class="op">=</span> plt.subplots(<span class="dv">1</span>, <span class="dv">2</span>, figsize<span class="op">=</span>(<span class="dv">11</span>, <span class="fl">3.9</span>))</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    arr[<span class="dv">0</span>].imshow(image)</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>    arr[<span class="dv">0</span>].set_title(<span class="ss">f'</span><span class="sc">{</span>title<span class="sc">}</span><span class="ss">, frame </span><span class="sc">{</span><span class="bu">tuple</span>(image.shape)<span class="sc">}</span><span class="ss">'</span>, fontsize<span class="op">=</span><span class="dv">12</span>, color<span class="op">=</span><span class="st">'gray'</span>)</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>    arr[<span class="dv">1</span>].imshow(mask[:, :, <span class="dv">0</span>])</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>    arr[<span class="dv">1</span>].set_title(<span class="ss">f'</span><span class="sc">{</span>title<span class="sc">}</span><span class="ss">, mask </span><span class="sc">{</span><span class="bu">tuple</span>(mask.shape)<span class="sc">}</span><span class="ss">'</span>, fontsize<span class="op">=</span><span class="dv">12</span>, color<span class="op">=</span><span class="st">'gray'</span>)</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> ax <span class="kw">in</span> arr:</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>        ax.axis(<span class="st">'off'</span>)</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>    plt.tight_layout()</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>    plt.show()</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> image, mask <span class="kw">in</span> image_ds.take(<span class="dv">1</span>):</span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>    show_pair(image.numpy(), mask.numpy(), <span class="st">'original'</span>)</span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> image, mask <span class="kw">in</span> processed_image_ds.take(<span class="dv">1</span>):</span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>    show_pair(image.numpy(), mask.numpy(), <span class="st">'resized'</span>)</span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"frame dtype"</span>, image.dtype, <span class="st">"range </span><span class="sc">%.2f</span><span class="st"> to </span><span class="sc">%.2f</span><span class="st">"</span></span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a>      <span class="op">%</span> (<span class="bu">float</span>(tf.reduce_min(image)), <span class="bu">float</span>(tf.reduce_max(image))))</span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"mask  dtype"</span>, mask.dtype, <span class="st">"range </span><span class="sc">%d</span><span class="st"> to </span><span class="sc">%d</span><span class="st">"</span></span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a>      <span class="op">%</span> (<span class="bu">int</span>(tf.reduce_min(mask)), <span class="bu">int</span>(tf.reduce_max(mask))))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-image-segmentation-with-u-net_files/figure-html/cell-8-output-1.png" class="img-fluid figure-img"></p>
+<figcaption>The same frame at full resolution and at the 96 by 128 the network sees. The shapes the model has to segment survive the shrink, while thin structures such as poles and lane markings barely do.</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-image-segmentation-with-u-net_files/figure-html/cell-8-output-2.png" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>frame dtype &lt;dtype: 'float32'&gt; range 0.08 to 1.00
+mask  dtype &lt;dtype: 'uint8'&gt; range 1 to 22</code></pre>
+</div>
+</div>
+<p>The frame comes out as floats between 0 and 1 and the mask comes out as bytes holding class indices. Those two types are what the rest of the lab is built around.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. Why must the mask be resized with <code>method='nearest'</code> while the frame could be resized any way at all?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the numbers in a mask are names, not quantities. Bilinear resizing takes weighted averages of neighboring values, and the average of class 7 and class 9 is class 8, which denotes a different category that may not appear anywhere near that pixel. Nearest neighbor copies one source value, so every result is a label that actually occurred. A frame holds real intensities, where an average of two neighboring reds is a legitimate red, so any interpolation is fine there.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. <code>process_path</code> converts the frame to float but leaves the mask as an integer. Why the difference?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because they play different roles. The frame is network input, and neural networks train better on small centered numbers than on values up to 255, so it is scaled to the range 0 to 1. The mask is the target of a sparse categorical loss, which expects an integer index naming the correct class at each position, and uses it to look up one entry of the prediction vector. Turning that index into a float would be meaningless at best, since 7.0 is not a category.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What does <code>keepdims=True</code> change in the <code>reduce_max</code> call, and why does it matter?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>It keeps the reduced axis instead of dropping it, so the mask has shape 480 by 640 by 1 rather than 480 by 640. That matters because <code>tf.image.resize</code> expects an image-shaped tensor with a channel axis, and because Keras compares the target with a prediction of shape 96 by 128 by 23 along the last axis. Keeping the trailing 1 makes the target line up with that layout without a later reshape.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="encoder-block" class="level2">
+<h2 class="anchored" data-anchor-id="encoder-block">Encoder Block</h2>
+<p><code>conv_block</code> is one rung of the contracting path, and it has three parts.</p>
+<p>Two <code>Conv2D</code> layers with <code>padding='same'</code> do the feature extraction. Same padding means the output keeps the height and width of the input, so the block changes the spatial size only where it means to, in the pooling layer. The <code>he_normal</code> initializer is the variance-scaling scheme matched to ReLU, which is the <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem.html#weight-initialization-for-deep-networks">He initialization</a> that keeps activations from shrinking or exploding as they pass through a deep stack.</p>
+<p>Dropout is applied only when <code>dropout_prob</code> is above zero, which the full model does for the two deepest blocks alone. Those are the blocks with the most channels, so they hold most of the parameters and are the ones with the most capacity to overfit.</p>
+<p>Max pooling halves the height and width, and it is skipped for the block at the bottom of the U, because the bottom is where descending stops.</p>
+<p>The block returns <strong>two</strong> tensors, and the difference between them is the whole point of the skip connections.</p>
+<ul>
+<li><code>next_layer</code> goes down to the next block. When pooling is on, this is the pooled, half sized tensor.</li>
+<li><code>skip_connection</code> goes across to the matching block on the way up. This is always the tensor <strong>before</strong> pooling, at full size.</li>
+</ul>
+<p>Taking the skip from before the pooling is what gives the expanding path something at the resolution it needs. Handing it the pooled tensor would pass across a version of the features that has already lost the fine detail the skip exists to restore.</p>
+<div id="c3c920e3" class="cell" data-execution_count="8">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> conv_block(inputs<span class="op">=</span><span class="va">None</span>, n_filters<span class="op">=</span><span class="dv">32</span>, dropout_prob<span class="op">=</span><span class="dv">0</span>, max_pooling<span class="op">=</span><span class="va">True</span>):</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Convolutional downsampling block</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="co">        inputs -- Input tensor</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="co">        n_filters -- Number of filters for the convolutional layers</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="co">        dropout_prob -- Dropout probability</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="co">        max_pooling -- Use MaxPooling2D to reduce the spatial dimensions of the output volume</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="co">        next_layer, skip_connection --  Next layer and skip connection outputs</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>    conv <span class="op">=</span> Conv2D(n_filters,          <span class="co"># Number of filters</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>                  <span class="dv">3</span>,                  <span class="co"># Kernel size</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>                  activation<span class="op">=</span><span class="st">'relu'</span>,</span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>                  padding<span class="op">=</span><span class="st">'same'</span>,</span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>                  kernel_initializer<span class="op">=</span><span class="st">'he_normal'</span>)(inputs)</span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>    conv <span class="op">=</span> Conv2D(n_filters,          <span class="co"># Number of filters</span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>                  <span class="dv">3</span>,                  <span class="co"># Kernel size</span></span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>                  activation<span class="op">=</span><span class="st">'relu'</span>,</span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a>                  padding<span class="op">=</span><span class="st">'same'</span>,</span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>                  kernel_initializer<span class="op">=</span><span class="st">'he_normal'</span>)(conv)</span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a>    <span class="co"># if dropout_prob &gt; 0 add a dropout layer, with the variable dropout_prob as parameter</span></span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> dropout_prob <span class="op">&gt;</span> <span class="dv">0</span>:</span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a>        conv <span class="op">=</span> Dropout(dropout_prob)(conv)</span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a>    <span class="co"># if max_pooling is True add a MaxPooling2D with 2x2 pool_size</span></span>
+<span id="cb15-29"><a href="#cb15-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> max_pooling:</span>
+<span id="cb15-30"><a href="#cb15-30" aria-hidden="true" tabindex="-1"></a>        next_layer <span class="op">=</span> MaxPooling2D(pool_size<span class="op">=</span>(<span class="dv">2</span>, <span class="dv">2</span>))(conv)</span>
+<span id="cb15-31"><a href="#cb15-31" aria-hidden="true" tabindex="-1"></a>    <span class="cf">else</span>:</span>
+<span id="cb15-32"><a href="#cb15-32" aria-hidden="true" tabindex="-1"></a>        next_layer <span class="op">=</span> conv</span>
+<span id="cb15-33"><a href="#cb15-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-34"><a href="#cb15-34" aria-hidden="true" tabindex="-1"></a>    skip_connection <span class="op">=</span> conv</span>
+<span id="cb15-35"><a href="#cb15-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-36"><a href="#cb15-36" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> next_layer, skip_connection</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Wrapping a block in a throwaway model is how its shapes and parameter counts can be read off directly. The helper below prints one row per layer, and it is used again for the decoder block and for the finished network.</p>
+<div id="4bd7148e" class="cell" data-execution_count="9">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> layer_table(model):</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Layer type, output shape and parameter count, one row per layer."""</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"</span><span class="sc">{</span><span class="st">'layer'</span><span class="sc">:&lt;18}</span><span class="ss"> </span><span class="sc">{</span><span class="st">'output shape'</span><span class="sc">:&gt;22}</span><span class="ss"> </span><span class="sc">{</span><span class="st">'parameters'</span><span class="sc">:&gt;12}</span><span class="ss">"</span>)</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> layer <span class="kw">in</span> model.layers:</span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(<span class="ss">f"</span><span class="sc">{</span><span class="bu">type</span>(layer)<span class="sc">.</span><span class="va">__name__</span><span class="sc">:&lt;18}</span><span class="ss"> </span><span class="sc">{</span><span class="bu">str</span>(layer.output.shape)<span class="sc">:&gt;22}</span><span class="ss"> "</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>              <span class="ss">f"</span><span class="sc">{</span>layer<span class="sc">.</span>count_params()<span class="sc">:&gt;12,}</span><span class="ss">"</span>)</span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"</span><span class="sc">{</span><span class="st">'total'</span><span class="sc">:&lt;18}</span><span class="ss"> </span><span class="sc">{</span><span class="st">''</span><span class="sc">:&gt;22}</span><span class="ss"> </span><span class="sc">{</span>model<span class="sc">.</span>count_params()<span class="sc">:&gt;12,}</span><span class="ss">"</span>)</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>input_size <span class="op">=</span> (<span class="dv">96</span>, <span class="dv">128</span>, <span class="dv">3</span>)</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>n_filters <span class="op">=</span> <span class="dv">32</span></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>inputs <span class="op">=</span> Input(input_size)</span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>cblock1 <span class="op">=</span> conv_block(inputs, n_filters <span class="op">*</span> <span class="dv">1</span>)</span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>model1 <span class="op">=</span> tf.keras.Model(inputs<span class="op">=</span>inputs, outputs<span class="op">=</span>cblock1)</span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>layer_table(model1)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>layer                        output shape   parameters
+InputLayer             (None, 96, 128, 3)            0
+Conv2D                (None, 96, 128, 32)          896
+Conv2D                (None, 96, 128, 32)        9,248
+MaxPooling2D           (None, 48, 64, 32)            0
+total                                           10,144</code></pre>
+</div>
+</div>
+<p>Every number in that table can be derived rather than taken on trust.</p>
+<p>The first convolution has <span class="math inline">\(3 \times 3 \times 3 \times 32 = 864\)</span> weights and 32 biases, giving 896 parameters, where the third 3 is the channel count of the input. The second sees 32 channels instead of 3, so it has <span class="math inline">\(3 \times 3 \times 32 \times 32 + 32 = 9248\)</span>. Same padding keeps both outputs at 96 by 128, and pooling with a 2 by 2 window and the matching stride halves both to 48 by 64 without adding a single parameter.</p>
+<p>Turning on dropout and widening the block shows the two optional parts and how quickly the cost grows with the filter count.</p>
+<div id="21c47c15" class="cell" data-execution_count="10">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>inputs <span class="op">=</span> Input(input_size)</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>cblock2 <span class="op">=</span> conv_block(inputs, n_filters <span class="op">*</span> <span class="dv">8</span>, dropout_prob<span class="op">=</span><span class="fl">0.3</span>, max_pooling<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>model2 <span class="op">=</span> tf.keras.Model(inputs<span class="op">=</span>inputs, outputs<span class="op">=</span>cblock2)</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>layer_table(model2)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>layer                        output shape   parameters
+InputLayer             (None, 96, 128, 3)            0
+Conv2D               (None, 96, 128, 256)        7,168
+Conv2D               (None, 96, 128, 256)      590,080
+Dropout              (None, 96, 128, 256)            0
+MaxPooling2D          (None, 48, 64, 256)            0
+total                                          597,248</code></pre>
+</div>
+</div>
+<p>Dropout appears as its own layer, with no parameters and no change of shape, since all it does is zero out a random 30 percent of the values while training. Eight times the filters costs roughly sixty four times the parameters in the second convolution, because that layer’s weight count scales with the product of its input and output channel counts, and both went up by a factor of eight.</p>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. Why is <code>skip_connection</code> taken before max pooling rather than after?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the skip exists to hand the expanding path the spatial detail the contracting path is throwing away, and pooling is the step that throws it away. The pre-pooling tensor is at full resolution for that level of the U, which is exactly the resolution the matching decoder block will be working at after its transpose convolution, so the two line up and can be concatenated. The pooled tensor is half that size and has already discarded three quarters of the positions, so passing it across would carry over the information the decoder can already reconstruct and none of the information it is missing.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why does <code>padding='same'</code> matter in a network whose whole design is about changing spatial size?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because it puts every change of size in one place. With same padding the convolutions leave height and width untouched, so the only layers that shrink the tensor are the pooling layers and the only ones that grow it are the transpose convolutions. The size at every level of the U is then a clean power of two relationship, and the skip connection at each level matches its partner exactly. With valid padding each convolution would shave pixels off the border, the two sides of the U would drift out of alignment, and the tensors would have to be cropped before they could be concatenated, which is precisely what the original U-Net paper had to do.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The block applies its ReLU inside the <code>Conv2D</code> layers through <code>activation='relu'</code>. What is the difference between doing that and adding a separate activation layer?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Nothing mathematically. The layer computes the convolution and then applies the function, which is the same composition either way, and the parameter count is identical because ReLU has no parameters. The difference is bookkeeping. Folding it in gives a shorter model summary, while a separate layer makes the activation visible as its own row and is what you need when something has to happen between the convolution and the nonlinearity, most commonly batch normalization.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="decoder-block" class="level2">
+<h2 class="anchored" data-anchor-id="decoder-block">Decoder Block</h2>
+<p><code>upsampling_block</code> is one rung of the expanding path, and it is the mirror of the encoder block with the skip connection joined in.</p>
+<p><code>Conv2DTranspose</code> with <code>strides=(2, 2)</code> is the <a href="../../../ai/deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html#transpose-convolutions">transpose convolution</a> that doubles height and width. Unlike an interpolated resize it has weights, so the network learns how to grow the representation rather than following a fixed rule.</p>
+<p><code>concatenate([up, contractive_input], axis=3)</code> is the skip connection. Axis 3 is the channel axis, so this stacks the two tensors channel-wise and leaves the height and width alone, which is only possible because the transpose convolution just brought <code>up</code> to the size the skip has always been. Note that concatenating is not adding. A residual connection <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-residual-networks.html">adds</a> its shortcut into the main path and keeps the channel count fixed, while U-Net keeps both sources side by side and lets the following convolutions decide how to weigh them.</p>
+<p>Two <code>Conv2D</code> layers with the same settings as the encoder then mix the coarse upsampled features with the fine skipped ones, and reduce the stacked channels back to <code>n_filters</code>.</p>
+<div id="fa31a3be" class="cell" data-execution_count="11">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> upsampling_block(expansive_input, contractive_input, n_filters<span class="op">=</span><span class="dv">32</span>):</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Convolutional upsampling block</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="co">        expansive_input -- Input tensor from previous layer</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="co">        contractive_input -- Input tensor from previous skip layer</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a><span class="co">        n_filters -- Number of filters for the convolutional layers</span></span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a><span class="co">        conv -- Tensor output</span></span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a>    up <span class="op">=</span> Conv2DTranspose(</span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a>                 n_filters,    <span class="co"># number of filters</span></span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a>                 <span class="dv">3</span>,            <span class="co"># Kernel size</span></span>
+<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a>                 strides<span class="op">=</span>(<span class="dv">2</span>, <span class="dv">2</span>),</span>
+<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a>                 padding<span class="op">=</span><span class="st">'same'</span>)(expansive_input)</span>
+<span id="cb20-17"><a href="#cb20-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-18"><a href="#cb20-18" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Merge the previous output and the contractive_input</span></span>
+<span id="cb20-19"><a href="#cb20-19" aria-hidden="true" tabindex="-1"></a>    merge <span class="op">=</span> concatenate([up, contractive_input], axis<span class="op">=</span><span class="dv">3</span>)</span>
+<span id="cb20-20"><a href="#cb20-20" aria-hidden="true" tabindex="-1"></a>    conv <span class="op">=</span> Conv2D(n_filters,   <span class="co"># Number of filters</span></span>
+<span id="cb20-21"><a href="#cb20-21" aria-hidden="true" tabindex="-1"></a>                 <span class="dv">3</span>,            <span class="co"># Kernel size</span></span>
+<span id="cb20-22"><a href="#cb20-22" aria-hidden="true" tabindex="-1"></a>                 activation<span class="op">=</span><span class="st">'relu'</span>,</span>
+<span id="cb20-23"><a href="#cb20-23" aria-hidden="true" tabindex="-1"></a>                 padding<span class="op">=</span><span class="st">'same'</span>,</span>
+<span id="cb20-24"><a href="#cb20-24" aria-hidden="true" tabindex="-1"></a>                 kernel_initializer<span class="op">=</span><span class="st">'he_normal'</span>)(merge)</span>
+<span id="cb20-25"><a href="#cb20-25" aria-hidden="true" tabindex="-1"></a>    conv <span class="op">=</span> Conv2D(n_filters,   <span class="co"># Number of filters</span></span>
+<span id="cb20-26"><a href="#cb20-26" aria-hidden="true" tabindex="-1"></a>                 <span class="dv">3</span>,            <span class="co"># Kernel size</span></span>
+<span id="cb20-27"><a href="#cb20-27" aria-hidden="true" tabindex="-1"></a>                 activation<span class="op">=</span><span class="st">'relu'</span>,</span>
+<span id="cb20-28"><a href="#cb20-28" aria-hidden="true" tabindex="-1"></a>                 padding<span class="op">=</span><span class="st">'same'</span>,</span>
+<span id="cb20-29"><a href="#cb20-29" aria-hidden="true" tabindex="-1"></a>                 kernel_initializer<span class="op">=</span><span class="st">'he_normal'</span>)(conv)</span>
+<span id="cb20-30"><a href="#cb20-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-31"><a href="#cb20-31" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> conv</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Testing it needs two inputs of different shapes, a small deep one standing in for the tensor coming up from below, and a larger shallower one standing in for the skip arriving from the left.</p>
+<div id="dcf8198f" class="cell" data-execution_count="12">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>input_size1 <span class="op">=</span> (<span class="dv">12</span>, <span class="dv">16</span>, <span class="dv">256</span>)      <span class="co"># coming up from the level below</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>input_size2 <span class="op">=</span> (<span class="dv">24</span>, <span class="dv">32</span>, <span class="dv">128</span>)      <span class="co"># arriving across the skip connection</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>expansive_inputs <span class="op">=</span> Input(input_size1)</span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>contractive_inputs <span class="op">=</span> Input(input_size2)</span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>ublock <span class="op">=</span> upsampling_block(expansive_inputs, contractive_inputs, n_filters <span class="op">*</span> <span class="dv">1</span>)</span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>model3 <span class="op">=</span> tf.keras.Model(inputs<span class="op">=</span>[expansive_inputs, contractive_inputs], outputs<span class="op">=</span>ublock)</span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>layer_table(model3)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>layer                        output shape   parameters
+InputLayer            (None, 12, 16, 256)            0
+Conv2DTranspose        (None, 24, 32, 32)       73,760
+InputLayer            (None, 24, 32, 128)            0
+Concatenate           (None, 24, 32, 160)            0
+Conv2D                 (None, 24, 32, 32)       46,112
+Conv2D                 (None, 24, 32, 32)        9,248
+total                                          129,120</code></pre>
+</div>
+</div>
+<p>Read the output shape column downward and the block’s whole argument is visible.</p>
+<p>The transpose convolution takes 12 by 16 by 256 to 24 by 32 by 32, doubling both spatial dimensions and cutting the channels from 256 to 32 in one layer. Its parameter count is <span class="math inline">\(3 \times 3 \times 256 \times 32 + 32 = 73{,}760\)</span>, the same formula an ordinary convolution uses, because a transpose convolution is the same set of weights applied with the roles of input and output swapped.</p>
+<p>Concatenation then makes 24 by 32 by 160, since <span class="math inline">\(32 + 128 = 160\)</span>, and it costs nothing because stacking tensors is not arithmetic. The first convolution after it has <span class="math inline">\(3 \times 3 \times 160 \times 32 + 32 = 46{,}112\)</span> parameters, and that is where the mixing happens, since each of its filters spans all 160 channels and therefore sees the upsampled features and the skipped features together. The second brings nothing new in and simply refines what the first produced.</p>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. Why does U-Net concatenate the skip connection instead of adding it, the way a ResNet does?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the two connections solve different problems. A residual connection adds a shortcut to a path that is trying to learn a small correction, and adding keeps the channel count unchanged and makes the identity easy to represent. A U-Net skip is carrying different information rather than a correction, namely fine spatial detail that the deep path no longer has, and adding would blend it irreversibly with the coarse features. Concatenating keeps both intact and hands the following convolutions the choice of how much of each to use, at the cost of a wider tensor for those two layers. Adding would also be impossible here without extra work, since the two tensors have different channel counts.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The transpose convolution outputs 32 channels while the skip carries 128, so the merged tensor is 160 channels wide. Why does the block not stay at 160?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the width would compound. Each level up would concatenate its own skip onto whatever came from below, so the channel count would grow monotonically toward the full-resolution end, exactly where the tensors are already largest and a convolution is most expensive. The two convolutions after the merge bring it back to <code>n_filters</code>, which lets the expanding path get thinner as it gets wider, mirroring the contracting path. They are also the layers that do the mixing, so the reduction and the combination happen in the same step rather than costing two.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="assembling-u-net" class="level2">
+<h2 class="anchored" data-anchor-id="assembling-u-net">Assembling U-Net</h2>
+<p>Both halves chain into the full model. Five encoder blocks descend, four decoder blocks ascend, and two convolutions finish.</p>
+<p>The filter count doubles at each step down, from 32 to 512, and halves at each step up. Dropout of 0.3 is switched on for the last two encoder blocks, and the fifth block has <code>max_pooling=False</code> because it is the bottom of the U.</p>
+<p>Every decoder block takes two arguments, and getting them the right way round is the fiddly part. The first is <code>[0]</code> of the block below, which is the tensor travelling upward. The second is <code>[1]</code> of the encoder block at the <strong>same level</strong>, which is the pre-pooling skip. So <code>ublock6</code> pairs the bottom of the U with <code>cblock4</code>, <code>ublock7</code> pairs that result with <code>cblock3</code>, and so on outward.</p>
+<p>The last two layers are the ones that turn features into an answer. <code>conv9</code> is an ordinary 3 by 3 convolution at full resolution, and <code>conv10</code> is a <span class="math inline">\(1 \times 1\)</span> convolution with <code>n_classes</code> filters. A <span class="math inline">\(1 \times 1\)</span> filter looks at one pixel position across all channels and mixes them without touching neighbors, which is exactly a per-pixel decision. It has no activation, so its outputs are raw scores rather than probabilities, and that choice comes back in the loss.</p>
+<div id="765b9a95" class="cell" data-execution_count="13">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> unet_model(input_size<span class="op">=</span>(<span class="dv">96</span>, <span class="dv">128</span>, <span class="dv">3</span>), n_filters<span class="op">=</span><span class="dv">32</span>, n_classes<span class="op">=</span><span class="dv">23</span>):</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Unet model</span></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a><span class="co">        input_size -- Input shape</span></span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a><span class="co">        n_filters -- Number of filters for the convolutional layers</span></span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a><span class="co">        n_classes -- Number of output classes</span></span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a><span class="co">        model -- tf.keras.Model</span></span>
+<span id="cb23-11"><a href="#cb23-11" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb23-12"><a href="#cb23-12" aria-hidden="true" tabindex="-1"></a>    inputs <span class="op">=</span> Input(input_size)</span>
+<span id="cb23-13"><a href="#cb23-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-14"><a href="#cb23-14" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Contracting Path (encoding). Double the number of filters at each new step.</span></span>
+<span id="cb23-15"><a href="#cb23-15" aria-hidden="true" tabindex="-1"></a>    cblock1 <span class="op">=</span> conv_block(inputs, n_filters)</span>
+<span id="cb23-16"><a href="#cb23-16" aria-hidden="true" tabindex="-1"></a>    cblock2 <span class="op">=</span> conv_block(cblock1[<span class="dv">0</span>], n_filters <span class="op">*</span> <span class="dv">2</span>)</span>
+<span id="cb23-17"><a href="#cb23-17" aria-hidden="true" tabindex="-1"></a>    cblock3 <span class="op">=</span> conv_block(cblock2[<span class="dv">0</span>], n_filters <span class="op">*</span> <span class="dv">4</span>)</span>
+<span id="cb23-18"><a href="#cb23-18" aria-hidden="true" tabindex="-1"></a>    cblock4 <span class="op">=</span> conv_block(cblock3[<span class="dv">0</span>], n_filters <span class="op">*</span> <span class="dv">8</span>, dropout_prob<span class="op">=</span><span class="fl">0.3</span>)</span>
+<span id="cb23-19"><a href="#cb23-19" aria-hidden="true" tabindex="-1"></a>    <span class="co"># bottom of the U, so dropout stays on and the pooling comes off</span></span>
+<span id="cb23-20"><a href="#cb23-20" aria-hidden="true" tabindex="-1"></a>    cblock5 <span class="op">=</span> conv_block(cblock4[<span class="dv">0</span>], n_filters <span class="op">*</span> <span class="dv">16</span>, dropout_prob<span class="op">=</span><span class="fl">0.3</span>, max_pooling<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb23-21"><a href="#cb23-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-22"><a href="#cb23-22" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Expanding Path (decoding). Halve the number of filters at each new step, and</span></span>
+<span id="cb23-23"><a href="#cb23-23" aria-hidden="true" tabindex="-1"></a>    <span class="co"># take the skip from element [1] of the encoder block at the same level.</span></span>
+<span id="cb23-24"><a href="#cb23-24" aria-hidden="true" tabindex="-1"></a>    ublock6 <span class="op">=</span> upsampling_block(cblock5[<span class="dv">0</span>], cblock4[<span class="dv">1</span>], n_filters <span class="op">*</span> <span class="dv">8</span>)</span>
+<span id="cb23-25"><a href="#cb23-25" aria-hidden="true" tabindex="-1"></a>    ublock7 <span class="op">=</span> upsampling_block(ublock6, cblock3[<span class="dv">1</span>], n_filters <span class="op">*</span> <span class="dv">4</span>)</span>
+<span id="cb23-26"><a href="#cb23-26" aria-hidden="true" tabindex="-1"></a>    ublock8 <span class="op">=</span> upsampling_block(ublock7, cblock2[<span class="dv">1</span>], n_filters <span class="op">*</span> <span class="dv">2</span>)</span>
+<span id="cb23-27"><a href="#cb23-27" aria-hidden="true" tabindex="-1"></a>    ublock9 <span class="op">=</span> upsampling_block(ublock8, cblock1[<span class="dv">1</span>], n_filters)</span>
+<span id="cb23-28"><a href="#cb23-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-29"><a href="#cb23-29" aria-hidden="true" tabindex="-1"></a>    conv9 <span class="op">=</span> Conv2D(n_filters,</span>
+<span id="cb23-30"><a href="#cb23-30" aria-hidden="true" tabindex="-1"></a>                 <span class="dv">3</span>,</span>
+<span id="cb23-31"><a href="#cb23-31" aria-hidden="true" tabindex="-1"></a>                 activation<span class="op">=</span><span class="st">'relu'</span>,</span>
+<span id="cb23-32"><a href="#cb23-32" aria-hidden="true" tabindex="-1"></a>                 padding<span class="op">=</span><span class="st">'same'</span>,</span>
+<span id="cb23-33"><a href="#cb23-33" aria-hidden="true" tabindex="-1"></a>                 kernel_initializer<span class="op">=</span><span class="st">'he_normal'</span>)(ublock9)</span>
+<span id="cb23-34"><a href="#cb23-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-35"><a href="#cb23-35" aria-hidden="true" tabindex="-1"></a>    <span class="co"># one score per class at every pixel, with no activation</span></span>
+<span id="cb23-36"><a href="#cb23-36" aria-hidden="true" tabindex="-1"></a>    conv10 <span class="op">=</span> Conv2D(n_classes, <span class="dv">1</span>, padding<span class="op">=</span><span class="st">'same'</span>)(conv9)</span>
+<span id="cb23-37"><a href="#cb23-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-38"><a href="#cb23-38" aria-hidden="true" tabindex="-1"></a>    model <span class="op">=</span> tf.keras.Model(inputs<span class="op">=</span>inputs, outputs<span class="op">=</span>conv10)</span>
+<span id="cb23-39"><a href="#cb23-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-40"><a href="#cb23-40" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> model</span>
+<span id="cb23-41"><a href="#cb23-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-42"><a href="#cb23-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-43"><a href="#cb23-43" aria-hidden="true" tabindex="-1"></a>img_height <span class="op">=</span> <span class="dv">96</span></span>
+<span id="cb23-44"><a href="#cb23-44" aria-hidden="true" tabindex="-1"></a>img_width <span class="op">=</span> <span class="dv">128</span></span>
+<span id="cb23-45"><a href="#cb23-45" aria-hidden="true" tabindex="-1"></a>num_channels <span class="op">=</span> <span class="dv">3</span></span>
+<span id="cb23-46"><a href="#cb23-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-47"><a href="#cb23-47" aria-hidden="true" tabindex="-1"></a>unet <span class="op">=</span> unet_model((img_height, img_width, num_channels))</span>
+<span id="cb23-48"><a href="#cb23-48" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"total parameters:"</span>, <span class="ss">f"</span><span class="sc">{</span>unet<span class="sc">.</span>count_params()<span class="sc">:,}</span><span class="ss">"</span>)</span>
+<span id="cb23-49"><a href="#cb23-49" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"output shape:    "</span>, unet.output.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>total parameters: 8,640,471
+output shape:     (None, 96, 128, 23)</code></pre>
+</div>
+</div>
+<p>The output is 96 by 128 by 23, one score per class at every pixel of the input grid. That is the shape <a href="../../../ai/deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html#full-architecture">the concept page</a> predicted, with height and width equal to the input and depth equal to the number of classes.</p>
+<p>Printing every layer is worth the space here, because the output shape column traces the U itself.</p>
+<div id="9370d3b9" class="cell" data-execution_count="14">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>layer_table(unet)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>layer                        output shape   parameters
+InputLayer             (None, 96, 128, 3)            0
+Conv2D                (None, 96, 128, 32)          896
+Conv2D                (None, 96, 128, 32)        9,248
+MaxPooling2D           (None, 48, 64, 32)            0
+Conv2D                 (None, 48, 64, 64)       18,496
+Conv2D                 (None, 48, 64, 64)       36,928
+MaxPooling2D           (None, 24, 32, 64)            0
+Conv2D                (None, 24, 32, 128)       73,856
+Conv2D                (None, 24, 32, 128)      147,584
+MaxPooling2D          (None, 12, 16, 128)            0
+Conv2D                (None, 12, 16, 256)      295,168
+Conv2D                (None, 12, 16, 256)      590,080
+Dropout               (None, 12, 16, 256)            0
+MaxPooling2D            (None, 6, 8, 256)            0
+Conv2D                  (None, 6, 8, 512)    1,180,160
+Conv2D                  (None, 6, 8, 512)    2,359,808
+Dropout                 (None, 6, 8, 512)            0
+Conv2DTranspose       (None, 12, 16, 256)    1,179,904
+Concatenate           (None, 12, 16, 512)            0
+Conv2D                (None, 12, 16, 256)    1,179,904
+Conv2D                (None, 12, 16, 256)      590,080
+Conv2DTranspose       (None, 24, 32, 128)      295,040
+Concatenate           (None, 24, 32, 256)            0
+Conv2D                (None, 24, 32, 128)      295,040
+Conv2D                (None, 24, 32, 128)      147,584
+Conv2DTranspose        (None, 48, 64, 64)       73,792
+Concatenate           (None, 48, 64, 128)            0
+Conv2D                 (None, 48, 64, 64)       73,792
+Conv2D                 (None, 48, 64, 64)       36,928
+Conv2DTranspose       (None, 96, 128, 32)       18,464
+Concatenate           (None, 96, 128, 64)            0
+Conv2D                (None, 96, 128, 32)       18,464
+Conv2D                (None, 96, 128, 32)        9,248
+Conv2D                (None, 96, 128, 32)        9,248
+Conv2D                (None, 96, 128, 23)          759
+total                                        8,640,471</code></pre>
+</div>
+</div>
+<p>Follow the shapes down and back up. The height goes 96, 48, 24, 12, 6 and then 12, 24, 48, 96, the width goes 128, 64, 32, 16, 8 and back the same way, and the channel count goes 32, 64, 128, 256, 512 on the way down and returns to 32 on the way up. The narrowest point is 6 by 8 by 512, which is 48 spatial positions where the input had 12,288, and 512 channels where the input had 3. Position traded for depth, one pooling layer at a time.</p>
+<p>The <code>Concatenate</code> rows are where the skips arrive, and each one widens the tensor exactly by the channel count of its partner on the left side of the U. The parameter column shows where the weight is, namely in the middle blocks where the channel counts are largest, while the layers at full resolution are cheap in parameters and expensive in arithmetic.</p>
+<section id="review-questions-4" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-4">Review Questions</h3>
+<p><strong>1. Why does <code>cblock5</code> set <code>max_pooling=False</code>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-14" class="callout-14-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because it is the bottom of the U and nothing descends further. Its output feeds the first decoder block, which begins by doubling the spatial size, so pooling here would immediately be undone and would only discard three quarters of the positions on the way through. It also has no partner on the expanding path to skip to, since it is the turning point rather than a level of the U.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Each decoder block receives <code>cblockN[1]</code> rather than <code>cblockN[0]</code>. What would break if <code>[0]</code> were passed instead?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The shapes would not match, so the model would fail to build. Element <code>[0]</code> is the output after pooling, at half the height and width of element <code>[1]</code>, and the transpose convolution has just brought the ascending tensor up to the size of <code>[1]</code>. Concatenating along the channel axis requires the other axes to agree, so Keras would reject it. That failure is fortunate, because if the sizes happened to align the model would build and quietly train on the wrong tensor, passing across features that had already lost the detail the skip exists to supply.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The final layer is a <span class="math inline">\(1 \times 1\)</span> convolution with 23 filters and no activation. Why is a dense layer not used instead, as it would be in a classifier?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-16-contents" aria-controls="callout-16" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-16" class="callout-16-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because a dense layer flattens, and flattening destroys the spatial arrangement that the whole network was built to preserve. It would also fix the input size, since its weight matrix depends on the number of positions. A <span class="math inline">\(1 \times 1\)</span> convolution applies the same 23-way mapping independently at each of the 12,288 pixel positions, which is what a per-pixel decision means, and it does so with <span class="math inline">\(32 \times 23 + 23\)</span> parameters regardless of how large the image is. Leaving off the activation is a separate choice, made so the loss can apply the softmax itself.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="loss-for-per-pixel-classification" class="level2">
+<h2 class="anchored" data-anchor-id="loss-for-per-pixel-classification">Loss for Per-Pixel Classification</h2>
+<p>The model outputs 23 numbers at every pixel and the mask holds one integer at every pixel, so the loss has to compare a vector of scores with an index. That is what <code>SparseCategoricalCrossentropy</code> does.</p>
+<p>The <strong>sparse</strong> part is about how the target is written. Ordinary categorical cross entropy expects one-hot targets, which here would mean a 96 by 128 by 23 tensor of zeros with a single 1 per pixel, 23 times the memory to carry the same information. The sparse version takes the index directly and looks up the matching score, which is both cheaper and exactly the form the mask already has.</p>
+<p><code>from_logits=True</code> says the model’s outputs are raw scores rather than probabilities, so the loss applies the softmax itself. Doing it inside the loss is more numerically stable, because cross entropy needs the logarithm of a probability, and a confident prediction can round to exactly 0 once the softmax has been applied separately, at which point the logarithm is infinite. Keeping the two together lets TensorFlow use a formulation that never takes that logarithm of a rounded value. This is the same argument as the <code>from_logits=True</code> in the <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-transfer-learning-with-mobilenet.html">MobileNetV2 lab</a>, one class at a time rather than 23.</p>
+<div id="1497206e" class="cell" data-execution_count="15">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>unet.<span class="bu">compile</span>(optimizer<span class="op">=</span><span class="st">'adam'</span>,</span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>              loss<span class="op">=</span>tf.keras.losses.SparseCategoricalCrossentropy(from_logits<span class="op">=</span><span class="va">True</span>),</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>              metrics<span class="op">=</span>[<span class="st">'accuracy'</span>])</span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"loss:       "</span>, unet.loss.name)</span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"from_logits:"</span>, unet.loss.from_logits)</span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"optimizer:  "</span>, unet.optimizer.name)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>loss:        sparse_categorical_crossentropy
+from_logits: True
+optimizer:   adam</code></pre>
+</div>
+</div>
+<section id="review-questions-5" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-5">Review Questions</h3>
+<p><strong>1. What would go wrong if the final convolution had <code>activation='softmax'</code> and the loss kept <code>from_logits=True</code>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-17-contents" aria-controls="callout-17" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-17" class="callout-17-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The softmax would be applied twice, once by the layer and once inside the loss. The second application would take the softmax of numbers already squeezed into the range 0 to 1, which flattens the distribution toward uniform, since the largest gap between any two inputs is now at most 1. Gradients would be small and undifferentiated, and training would crawl or stall. The model would still run, which is what makes the mistake easy to miss.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Accuracy is reported per pixel here rather than per image. What does a single accuracy number actually count?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-18-contents" aria-controls="callout-18" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-18" class="callout-18-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The fraction of pixel positions whose arg max class equals the label at that position, averaged over every pixel of every image in the batch. Each 96 by 128 frame contributes 12,288 independent decisions, so one batch of 32 contributes nearly 400,000. That makes the number statistically stable from the very first batch, and it also makes it dominated by whichever classes cover the most area, which for this dataset means road and sky.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="training" class="level2">
+<h2 class="anchored" data-anchor-id="training">Training</h2>
+<p>Three transformations turn the dataset into something <code>fit</code> can consume, and their order matters.</p>
+<p><code>cache()</code> keeps the decoded, resized tensors in memory after the first pass, so the PNG decoding and the resizing happen once instead of once per epoch. It goes first because everything before it is what gets cached. At 96 by 128 the whole dataset is small enough to hold, which is another dividend of the resize.</p>
+<p><code>shuffle(500)</code> fills a buffer with 500 elements and draws randomly from it, refilling as it goes. It is not a full shuffle of all 1060, it is a moving window, which is the usual compromise between randomness and memory. It goes after the cache so that a different order comes out each epoch.</p>
+<p><code>batch(32)</code> groups the result into batches of 32, giving 34 steps per epoch for 1060 frames, with the last batch short.</p>
+<div id="4f1a52e0" class="cell" data-execution_count="16">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>EPOCHS <span class="op">=</span> <span class="dv">15</span></span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>BUFFER_SIZE <span class="op">=</span> <span class="dv">500</span></span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>BATCH_SIZE <span class="op">=</span> <span class="dv">32</span></span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>train_dataset <span class="op">=</span> processed_image_ds.cache().shuffle(BUFFER_SIZE).batch(BATCH_SIZE)</span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(processed_image_ds.element_spec)</span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"steps per epoch:"</span>, <span class="bu">int</span>(np.ceil(<span class="dv">1060</span> <span class="op">/</span> BATCH_SIZE)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>(TensorSpec(shape=(96, 128, 3), dtype=tf.float32, name=None), TensorSpec(shape=(96, 128, 1), dtype=tf.uint8, name=None))
+steps per epoch: 34</code></pre>
+</div>
+</div>
+<p>There is no validation split here. The original assignment trains on all 1060 frames and reads the training accuracy, and this page keeps that, so every number below describes how well the model fits data it has seen. That is enough to show a U-Net learning, and it is not enough to claim the model generalizes.</p>
+<div id="cbbd2612" class="cell" data-execution_count="17">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>model_history <span class="op">=</span> unet.fit(train_dataset, epochs<span class="op">=</span>EPOCHS, verbose<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>h <span class="op">=</span> model_history.history</span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"</span><span class="sc">{</span><span class="st">'epoch'</span><span class="sc">:&gt;6}</span><span class="ss"> </span><span class="sc">{</span><span class="st">'loss'</span><span class="sc">:&gt;10}</span><span class="ss"> </span><span class="sc">{</span><span class="st">'accuracy'</span><span class="sc">:&gt;10}</span><span class="ss">"</span>)</span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> e <span class="kw">in</span> <span class="bu">range</span>(EPOCHS):</span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"</span><span class="sc">{</span>e<span class="op">+</span><span class="dv">1</span><span class="sc">:&gt;6}</span><span class="ss"> </span><span class="sc">{</span>h[<span class="st">'loss'</span>][e]<span class="sc">:&gt;10.4f}</span><span class="ss"> </span><span class="sc">{</span>h[<span class="st">'accuracy'</span>][e]<span class="sc">:&gt;10.4f}</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code> epoch       loss   accuracy
+     1     2.9802     0.4392
+     2     1.4767     0.5685
+     3     0.8619     0.7863
+     4     0.6109     0.8377
+     5     0.5173     0.8549
+     6     0.4448     0.8724
+     7     0.3998     0.8842
+     8     0.3651     0.8939
+     9     0.3401     0.9011
+    10     0.3171     0.9085
+    11     0.3122     0.9094
+    12     0.2666     0.9227
+    13     0.2451     0.9286
+    14     0.2275     0.9338
+    15     0.2196     0.9358</code></pre>
+</div>
+</div>
+<div id="0d91dfef" class="cell" data-execution_count="18">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>fig, axes <span class="op">=</span> plt.subplots(<span class="dv">1</span>, <span class="dv">2</span>, figsize<span class="op">=</span>(<span class="dv">12</span>, <span class="fl">4.6</span>))</span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">0</span>].plot(<span class="bu">range</span>(<span class="dv">1</span>, EPOCHS <span class="op">+</span> <span class="dv">1</span>), h[<span class="st">'loss'</span>], color<span class="op">=</span><span class="st">'#4682B4'</span>)</span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">0</span>].set_title(<span class="st">'Model loss'</span>, fontsize<span class="op">=</span><span class="dv">12</span>, color<span class="op">=</span><span class="st">'gray'</span>)</span>
+<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">0</span>].set_ylabel(<span class="st">'Sparse categorical cross entropy'</span>)</span>
+<span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">1</span>].plot(<span class="bu">range</span>(<span class="dv">1</span>, EPOCHS <span class="op">+</span> <span class="dv">1</span>), h[<span class="st">'accuracy'</span>], color<span class="op">=</span><span class="st">'#4682B4'</span>)</span>
+<span id="cb33-8"><a href="#cb33-8" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">1</span>].axhline(<span class="fl">0.756</span>, color<span class="op">=</span><span class="st">'#CC5500'</span>, linestyle<span class="op">=</span><span class="st">'--'</span>, linewidth<span class="op">=</span><span class="fl">1.2</span>,</span>
+<span id="cb33-9"><a href="#cb33-9" aria-hidden="true" tabindex="-1"></a>                label<span class="op">=</span><span class="st">'road and sky alone'</span>)</span>
+<span id="cb33-10"><a href="#cb33-10" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">1</span>].set_title(<span class="st">'Model accuracy'</span>, fontsize<span class="op">=</span><span class="dv">12</span>, color<span class="op">=</span><span class="st">'gray'</span>)</span>
+<span id="cb33-11"><a href="#cb33-11" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">1</span>].set_ylabel(<span class="st">'Pixel accuracy'</span>)</span>
+<span id="cb33-12"><a href="#cb33-12" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">1</span>].set_ylim(<span class="dv">0</span>, <span class="dv">1</span>)</span>
+<span id="cb33-13"><a href="#cb33-13" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">1</span>].legend()</span>
+<span id="cb33-14"><a href="#cb33-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-15"><a href="#cb33-15" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> ax <span class="kw">in</span> axes:</span>
+<span id="cb33-16"><a href="#cb33-16" aria-hidden="true" tabindex="-1"></a>    ax.set_xlabel(<span class="st">'Epoch'</span>)</span>
+<span id="cb33-17"><a href="#cb33-17" aria-hidden="true" tabindex="-1"></a>    ax.set_xticks(<span class="bu">range</span>(<span class="dv">1</span>, EPOCHS <span class="op">+</span> <span class="dv">1</span>))</span>
+<span id="cb33-18"><a href="#cb33-18" aria-hidden="true" tabindex="-1"></a>    ax.grid(linestyle<span class="op">=</span><span class="st">'--'</span>, alpha<span class="op">=</span><span class="fl">0.4</span>)</span>
+<span id="cb33-19"><a href="#cb33-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-20"><a href="#cb33-20" aria-hidden="true" tabindex="-1"></a>plt.tight_layout()</span>
+<span id="cb33-21"><a href="#cb33-21" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-image-segmentation-with-u-net_files/figure-html/cell-19-output-1.png" class="img-fluid figure-img"></p>
+<figcaption>Training loss and pixel accuracy over 15 epochs. The dashed line marks the roughly 75 percent that road and sky alone are worth.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>It takes three epochs to clear the road-and-sky line, and the curve then climbs steadily, still rising at the last epoch, which says 15 epochs is where this run stopped rather than where it converged. The original assignment notes that 40 epochs gives noticeably better masks, and also warns that more epochs are not automatically better, since there is no validation set here to say when fitting turns into memorizing.</p>
+</section>
+<section id="reading-the-predictions" class="level2">
+<h2 class="anchored" data-anchor-id="reading-the-predictions">Reading the Predictions</h2>
+<p>The model outputs 23 scores per pixel, and a mask needs one class per pixel, so something has to reduce that axis. <code>tf.argmax(pred_mask, axis=-1)</code> takes the index of the largest score at each position, which is the predicted class. <code>[..., tf.newaxis]</code> puts the trailing axis of length 1 back so the result has the same shape as a true mask, and <code>[0]</code> returns the first image of the batch.</p>
+<p>Note what is missing. There is no softmax anywhere in here, and none is needed, because softmax is monotonic and therefore does not change which entry is largest. Probabilities would be required to report a confidence, not to pick a winner.</p>
+<div id="171e3c57" class="cell" data-execution_count="19">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> create_mask(pred_mask):</span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a>    pred_mask <span class="op">=</span> tf.argmax(pred_mask, axis<span class="op">=-</span><span class="dv">1</span>)</span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>    pred_mask <span class="op">=</span> pred_mask[..., tf.newaxis]</span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> pred_mask[<span class="dv">0</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The display function puts a frame, its true mask, and the predicted mask side by side. <code>array_to_img</code> converts an array to a viewable image, and it <strong>rescales</strong> as it goes, mapping the smallest value present to black and the largest to white. So the grey level of a region is not its class number, and the same class can appear at a different brightness in two panels whose ranges differ. It is a picture of the mask, useful for judging shapes, and it is not a legend.</p>
+<div id="2c08bb0b" class="cell" data-execution_count="20">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> display(display_list, axes, show_titles<span class="op">=</span><span class="va">True</span>):</span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""One frame, its true mask, and a predicted mask, side by side on one row."""</span></span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a>    title <span class="op">=</span> [<span class="st">'Input Image'</span>, <span class="st">'True Mask'</span>, <span class="st">'Predicted Mask'</span>]</span>
+<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="bu">len</span>(display_list)):</span>
+<span id="cb35-6"><a href="#cb35-6" aria-hidden="true" tabindex="-1"></a>        axes[i].imshow(tf.keras.utils.array_to_img(display_list[i]))</span>
+<span id="cb35-7"><a href="#cb35-7" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> show_titles:</span>
+<span id="cb35-8"><a href="#cb35-8" aria-hidden="true" tabindex="-1"></a>            axes[i].set_title(title[i], fontsize<span class="op">=</span><span class="dv">12</span>, color<span class="op">=</span><span class="st">'gray'</span>)</span>
+<span id="cb35-9"><a href="#cb35-9" aria-hidden="true" tabindex="-1"></a>        axes[i].axis(<span class="st">'off'</span>)</span>
+<span id="cb35-10"><a href="#cb35-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-11"><a href="#cb35-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-12"><a href="#cb35-12" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> show_predictions(dataset, num<span class="op">=</span><span class="dv">1</span>):</span>
+<span id="cb35-13"><a href="#cb35-13" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb35-14"><a href="#cb35-14" aria-hidden="true" tabindex="-1"></a><span class="co">    Displays the first image of each of the num batches, one row each</span></span>
+<span id="cb35-15"><a href="#cb35-15" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb35-16"><a href="#cb35-16" aria-hidden="true" tabindex="-1"></a>    fig, axes <span class="op">=</span> plt.subplots(num, <span class="dv">3</span>, figsize<span class="op">=</span>(<span class="dv">11</span>, <span class="fl">2.85</span> <span class="op">*</span> num))</span>
+<span id="cb35-17"><a href="#cb35-17" aria-hidden="true" tabindex="-1"></a>    axes <span class="op">=</span> np.atleast_2d(axes)</span>
+<span id="cb35-18"><a href="#cb35-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-19"><a href="#cb35-19" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> row, (image, mask) <span class="kw">in</span> <span class="bu">enumerate</span>(dataset.take(num)):</span>
+<span id="cb35-20"><a href="#cb35-20" aria-hidden="true" tabindex="-1"></a>        pred_mask <span class="op">=</span> unet.predict(image, verbose<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb35-21"><a href="#cb35-21" aria-hidden="true" tabindex="-1"></a>        display([image[<span class="dv">0</span>], mask[<span class="dv">0</span>], create_mask(pred_mask)], axes[row], row <span class="op">==</span> <span class="dv">0</span>)</span>
+<span id="cb35-22"><a href="#cb35-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-23"><a href="#cb35-23" aria-hidden="true" tabindex="-1"></a>    plt.tight_layout()</span>
+<span id="cb35-24"><a href="#cb35-24" aria-hidden="true" tabindex="-1"></a>    plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="b2b4e048" class="cell" data-execution_count="21">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>show_predictions(train_dataset, <span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-image-segmentation-with-u-net_files/figure-html/cell-22-output-1.png" class="img-fluid figure-img"></p>
+<figcaption>Three frames with their true and predicted masks. Large regions are recovered cleanly, and most of the errors sit on boundaries, on small objects, and between categories that look alike at this resolution.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The large regions come out right. Road, sky, building, and vegetation are placed where they belong and their boundaries follow the real edges rather than blurring across them, which is the skip connections doing their work. The mistakes are where you would expect them to be, on thin structures such as poles and lane markings that a 96 by 128 grid barely resolves, and on the rare classes that a few hundredths of a percent of the pixels cannot teach.</p>
+<p>The grayscale panels make it hard to say <strong>which</strong> class was confused with which. Mapping each index to a fixed color, with the same mapping in both panels, answers that.</p>
+<div id="f96039d5" class="cell" data-execution_count="22">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="co"># one color per CARLA class index, chosen for legibility rather than taken from the data</span></span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a>CLASS_COLORS <span class="op">=</span> [<span class="st">'#000000'</span>, <span class="st">'#8B5A2B'</span>, <span class="st">'#C8A165'</span>, <span class="st">'#B0B0B0'</span>, <span class="st">'#E23A3A'</span>, <span class="st">'#F0C808'</span>,</span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a>                <span class="st">'#FFFFFF'</span>, <span class="st">'#59636F'</span>, <span class="st">'#C77FBF'</span>, <span class="st">'#2E8B57'</span>, <span class="st">'#4682B4'</span>, <span class="st">'#A0522D'</span>,</span>
+<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a>                <span class="st">'#FFD700'</span>, <span class="st">'#87CEEB'</span>, <span class="st">'#9C8B6E'</span>, <span class="st">'#7F7F9F'</span>, <span class="st">'#6B4E31'</span>, <span class="st">'#B7C4CF'</span>,</span>
+<span id="cb37-5"><a href="#cb37-5" aria-hidden="true" tabindex="-1"></a>                <span class="st">'#FF8C00'</span>, <span class="st">'#9467BD'</span>, <span class="st">'#E377C2'</span>, <span class="st">'#00CED1'</span>, <span class="st">'#8FBC5A'</span>]</span>
+<span id="cb37-6"><a href="#cb37-6" aria-hidden="true" tabindex="-1"></a>cmap <span class="op">=</span> ListedColormap(CLASS_COLORS)</span>
+<span id="cb37-7"><a href="#cb37-7" aria-hidden="true" tabindex="-1"></a>norm <span class="op">=</span> BoundaryNorm(np.arange(<span class="op">-</span><span class="fl">0.5</span>, <span class="fl">23.5</span>), cmap.N)</span>
+<span id="cb37-8"><a href="#cb37-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-9"><a href="#cb37-9" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> image, mask <span class="kw">in</span> train_dataset.take(<span class="dv">1</span>):</span>
+<span id="cb37-10"><a href="#cb37-10" aria-hidden="true" tabindex="-1"></a>    true_mask <span class="op">=</span> mask[<span class="dv">0</span>].numpy()[:, :, <span class="dv">0</span>]</span>
+<span id="cb37-11"><a href="#cb37-11" aria-hidden="true" tabindex="-1"></a>    pred_mask <span class="op">=</span> create_mask(unet.predict(image, verbose<span class="op">=</span><span class="dv">0</span>)).numpy()[:, :, <span class="dv">0</span>]</span>
+<span id="cb37-12"><a href="#cb37-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-13"><a href="#cb37-13" aria-hidden="true" tabindex="-1"></a>fig, axes <span class="op">=</span> plt.subplots(<span class="dv">1</span>, <span class="dv">3</span>, figsize<span class="op">=</span>(<span class="dv">12</span>, <span class="fl">3.6</span>))</span>
+<span id="cb37-14"><a href="#cb37-14" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">0</span>].imshow(image[<span class="dv">0</span>].numpy())</span>
+<span id="cb37-15"><a href="#cb37-15" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">0</span>].set_title(<span class="st">'Input Image'</span>, fontsize<span class="op">=</span><span class="dv">12</span>, color<span class="op">=</span><span class="st">'gray'</span>)</span>
+<span id="cb37-16"><a href="#cb37-16" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">1</span>].imshow(true_mask, cmap<span class="op">=</span>cmap, norm<span class="op">=</span>norm, interpolation<span class="op">=</span><span class="st">'nearest'</span>)</span>
+<span id="cb37-17"><a href="#cb37-17" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">1</span>].set_title(<span class="st">'True Mask'</span>, fontsize<span class="op">=</span><span class="dv">12</span>, color<span class="op">=</span><span class="st">'gray'</span>)</span>
+<span id="cb37-18"><a href="#cb37-18" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">2</span>].imshow(pred_mask, cmap<span class="op">=</span>cmap, norm<span class="op">=</span>norm, interpolation<span class="op">=</span><span class="st">'nearest'</span>)</span>
+<span id="cb37-19"><a href="#cb37-19" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">2</span>].set_title(<span class="st">'Predicted Mask'</span>, fontsize<span class="op">=</span><span class="dv">12</span>, color<span class="op">=</span><span class="st">'gray'</span>)</span>
+<span id="cb37-20"><a href="#cb37-20" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> ax <span class="kw">in</span> axes:</span>
+<span id="cb37-21"><a href="#cb37-21" aria-hidden="true" tabindex="-1"></a>    ax.axis(<span class="st">'off'</span>)</span>
+<span id="cb37-22"><a href="#cb37-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-23"><a href="#cb37-23" aria-hidden="true" tabindex="-1"></a>present <span class="op">=</span> <span class="bu">sorted</span>(<span class="bu">set</span>(np.unique(true_mask)) <span class="op">|</span> <span class="bu">set</span>(np.unique(pred_mask)))</span>
+<span id="cb37-24"><a href="#cb37-24" aria-hidden="true" tabindex="-1"></a>fig.legend(handles<span class="op">=</span>[Patch(facecolor<span class="op">=</span>CLASS_COLORS[c], edgecolor<span class="op">=</span><span class="st">'#888888'</span>,</span>
+<span id="cb37-25"><a href="#cb37-25" aria-hidden="true" tabindex="-1"></a>                          label<span class="op">=</span><span class="ss">f'</span><span class="sc">{</span>c<span class="sc">}</span><span class="ss"> </span><span class="sc">{</span>CARLA_CLASSES[c]<span class="sc">}</span><span class="ss">'</span>) <span class="cf">for</span> c <span class="kw">in</span> present],</span>
+<span id="cb37-26"><a href="#cb37-26" aria-hidden="true" tabindex="-1"></a>           loc<span class="op">=</span><span class="st">'lower center'</span>, ncol<span class="op">=</span><span class="dv">6</span>, frameon<span class="op">=</span><span class="va">False</span>, fontsize<span class="op">=</span><span class="dv">9</span>,</span>
+<span id="cb37-27"><a href="#cb37-27" aria-hidden="true" tabindex="-1"></a>           bbox_to_anchor<span class="op">=</span>(<span class="fl">0.5</span>, <span class="op">-</span><span class="fl">0.16</span>))</span>
+<span id="cb37-28"><a href="#cb37-28" aria-hidden="true" tabindex="-1"></a>plt.tight_layout()</span>
+<span id="cb37-29"><a href="#cb37-29" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb37-30"><a href="#cb37-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-31"><a href="#cb37-31" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"pixel agreement on this frame: </span><span class="sc">{</span>(true_mask <span class="op">==</span> pred_mask)<span class="sc">.</span>mean()<span class="sc">:.1%}</span><span class="ss">"</span>)</span>
+<span id="cb37-32"><a href="#cb37-32" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"classes in the true mask:      "</span>, <span class="bu">sorted</span>(np.unique(true_mask).tolist()))</span>
+<span id="cb37-33"><a href="#cb37-33" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"classes in the predicted mask: "</span>, <span class="bu">sorted</span>(np.unique(pred_mask).tolist()))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-image-segmentation-with-u-net_files/figure-html/cell-23-output-1.png" class="img-fluid figure-img"></p>
+<figcaption>The same comparison with one fixed color per class, so the two mask panels can be read against each other. The colors are chosen here for legibility and are not stored in the data.</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>pixel agreement on this frame: 96.5%
+classes in the true mask:       [1, 3, 5, 6, 7, 8, 9, 11, 13, 17, 22]
+classes in the predicted mask:  [1, 2, 7, 8, 9, 11, 13, 14, 17, 22]</code></pre>
+</div>
+</div>
+<p>The two lists of classes rarely match exactly, and the difference runs both ways. A class present in the truth and missing from the prediction is one the model failed to find, usually something small and rare. A class present in the prediction and missing from the truth is a confusion, usually between two categories that look alike in a 96 by 128 frame, such as a wall against a building or terrain against vegetation.</p>
+<section id="review-questions-6" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-6">Review Questions</h3>
+<p><strong>1. <code>create_mask</code> applies <code>argmax</code> to raw scores, with no softmax. Why is that not a bug?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-19-contents" aria-controls="callout-19" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-19" class="callout-19-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because softmax is monotonic, so it preserves the ordering of the values it is applied to. The largest raw score is always the largest probability, and <code>argmax</code> only asks which entry is largest. Applying the softmax first would cost an exponential and a normalization per pixel and give the same answer. It would be needed only to report how confident the prediction is, or to compare a probability against a threshold, neither of which happens here.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why can the grey level of a region in the <code>array_to_img</code> panels not be read as a class number?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-20-contents" aria-controls="callout-20" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-20" class="callout-20-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because <code>array_to_img</code> rescales its input to the display range 0 to 255, mapping the smallest value present to black and the largest to white. The mapping therefore depends on which classes happen to appear in that particular mask, so class 7 is drawn at one brightness in a frame whose largest index is 22 and at a different brightness in a frame whose largest index is 13. Comparing the true and predicted panels by eye works for shapes and fails for identity, which is why the second figure fixes a color per class instead.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The model reaches nearly 94 percent pixel accuracy, yet the predicted masks visibly miss poles and lane markings. How can both be true?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-21-contents" aria-controls="callout-21" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-21" class="callout-21-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because accuracy is an area measurement and those objects have almost no area. Poles are 0.4 percent of the pixels and traffic signs are 0.012 percent, so getting every one of them wrong moves the score by a fraction of a percent, while the road and sky that dominate the frame are easy and carry three quarters of the weight. The metric is reporting honestly on the question it was asked, and the question is a poor match for what the masks are wanted for. A per-class measure such as mean intersection over union would rank a model that finds the poles above one that does not.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="summary" class="level2">
+<h2 class="anchored" data-anchor-id="summary">Summary</h2>
+<p>The lab built a U-Net out of two functions and trained it to label 12,288 pixels per frame across 23 classes.</p>
+<p><strong>Encoder and decoder are one function each.</strong> <code>conv_block</code> is two same-padded convolutions, optional dropout, and optional pooling, returning the pooled tensor to send down and the unpooled tensor to send across. <code>upsampling_block</code> is a transpose convolution, a concatenation, and two more convolutions. Five of the first and four of the second is the whole architecture.</p>
+<p><strong>Skips are taken before pooling and joined by concatenation.</strong> Before pooling, because the point is to carry the resolution the deep path is losing. By concatenation rather than addition, because the two sources hold different information and the following convolutions should decide how to weigh them.</p>
+<p><strong>Labels are images, and they resize differently from pictures.</strong> A mask is a grid of class indices stored in a lossless format, and it must be resized with nearest neighbor, since the average of two class numbers is a third class that was never there.</p>
+<p><strong>The output is scores, not probabilities.</strong> A <span class="math inline">\(1 \times 1\)</span> convolution with one filter per class gives 96 by 128 by 23 raw scores, <code>SparseCategoricalCrossentropy(from_logits=True)</code> applies the softmax inside the loss where it is numerically safe, and <code>argmax</code> turns the scores into a mask without needing a softmax at all.</p>
+<p><strong>Pixel accuracy flatters this dataset.</strong> Road and sky are three quarters of the pixels, so 75 percent is the floor rather than a result, and the 93.6 percent reached after 15 epochs coexists with a predicted mask holding no poles and no lane markings at all on the frame shown above. The metric to reach for next is intersection over union averaged over classes, which is what <a href="../../../ai/deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes.html#measuring-overlap-with-iou">IoU</a> measured for boxes, applied to regions instead.</p>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li>Dosovitskiy, A., Ros, G., Codevilla, F., Lopez, A., &amp; Koltun, V. (2017). CARLA: An open urban driving simulator. In <em>Proceedings of the 1st Annual Conference on Robot Learning</em>, Proceedings of Machine Learning Research (Vol. 78, pp.&nbsp;1-16). PMLR. <a href="https://proceedings.mlr.press/v78/dosovitskiy17a.html" class="uri">https://proceedings.mlr.press/v78/dosovitskiy17a.html</a></li>
+<li>Ronneberger, O., Fischer, P., &amp; Brox, T. (2015). U-Net: Convolutional networks for biomedical image segmentation. In <em>Medical Image Computing and Computer-Assisted Intervention, MICCAI 2015</em>, Lecture Notes in Computer Science (Vol. 9351, pp.&nbsp;234-241). Springer. <a href="https://doi.org/10.1007/978-3-319-24574-4_28" class="uri">https://doi.org/10.1007/978-3-319-24574-4_28</a></li>
+</ul>
+<p>The frames and masks come from the “Image Segmentation with U-Net” programming assignment of the DeepLearning.AI Convolutional Neural Networks course, where they are supplied as simulator output rather than hand annotation. The class numbering was checked against the <a href="https://carla.readthedocs.io/en/0.9.11/ref_sensors/">CARLA 0.9.11 sensor reference</a>.</p>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 80%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">80% completed (1637 of 2042 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" class="pagination-link" aria-label="Semantic Segmentation with U-Net">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Semantic Segmentation with U-Net</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../../ai/deep-learning/convolutional-neural-networks/face-recognition-and-one-shot-learning.html" class="pagination-link" aria-label="Face Recognition and One Shot Learning">
+        <span class="nav-page-text">Face Recognition and One Shot Learning</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

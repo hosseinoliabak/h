@@ -1,0 +1,1489 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-17">
+<meta name="description" content="How a ConvNet learns to output bounding box coordinates alongside a class label, the eight component target vector, and how the same idea locates facial landmarks.">
+
+<title>Object Localization and Landmark Detection – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html" rel="next">
+<link href="../../../ai/deep-learning/convolutional-neural-networks/lab-transfer-learning-with-mobilenet.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Object Localization and Landmark Detection – H’s Notes">
+<meta property="og:description" content="How a ConvNet learns to output bounding box coordinates alongside a class label, the eight component target vector, and how the same idea locates facial landmarks.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Object Localization and Landmark Detection – H’s Notes">
+<meta name="twitter:description" content="How a ConvNet learns to output bounding box coordinates alongside a class label, the eight component target vector, and how the same idea locates facial landmarks.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../infrastructure/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html">Object Localization and Landmark Detection</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutional Neural Networks</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/convolutions-and-edge-detection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Convolutions and Edge Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/strided-convolutions-and-volumes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Strided Convolutions and Convolutions Over Volume</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/one-layer-of-a-convolutional-network.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">One Layer of a Convolutional Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/pooling-layers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pooling Layers</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/full-convnet-example-and-why-convolutions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Full ConvNet Example and Why Convolutions</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-convolutional-model-step-by-step.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Convolutional Model Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-convolutional-model-application.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Convolutional Model Application</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/classic-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classic Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/modern-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modern Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-residual-networks.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Residual Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/mobilenet-and-efficientnet.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MobileNet and EfficientNet</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/practical-advice-for-convnets.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Practical Advice for Using ConvNets</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-transfer-learning-with-mobilenet.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Transfer Learning with MobileNetV2</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/object-localization-and-landmark-detection.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Object Localization and Landmark Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sliding Windows and Region Proposals</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bounding Box Predictions with YOLO</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">IoU, Non-max Suppression, and Anchor Boxes</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-car-detection-with-yolo.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Car Detection with YOLO</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/semantic-segmentation-with-u-net.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Semantic Segmentation with U-Net</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-image-segmentation-with-u-net.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Image Segmentation with U-Net</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/face-recognition-and-one-shot-learning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Face Recognition and One Shot Learning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/siamese-networks-and-the-triplet-loss.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Siamese Networks and the Triplet Loss</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-face-recognition.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Face Recognition</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/neural-style-transfer.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Neural Style Transfer</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-neural-style-transfer.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Art Generation with Neural Style Transfer</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#three-vision-tasks" id="toc-three-vision-tasks" class="nav-link active" data-scroll-target="#three-vision-tasks">Three Vision Tasks</a></li>
+  <li><a href="#bounding-box-output" id="toc-bounding-box-output" class="nav-link" data-scroll-target="#bounding-box-output">Bounding Box Output</a></li>
+  <li><a href="#target-label" id="toc-target-label" class="nav-link" data-scroll-target="#target-label">Target Label</a></li>
+  <li><a href="#loss-function" id="toc-loss-function" class="nav-link" data-scroll-target="#loss-function">Loss Function</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#landmark-detection" id="toc-landmark-detection" class="nav-link" data-scroll-target="#landmark-detection">Landmark Detection</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../breadcrumb-path.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Object Localization and Landmark Detection</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">convolutional-neural-networks</div>
+    <div class="quarto-category">computer-vision</div>
+    <div class="quarto-category">object-detection</div>
+    <div class="quarto-category">localization</div>
+    <div class="quarto-category">landmarks</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    How a ConvNet learns to output bounding box coordinates alongside a class label, the eight component target vector, and how the same idea locates facial landmarks.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 17, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~40 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,300 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<p>Object detection is one of the areas of computer vision that has moved fastest, and it works far better now than it did a few years ago. Getting there takes one step at a time, and the first step is <strong>object localization</strong>.</p>
+<p>Image classification asks what is in a picture. Localization also asks where it is. The answer to “where” turns out to be nothing more exotic than a few more output numbers, trained with the same supervised learning already used for the class label. That single observation, that a network can be asked to output real numbers describing positions, carries all the way from a bounding box to the sixty-four points of a face.</p>
+<section id="three-vision-tasks" class="level2">
+<h2 class="anchored" data-anchor-id="three-vision-tasks">Three Vision Tasks</h2>
+<p>Three related tasks come up repeatedly, and it is worth separating them before going further.</p>
+<p><strong>Classification</strong> takes a picture and returns a label. This is the task from <a href="../../../ai/deep-learning/convolutional-neural-networks/full-convnet-example-and-why-convolutions.html">Full ConvNet Example</a>, where a picture of a car produces the answer “car” and nothing else.</p>
+<p><strong>Classification with localization</strong> returns the label and a box. The algorithm has to say “car” and also draw a rectangle around where in the picture the car is.</p>
+<p><strong>Detection</strong> drops the assumption that there is only one thing to find. A picture may hold several objects, possibly of different categories, and all of them have to be found and located. For a self driving application that could mean other cars, pedestrians, and motorcycles in the same frame.</p>
+<div id="d2da4f32" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="object-localization-and-landmark-detection_files/figure-html/cell-2-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Photographs from the Drive.ai Sample Dataset, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Those are real photographs from a car mounted camera, and the red boxes were not drawn by hand. They came from running a trained detector over each frame once, offline, and recording what it found, which is why the third panel finds six cars and a bus without anyone measuring anything. The rest of this page is about what a network has to output for boxes like those to be possible at all.</p>
+<p>The ordering of those three is not accidental. Ideas from classification carry over to classification with localization, and ideas from localization carry over to detection. This page covers the middle one, where there is at most one object to find, and that restriction is what keeps the output a fixed size.</p>
+</section>
+<section id="bounding-box-output" class="level2">
+<h2 class="anchored" data-anchor-id="bounding-box-output">Bounding Box Output</h2>
+<p>Start from the classification pipeline. An image goes into a ConvNet, the ConvNet produces a vector of features, and a softmax turns those features into class probabilities. For a self driving application the classes might be four.</p>
+<ol type="1">
+<li>Pedestrian</li>
+<li>Car</li>
+<li>Motorcycle</li>
+<li>Background, meaning none of the above</li>
+</ol>
+<p>Now suppose the position of the car is wanted as well. The change is small. Give the network four more output units, called <span class="math inline">\(b_x\)</span>, <span class="math inline">\(b_y\)</span>, <span class="math inline">\(b_h\)</span>, and <span class="math inline">\(b_w\)</span>, and let those four numbers describe the box.</p>
+<div id="6bda99bb" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="object-localization-and-landmark-detection_files/figure-html/cell-3-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Photograph from the Drive.ai Sample Dataset, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Everything to the left of the two heads is the classification network, unchanged. The convolutional and pooling layers still reduce the image to a vector of features, and the softmax head still turns those features into class probabilities. Localization adds one thing, the second head, four units reading the same features and reporting numbers rather than probabilities. Those units carry no softmax and no sigmoid, because a coordinate is not a probability and squashing it would cost the network the ability to say 0.65.</p>
+<p>Describing a rectangle takes four numbers, and the convention used here is the midpoint plus the size. So <span class="math inline">\((b_x, b_y)\)</span> is the center of the box, <span class="math inline">\(b_h\)</span> is its height, and <span class="math inline">\(b_w\)</span> is its width. Coordinates are measured with the <strong>upper left corner of the image at <span class="math inline">\((0,0)\)</span> and the lower right corner at <span class="math inline">\((1,1)\)</span></strong>, which means <span class="math inline">\(b_y\)</span> grows downward, and every one of the four numbers is a fraction of the image rather than a count of pixels.</p>
+<div id="686f298e" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="object-localization-and-landmark-detection_files/figure-html/cell-4-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Photograph from the Drive.ai Sample Dataset, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Reading the numbers off that picture, <span class="math inline">\(b_x\)</span> is 0.65 because the midpoint sits about two thirds of the way across, <span class="math inline">\(b_y\)</span> is 0.46 because it is a little above halfway down, <span class="math inline">\(b_w\)</span> is 0.11 because the box is about a ninth of the width, and <span class="math inline">\(b_h\)</span> is 0.15 because it is about a seventh of the height. Four numbers, each between 0 and 1, and the rectangle is pinned down completely.</p>
+<p>Notice how small those last two are. In footage from a car, the thing being localized usually occupies a modest patch of a wide frame, which is worth remembering later, because a network that has to find such a patch anywhere in the image is doing something harder than it looks.</p>
+<p>For supervised learning to produce those numbers, the training set has to contain them. A labeled example is no longer an image and a class, it is an image, a class, and four coordinates, which somebody had to draw. That is the real cost of localization, and it is paid in labeling rather than in architecture.</p>
+</section>
+<section id="target-label" class="level2">
+<h2 class="anchored" data-anchor-id="target-label">Target Label</h2>
+<p>With eight numbers coming out of the network, the target label needs eight components too. The first one answers whether there is any object at all.</p>
+<p><span class="math display">\[
+y = \begin{bmatrix} p_c \\ b_x \\ b_y \\ b_h \\ b_w \\ c_1 \\ c_2 \\ c_3 \end{bmatrix}
+\]</span></p>
+<p><span class="math inline">\(p_c\)</span> is 1 if one of the classes being looked for is present, and 0 if the image is background. Think of it as the probability that there is an object, meaning something other than background.</p>
+<p>If <span class="math inline">\(p_c = 1\)</span>, then <span class="math inline">\(b_x, b_y, b_h, b_w\)</span> give the box, and <span class="math inline">\(c_1, c_2, c_3\)</span> say which class it is, one of pedestrian, car, or motorcycle. At most one of the three is 1, because this task assumes at most one object in the image.</p>
+<p>Notice what happened to the fourth class. The classification pipeline had a four way softmax whose last output was background, while this target vector has only three class components. Background did not disappear, it moved into <span class="math inline">\(p_c\)</span>. Saying “no object” and saying “which object” are now two separate questions, which is exactly what allows the second question to be skipped when the answer to the first one is no.</p>
+<div id="7a69a9f4" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="object-localization-and-landmark-detection_files/figure-html/cell-5-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Photographs from the Drive.ai Sample Dataset, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The image on the left is a car, so <span class="math inline">\(p_c = 1\)</span>, the four coordinates describe the red box, and the class components are <span class="math inline">\(c_1 = 0\)</span>, <span class="math inline">\(c_2 = 1\)</span>, <span class="math inline">\(c_3 = 0\)</span>, since a car is class 2.</p>
+<p>The image on the right contains none of the three classes, so <span class="math inline">\(p_c = 0\)</span> and the remaining seven components are <strong>do not care</strong> entries, written as question marks. There is no correct bounding box for an image with no object in it, and no correct class either, so the label simply declines to say.</p>
+</section>
+<section id="loss-function" class="level2">
+<h2 class="anchored" data-anchor-id="loss-function">Loss Function</h2>
+<p>Those question marks have to mean something to the training procedure, and the loss function is where they get their meaning. Take the ground truth <span class="math inline">\(y\)</span> and the network output <span class="math inline">\(\hat y\)</span>, and split the definition on the first component.</p>
+<p><span class="math display">\[
+\mathcal{L}(\hat y, y) =
+\begin{cases}
+(\hat y_1 - y_1)^2 + (\hat y_2 - y_2)^2 + \cdots + (\hat y_8 - y_8)^2, &amp; \text{if } y_1 = 1 \\[4pt]
+(\hat y_1 - y_1)^2, &amp; \text{if } y_1 = 0
+\end{cases}
+\]</span></p>
+<p>When <span class="math inline">\(y_1 = 1\)</span>, which is to say <span class="math inline">\(p_c = 1\)</span>, there is an object, every component of the label is meaningful, and squared error over all eight of them penalizes any deviation.</p>
+<p>When <span class="math inline">\(y_1 = 0\)</span> there is no object, components two through eight are do not care entries, and the loss ignores them completely. All that matters is how accurately the network reports <span class="math inline">\(p_c\)</span>. Whatever box it draws in that case is irrelevant, because nothing in the picture is being boxed.</p>
+<p>Squared error over all eight components is a simplification that keeps the description short. In practice the three parts of the vector usually get losses suited to what they are. The class components <span class="math inline">\(c_1, c_2, c_3\)</span> come from a softmax and use a log likelihood loss, the box coordinates keep squared error or something like it, and <span class="math inline">\(p_c\)</span> uses the logistic regression loss from <a href="../../../ai/deep-learning/neural-networks-and-deep-learning/logistic-regression-as-a-neural-network.html">Logistic Regression as a Neural Network</a>. Squared error on everything will still work reasonably well.</p>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. Why does the target vector have three class components when the classification network it grew out of had a four way softmax?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because the fourth class, background, has been separated out into <span class="math inline">\(p_c\)</span>. The softmax had to choose one of pedestrian, car, motorcycle, or background, so “nothing here” competed against the real classes as if it were one of them. Splitting the question in two lets <span class="math inline">\(p_c\)</span> answer whether anything is present and lets <span class="math inline">\(c_1, c_2, c_3\)</span> answer which class it is, given that something is. That split is what makes the seven ignored components possible, because there is now a single component that says the rest of the vector carries no information.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. An image contains no pedestrian, car, or motorcycle. The network outputs <span class="math inline">\(p_c = 0.02\)</span> and a bounding box in a completely arbitrary place. How much does the wrong box cost during training?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Nothing. With <span class="math inline">\(y_1 = 0\)</span> the loss reduces to <span class="math inline">\((\hat y_1 - y_1)^2\)</span>, so the only term that survives is the one measuring <span class="math inline">\(p_c\)</span>. The box components and the class components are absent from the loss, so no gradient flows into them from this example. That is intentional, since there is no correct answer to compare an arbitrary box against on an image with no object.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why is the bounding box expressed as fractions of the image rather than as pixel counts?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because fractions are independent of the input size. With the upper left at <span class="math inline">\((0,0)\)</span> and the lower right at <span class="math inline">\((1,1)\)</span>, the same four numbers describe the same box whether the image is 100 by 100 or 1000 by 1000, so training images and test images of different resolutions produce comparable labels. It also keeps the four outputs on a similar scale to each other and to the class outputs, which makes them easier to fit with one shared loss.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The label for a localization example is an image, a class, and four coordinates. Which part of that is expensive, and why does it matter here more than for classification?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The four coordinates. A classification label is one choice from a short list, while a bounding box has to be drawn, and drawn consistently, by a person looking at every training image. Nothing in the architecture changes much when localization is added, since it is four more output units, so the practical cost of the task sits almost entirely in producing the labels rather than in the model.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. The three classes are pedestrian, car, and motorcycle, in that order, and the target is <span class="math inline">\(y = [p_c, b_x, b_y, b_h, b_w, c_1, c_2, c_3]\)</span>. What should <span class="math inline">\(y\)</span> be for this photograph?</strong></p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="../../../media/deep-learning/object-detection/motorcycle-pexels-995487.jpg" class="img-fluid quarto-figure quarto-figure-center figure-img" style="width:88.0%"></p>
+</figure>
+</div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(y = [1, 0.25, 0.51, 0.33, 0.25, 0, 0, 1]\)</span>.</p>
+<p>There is an object from one of the three classes, so <span class="math inline">\(p_c = 1\)</span> and no component of the vector is ignored by the loss. The scooter is a motorcycle, so <span class="math inline">\(c_3 = 1\)</span> while <span class="math inline">\(c_1\)</span> and <span class="math inline">\(c_2\)</span> are 0. The four box numbers are fractions of the image, so the midpoint sits a quarter of the way across and about halfway down, and the box covers about a third of the height and a quarter of the width.</p>
+<p>Two of the wrong answers are worth naming. Setting <span class="math inline">\(c_1\)</span> and <span class="math inline">\(c_2\)</span> to “?” would only be right if <span class="math inline">\(p_c\)</span> were 0, because the class components are ignored by the loss only when there is no object at all. Setting all three classes to 1 misreads <span class="math inline">\(c_1, c_2, c_3\)</span> as independent flags, when exactly one of them is 1.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. A factory camera photographs a soft drink can on a conveyor belt, and the system has to say whether a can is present and where it is. The can is round, so its box is always square, and it always appears at the same size. At most one can appears per image. What is the smallest set of output units that does the job?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>A logistic unit for presence, plus <span class="math inline">\(b_x\)</span> and <span class="math inline">\(b_y\)</span>. Three units in total.</p>
+<p>The usual answer would also need <span class="math inline">\(b_h\)</span> and <span class="math inline">\(b_w\)</span>, but neither carries any information here. The can is always the same size, so its height is a constant the network does not have to predict, and the box is always square, so the width is that same constant. Only the position varies from image to image.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="landmark-detection" class="level2">
+<h2 class="anchored" data-anchor-id="landmark-detection">Landmark Detection</h2>
+<p>A bounding box is four numbers describing one rectangle. Nothing restricts the idea to four, or to rectangles. In general a network can output the <span class="math inline">\(x\)</span> and <span class="math inline">\(y\)</span> coordinates of any number of important points in an image, and those points are called <strong>landmarks</strong>.</p>
+<p>Take face recognition. Suppose the corner of an eye is wanted. That point has an <span class="math inline">\(x\)</span> and a <span class="math inline">\(y\)</span> coordinate, so the final layer gets two more units, <span class="math inline">\(l_x\)</span> and <span class="math inline">\(l_y\)</span>, and it reports where the corner is. For all four corners of both eyes, the outputs become <span class="math inline">\(l_{1x}, l_{1y}\)</span> for the first point, <span class="math inline">\(l_{2x}, l_{2y}\)</span> for the second, and so on.</p>
+<p>There is no reason to stop at the corners. Points can be placed along the eye, along the mouth so that the shape of the mouth reveals whether the person is smiling or frowning, along the edges of the nose, and around the jaw line to define the edge of the face. Pick a number, say sixty-four landmarks, annotate a training set with all of them, and the network can be trained to report every one.</p>
+<div id="9bc6b8f9" class="cell" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="object-localization-and-landmark-detection_files/figure-html/cell-6-output-1.svg" class="img-fluid figure-img" alt="Left, a close-up of Jürgen Klinsmann's face on a pitch with 68 red landmarks outlining the jaw, brows, eyes, nose and lips. Right, Klinsmann jogging in an Inter Forever shirt with 17 red joints joined into a skeleton, six of them labeled shoulder, elbow, wrist, hip, knee and ankle."></p>
+<figcaption>Face photograph by <a href="https://www.flickr.com/photos/nathanf/6227558425/">Nathan Forget</a>, <a href="https://creativecommons.org/licenses/by/2.0/">CC BY 2.0</a>, and pose photograph by <a href="https://www.flickr.com/photos/cfcunofficial/42326071641/"><span class="citation" data-cites="cfcunofficial">@cfcunofficial</span> (Chelsea Debs) London</a>, <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC BY-SA 2.0</a>, both of Jürgen Klinsmann and both cropped. The points are not hand-placed: the 68 face landmarks come from FAN and the 17 joints from Keypoint R-CNN, each run once offline, as recorded in <code>media/deep-learning/IMAGE-SOURCES.txt</code>. Being a derivative of a share-alike photograph, the right-hand panel is available under <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC BY-SA 2.0</a>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The left picture carries sixty-eight points, which is the markup public face datasets settled on, and nothing about that number is special. A network that reports sixty-four of them is the familiar one with a longer output. An image goes through a ConvNet, and the final layer emits one unit saying whether there is a face at all, followed by <span class="math inline">\(l_{1x}, l_{1y}\)</span> down to <span class="math inline">\(l_{64x}, l_{64y}\)</span>. That is <span class="math inline">\(1 + 64 \times 2 = 129\)</span> output units.</p>
+<p>Landmarks like these are a building block for recognizing emotion from a face. They are also what sits behind the augmented reality filters in photo applications, the ones that draw a crown on someone’s head or warp their features, since drawing anything onto a face requires knowing where the face is in detail rather than roughly.</p>
+<p>The same idea applies to people rather than faces. Choose key positions on a body, such as the midpoint of the chest, the left shoulder, the left elbow, the wrist, and so on, and a network can annotate all of them. The right picture uses seventeen of them, the set the COCO keypoint benchmark defines, and with thirty-two such points, <span class="math inline">\(l_{1x}, l_{1y}\)</span> through <span class="math inline">\(l_{32x}, l_{32y}\)</span>, the output describes the pose in more detail. As with the face, the count is a choice made when the data was labeled, not something the architecture forces.</p>
+<p>One requirement makes all of this work, and it is easy to overlook because it is a property of the dataset rather than of the network. <strong>The identity of each landmark has to be consistent across every image.</strong> Landmark one is always the same corner of the same eye, landmark two is always the next specific point, and so on through the whole set. Output unit forty learns to predict whatever point forty was labeled as, so if the labeling order drifts between images, that unit is being trained on two different targets at once.</p>
+<p>Producing that data means somebody annotating every landmark in every training image by hand, consistently. It is laborious, and it is the price of admission.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. A landmark network for 64 face points has 129 output units. Where does each part of that number come from?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>One unit reports whether there is a face in the image at all, and each landmark needs two numbers, an <span class="math inline">\(x\)</span> and a <span class="math inline">\(y\)</span>. So the count is <span class="math inline">\(1 + 64 \times 2 = 129\)</span>. The structure is the same as the localization vector, where one component asks whether the object is present and the rest describe geometry.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why must landmark one mean the same anatomical point in every training image?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because a specific pair of output units is responsible for it. The unit that predicts <span class="math inline">\(l_{1x}\)</span> learns one function from image to coordinate, so it can only learn something coherent if <span class="math inline">\(l_{1x}\)</span> refers to the same point every time. If landmark one is the left corner of the left eye in some images and the right corner of the mouth in others, the unit is being asked to predict two unrelated quantities, and it will settle on something that fits neither. Consistency is a property of the labeling, and the network cannot recover it.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What do bounding box regression and landmark detection have in common, and why does that make them one idea rather than two?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Both ask a ConvNet to output real numbers describing positions in the image, trained with ordinary supervised learning against labels somebody drew. A box is a fixed set of four such numbers with a geometric interpretation, and a landmark set is a longer list of the same kind of number. Nothing about the architecture changes between them beyond the width of the final layer, which is why the same trick extends from one rectangle to sixty-four points to a pose skeleton.</p>
+</div>
+</div>
+</div>
+<p>Localization and landmarks share one limitation, which is that both assume a fixed number of things to find. A single box, or a single fixed set of landmarks, is a fixed size output. Detection breaks that assumption, since the number of objects in a picture is not known in advance, and the next section starts working toward it.</p>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 55%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">55% completed (1129 of 2042 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/convolutional-neural-networks/lab-transfer-learning-with-mobilenet.html" class="pagination-link" aria-label="Transfer Learning with MobileNetV2">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Transfer Learning with MobileNetV2</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../../ai/deep-learning/convolutional-neural-networks/sliding-windows-and-region-proposals.html" class="pagination-link" aria-label="Sliding Windows and Region Proposals">
+        <span class="nav-page-text">Sliding Windows and Region Proposals</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

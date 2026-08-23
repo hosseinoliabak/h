@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-06">
+<meta name="description" content="How softmax generalizes logistic regression to C classes, with a worked example, linear decision boundaries, cross-entropy loss, and backprop.">
+
+<title>Softmax Regression – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/improving-deep-neural-networks/deep-learning-frameworks.html" rel="next">
+<link href="../../../ai/deep-learning/improving-deep-neural-networks/batch-normalization.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Softmax Regression – H’s Notes">
+<meta property="og:description" content="How softmax generalizes logistic regression to C classes, with a worked example, linear decision boundaries, cross-entropy loss, and backprop.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/improving-deep-neural-networks/softmax-regression_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Softmax Regression – H’s Notes">
+<meta name="twitter:description" content="How softmax generalizes logistic regression to C classes, with a worked example, linear decision boundaries, cross-entropy loss, and backprop.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/improving-deep-neural-networks/softmax-regression_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../infrastructure/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/improving-deep-neural-networks/softmax-regression.html">Softmax Regression</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Improving Deep Neural Networks</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-machine-learning-application.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Setting Up Your Machine Learning Application</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regularizing Your Neural Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Setting Up Your Optimization Problem</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-initialization.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Initialization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-regularization.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Regularization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-gradient-checking.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Gradient Checking</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/mini-batch-gradient-descent.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mini-batch Gradient Descent</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/exponentially-weighted-averages.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Exponentially Weighted Averages</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/momentum-rmsprop-and-adam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Momentum, RMSprop, and Adam</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-optimization-methods.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Optimization Methods</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/hyperparameter-tuning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hyperparameter Tuning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/batch-normalization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Batch Normalization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/softmax-regression.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Softmax Regression</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/deep-learning-frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Deep Learning Frameworks and TensorFlow</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-introduction-to-tensorflow.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Introduction to TensorFlow</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#recognizing-one-of-many-classes" id="toc-recognizing-one-of-many-classes" class="nav-link active" data-scroll-target="#recognizing-one-of-many-classes">Recognizing One of Many Classes</a>
+  <ul class="collapse">
+  <li><a href="#softmax-activation-function" id="toc-softmax-activation-function" class="nav-link" data-scroll-target="#softmax-activation-function">Softmax Activation Function</a></li>
+  <li><a href="#what-a-softmax-layer-can-represent" id="toc-what-a-softmax-layer-can-represent" class="nav-link" data-scroll-target="#what-a-softmax-layer-can-represent">What a Softmax Layer Can Represent</a></li>
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#training-a-softmax-classifier" id="toc-training-a-softmax-classifier" class="nav-link" data-scroll-target="#training-a-softmax-classifier">Training a Softmax Classifier</a>
+  <ul class="collapse">
+  <li><a href="#softmax-vs.-hard-max" id="toc-softmax-vs.-hard-max" class="nav-link" data-scroll-target="#softmax-vs.-hard-max">Softmax vs.&nbsp;Hard Max</a></li>
+  <li><a href="#loss-function" id="toc-loss-function" class="nav-link" data-scroll-target="#loss-function">Loss Function</a></li>
+  <li><a href="#gradient-descent-with-a-softmax-output-layer" id="toc-gradient-descent-with-a-softmax-output-layer" class="nav-link" data-scroll-target="#gradient-descent-with-a-softmax-output-layer">Gradient Descent with a Softmax Output Layer</a></li>
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../breadcrumb-path.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Softmax Regression</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">softmax</div>
+    <div class="quarto-category">multi-class-classification</div>
+    <div class="quarto-category">cross-entropy</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    How softmax generalizes logistic regression to C classes, with a worked example, linear decision boundaries, cross-entropy loss, and backprop.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 6, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~57 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,000 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<p>So far, the classification examples we have talked about used binary classification, where you had two possible labels, 0 or 1. Is it a cat, is it not a cat? What if we have multiple possible classes? There is a generalization of logistic regression called softmax regression that lets you make predictions where you are trying to recognize one of <span class="math inline">\(C\)</span> classes, rather than just two.</p>
+<section id="recognizing-one-of-many-classes" class="level2">
+<h2 class="anchored" data-anchor-id="recognizing-one-of-many-classes">Recognizing One of Many Classes</h2>
+<p>Say that instead of just recognizing cats you want to recognize cats, dogs, and chickens (the lecture uses baby chicks; the images here use chickens). Call cats class 1, dogs class 2, chickens class 3, and if the image is none of the above, there is an other class, class 0. With four possible classes like this, the notation we use is capital <span class="math inline">\(C\)</span> for the number of classes your inputs can be categorized into, so here <span class="math inline">\(C = 4\)</span>, and the numbers indexing the classes run from <span class="math inline">\(0\)</span> through <span class="math inline">\(C - 1\)</span>, that is, 0, 1, 2, 3.</p>
+<div id="c6723e2c" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="softmax-regression_files/figure-html/cell-2-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>We are going to build a neural network whose output layer has <span class="math inline">\(C\)</span> units, so <span class="math inline">\(n^{[L]} = 4\)</span>, or in general <span class="math inline">\(n^{[L]} = C\)</span>. What we want is for each unit in the output layer to tell us the probability of one of the classes. The first node should output <span class="math inline">\(P(\text{other} \mid x)\)</span>, the next <span class="math inline">\(P(\text{cat} \mid x)\)</span>, the next <span class="math inline">\(P(\text{dog} \mid x)\)</span>, and the last <span class="math inline">\(P(\text{chicken} \mid x)\)</span>. The output <span class="math inline">\(\hat{y}\)</span> is therefore a <span class="math inline">\((4, 1)\)</span> dimensional vector containing these four probabilities, and because they are probabilities, the four numbers should sum to 1.</p>
+<div id="02515a78" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="softmax-regression_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The standard model for getting your network to do this uses a <strong>softmax layer</strong> as the output layer.</p>
+<section id="softmax-activation-function" class="level3">
+<h3 class="anchored" data-anchor-id="softmax-activation-function">Softmax Activation Function</h3>
+<p>In the final layer of the network you first compute the linear part as usual,</p>
+<p><span class="math display">\[
+z^{[L]} = W^{[L]} a^{[L-1]} + b^{[L]}
+\]</span></p>
+<p>In our example <span class="math inline">\(z^{[L]}\)</span> is a <span class="math inline">\((4, 1)\)</span> vector. Then you apply the softmax activation function, which is a bit unusual. First compute a temporary variable <span class="math inline">\(t\)</span> by exponentiating element-wise,</p>
+<p><span class="math display">\[
+t = e^{z^{[L]}}
+\]</span></p>
+<p>so <span class="math inline">\(t\)</span> is also a <span class="math inline">\((4, 1)\)</span> vector. The output <span class="math inline">\(a^{[L]}\)</span> is then the vector <span class="math inline">\(t\)</span> normalized to sum to 1,</p>
+<p><span class="math display">\[
+a^{[L]} = \frac{e^{z^{[L]}}}{\sum_{i=1}^{4} t_i}
+\]</span></p>
+<p>In other words, the <span class="math inline">\(i\)</span>-th element of the output is</p>
+<p><span class="math display">\[
+a^{[L]}_i = \frac{t_i}{\sum_{j=1}^{4} t_j}
+\]</span></p>
+<p>where the sum in the denominator runs over all four entries of <span class="math inline">\(t\)</span> (in the general case, over all <span class="math inline">\(C\)</span> of them).</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Consistent Subscripts
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The lecture slide mixes the subscripts <span class="math inline">\(i\)</span> and <span class="math inline">\(j\)</span> inside this formula, writing the denominator sum over <span class="math inline">\(j\)</span> of <span class="math inline">\(t_i\)</span>. As the course clarification points out, the subscript should be consistent throughout. The forms above are the corrected ones, one index for the output element and one dummy index for the sum.</p>
+</div>
+</div>
+<p>In case this math is not clear, a specific example will make it clearer. Say your computed <span class="math inline">\(z^{[L]}\)</span> is</p>
+<p><span class="math display">\[
+z^{[L]} = \begin{bmatrix} 5 \\ 2 \\ -1 \\ 3 \end{bmatrix}
+\]</span></p>
+<p>Element-wise exponentiation gives</p>
+<p><span class="math display">\[
+t = \begin{bmatrix} e^{5} \\ e^{2} \\ e^{-1} \\ e^{3} \end{bmatrix}
+= \begin{bmatrix} 148.4 \\ 7.4 \\ 0.4 \\ 20.1 \end{bmatrix}
+\]</span></p>
+<p>To go from <span class="math inline">\(t\)</span> to <span class="math inline">\(a^{[L]}\)</span>, normalize the entries to sum to 1. Adding up those four numbers gives <span class="math inline">\(176.3\)</span>, so <span class="math inline">\(a^{[L]} = t \,/\, 176.3\)</span>,</p>
+<p><span class="math display">\[
+a^{[L]} = g^{[L]}(z^{[L]}) =
+\begin{bmatrix}
+e^{5} / (e^{5} + e^{2} + e^{-1} + e^{3}) \\
+e^{2} / (e^{5} + e^{2} + e^{-1} + e^{3}) \\
+e^{-1} / (e^{5} + e^{2} + e^{-1} + e^{3}) \\
+e^{3} / (e^{5} + e^{2} + e^{-1} + e^{3})
+\end{bmatrix}
+= \begin{bmatrix} 148.4 / 176.3 \\ 7.4 / 176.3 \\ 0.4 / 176.3 \\ 20.1 / 176.3 \end{bmatrix}
+= \begin{bmatrix} 0.842 \\ 0.042 \\ 0.002 \\ 0.114 \end{bmatrix}
+\]</span></p>
+<p>So for this image, if this is the value of <span class="math inline">\(z^{[L]}\)</span> you get, the chance of class 0 is 84.2%, the chance of class 1 is 4.2%, the chance of class 2 is 0.2%, and the chance of class 3, the chicken class, is 11.4%. The output <span class="math inline">\(a^{[L]}\)</span>, which is also <span class="math inline">\(\hat{y}\)</span>, is a <span class="math inline">\((4, 1)\)</span> vector holding these four probabilities, which sum to 1.</p>
+<p>If we summarize the computation from <span class="math inline">\(z^{[L]}\)</span> to <span class="math inline">\(a^{[L]}\)</span>, the element-wise exponentiation into the temporary variable <span class="math inline">\(t\)</span> followed by the normalization, we can write it as a softmax activation function,</p>
+<p><span class="math display">\[
+a^{[L]} = g^{[L]}(z^{[L]})
+\]</span></p>
+<p>The unusual thing about this activation function is that it takes a <span class="math inline">\((4, 1)\)</span> vector as input and outputs a <span class="math inline">\((4, 1)\)</span> vector. Previously, our activation functions took a single real number as input; the sigmoid and ReLU activation functions each input a real number and output a real number. Because softmax needs to normalize across the different possible outputs, it takes a vector and outputs a vector.</p>
+</section>
+<section id="what-a-softmax-layer-can-represent" class="level3">
+<h3 class="anchored" data-anchor-id="what-a-softmax-layer-can-represent">What a Softmax Layer Can Represent</h3>
+<p>To build intuition for what a softmax layer can represent, consider a network with inputs <span class="math inline">\(x_1, x_2\)</span> feeding directly into a softmax output layer with <span class="math inline">\(C\)</span> output nodes, and no hidden layer. All it computes is <span class="math inline">\(z^{[1]} = W^{[1]} x + b^{[1]}\)</span>, and the output <span class="math inline">\(a^{[1]} = \hat{y}\)</span> is the softmax activation function applied to <span class="math inline">\(z^{[1]}\)</span>.</p>
+<div id="0955461d" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="softmax-regression_files/figure-html/cell-4-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>These plots were made the way described in the lecture. A training set like the points shown was used to train a softmax classifier, and the shading shows, for each point of the input space, which of the outputs has the highest probability. The top row shows three different examples with <span class="math inline">\(C = 3\)</span> output classes; the softmax layer produces several linear decision boundaries that separate the data into three classes. The bottom row shows that it keeps doing so with more classes, <span class="math inline">\(C = 4\)</span>, <span class="math inline">\(C = 5\)</span>, and <span class="math inline">\(C = 6\)</span>. You can see it as a generalization of logistic regression with linear decision boundaries, but instead of the class being 0 or 1, the class can be 0, 1, or 2, or more.</p>
+<p>One intuition to take away is that the decision boundary between any two classes is linear. That is why, between any pair of neighboring colored regions in these plots, the border is a straight line. The softmax layer uses these different linear functions to separate the space into <span class="math inline">\(C\)</span> classes. This is what softmax can do when there is no hidden layer; with a much deeper neural network, with <span class="math inline">\(x\)</span>, then some hidden units, then more hidden units, and so on, you can learn even more complex nonlinear decision boundaries to separate out multiple classes.</p>
+</section>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. Given <span class="math inline">\(z^{[L]} = [5, 2, -1, 3]^T\)</span>, walk through the softmax computation. What do the outputs represent?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>First exponentiate element-wise, <span class="math inline">\(t = [e^5, e^2, e^{-1}, e^3]^T = [148.4, 7.4, 0.4, 20.1]^T\)</span>. Then normalize by the sum <span class="math inline">\(\sum_j t_j = 176.3\)</span>, giving <span class="math inline">\(a^{[L]} = [0.842, 0.042, 0.002, 0.114]^T\)</span>. Each entry is the estimated probability of one of the <span class="math inline">\(C = 4\)</span> classes given the input, and the entries sum to 1. The largest entry of <span class="math inline">\(z^{[L]}\)</span> (here 5) always yields the largest probability.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What makes the softmax activation function unusual compared to sigmoid or ReLU?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Sigmoid and ReLU take a single real number as input and output a real number, applied element by element. Softmax must normalize across all the output units, so it takes a whole vector (<span class="math inline">\(C\)</span> by 1) as input and outputs a vector of the same dimension whose entries sum to 1.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What kinds of decision boundaries can a softmax output layer with no hidden layer represent?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Linear ones. The decision boundary between any two classes is a straight line, so the input space is carved into <span class="math inline">\(C\)</span> regions by linear boundaries, a generalization of logistic regression to more than two classes. To get complex nonlinear boundaries between multiple classes, you add hidden layers in front of the softmax output layer.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="training-a-softmax-classifier" class="level2">
+<h2 class="anchored" data-anchor-id="training-a-softmax-classifier">Training a Softmax Classifier</h2>
+<p>Recall the earlier example where, with <span class="math inline">\(C = 4\)</span>, the output layer computes the <span class="math inline">\((4, 1)\)</span> vector <span class="math inline">\(z^{[L]} = [5, 2, -1, 3]^T\)</span>, the temporary variable <span class="math inline">\(t\)</span> exponentiates element-wise, and the softmax activation function <span class="math inline">\(g^{[L]}\)</span> normalizes <span class="math inline">\(t\)</span> to sum to 1, giving <span class="math inline">\(a^{[L]} = [0.842, 0.042, 0.002, 0.114]^T\)</span>. Notice that the biggest element of <span class="math inline">\(z\)</span> was 5, and the biggest probability ends up being the first one.</p>
+<section id="softmax-vs.-hard-max" class="level3">
+<h3 class="anchored" data-anchor-id="softmax-vs.-hard-max">Softmax vs.&nbsp;Hard Max</h3>
+<p>The name softmax comes from contrasting it with what is called a <strong>hard max</strong>, which would take the vector <span class="math inline">\(z\)</span> and map it to</p>
+<p><span class="math display">\[
+\begin{bmatrix} 5 \\ 2 \\ -1 \\ 3 \end{bmatrix}
+\xrightarrow{\;\text{hard max}\;}
+\begin{bmatrix} 1 \\ 0 \\ 0 \\ 0 \end{bmatrix}
+\]</span></p>
+<p>A hard max looks at the elements of <span class="math inline">\(z\)</span> and just puts a 1 in the position of the biggest element and 0s everywhere else. In contrast, softmax is a more gentle mapping from <span class="math inline">\(z\)</span> to probabilities. It is maybe not a great name, but that is the intuition behind it.</p>
+<p>One thing alluded to earlier is that softmax regression generalizes logistic regression to <span class="math inline">\(C\)</span> classes. In particular, if <span class="math inline">\(C = 2\)</span>, softmax essentially reduces to logistic regression. Here is a rough outline of why. With <span class="math inline">\(C = 2\)</span>, the output layer <span class="math inline">\(a^{[L]}\)</span> outputs two numbers, say 0.842 and 0.158, and these two numbers always have to sum to 1. Because of that, they are redundant; you do not need to compute both, just one of them, and the way you end up computing that one number reduces to the way logistic regression computes its single output. That is not much of a proof, but the takeaway is that softmax regression is a generalization of logistic regression to more than two classes.</p>
+</section>
+<section id="loss-function" class="level3">
+<h3 class="anchored" data-anchor-id="loss-function">Loss Function</h3>
+<p>Now let us look at how you actually train a neural network with a softmax output layer, and in particular the loss function. Take an example in your training set where the ground truth label is</p>
+<p><span class="math display">\[
+y = \begin{bmatrix} 0 \\ 1 \\ 0 \\ 0 \end{bmatrix}
+\]</span></p>
+<p>Following the earlier example, this is an image of a cat, because it falls into class 1. Say your neural network currently outputs the probability vector</p>
+<p><span class="math display">\[
+\hat{y} = a^{[L]} = \begin{bmatrix} 0.3 \\ 0.2 \\ 0.1 \\ 0.4 \end{bmatrix}
+\]</span></p>
+<p>which you can check sums to 1. The network is not doing very well here, because this is actually a cat and it assigns only a 20% chance to the cat class.</p>
+<p>The loss function used in softmax classification is</p>
+<p><span class="math display">\[
+\mathcal{L}(\hat{y}, y) = -\sum_{j=1}^{C} y_j \log \hat{y}_j
+\]</span></p>
+<p>with <span class="math inline">\(C = 4\)</span> in our case. Look at the single example above to understand what happens. In this example <span class="math inline">\(y_1 = y_3 = y_4 = 0\)</span> and only <span class="math inline">\(y_2 = 1\)</span>, so in the summation all the terms with zero values of <span class="math inline">\(y_j\)</span> vanish, and the only term left is</p>
+<p><span class="math display">\[
+\mathcal{L}(\hat{y}, y) = -y_2 \log \hat{y}_2 = -\log \hat{y}_2
+\]</span></p>
+<p>What this means is that if your learning algorithm is trying to make the loss small, using gradient descent to reduce the loss on the training set, the only way to do that is to make <span class="math inline">\(\hat{y}_2\)</span> as big as possible, and these are probabilities, so it can never be bigger than 1. That makes sense, because if <span class="math inline">\(x\)</span> is a picture of a cat, you want the output probability for the cat class to be as big as possible. More generally, what this loss function does is look at whatever is the ground truth class in your training set and try to make the corresponding probability of that class as high as possible. If you are familiar with <a href="../../../math/statistics/point-estimation.html">maximum likelihood estimation</a> in statistics, this turns out to be a form of maximum likelihood estimation, but if you do not know what that means, the intuition just described will suffice.</p>
+<p>That is the loss on a single training example. The cost <span class="math inline">\(J\)</span> on the entire training set, for a given setting of all the weights and biases, is pretty much what you would guess,</p>
+<p><span class="math display">\[
+J = \frac{1}{m} \sum_{i=1}^{m} \mathcal{L}(\hat{y}^{(i)}, y^{(i)})
+\]</span></p>
+<p>the average of the losses of your learning algorithm’s predictions over the training examples, and you use gradient descent to try to minimize this cost.</p>
+<p>One more implementation detail. Because <span class="math inline">\(C = 4\)</span>, each <span class="math inline">\(y\)</span> is a <span class="math inline">\((4, 1)\)</span> vector and each <span class="math inline">\(\hat{y}\)</span> is a <span class="math inline">\((4, 1)\)</span> vector. If you are using a vectorized implementation, the matrix <span class="math inline">\(Y\)</span> is <span class="math inline">\(y^{(1)}, y^{(2)}, \ldots, y^{(m)}\)</span> stacked horizontally, so if the example above is the first training example, the first column of <span class="math inline">\(Y\)</span> is <span class="math inline">\([0, 1, 0, 0]^T\)</span>; maybe the second example is a dog, the third is a none of the above, and so on, making <span class="math inline">\(Y\)</span> a <span class="math inline">\((4, m)\)</span> matrix,</p>
+<p><span class="math display">\[
+Y = \begin{bmatrix} y^{(1)} &amp; y^{(2)} &amp; \cdots &amp; y^{(m)} \end{bmatrix}
+= \begin{bmatrix}
+0 &amp; 0 &amp; 1 &amp; \\
+1 &amp; 0 &amp; 0 &amp; \cdots \\
+0 &amp; 1 &amp; 0 &amp; \\
+0 &amp; 0 &amp; 0 &amp;
+\end{bmatrix}
+\qquad (4, m)
+\]</span></p>
+<p>Similarly <span class="math inline">\(\hat{Y}\)</span> is <span class="math inline">\(\hat{y}^{(1)}, \ldots, \hat{y}^{(m)}\)</span> stacked horizontally, with first column <span class="math inline">\([0.3, 0.2, 0.1, 0.4]^T\)</span>, the outputs on the first training example, also a <span class="math inline">\((4, m)\)</span> matrix,</p>
+<p><span class="math display">\[
+\hat{Y} = \begin{bmatrix} \hat{y}^{(1)} &amp; \hat{y}^{(2)} &amp; \cdots &amp; \hat{y}^{(m)} \end{bmatrix}
+= \begin{bmatrix}
+0.3 &amp; \\
+0.2 &amp; \cdots \\
+0.1 &amp; \\
+0.4 &amp;
+\end{bmatrix}
+\qquad (4, m)
+\]</span></p>
+</section>
+<section id="gradient-descent-with-a-softmax-output-layer" class="level3">
+<h3 class="anchored" data-anchor-id="gradient-descent-with-a-softmax-output-layer">Gradient Descent with a Softmax Output Layer</h3>
+<p>The output layer computes <span class="math inline">\(z^{[L]}\)</span>, which is <span class="math inline">\((C, 1)\)</span>, in our example <span class="math inline">\((4, 1)\)</span>, then applies the softmax activation function to get <span class="math inline">\(a^{[L]} = \hat{y}\)</span>, which in turn lets you compute the loss. That is the forward propagation step. How about backpropagation? It turns out that the key equation you need to initialize backprop is</p>
+<p><span class="math display">\[
+dz^{[L]} = \hat{y} - y
+\]</span></p>
+<p>where all three are <span class="math inline">\((4, 1)\)</span> vectors with four classes, or <span class="math inline">\((C, 1)\)</span> in the general case. As usual, <span class="math inline">\(dz^{[L]}\)</span> here denotes the partial derivative of the loss with respect to <span class="math inline">\(z^{[L]}\)</span>. If you are comfortable with calculus you can try to derive this yourself, but using the formula directly works fine if you need to implement this from scratch. With it you can compute <span class="math inline">\(dz^{[L]}\)</span> and start off the backprop process to compute all the derivatives you need throughout the network.</p>
+<p>In practice, when using a deep learning programming framework, you usually just need to focus on getting forward prop right; as long as you specify the forward pass, the framework figures out the backward pass for you. So this expression is worth keeping in mind in case you ever need to implement softmax classification from scratch, but a framework will take care of the derivative computation. With softmax classification you can now implement learning algorithms that categorize inputs into not just one of two classes, but one of <span class="math inline">\(C\)</span> different classes. The deep learning programming frameworks themselves are the subject of a later section.</p>
+</section>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. What is the difference between softmax and hard max, and how does softmax relate to logistic regression?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>A hard max maps <span class="math inline">\(z\)</span> to a vector with a 1 in the position of the largest element and 0s everywhere else. Softmax instead maps <span class="math inline">\(z\)</span> to a gentle vector of probabilities that sum to 1, with the largest <span class="math inline">\(z\)</span> entry getting the largest probability. Softmax regression generalizes logistic regression to <span class="math inline">\(C\)</span> classes; with <span class="math inline">\(C = 2\)</span> the two outputs sum to 1 and are redundant, and computing just one of them reduces to how logistic regression computes its single output.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. With <span class="math inline">\(y = [0, 1, 0, 0]^T\)</span> and <span class="math inline">\(\hat{y} = [0.3, 0.2, 0.1, 0.4]^T\)</span>, what does the softmax loss reduce to, and what does minimizing it push the network to do?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(\mathcal{L}(\hat{y}, y) = -\sum_{j=1}^{4} y_j \log \hat{y}_j\)</span>, and since only <span class="math inline">\(y_2 = 1\)</span>, it reduces to <span class="math inline">\(-\log \hat{y}_2\)</span>. Minimizing it means making <span class="math inline">\(\hat{y}_2\)</span>, the probability assigned to the true class, as large as possible (it cannot exceed 1). In general, the loss looks at the ground truth class and pushes the predicted probability of that class as high as possible; it is a form of maximum likelihood estimation. The cost is the average loss, <span class="math inline">\(J = \frac{1}{m}\sum_i \mathcal{L}(\hat{y}^{(i)}, y^{(i)})\)</span>.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What is the key equation for initializing backpropagation with a softmax output layer, and do you usually need it in practice?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(dz^{[L]} = \hat{y} - y\)</span>, a <span class="math inline">\((C, 1)\)</span> vector, the derivative of the loss with respect to <span class="math inline">\(z^{[L]}\)</span>. In practice, deep learning frameworks only require you to specify forward propagation and work out the backward pass automatically, so you mainly need this formula if you implement softmax classification from scratch.</p>
+</div>
+</div>
+</div>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 88%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">88% completed (1010 of 1137 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/improving-deep-neural-networks/batch-normalization.html" class="pagination-link" aria-label="Batch Normalization">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Batch Normalization</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../../ai/deep-learning/improving-deep-neural-networks/deep-learning-frameworks.html" class="pagination-link" aria-label="Deep Learning Frameworks and TensorFlow">
+        <span class="nav-page-text">Deep Learning Frameworks and TensorFlow</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

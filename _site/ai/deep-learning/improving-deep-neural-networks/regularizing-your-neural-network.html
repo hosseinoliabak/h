@@ -1,0 +1,1802 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-03">
+<meta name="description" content="L2 and L1 regularization, weight decay, dropout and inverted dropout, plus data augmentation and early stopping to reduce overfitting.">
+
+<title>Regularizing Your Neural Network – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem.html" rel="next">
+<link href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-machine-learning-application.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Regularizing Your Neural Network – H’s Notes">
+<meta property="og:description" content="L2 and L1 regularization, weight decay, dropout and inverted dropout, plus data augmentation and early stopping to reduce overfitting.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/improving-deep-neural-networks/regularizing-your-neural-network_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta name="twitter:title" content="Regularizing Your Neural Network – H’s Notes">
+<meta name="twitter:description" content="L2 and L1 regularization, weight decay, dropout and inverted dropout, plus data augmentation and early stopping to reduce overfitting.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/improving-deep-neural-networks/regularizing-your-neural-network_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../infrastructure/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html">Regularizing Your Neural Network</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Improving Deep Neural Networks</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-machine-learning-application.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Setting Up Your Machine Learning Application</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/regularizing-your-neural-network.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Regularizing Your Neural Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Setting Up Your Optimization Problem</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-initialization.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Initialization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-regularization.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Regularization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-gradient-checking.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Gradient Checking</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/mini-batch-gradient-descent.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mini-batch Gradient Descent</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/exponentially-weighted-averages.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Exponentially Weighted Averages</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/momentum-rmsprop-and-adam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Momentum, RMSprop, and Adam</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-optimization-methods.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Optimization Methods</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/hyperparameter-tuning.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hyperparameter Tuning</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/batch-normalization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Batch Normalization</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/softmax-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Softmax Regression</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/deep-learning-frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Deep Learning Frameworks and TensorFlow</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/improving-deep-neural-networks/lab-introduction-to-tensorflow.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Introduction to TensorFlow</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#l2-regularization" id="toc-l2-regularization" class="nav-link active" data-scroll-target="#l2-regularization">L2 Regularization</a>
+  <ul class="collapse">
+  <li><a href="#regularizing-logistic-regression" id="toc-regularizing-logistic-regression" class="nav-link" data-scroll-target="#regularizing-logistic-regression">Regularizing Logistic Regression</a></li>
+  <li><a href="#regularizing-a-neural-network" id="toc-regularizing-a-neural-network" class="nav-link" data-scroll-target="#regularizing-a-neural-network">Regularizing a Neural Network</a></li>
+  <li><a href="#weight-decay" id="toc-weight-decay" class="nav-link" data-scroll-target="#weight-decay">Weight Decay</a></li>
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#why-regularization-reduces-overfitting" id="toc-why-regularization-reduces-overfitting" class="nav-link" data-scroll-target="#why-regularization-reduces-overfitting">Why Regularization Reduces Overfitting</a>
+  <ul class="collapse">
+  <li><a href="#intuition-1-zeroing-out-hidden-units" id="toc-intuition-1-zeroing-out-hidden-units" class="nav-link" data-scroll-target="#intuition-1-zeroing-out-hidden-units">Intuition 1, Zeroing Out Hidden Units</a></li>
+  <li><a href="#intuition-2-staying-in-the-linear-regime" id="toc-intuition-2-staying-in-the-linear-regime" class="nav-link" data-scroll-target="#intuition-2-staying-in-the-linear-regime">Intuition 2, Staying in the Linear Regime</a></li>
+  <li><a href="#implementation-tip-plot-the-new-cost-function" id="toc-implementation-tip-plot-the-new-cost-function" class="nav-link" data-scroll-target="#implementation-tip-plot-the-new-cost-function">Implementation Tip, Plot the New Cost Function</a></li>
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#dropout-regularization" id="toc-dropout-regularization" class="nav-link" data-scroll-target="#dropout-regularization">Dropout Regularization</a>
+  <ul class="collapse">
+  <li><a href="#inverted-dropout-implementation" id="toc-inverted-dropout-implementation" class="nav-link" data-scroll-target="#inverted-dropout-implementation">Inverted Dropout Implementation</a></li>
+  <li><a href="#no-dropout-at-test-time" id="toc-no-dropout-at-test-time" class="nav-link" data-scroll-target="#no-dropout-at-test-time">No Dropout at Test Time</a></li>
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#understanding-dropout" id="toc-understanding-dropout" class="nav-link" data-scroll-target="#understanding-dropout">Understanding Dropout</a>
+  <ul class="collapse">
+  <li><a href="#varying-keep_prob-by-layer" id="toc-varying-keep_prob-by-layer" class="nav-link" data-scroll-target="#varying-keep_prob-by-layer">Varying keep_prob by Layer</a></li>
+  <li><a href="#implementation-tips" id="toc-implementation-tips" class="nav-link" data-scroll-target="#implementation-tips">Implementation Tips</a></li>
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#other-regularization-methods" id="toc-other-regularization-methods" class="nav-link" data-scroll-target="#other-regularization-methods">Other Regularization Methods</a>
+  <ul class="collapse">
+  <li><a href="#data-augmentation" id="toc-data-augmentation" class="nav-link" data-scroll-target="#data-augmentation">Data Augmentation</a></li>
+  <li><a href="#early-stopping" id="toc-early-stopping" class="nav-link" data-scroll-target="#early-stopping">Early Stopping</a></li>
+  <li><a href="#early-stopping-versus-l2-regularization" id="toc-early-stopping-versus-l2-regularization" class="nav-link" data-scroll-target="#early-stopping-versus-l2-regularization">Early Stopping versus L2 Regularization</a></li>
+  <li><a href="#review-questions-4" id="toc-review-questions-4" class="nav-link" data-scroll-target="#review-questions-4">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../breadcrumb-path.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Regularizing Your Neural Network</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">regularization</div>
+    <div class="quarto-category">dropout</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    L2 and L1 regularization, weight decay, dropout and inverted dropout, plus data augmentation and early stopping to reduce overfitting.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 3, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~95 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~6,300 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<p>The <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-machine-learning-application.html#basic-recipe-for-machine-learning">basic recipe</a> named regularization as a main tool against high variance. This page defines L2 regularization for logistic regression and for neural networks, builds the intuition for why it reduces overfitting, then introduces a second powerful technique called dropout, and closes with two more methods, data augmentation and early stopping.</p>
+<section id="l2-regularization" class="level2">
+<h2 class="anchored" data-anchor-id="l2-regularization">L2 Regularization</h2>
+<p>If you suspect your neural network is overfitting your data, that is, you have a high variance problem, one of the first things to try is probably regularization. The other reliable way to address high variance is to get more training data, but you cannot always get more, or it could be expensive. Adding regularization often helps prevent overfitting and reduce variance in the network.</p>
+<section id="regularizing-logistic-regression" class="level3">
+<h3 class="anchored" data-anchor-id="regularizing-logistic-regression">Regularizing Logistic Regression</h3>
+<p>Develop the idea with logistic regression first. Recall that logistic regression tries to minimize the cost function</p>
+<p><span class="math display">\[
+J(w, b) = \frac{1}{m} \sum_{i=1}^{m} \mathcal{L}(\hat{y}^{(i)}, y^{(i)})
+\]</span></p>
+<p>where the parameters are <span class="math inline">\(w \in \mathbb{R}^{n_x}\)</span> and the real number <span class="math inline">\(b\)</span>. To add regularization, you add a term to the cost.</p>
+<p><span class="math display">\[
+J(w, b) = \frac{1}{m} \sum_{i=1}^{m} \mathcal{L}(\hat{y}^{(i)}, y^{(i)}) + \frac{\lambda}{2m} \|w\|_2^2
+\qquad \text{where} \qquad
+\|w\|_2^2 = \sum_{j=1}^{n_x} w_j^2 = w^T w
+\]</span></p>
+<p>Here <span class="math inline">\(\lambda\)</span> is called the <strong>regularization parameter</strong>, and <span class="math inline">\(\|w\|_2^2\)</span> is just the squared Euclidean norm of the parameter vector <span class="math inline">\(w\)</span>, familiar from the <a href="../../../math/linear-algebra/">linear algebra course</a>. Because the Euclidean norm is also called the <strong>L2 norm</strong>, this is called <strong>L2 regularization</strong>.</p>
+<p>Why regularize just <span class="math inline">\(w\)</span> and not <span class="math inline">\(b\)</span>? In practice you could add a <span class="math inline">\(b\)</span> term as well, but it is usually omitted. Look at the parameters. <span class="math inline">\(w\)</span> is usually a pretty high dimensional vector, especially with a high variance problem, so almost all the parameters are in <span class="math inline">\(w\)</span>, while <span class="math inline">\(b\)</span> is just a single number. Adding one parameter out of a very large number of them makes little difference in practice, so it is usually not worth bothering with, though you can include it if you want.</p>
+<p>You might also hear about <strong>L1 regularization</strong>, which adds the L1 norm of <span class="math inline">\(w\)</span> instead.</p>
+<p><span class="math display">\[
+\frac{\lambda}{m} \|w\|_1 = \frac{\lambda}{m} \sum_{j=1}^{n_x} |w_j|
+\]</span></p>
+<p>(Whether the denominator is <span class="math inline">\(m\)</span> or <span class="math inline">\(2m\)</span> is just a scaling constant.) With L1 regularization, <span class="math inline">\(w\)</span> ends up being <strong>sparse</strong>, meaning the vector contains a lot of zeros. Some people say this helps compress the model, because parameters that are zero need less memory to store. In practice, L1 regularization to make the model sparse helps only a little bit, so it is not used that much, at least not for compression. When training networks, L2 regularization is used much, much more often.</p>
+<p>One last detail. <span class="math inline">\(\lambda\)</span> is another <strong>hyperparameter</strong> to tune, usually set with the dev set (hold-out cross validation) by trying a variety of values and seeing what does best in the trade-off between fitting the training set well and keeping the norm of the parameters small to prevent overfitting. And a programming note. <code>lambda</code> is a reserved keyword in Python, so in the programming exercises the variable is spelled <code>lambd</code>, without the <code>a</code>, to avoid the clash.</p>
+</section>
+<section id="regularizing-a-neural-network" class="level3">
+<h3 class="anchored" data-anchor-id="regularizing-a-neural-network">Regularizing a Neural Network</h3>
+<p>In a neural network, the cost function is a function of all the parameters <span class="math inline">\(w^{[1]}, b^{[1]}\)</span> through <span class="math inline">\(w^{[L]}, b^{[L]}\)</span>, where <span class="math inline">\(L\)</span> is the number of layers. Regularization adds a penalty on every weight matrix.</p>
+<p><span class="math display">\[
+J(w^{[1]}, b^{[1]}, \ldots, w^{[L]}, b^{[L]}) = \frac{1}{m} \sum_{i=1}^{m} \mathcal{L}(\hat{y}^{(i)}, y^{(i)}) + \frac{\lambda}{2m} \sum_{l=1}^{L} \left\| w^{[l]} \right\|_F^2
+\]</span></p>
+<p>The squared norm of a matrix is defined as the sum of the squares of all its elements. Since <span class="math inline">\(w^{[l]}\)</span> has <span class="math inline">\(n^{[l]}\)</span> rows (the number of units in the current layer <span class="math inline">\(l\)</span>) and <span class="math inline">\(n^{[l-1]}\)</span> columns (the number of units in the previous layer), the sum runs</p>
+<p><span class="math display">\[
+\left\| w^{[l]} \right\|_F^2 = \sum_{i=1}^{n^{[l]}} \sum_{j=1}^{n^{[l-1]}} \left( w_{i,j}^{[l]} \right)^2
+\]</span></p>
+<p>You might expect this to be called the L2 norm of the matrix, but for arcane linear algebra reasons it is instead called the <strong>Frobenius norm</strong>, denoted with the subscript <span class="math inline">\(F\)</span>. The name does not change what it means, the sum of the squares of the elements of the matrix.</p>
+</section>
+<section id="weight-decay" class="level3">
+<h3 class="anchored" data-anchor-id="weight-decay">Weight Decay</h3>
+<p>How do you implement gradient descent with the new cost? Previously, backprop computed <span class="math inline">\(dw^{[l]}\)</span>, the partial derivative of <span class="math inline">\(J\)</span> with respect to <span class="math inline">\(w^{[l]}\)</span>, and then you updated <span class="math inline">\(w^{[l]} := w^{[l]} - \alpha \, dw^{[l]}\)</span>. Now that the objective has the extra regularization term, you take what backprop gives you and add the derivative of the penalty term.</p>
+<p><span class="math display">\[
+dw^{[l]} = (\text{from backprop}) + \frac{\lambda}{m} w^{[l]}
+\]</span></p>
+<p>With this new definition, <span class="math inline">\(dw^{[l]}\)</span> is still the correct derivative of the cost function with respect to the parameters, and the update itself is unchanged.</p>
+<p><span class="math display">\[
+w^{[l]} := w^{[l]} - \alpha \, dw^{[l]}
+\]</span></p>
+<p>It is for this reason that L2 regularization is sometimes called <strong>weight decay</strong>. To see why, plug the new <span class="math inline">\(dw^{[l]}\)</span> into the update and multiply out.</p>
+<p><span class="math display">\[
+\begin{aligned}
+w^{[l]} &amp;:= w^{[l]} - \alpha \left[ (\text{from backprop}) + \frac{\lambda}{m} w^{[l]} \right] \\
+&amp;= w^{[l]} - \frac{\alpha \lambda}{m} w^{[l]} - \alpha \, (\text{from backprop}) \\
+&amp;= \left( 1 - \frac{\alpha \lambda}{m} \right) w^{[l]} - \alpha \, (\text{from backprop})
+\end{aligned}
+\]</span></p>
+<p>Look at the first term. Whatever the matrix <span class="math inline">\(w^{[l]}\)</span> is, the update multiplies it by <span class="math inline">\(1 - \frac{\alpha \lambda}{m}\)</span>, a number a little bit less than 1, making the weights a little bit smaller. So this is just like ordinary gradient descent, subtracting <span class="math inline">\(\alpha\)</span> times the gradient from backprop, except the weights also get shrunk, or decayed, by that factor on every step. That is where the alternative name weight decay comes from.</p>
+</section>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<p><strong>1. Why is the bias parameter <span class="math inline">\(b\)</span> usually left out of the L2 regularization term?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Because it hardly matters. <span class="math inline">\(w\)</span> is usually a very high dimensional vector, especially with a high variance problem, so almost all the parameters live in <span class="math inline">\(w\)</span>, while <span class="math inline">\(b\)</span> is just one number. Penalizing one parameter among a very large number of them makes little practical difference, so it is usually omitted, though including it is not wrong.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What is the main practical difference between L1 and L2 regularization, and which is used more for neural networks?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>L1 regularization penalizes <span class="math inline">\(\frac{\lambda}{m} \sum_j |w_j|\)</span> and drives <span class="math inline">\(w\)</span> to be sparse, with many exactly-zero entries, which some people argue compresses the model since zero parameters need less memory. In practice the sparsity helps only a little, so L1 is not used much for that purpose. L2 regularization, which penalizes the squared norm, is used much more often when training neural networks.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In the programming exercises, why is the regularization parameter written <code>lambd</code> instead of <code>lambda</code>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><code>lambda</code> is a reserved keyword in Python (it defines anonymous functions), so it cannot be used as a variable name. Dropping the <code>a</code> gives <code>lambd</code>, which avoids the clash while staying recognizable.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Show why L2 regularization is also called weight decay.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>With regularization, the gradient becomes <span class="math inline">\(dw^{[l]} = (\text{from backprop}) + \frac{\lambda}{m} w^{[l]}\)</span>. Substituting into the update <span class="math inline">\(w^{[l]} := w^{[l]} - \alpha \, dw^{[l]}\)</span> and multiplying out gives</p>
+<p><span class="math display">\[
+w^{[l]} := \left( 1 - \frac{\alpha \lambda}{m} \right) w^{[l]} - \alpha \, (\text{from backprop})
+\]</span></p>
+<p>The weight matrix is multiplied by <span class="math inline">\(1 - \frac{\alpha \lambda}{m}\)</span>, a number slightly less than 1, on every iteration, before the ordinary gradient step. The weights literally decay a little on each update, hence the name.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What is weight decay?</strong></p>
+<ol type="a">
+<li><p>A regularization technique (such as L2 regularization) that results in gradient descent shrinking the weights on every iteration</p></li>
+<li><p>A technique to avoid vanishing gradients by imposing a ceiling on the values of the weights</p></li>
+<li><p>Gradual corruption of the weights in the neural network if it is trained on noisy data</p></li>
+<li><p>The process of gradually decreasing the learning rate during training</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>a.</strong> As derived above, L2 regularization multiplies each weight matrix by the factor <span class="math inline">\(1 - \frac{\alpha \lambda}{m}\)</span>, a number slightly less than 1, on every gradient descent update, so the weights shrink, or decay, a little on each step.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. True or false. In L2 regularization, the hyperparameter <span class="math inline">\(\lambda\)</span> directly influences the calculations used by the model to make predictions at test time.</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>False.</strong> <span class="math inline">\(\lambda\)</span> affects how the weights change during training, through the extra <span class="math inline">\(\frac{\lambda}{m} w^{[l]}\)</span> term added to the gradient in backpropagation. Making a prediction is plain forward propagation with the learned weights, and <span class="math inline">\(\lambda\)</span> appears nowhere in that calculation. Its influence on predictions is only indirect, through the weights it shaped during training.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="why-regularization-reduces-overfitting" class="level2">
+<h2 class="anchored" data-anchor-id="why-regularization-reduces-overfitting">Why Regularization Reduces Overfitting</h2>
+<p>Recall the high bias, “just right”, and high variance pictures from the <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-machine-learning-application.html#bias-and-variance">previous page</a>, and suppose you are fitting a large, deep neural network that is currently overfitting. The section above added an extra term to the cost function, the Frobenius norm penalty, to keep the weight matrices from being too large. So why does shrinking the L2 norm, or the Frobenius norm, of the parameters cause less overfitting? You already met the regression version of this idea on the <a href="../../../ai/machine-learning/supervised-machine-learning/regularization.html">regularization</a> page of the machine learning course. Here are two pieces of intuition for the neural network version.</p>
+<section id="intuition-1-zeroing-out-hidden-units" class="level3">
+<h3 class="anchored" data-anchor-id="intuition-1-zeroing-out-hidden-units">Intuition 1, Zeroing Out Hidden Units</h3>
+<p>If you crank the regularization parameter <span class="math inline">\(\lambda\)</span> to be really, really big, the cost function is heavily incentivized to set the weight matrices <span class="math inline">\(w\)</span> reasonably close to zero. One piece of intuition is that this sets the weights so close to zero for a lot of hidden units that it basically zeroes out their impact. If that were the case, the much simplified neural network becomes a much smaller network, almost like a logistic regression unit stacked multiple layers deep. That takes you from the overfitting case toward the other extreme, the high bias case. Hopefully there is an intermediate value of <span class="math inline">\(\lambda\)</span> that lands closer to the “just right” case in the middle.</p>
+<p>In practice, completely zeroing out a bunch of hidden units is not quite what happens. The network still uses all of its hidden units, but each of them just has a much smaller effect. The result is still a simpler network, one that behaves as if it were smaller, and is therefore less prone to overfitting.</p>
+</section>
+<section id="intuition-2-staying-in-the-linear-regime" class="level3">
+<h3 class="anchored" data-anchor-id="intuition-2-staying-in-the-linear-regime">Intuition 2, Staying in the Linear Regime</h3>
+<p>Here is another attempt at intuition, this time assuming the network uses the <strong>tanh</strong> activation function, <span class="math inline">\(g(z) = \tanh(z)\)</span>.</p>
+<div id="dd274114" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="regularizing-your-neural-network_files/figure-html/cell-2-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Notice that as long as <span class="math inline">\(z\)</span> is quite small, taking on only a smallish range of values around zero, you are using just the <strong>linear regime</strong> of the tanh function. Only if <span class="math inline">\(z\)</span> is allowed to wander to larger positive or negative values does the activation function start to become non-linear.</p>
+<p>Now follow the chain. If <span class="math inline">\(\lambda\)</span> is large, the parameters <span class="math inline">\(w\)</span> will be relatively small, because they are penalized for being large in the cost function. Since <span class="math inline">\(z^{[l]} = w^{[l]} a^{[l-1]} + b^{[l]}\)</span> (ignoring the effect of <span class="math inline">\(b\)</span> for now), small <span class="math inline">\(w\)</span> means <span class="math inline">\(z\)</span> also takes on a small range of values. And if <span class="math inline">\(z\)</span> stays in that little range, <span class="math inline">\(g(z)\)</span> is roughly linear, so every layer computes something roughly linear. As you saw in the <a href="../../../ai/deep-learning/neural-networks-and-deep-learning/shallow-neural-networks.html">previous course</a>, if every layer is linear, the whole network is just a linear network, and even a very deep network with linear activations can only compute a linear function. Such a network cannot fit those very complicated, highly non-linear decision boundaries that let it overfit the data set. The network computes something not too far from a big linear function, a pretty simple function, and is therefore much less able to overfit.</p>
+<p>When you implement regularization in the programming exercise, you will see some of these variance reduction results yourself.</p>
+</section>
+<section id="implementation-tip-plot-the-new-cost-function" class="level3">
+<h3 class="anchored" data-anchor-id="implementation-tip-plot-the-new-cost-function">Implementation Tip, Plot the New Cost Function</h3>
+<p>One implementational tip before wrapping up. With regularization, the definition of the cost function <span class="math inline">\(J\)</span> has changed, since it now includes the extra penalty term. One of the standard ways to debug gradient descent is to plot <span class="math inline">\(J\)</span> as a function of the number of iterations and check that it decreases monotonically after every iteration. If you plot the <strong>old</strong> definition of <span class="math inline">\(J\)</span>, just the first term without the regularization term, you might not see a monotonic decrease. So make sure you plot the new definition of <span class="math inline">\(J\)</span> that includes the second term as well.</p>
+<p>That is L2 regularization, which is actually the regularization technique used the most in training deep learning models. Deep learning has another sometimes-used technique called dropout regularization, which comes next.</p>
+</section>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<p><strong>1. If you make the regularization parameter <span class="math inline">\(\lambda\)</span> very large, what is the intuition for what happens to the network, and what actually happens in practice?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>The intuition is that a huge <span class="math inline">\(\lambda\)</span> pushes the weight matrices close to zero, effectively zeroing out many hidden units, so the network behaves like a much smaller one (almost logistic regression stacked in layers), moving from high variance toward high bias. In practice the units are not literally zeroed out. All hidden units are still used, but each has a much smaller effect, which still yields a simpler network that is less prone to overfitting. An intermediate <span class="math inline">\(\lambda\)</span> hopefully lands at “just right”.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Complete the chain of reasoning for the tanh intuition. Large <span class="math inline">\(\lambda\)</span> leads to…</strong></p>
+<ol type="a">
+<li><p>large <span class="math inline">\(w\)</span>, large <span class="math inline">\(z\)</span>, more non-linearity, more overfitting</p></li>
+<li><p>small <span class="math inline">\(w\)</span>, small <span class="math inline">\(z\)</span>, roughly linear layers, a nearly linear network, less overfitting</p></li>
+<li><p>small <span class="math inline">\(w\)</span>, large <span class="math inline">\(z\)</span>, saturated activations, less overfitting</p></li>
+<li><p>small <span class="math inline">\(w\)</span>, small <span class="math inline">\(z\)</span>, more hidden units removed, less overfitting</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b.</strong> A large <span class="math inline">\(\lambda\)</span> penalizes large weights, so <span class="math inline">\(w\)</span> is small. Since <span class="math inline">\(z = w a + b\)</span>, the values of <span class="math inline">\(z\)</span> stay in a small range around zero, which is the roughly linear regime of tanh. If every layer computes something roughly linear, the whole network is close to one big linear function, which cannot produce the highly non-linear decision boundaries needed to overfit.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. You add L2 regularization and plot the average loss (without the penalty term) against gradient descent iterations. The curve does not decrease monotonically. Is your implementation necessarily wrong?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Not necessarily. Gradient descent is now minimizing the <strong>new</strong> cost function, which includes the regularization penalty. Only that full cost is guaranteed to decrease on every iteration when things work. To use the monotonic-decrease debugging check, plot the new definition of <span class="math inline">\(J\)</span> including the <span class="math inline">\(\frac{\lambda}{2m} \sum_l \|w^{[l]}\|_F^2\)</span> term.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="dropout-regularization" class="level2">
+<h2 class="anchored" data-anchor-id="dropout-regularization">Dropout Regularization</h2>
+<p>In addition to L2 regularization, another very powerful regularization technique is called <strong>dropout</strong>. Say you train a neural network and it is overfitting. With dropout, you go through each layer of the network and set some probability of eliminating each node. For each node in each layer, you toss a coin, say with a 0.5 chance of keeping the node and a 0.5 chance of removing it. After the coin tosses, you eliminate the chosen nodes and also remove all their incoming and outgoing links. You end up with a much smaller, much diminished network, and you do one step of training (forward and back propagation) on this diminished network for one example. For a different example, you toss the coins again, keep a different set of nodes, and train on a different thinned network.</p>
+<div id="45e4184e" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="regularizing-your-neural-network_files/figure-html/cell-3-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>It may seem like a slightly crazy technique, just knocking out nodes at random, but it actually works. Because you train a much smaller network on each example, this may give you a sense of why you end up regularizing the network.</p>
+<section id="inverted-dropout-implementation" class="level3">
+<h3 class="anchored" data-anchor-id="inverted-dropout-implementation">Inverted Dropout Implementation</h3>
+<p>There are a few ways to implement dropout. The most common one is called <strong>inverted dropout</strong>. To illustrate it in a single layer, take layer <span class="math inline">\(l = 3\)</span>. You set a <strong>dropout vector</strong> <code>d3</code> for layer 3, with the same shape as the activations <code>a3</code>, and compare it to a number <code>keep_prob</code>, the probability that a given hidden unit is kept. In this example use <code>keep_prob = 0.8</code>, meaning there is a 0.2 chance of eliminating any hidden unit.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>keep_prob <span class="op">=</span> <span class="fl">0.8</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>d3 <span class="op">=</span> np.random.rand(a3.shape[<span class="dv">0</span>], a3.shape[<span class="dv">1</span>]) <span class="op">&lt;</span> keep_prob</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>a3 <span class="op">=</span> np.multiply(a3, d3)   <span class="co"># equivalently a3 *= d3</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>a3 <span class="op">=</span> a3 <span class="op">/</span> keep_prob        <span class="co"># the "inverted" part</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The second line generates a random matrix, and this works with vectorization too, so <code>d3</code> covers every hidden unit for every example. Each entry has a 0.8 chance of being one (true) and a 0.2 chance of being zero (false). Technically <code>d3</code> is a boolean array of true and false values rather than ones and zeros, but the multiply operation interprets them as one and zero, as you can check for yourself in Python. The third line then zeroes out the corresponding element of <code>a3</code> wherever <code>d3</code> is zero.</p>
+<p>The last line is what makes this <strong>inverted</strong> dropout, and here is what it is doing. Say layer 3 has 50 units, so <code>a3</code> is <span class="math inline">\(50 \times 1\)</span> for one example, or <span class="math inline">\(50 \times m\)</span> vectorized. With an 80% chance of keeping each unit, on average 10 units get shut off. Now look at the next layer.</p>
+<p><span class="math display">\[
+z^{[4]} = w^{[4]} a^{[3]} + b^{[4]}
+\]</span></p>
+<p>On expectation, <span class="math inline">\(a^{[3]}\)</span> is reduced by 20%, since 20% of its elements are zeroed out. To avoid reducing the expected value of <span class="math inline">\(z^{[4]}\)</span>, you divide <code>a3</code> by 0.8, which bumps it back up by roughly the 20% you need, so the expected value of <code>a3</code> stays the same. No matter what you set <code>keep_prob</code> to, 0.8, 0.9, or even 1 (which means no dropout at all), dividing by <code>keep_prob</code> keeps the expected value of the activations unchanged. This also makes test time easier, because there is less of a scaling problem. Some early versions of dropout missed the divide-by-<code>keep_prob</code> line, making test time averages more complicated, but people tend not to use those versions. By far the most common implementation today is inverted dropout, and that is the one to use.</p>
+<p>Note that different training examples get different hidden units zeroed out. In fact, if you make multiple passes through the training set, different passes should randomly zero out different patterns of hidden units too. It is not that one example keeps zeroing out the same units on every pass. The vector <span class="math inline">\(d\)</span> (or <code>d3</code> for layer 3) decides what to zero out in both forward propagation and back propagation.</p>
+</section>
+<section id="no-dropout-at-test-time" class="level3">
+<h3 class="anchored" data-anchor-id="no-dropout-at-test-time">No Dropout at Test Time</h3>
+<p>Having trained the algorithm, here is what you do at test time when you are given some example <span class="math inline">\(x\)</span> on which to make a prediction. Using the standard notation with <span class="math inline">\(a^{[0]} = x\)</span> for the activations of the zeroth layer, you just run ordinary forward propagation with <strong>no dropout</strong>.</p>
+<p><span class="math display">\[
+z^{[1]} = w^{[1]} a^{[0]} + b^{[1]}, \quad a^{[1]} = g^{[1]}(z^{[1]}), \quad z^{[2]} = w^{[2]} a^{[1]} + b^{[2]}, \quad a^{[2]} = \ldots
+\]</span></p>
+<p>and so on until the last layer produces the prediction <span class="math inline">\(\hat{y}\)</span>. At test time you are not tossing coins to decide which hidden units to eliminate, because when making predictions you do not want the output to be random. Implementing dropout at test time would just add noise to the predictions. In theory you could run the prediction many times with different units randomly dropped and average the results, but that is computationally inefficient and gives roughly the same answer. And remember the divide-by-<code>keep_prob</code> step from inverted dropout. Its effect is that the expected value of the activations does not change even though you are not applying dropout at test time, so there is no extra scaling parameter to add at test time.</p>
+</section>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<p><strong>1. In inverted dropout with <code>keep_prob = 0.8</code>, why is <code>a3</code> divided by 0.8 after the elementwise multiplication with <code>d3</code>?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>On average, 20% of the elements of <code>a3</code> are zeroed out, so <span class="math inline">\(z^{[4]} = w^{[4]} a^{[3]} + b^{[4]}\)</span> would be reduced by about 20% in expectation. Dividing by <code>keep_prob</code> bumps <code>a3</code> back up so its expected value is unchanged. This is the “inverted” part of inverted dropout, and it also means no extra scaling is needed at test time.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Which statement about dropout at test time is correct?</strong></p>
+<ol type="a">
+<li><p>Use the same <code>keep_prob</code> as during training and toss coins as usual</p></li>
+<li><p>Use dropout but with a higher <code>keep_prob</code> such as 0.95</p></li>
+<li><p>Do not use dropout, and run ordinary forward propagation</p></li>
+<li><p>Run many random dropout predictions and average them, since this is the standard practice</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>c.</strong> At test time you do not flip coins, because predictions should not be random; dropout would just add noise. Averaging many randomly dropped predictions (d) would give roughly the same result but is computationally inefficient. Because inverted dropout preserved the expected value of the activations during training, ordinary forward propagation needs no extra scaling.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. During training with dropout, should the same hidden units stay zeroed out for a given example across passes over the training set?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>No.&nbsp;Different training examples zero out different hidden units, and on different passes through the training set you should randomly zero out different patterns of hidden units as well. The dropout vector <span class="math inline">\(d\)</span> for a layer decides what is zeroed out, in both forward propagation and back propagation.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Which of the following are true about dropout? (Check all that apply.)</strong></p>
+<ol type="a">
+<li><p>It helps to reduce the bias of a model</p></li>
+<li><p>It helps to reduce the variance of a model</p></li>
+<li><p>In practice, it eliminates units of each layer with a probability of <code>keep_prob</code></p></li>
+<li><p>In practice, it eliminates units of each layer with a probability of <code>1 - keep_prob</code></p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b and d.</strong> Dropout is a regularization technique, so its job is reducing variance (overfitting), not bias. And <code>keep_prob</code> is the probability that a unit is <strong>kept</strong>, so the probability of eliminating a unit is <code>1 - keep_prob</code>.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="understanding-dropout" class="level2">
+<h2 class="anchored" data-anchor-id="understanding-dropout">Understanding Dropout</h2>
+<p>Dropout does this seemingly crazy thing of randomly knocking out units in the network. Why does it work as a regularizer? Here are two better intuitions.</p>
+<p>The first intuition you already saw. On every iteration you work with a smaller neural network, and using a smaller network seems like it should have a regularizing effect.</p>
+<p>The second intuition looks at it from the perspective of a single unit. A unit takes its inputs and needs to generate some meaningful output. With dropout, its inputs can get randomly eliminated. Sometimes two of its inputs disappear, sometimes a different one does. So the unit cannot rely on any one feature, because any one of its inputs could go away at random. The unit becomes reluctant to put all of its bets on any single input, and is more motivated to spread out its weights, giving a little bit of weight to each of its inputs. Spreading out the weights tends to shrink the squared norm of the weights, similar to what L2 regularization does. It turns out dropout can formally be shown to be an <strong>adaptive form of L2 regularization</strong>, where the L2 penalty on different weights differs depending on the size of the activation being multiplied into that weight. The summary is that dropout has a similar effect to L2 regularization, only applied a little differently and more adaptively to the scale of different inputs.</p>
+<section id="varying-keep_prob-by-layer" class="level3">
+<h3 class="anchored" data-anchor-id="varying-keep_prob-by-layer">Varying keep_prob by Layer</h3>
+<p>One more detail for implementing dropout. It is feasible to vary <code>keep_prob</code> by layer. Take a network with 3 input features and hidden layers of 7, 7, 3, 2, and 1 units. The weight matrices are <span class="math inline">\(w^{[1]}\)</span> of shape <span class="math inline">\(7 \times 3\)</span>, <span class="math inline">\(w^{[2]}\)</span> of shape <span class="math inline">\(7 \times 7\)</span>, <span class="math inline">\(w^{[3]}\)</span> of shape <span class="math inline">\(3 \times 7\)</span>, and so on. In general, the number of neurons in the current layer gives the number of rows of the weight matrix, and the number of neurons in the previous layer gives the number of columns.</p>
+<p>Here <span class="math inline">\(w^{[2]}\)</span> is the biggest weight matrix, with the largest set of parameters (<span class="math inline">\(7 \times 7 = 49\)</span>). To reduce overfitting of that matrix, layer 2 might get a relatively low <code>keep_prob</code>, say 0.5, while layers you worry less about could have a higher one, maybe 0.7, and layers you do not worry about at all can have a <code>keep_prob</code> of 1.0, which keeps every unit, meaning no dropout in that layer. For layers with a lot of parameters, where overfitting is the biggest worry, a smaller <code>keep_prob</code> applies a more powerful form of dropout. It is like cranking up the regularization parameter <span class="math inline">\(\lambda\)</span> in L2 regularization to regularize some layers more than others.</p>
+<p>Technically you can also apply dropout to the input layer, giving some chance of knocking out one or more input features, but in practice this is not done often. A <code>keep_prob</code> of 1.0 is quite common for the input layer, or possibly a very high value like 0.9. You are much less likely to want to eliminate half the input features, so if dropout is applied to the input layer at all, its <code>keep_prob</code> stays close to 1.</p>
+<p>The downside of per-layer <code>keep_prob</code> values is that it gives you even more hyperparameters to search over using cross validation. One alternative is to have some layers with dropout and some without, and then just one hyperparameter, a single <code>keep_prob</code> shared by all the layers that do apply dropout.</p>
+</section>
+<section id="implementation-tips" class="level3">
+<h3 class="anchored" data-anchor-id="implementation-tips">Implementation Tips</h3>
+<p>Many of the first successful implementations of dropout were in <strong>computer vision</strong>. In computer vision the input size is so big, all those pixels, that you almost never have enough data, so overfitting is almost always a concern, and dropout is very frequently used there. Some computer vision researchers pretty much always use it, almost as a default. But the thing to remember is that dropout is a regularization technique whose job is to prevent overfitting. Unless the algorithm is overfitting, there is no reason to bother using dropout, so it is used somewhat less often in other application areas. The computer vision intuition of always applying it does not necessarily generalize to other disciplines.</p>
+<p>One big downside of dropout is that the cost function <span class="math inline">\(J\)</span> is <strong>no longer well defined</strong> on every iteration, because you are randomly knocking off a bunch of nodes. If you are double-checking the performance of gradient descent by plotting <span class="math inline">\(J\)</span> against iterations, that debugging tool is lost, because the cost being optimized is less well defined, or at least hard to calculate. So a common practice is to first turn dropout off (set <code>keep_prob = 1</code>), run the code, and make sure that <span class="math inline">\(J\)</span> is monotonically decreasing. Then turn dropout back on, having gained confidence that the code is working, and rely on other checks while dropout is running.</p>
+</section>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<p><strong>1. From the perspective of a single unit, why does dropout shrink the weights?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-14" class="callout-14-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Any of the unit’s inputs can be randomly eliminated, so the unit cannot rely on any one feature. It is reluctant to put too much weight on any single input and instead spreads small weights across all its inputs. Spreading out the weights shrinks their squared norm, similar to L2 regularization. In fact, dropout can be shown formally to be an adaptive form of L2 regularization, with the penalty on each weight depending on the size of the activation multiplied into it.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. In the example network with weight matrices <span class="math inline">\(w^{[1]}\)</span> of shape <span class="math inline">\(7 \times 3\)</span>, <span class="math inline">\(w^{[2]}\)</span> of shape <span class="math inline">\(7 \times 7\)</span>, and <span class="math inline">\(w^{[3]}\)</span> of shape <span class="math inline">\(3 \times 7\)</span>, which layer is the strongest candidate for a low <code>keep_prob</code>, and why?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Layer 2, because <span class="math inline">\(w^{[2]}\)</span> is the biggest weight matrix with the largest number of parameters (<span class="math inline">\(49\)</span>), which makes it the layer most at risk of overfitting. A lower <code>keep_prob</code> such as 0.5 there applies a more powerful form of dropout, like using a larger <span class="math inline">\(\lambda\)</span> for that layer in L2 regularization. Layers with fewer parameters can use a higher <code>keep_prob</code> such as 0.7, or 1.0 for no dropout at all. The cost of varying <code>keep_prob</code> per layer is more hyperparameters to search over.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. With dropout turned on, why is plotting the cost function <span class="math inline">\(J\)</span> against iterations no longer a reliable debugging tool, and what is the standard workaround?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-16-contents" aria-controls="callout-16" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-16" class="callout-16-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>With nodes being randomly knocked out on every iteration, the cost function being optimized is no longer well defined, so the plot of <span class="math inline">\(J\)</span> is not guaranteed to decrease monotonically and is hard to even calculate. The workaround is to first set <code>keep_prob = 1</code> (no dropout), verify that <span class="math inline">\(J\)</span> decreases monotonically to confirm the code is correct, and then turn dropout on.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Decreasing the parameter <code>keep_prob</code> from (say) 0.6 to 0.4 will likely cause which of the following?</strong></p>
+<ol type="a">
+<li><p>Reducing the regularization effect</p></li>
+<li><p>Increasing the regularization effect</p></li>
+<li><p>Causing the neural network to have higher variance</p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-17-contents" aria-controls="callout-17" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-17" class="callout-17-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>b.</strong> A lower <code>keep_prob</code> means a higher probability of eliminating each node, which is a more powerful form of dropout, like cranking up <span class="math inline">\(\lambda\)</span> in L2 regularization. Stronger regularization reduces variance rather than increasing it.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Which of the following actions increase the regularization of a model? (Check all that apply.)</strong></p>
+<ol type="a">
+<li><p>Decrease the value of the hyperparameter <span class="math inline">\(\lambda\)</span></p></li>
+<li><p>Use Xavier initialization</p></li>
+<li><p>Increase the value of <code>keep_prob</code> in dropout</p></li>
+<li><p>Decrease the value of <code>keep_prob</code> in dropout</p></li>
+<li><p>Increase the value of the hyperparameter <span class="math inline">\(\lambda\)</span></p></li>
+</ol>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-18-contents" aria-controls="callout-18" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-18" class="callout-18-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><strong>d and e.</strong> Decreasing <code>keep_prob</code> drops more nodes and strengthens dropout, and increasing <span class="math inline">\(\lambda\)</span> strengthens the L2 penalty. Increasing <code>keep_prob</code> or decreasing <span class="math inline">\(\lambda\)</span> weakens the respective technique. Xavier initialization is a weight initialization scheme for keeping activations on a reasonable scale in deep networks, covered on the <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem.html#weight-initialization-for-deep-networks">next page</a>, not a regularization method.</p>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="other-regularization-methods" class="level2">
+<h2 class="anchored" data-anchor-id="other-regularization-methods">Other Regularization Methods</h2>
+<p>Besides L2 regularization and dropout regularization, a few other techniques reduce overfitting in a neural network.</p>
+<section id="data-augmentation" class="level3">
+<h3 class="anchored" data-anchor-id="data-augmentation">Data Augmentation</h3>
+<p>Say you are fitting a cat classifier and you are overfitting. Getting more training data can help, but it can be expensive, and sometimes you just cannot get more. What you can do is <strong>augment</strong> the training set, a technique you first met in the <a href="../../../ai/machine-learning/advanced-learning-algorithms/machine-learning-development-process.html#data-augmentation">machine learning course</a>. Take a training image and flip it horizontally, and add the flipped copy to the training set, doubling its size. The augmented set is a bit redundant, so this is not as good as collecting brand new independent examples, but it costs nothing compared to going out and taking more pictures of cats. Besides horizontal flips, you can take random crops of the image, random rotations, and random zooms into parts of the image, and the result still looks like a cat.</p>
+<div id="a18bea4d" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="regularizing-your-neural-network_files/figure-html/cell-4-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Cat photograph by <a href="https://pixabay.com/photos/cat-pet-animal-67345/">Steven Iodice (STVIOD) on Pixabay</a>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>By taking random distortions and translations of the images you make additional, somewhat fake training examples. They do not add as much information as brand new independent cat pictures would, but they are almost free apart from some computational cost, so this can be an inexpensive way to give the algorithm more data, regularize it, and reduce overfitting. Synthesizing examples like this really tells the algorithm that if something is a cat, then its horizontal flip is still a cat. Notice the image is not flipped vertically, because we may not want upside-down cats. For optical character recognition, you can augment the data set by taking digits and imposing random rotations and distortions on them, and they are still the same digits. In practice the distortions used are fairly subtle; a very strongly warped digit is only useful for illustration.</p>
+</section>
+<section id="early-stopping" class="level3">
+<h3 class="anchored" data-anchor-id="early-stopping">Early Stopping</h3>
+<p>One other technique that is often used is called <strong>early stopping</strong>. As you run gradient descent, plot either the training error (the 0-1 classification error on the training set) or just the cost function <span class="math inline">\(J\)</span>, which should decrease monotonically. With early stopping, you also plot the <strong>dev set error</strong>, which can be a classification error on the dev set or something like the logistic loss on the dev set. What you find is that the dev set error usually goes down for a while and then starts to increase. Early stopping says the network was doing best around the iteration where the dev error was lowest, so stop training there and take the parameter values that achieved that dev set error.</p>
+<div id="758f9c6c" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="regularizing-your-neural-network_files/figure-html/cell-5-output-1.svg" class="img-fluid quarto-figure quarto-figure-center figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Why does this work? When you have not run many iterations yet, the parameters <span class="math inline">\(w\)</span> are close to zero, because random initialization sets <span class="math inline">\(w\)</span> to small random values. As you train, <span class="math inline">\(w\)</span> gets bigger and bigger, until late in training you may have much larger parameter values. Stopping halfway leaves you with a mid-size <span class="math inline">\(\|w\|\)</span>. Similar to L2 regularization, picking the network with a smaller norm for the parameters <span class="math inline">\(w\)</span> hopefully means less overfitting. The term early stopping simply refers to stopping the training of the neural network earlier.</p>
+</section>
+<section id="early-stopping-versus-l2-regularization" class="level3">
+<h3 class="anchored" data-anchor-id="early-stopping-versus-l2-regularization">Early Stopping versus L2 Regularization</h3>
+<p>Early stopping has one main downside, and explaining it needs a principle sometimes called <strong>orthogonalization</strong>, the idea that you want to think about one task at a time. The machine learning process comprises several different tasks. One task is to <strong>optimize the cost function <span class="math inline">\(J\)</span></strong>, and there are various tools for that, such as gradient descent and the algorithms covered later in this course (momentum, RMSprop, Adam, and so on). When optimizing <span class="math inline">\(J\)</span>, all you care about is finding <span class="math inline">\(w\)</span> and <span class="math inline">\(b\)</span> so that <span class="math inline">\(J(w, b)\)</span> is as small as possible. A completely separate task is to <strong>not overfit</strong>, in other words to reduce variance, and there is a separate set of tools for that, such as regularization and getting more data. Machine learning already has so many hyperparameters to search over that it is easier to think about when one set of tools targets optimizing <span class="math inline">\(J\)</span> and a different set targets not overfitting. More on orthogonalization comes later in the specialization; do not worry if the concept does not fully make sense yet.</p>
+<p>The main downside of early stopping is that it <strong>couples these two tasks</strong>. By stopping gradient descent early, you are interrupting the optimization of <span class="math inline">\(J\)</span>, so you have not done a great job reducing it, while simultaneously trying to not overfit. Instead of using different tools for the two problems, one technique mixes both, which makes the set of things to try more complicated to think about.</p>
+<p>The alternative is to use L2 regularization and simply train as long as possible. This makes the hyperparameter search space easier to decompose and search over, but the downside is that you might have to try a lot of values of <span class="math inline">\(\lambda\)</span>, which is computationally expensive. The advantage of early stopping is that a single run of gradient descent tries out small <span class="math inline">\(\|w\|\)</span>, mid-size <span class="math inline">\(\|w\|\)</span>, and large <span class="math inline">\(\|w\|\)</span>, without needing to try many values of <span class="math inline">\(\lambda\)</span>. Despite its disadvantages, many people do use early stopping; the preference expressed in the course is to use L2 regularization with different values of <span class="math inline">\(\lambda\)</span> when the computation is affordable, while early stopping achieves a similar effect more cheaply.</p>
+<p>You have now seen how to use data augmentation, and if you wish early stopping, to reduce variance and prevent overfitting. The next topic is setting up the optimization problem itself to make training go quickly.</p>
+</section>
+<section id="review-questions-4" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-4">Review Questions</h3>
+<p><strong>1. Why is a horizontally flipped cat picture a cheaper but weaker training example than a brand new cat picture?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-19-contents" aria-controls="callout-19" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-19" class="callout-19-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>It is cheaper because it costs only a little computation, with no need to collect new photos. It is weaker because the augmented set is redundant. A flipped copy carries less new information than an independent new example. It still helps, because it teaches the algorithm an invariance, namely that if something is a cat, its horizontal flip is still a cat. A vertical flip is not used, since upside-down cats may not be wanted, and for digits, only subtle rotations and distortions are applied in practice.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. How does early stopping act like a regularizer?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-20-contents" aria-controls="callout-20" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-20" class="callout-20-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Random initialization starts <span class="math inline">\(w\)</span> at small values, and <span class="math inline">\(\|w\|\)</span> grows as training proceeds. Dev set error typically falls and then rises again, and early stopping halts training near the dev-error minimum, so the final parameters have a mid-size norm. Like L2 regularization, choosing a network with a smaller <span class="math inline">\(\|w\|\)</span> tends to overfit less.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. What is the orthogonalization argument against early stopping, and what does early stopping offer in exchange?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-21-contents" aria-controls="callout-21" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-21" class="callout-21-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Orthogonalization says to treat optimizing the cost function <span class="math inline">\(J\)</span> and preventing overfitting as separate tasks with separate tools. Early stopping couples them, because halting gradient descent early both interrupts the optimization of <span class="math inline">\(J\)</span> and serves as the variance-reduction tool, making the space of things to try harder to reason about. In exchange, one run of gradient descent effectively tries small, mid-size, and large <span class="math inline">\(\|w\|\)</span>, avoiding the computationally expensive search over many values of <span class="math inline">\(\lambda\)</span> that L2 regularization requires.</p>
+</div>
+</div>
+</div>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 13%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">13% completed (149 of 1137 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-machine-learning-application.html" class="pagination-link" aria-label="Setting Up Your Machine Learning Application">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Setting Up Your Machine Learning Application</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../../ai/deep-learning/improving-deep-neural-networks/setting-up-your-optimization-problem.html" class="pagination-link" aria-label="Setting Up Your Optimization Problem">
+        <span class="nav-page-text">Setting Up Your Optimization Problem</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
