@@ -1,0 +1,2315 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-24">
+<meta name="description" content="Train a character-level RNN on a list of dinosaur names, with gradient clipping and sampling written in NumPy, then generate poetry from a stacked LSTM.">
+
+<title>Lab: Character Level Language Model – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/sequence-models/lab-building-your-recurrent-neural-network.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="https://cdn.jsdelivr.net/npm/requirejs@2.3.6/require.min.js" integrity="sha384-c9c+LnTbwQ3aujuU7ULEPVvgLs+Fn6fJUvIGTsuu1ZcCf11fiEubah0ttpca4ntM sha384-6V1/AdqZRWk1KAlWbKBlGhN7VG4iE/yAZcO6NZPMF8od0vukrvr0tg4qY6NSrItx" crossorigin="anonymous"></script>
+
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Lab: Character Level Language Model – H’s Notes">
+<meta property="og:description" content="Train a character-level RNN on a list of dinosaur names, with gradient clipping and sampling written in NumPy, then generate poetry from a stacked LSTM.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/lab-character-level-language-model_files/figure-html/cell-6-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta property="og:image:alt" content="Five columns of circles. The bottom row holds the inputs, a zero vector followed by the characters z, u, u and l. The middle row holds hidden states connected left to right by orange recurrence arrows. The top row holds the predictions z, u, u, l and newline, each one equal to the input of the following column.">
+<meta name="twitter:title" content="Lab: Character Level Language Model – H’s Notes">
+<meta name="twitter:description" content="Train a character-level RNN on a list of dinosaur names, with gradient clipping and sampling written in NumPy, then generate poetry from a stacked LSTM.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/lab-character-level-language-model_files/figure-html/cell-6-output-1.svg">
+<meta name="twitter:image:alt" content="Five columns of circles. The bottom row holds the inputs, a zero vector followed by the characters z, u, u and l. The middle row holds hidden states connected left to right by orange recurrence arrows. The top row holds the predictions z, u, u, l and newline, each one equal to the input of the following column.">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../infrastructure/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/sequence-models/lab-character-level-language-model.html">Character Level Language Model</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence Models</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/recurrent-neural-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Recurrent Neural Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/rnn-architectures-and-language-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RNN Architectures and Language Models</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vanishing Gradients, GRUs, and LSTMs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/bidirectional-and-deep-rnns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bidirectional and Deep RNNs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-building-your-recurrent-neural-network.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Building Your Recurrent Neural Network Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-character-level-language-model.html" class="sidebar-item-text sidebar-link active"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Character Level Language Model</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#packages" id="toc-packages" class="nav-link active" data-scroll-target="#packages">Packages</a></li>
+  <li><a href="#dataset-and-preprocessing" id="toc-dataset-and-preprocessing" class="nav-link" data-scroll-target="#dataset-and-preprocessing">Dataset and Preprocessing</a></li>
+  <li><a href="#overview-of-the-model" id="toc-overview-of-the-model" class="nav-link" data-scroll-target="#overview-of-the-model">Overview of the Model</a></li>
+  <li><a href="#building-blocks-of-the-model" id="toc-building-blocks-of-the-model" class="nav-link" data-scroll-target="#building-blocks-of-the-model">Building Blocks of the Model</a>
+  <ul class="collapse">
+  <li><a href="#clipping-gradients-in-the-optimization-loop" id="toc-clipping-gradients-in-the-optimization-loop" class="nav-link" data-scroll-target="#clipping-gradients-in-the-optimization-loop">Clipping Gradients in the Optimization Loop</a></li>
+  <li><a href="#sampling" id="toc-sampling" class="nav-link" data-scroll-target="#sampling">Sampling</a></li>
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#building-the-language-model" id="toc-building-the-language-model" class="nav-link" data-scroll-target="#building-the-language-model">Building the Language Model</a>
+  <ul class="collapse">
+  <li><a href="#helper-functions-from-the-previous-assignment" id="toc-helper-functions-from-the-previous-assignment" class="nav-link" data-scroll-target="#helper-functions-from-the-previous-assignment">Helper Functions From the Previous Assignment</a></li>
+  <li><a href="#gradient-descent" id="toc-gradient-descent" class="nav-link" data-scroll-target="#gradient-descent">Gradient Descent</a></li>
+  <li><a href="#training-the-model" id="toc-training-the-model" class="nav-link" data-scroll-target="#training-the-model">Training the Model</a></li>
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#writing-like-shakespeare" id="toc-writing-like-shakespeare" class="nav-link" data-scroll-target="#writing-like-shakespeare">Writing Like Shakespeare</a>
+  <ul class="collapse">
+  <li><a href="#corpus-and-training-set" id="toc-corpus-and-training-set" class="nav-link" data-scroll-target="#corpus-and-training-set">Corpus and Training Set</a></li>
+  <li><a href="#pretrained-model" id="toc-pretrained-model" class="nav-link" data-scroll-target="#pretrained-model">Pretrained Model</a></li>
+  <li><a href="#generating-a-poem" id="toc-generating-a-poem" class="nav-link" data-scroll-target="#generating-a-poem">Generating a Poem</a></li>
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../breadcrumb-path.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title"><span class="bi bi-flask lab-title-icon" aria-hidden="true"></span><span class="visually-hidden">Lab:</span> Character Level Language Model</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">sequence-models</div>
+    <div class="quarto-category">rnn</div>
+    <div class="quarto-category">language-model</div>
+    <div class="quarto-category">gradient-clipping</div>
+    <div class="quarto-category">sampling</div>
+    <div class="quarto-category">lstm</div>
+    <div class="quarto-category">keras</div>
+    <div class="quarto-category">lab</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Train a character-level RNN on a list of dinosaur names, with gradient clipping and sampling written in NumPy, then generate poetry from a stacked LSTM.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 24, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~177 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~5,300 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<p>This is the second assignment of Course 5, and the first one that trains a model rather than only running a forward pass. The task is to invent dinosaur names. A list of names that real paleontologists have already used becomes the training set, a character-level recurrent network learns the patterns inside it, and sampling from that trained network produces names nobody has seen before.</p>
+<p>By the end of this lab you will be able to</p>
+<ul>
+<li>store text data for processing by an RNN,</li>
+<li>build a character-level text generation model,</li>
+<li>sample novel sequences from a trained RNN,</li>
+<li>explain the exploding gradient problem and apply gradient clipping as the fix.</li>
+</ul>
+<p>The <a href="../../../ai/deep-learning/sequence-models/lab-building-your-recurrent-neural-network.html">previous lab</a> built the RNN and LSTM forward and backward passes by hand. Those functions come back here as given helpers, so the code you write is the part that turns them into a working language model. Three pieces are new. Gradient clipping keeps the updates from exploding, sampling turns a trained network into a generator, and the optimization loop ties everything together.</p>
+<section id="packages" class="level2">
+<h2 class="anchored" data-anchor-id="packages">Packages</h2>
+<p>Four imports carry the lab, and none of them is a deep learning framework. The dinosaur model is plain NumPy from end to end.</p>
+<div id="6ad5a6ce" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> random</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pprint</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> copy</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>DATA <span class="op">=</span> <span class="st">"../../../media/deep-learning/character-level-language-model/"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>DATA</code> is the folder holding the dataset and the helper module the assignment ships with, so every path below is written once and reused.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Lab Files Download
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Everything this lab needs, ready to download.</p>
+<ul>
+<li><a href="../../../media/deep-learning/character-level-language-model/dinos.txt">dinos.txt</a> (19 KB), the training set of 1536 dinosaur names, one per line.</li>
+<li><a href="../../../media/deep-learning/character-level-language-model/utils.py">utils.py</a> (5 KB), the helper module the notebook imports. It holds <code>softmax</code>, the forward and backward passes over a sequence, the parameter update, and the loss smoothing.</li>
+<li><a href="../../../media/deep-learning/character-level-language-model/shakespeare.txt">shakespeare.txt</a> (94 KB), the collection of Shakespeare sonnets used in the final section.</li>
+<li><a href="../../../media/deep-learning/character-level-language-model/model_shakespeare_kiank_350_epoch.h5">model_shakespeare_kiank_350_epoch.h5</a> (2.7 MB), the stacked LSTM already trained on those sonnets for roughly 1000 epochs.</li>
+<li><a href="../../../media/deep-learning/character-level-language-model/shakespeare_utils.py">shakespeare_utils.py</a> (5 KB), the original helper module for that final section. The page does not import it, for the reasons given in <a href="#writing-like-shakespeare">Writing Like Shakespeare</a>, but it is here because it is part of the original lab.</li>
+</ul>
+</div>
+</div>
+</section>
+<section id="dataset-and-preprocessing" class="level2">
+<h2 class="anchored" data-anchor-id="dataset-and-preprocessing">Dataset and Preprocessing</h2>
+<p>The dataset is a plain text file with one dinosaur name per line. Reading it and lowercasing it gives a single long string, and the set of characters appearing in that string is the vocabulary.</p>
+<div id="350acca6" class="cell" data-execution_count="2">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>data <span class="op">=</span> <span class="bu">open</span>(DATA <span class="op">+</span> <span class="st">"dinos.txt"</span>, <span class="st">"r"</span>).read()</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>data <span class="op">=</span> data.lower()</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>chars <span class="op">=</span> <span class="bu">list</span>(<span class="bu">set</span>(data))</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>data_size, vocab_size <span class="op">=</span> <span class="bu">len</span>(data), <span class="bu">len</span>(chars)</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"There are </span><span class="sc">%d</span><span class="st"> total characters and </span><span class="sc">%d</span><span class="st"> unique characters in your data."</span> <span class="op">%</span> (data_size, vocab_size))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>There are 19909 total characters and 27 unique characters in your data.</code></pre>
+</div>
+</div>
+<p>The 27 characters are the 26 letters a to z plus the newline. That newline is doing real work. It plays the role of the end-of-sentence token from the <a href="../../../ai/deep-learning/sequence-models/rnn-architectures-and-language-models.html#character-level-language-models">character-level language model lecture</a>, except that here it marks the end of a name rather than the end of a sentence. Training the network to predict it is what teaches the model when to stop.</p>
+<p>A model cannot consume characters, only numbers, so two dictionaries translate in both directions. <code>char_to_ix</code> maps a character to an index from 0 to 26, and <code>ix_to_char</code> maps the index back. Sorting the character list first is what makes the mapping reproducible, because a Python set has no guaranteed order.</p>
+<div id="76b97017" class="cell" data-execution_count="3">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>chars <span class="op">=</span> <span class="bu">sorted</span>(chars)</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(chars)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>['\n', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']</code></pre>
+</div>
+</div>
+<div id="6097f709" class="cell" data-execution_count="4">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>char_to_ix <span class="op">=</span> { ch:i <span class="cf">for</span> i,ch <span class="kw">in</span> <span class="bu">enumerate</span>(chars) }</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>ix_to_char <span class="op">=</span> { i:ch <span class="cf">for</span> i,ch <span class="kw">in</span> <span class="bu">enumerate</span>(chars) }</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>pp <span class="op">=</span> pprint.PrettyPrinter(indent<span class="op">=</span><span class="dv">4</span>)</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>pp.pprint(ix_to_char)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>{   0: '\n',
+    1: 'a',
+    2: 'b',
+    3: 'c',
+    4: 'd',
+    5: 'e',
+    6: 'f',
+    7: 'g',
+    8: 'h',
+    9: 'i',
+    10: 'j',
+    11: 'k',
+    12: 'l',
+    13: 'm',
+    14: 'n',
+    15: 'o',
+    16: 'p',
+    17: 'q',
+    18: 'r',
+    19: 's',
+    20: 't',
+    21: 'u',
+    22: 'v',
+    23: 'w',
+    24: 'x',
+    25: 'y',
+    26: 'z'}</code></pre>
+</div>
+</div>
+<p>Index 0 is the newline, because it sorts before every letter. That detail matters later, when the softmax output vector is indexed to find the probability that the name ends right here.</p>
+</section>
+<section id="overview-of-the-model" class="level2">
+<h2 class="anchored" data-anchor-id="overview-of-the-model">Overview of the Model</h2>
+<p>The model reads one character at a time and, at every time step, tries to predict the character that comes next. Written as sequences, the input is <span class="math inline">\(X = (x^{\langle 1 \rangle}, x^{\langle 2 \rangle}, \ldots, x^{\langle T_x \rangle})\)</span>, a list of characters from the training set, and the label is <span class="math inline">\(Y = (y^{\langle 1 \rangle}, y^{\langle 2 \rangle}, \ldots, y^{\langle T_x \rangle})\)</span>, the same list shifted one character forward. At every time step <span class="math inline">\(t\)</span>, <span class="math inline">\(y^{\langle t \rangle} = x^{\langle t+1 \rangle}\)</span>, so the target at time <span class="math inline">\(t\)</span> is simply the input at time <span class="math inline">\(t+1\)</span>.</p>
+<div class="wide-network-hint">
+<p>On a small screen, scroll horizontally to inspect the complete diagram.</p>
+</div>
+<div class="wide-network-figure" role="region" aria-label="Scrollable unrolled character-level RNN diagram" tabindex="0">
+<div id="8ab4e86f" class="cell" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-character-level-language-model_files/figure-html/cell-6-output-1.svg" class="img-fluid figure-img" alt="Five columns of circles. The bottom row holds the inputs, a zero vector followed by the characters z, u, u and l. The middle row holds hidden states connected left to right by orange recurrence arrows. The top row holds the predictions z, u, u, l and newline, each one equal to the input of the following column."></p>
+<figcaption>The unrolled network on the name ‘zuul’. The label at every time step is the input at the next one, and the last label is the newline that ends the name.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<p>The first input is the zero vector rather than a character, because at the first time step there is nothing to condition on yet. From then on the network is fed the real character at each position and asked for the next one, and the last thing it must predict is the newline.</p>
+<p>Training the whole thing has the structure of any other model in the course. Initialize the parameters, then repeat a loop that forward propagates to compute the loss, backward propagates to compute the gradients, clips those gradients, and updates the parameters with the gradient descent rule. The two blocks built next are the clipping step and the sampling procedure that turns the trained parameters back into text.</p>
+</section>
+<section id="building-blocks-of-the-model" class="level2">
+<h2 class="anchored" data-anchor-id="building-blocks-of-the-model">Building Blocks of the Model</h2>
+<p>Two functions have to exist before the training loop can be written. Gradient clipping keeps the parameter updates under control, and sampling reads text out of the trained parameters.</p>
+<section id="clipping-gradients-in-the-optimization-loop" class="level3">
+<h3 class="anchored" data-anchor-id="clipping-gradients-in-the-optimization-loop">Clipping Gradients in the Optimization Loop</h3>
+<p>Recurrent networks suffer from <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm.html#exploding-gradients">exploding gradients</a> as well as vanishing ones. When the gradient is very large, the update <span class="math inline">\(w := w - \alpha \, dw\)</span> moves so far that it overshoots the minimum entirely, and the next gradient is larger still. A few iterations of that and the parameters are filled with <code>NaN</code>.</p>
+<p>Clipping is the standard fix. Before the update, every entry of every gradient is forced back into a range <span class="math inline">\([-N, N]\)</span>. An entry above <span class="math inline">\(N\)</span> becomes <span class="math inline">\(N\)</span>, an entry below <span class="math inline">\(-N\)</span> becomes <span class="math inline">\(-N\)</span>, and anything already inside the range is left alone. The direction of the step changes somewhat, because the components are rescaled unevenly, but the length of the step is now bounded, which is what stops the divergence.</p>
+<div id="5ec70803" class="cell" data-execution_count="6">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-character-level-language-model_files/figure-html/cell-7-output-1.svg" class="img-fluid figure-img" alt="Two contour plots side by side. On the left, without clipping, the trajectory oscillates across the valley in steps that grow larger until they leave the plot. On the right, with clipping, the trajectory takes bounded steps that settle into the minimum."></p>
+<figcaption>Gradient descent on the same elongated bowl, with the same learning rate. Clipping every gradient entry at 1.0 turns a diverging run into a converging one.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The <code>clip</code> function takes the dictionary of gradients and a maximum value, and returns the clipped dictionary.</p>
+<p>Two details in the implementation are worth attention. The function starts with <code>copy.deepcopy</code>, so the caller’s dictionary is not modified behind its back. Then <code>np.clip</code> is called with <code>out=gradient</code>, which writes the result back into the same array rather than returning a new one. Without <code>out</code>, the clipped array would be assigned to the loop variable and thrown away at the next iteration, leaving the real gradients untouched.</p>
+<div id="12e7b80f" class="cell" data-execution_count="7">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> clip(gradients, maxValue):</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">'''</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Clips the gradients' values between minimum and maximum.</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="co">    gradients -- a dictionary containing the gradients "dWaa", "dWax", "dWya", "db", "dby"</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="co">    maxValue -- everything above this number is set to this number,</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="co">                and everything less than -maxValue is set to -maxValue</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="co">    gradients -- a dictionary with the clipped gradients.</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="co">    '''</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>    gradients <span class="op">=</span> copy.deepcopy(gradients)</span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>    dWaa, dWax, dWya, db, dby <span class="op">=</span> gradients[<span class="st">'dWaa'</span>], gradients[<span class="st">'dWax'</span>], gradients[<span class="st">'dWya'</span>], gradients[<span class="st">'db'</span>], gradients[<span class="st">'dby'</span>]</span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Clip to mitigate exploding gradients, in place, one array at a time.</span></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> gradient <span class="kw">in</span> [dWax, dWaa, dWya, db, dby]:</span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>        np.clip(gradient, <span class="op">-</span>maxValue, maxValue, out<span class="op">=</span>gradient)</span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>    gradients <span class="op">=</span> {<span class="st">"dWaa"</span>: dWaa, <span class="st">"dWax"</span>: dWax, <span class="st">"dWya"</span>: dWya, <span class="st">"db"</span>: db, <span class="st">"dby"</span>: dby}</span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> gradients</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Running it on random gradients scaled by 10 shows both halves of the behavior. Entries that were far outside the range come back sitting exactly on the boundary, and entries that were already inside are untouched.</p>
+<div id="1ce1cc36" class="cell" data-execution_count="8">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>np.random.seed(<span class="dv">3</span>)</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>dWax <span class="op">=</span> np.random.randn(<span class="dv">5</span>, <span class="dv">3</span>) <span class="op">*</span> <span class="dv">10</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>dWaa <span class="op">=</span> np.random.randn(<span class="dv">5</span>, <span class="dv">5</span>) <span class="op">*</span> <span class="dv">10</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>dWya <span class="op">=</span> np.random.randn(<span class="dv">2</span>, <span class="dv">5</span>) <span class="op">*</span> <span class="dv">10</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>db <span class="op">=</span> np.random.randn(<span class="dv">5</span>, <span class="dv">1</span>) <span class="op">*</span> <span class="dv">10</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>dby <span class="op">=</span> np.random.randn(<span class="dv">2</span>, <span class="dv">1</span>) <span class="op">*</span> <span class="dv">10</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>gradients <span class="op">=</span> {<span class="st">"dWax"</span>: dWax, <span class="st">"dWaa"</span>: dWaa, <span class="st">"dWya"</span>: dWya, <span class="st">"db"</span>: db, <span class="st">"dby"</span>: dby}</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> maxValue <span class="kw">in</span> [<span class="dv">10</span>, <span class="dv">5</span>]:</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    clipped <span class="op">=</span> clip(gradients, maxValue)</span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"Gradients for maxValue=</span><span class="sc">{</span>maxValue<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'gradients["dWaa"][1][2] ='</span>, clipped[<span class="st">"dWaa"</span>][<span class="dv">1</span>][<span class="dv">2</span>])</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'gradients["dWax"][3][1] ='</span>, clipped[<span class="st">"dWax"</span>][<span class="dv">3</span>][<span class="dv">1</span>])</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'gradients["dWya"][1][2] ='</span>, clipped[<span class="st">"dWya"</span>][<span class="dv">1</span>][<span class="dv">2</span>])</span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'gradients["db"][4] ='</span>, clipped[<span class="st">"db"</span>][<span class="dv">4</span>])</span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'gradients["dby"][1] ='</span>, clipped[<span class="st">"dby"</span>][<span class="dv">1</span>])</span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    lo <span class="op">=</span> <span class="bu">min</span>(np.<span class="bu">min</span>(v) <span class="cf">for</span> v <span class="kw">in</span> clipped.values())</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>    hi <span class="op">=</span> <span class="bu">max</span>(np.<span class="bu">max</span>(v) <span class="cf">for</span> v <span class="kw">in</span> clipped.values())</span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"range across all five gradients = [</span><span class="sc">{</span>lo<span class="sc">}</span><span class="ss">, </span><span class="sc">{</span>hi<span class="sc">}</span><span class="ss">]</span><span class="ch">\n</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Gradients for maxValue=10
+gradients["dWaa"][1][2] = 10.0
+gradients["dWax"][3][1] = -10.0
+gradients["dWya"][1][2] = 0.2971381536101662
+gradients["db"][4] = [10.]
+gradients["dby"][1] = [8.45833407]
+range across all five gradients = [-10.0, 10.0]
+
+Gradients for maxValue=5
+gradients["dWaa"][1][2] = 5.0
+gradients["dWax"][3][1] = -5.0
+gradients["dWya"][1][2] = 0.2971381536101662
+gradients["db"][4] = [5.]
+gradients["dby"][1] = [5.]
+range across all five gradients = [-5.0, 5.0]
+</code></pre>
+</div>
+</div>
+<p>Read the two blocks against each other. <code>dWaa[1][2]</code> was above 10, so it is 10.0 in the first block and 5.0 in the second, pinned to whichever boundary applies. <code>dWax[3][1]</code> was below the negative boundary and gets the same treatment on the other side. <code>dWya[1][2]</code> is about 0.297, comfortably inside both ranges, so it is identical in both blocks. The printed range confirms the guarantee the function exists to provide, which is that nothing survives outside <span class="math inline">\([-N, N]\)</span>.</p>
+<p>Notice also that <code>gradients</code> itself still holds the original unclipped values, since the two calls above both start from it and produce different results. That is <code>copy.deepcopy</code> doing its job.</p>
+</section>
+<section id="sampling" class="level3">
+<h3 class="anchored" data-anchor-id="sampling">Sampling</h3>
+<p>Assume for a moment the model is already trained. Generating a new name is a loop that feeds the network its own output.</p>
+<div id="7968090c" class="cell" data-execution_count="9">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-character-level-language-model_files/figure-html/cell-10-output-1.svg" class="img-fluid figure-img" alt="Three columns showing a zero input producing a softmax distribution, a character sampled from it, and that character fed back as the one-hot input of the next column. A curved orange arrow leads from each sampled character down to the following input."></p>
+<figcaption>Sampling. The character drawn from the softmax at one time step becomes the one-hot input at the next, and the loop stops when a newline is drawn.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The procedure has four steps.</p>
+<p><strong>Step 1</strong> starts the sequence with a dummy input, <span class="math inline">\(x^{\langle 1 \rangle} = 0\)</span>, and a zero initial hidden state, <span class="math inline">\(a^{\langle 0 \rangle} = 0\)</span>. There is no character to condition on yet, so both are vectors of zeros.</p>
+<p><strong>Step 2</strong> runs one step of forward propagation, which is the same arithmetic as the previous lab.</p>
+<p><span class="math display">\[ a^{\langle t+1 \rangle} = \tanh(W_{ax} x^{\langle t+1 \rangle} + W_{aa} a^{\langle t \rangle} + b) \]</span></p>
+<p><span class="math display">\[ z^{\langle t+1 \rangle} = W_{ya} a^{\langle t+1 \rangle} + b_y \]</span></p>
+<p><span class="math display">\[ \hat{y}^{\langle t+1 \rangle} = \text{softmax}(z^{\langle t+1 \rangle}) \]</span></p>
+<p>The result <span class="math inline">\(\hat{y}^{\langle t+1 \rangle}\)</span> is a probability vector with 27 entries that sum to one, where entry <span class="math inline">\(i\)</span> is the probability that the next character is the one with index <span class="math inline">\(i\)</span>.</p>
+<p><strong>Step 3</strong> draws a character from that distribution. Taking the most probable character every time would make the model deterministic, so a given first letter would always produce exactly the same name. Instead <code>np.random.choice</code> draws index <span class="math inline">\(i\)</span> with probability <span class="math inline">\(\hat{y}^{\langle t+1 \rangle}_i\)</span>, which keeps the output varied while still respecting what the model learned. The probability vector is 2D of shape <span class="math inline">\((27, 1)\)</span>, and <code>np.random.choice</code> needs a 1D vector, which is what <code>.ravel()</code> provides.</p>
+<p><strong>Step 4</strong> overwrites the input with a one-hot vector for the character just drawn, so the next iteration is conditioned on it. The loop repeats until a newline is drawn, or until 50 characters have been generated, which is a safety valve for an untrained model that might never produce a newline at all.</p>
+<div id="a50f4e72" class="cell" data-execution_count="10">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> softmax(x):</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Softmax over the whole array, as shipped in the lab's utils module."""</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    e_x <span class="op">=</span> np.exp(x <span class="op">-</span> np.<span class="bu">max</span>(x))</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> e_x <span class="op">/</span> e_x.<span class="bu">sum</span>(axis<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> sample(parameters, char_to_ix, seed):</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="co">    Sample a sequence of characters according to a sequence of probability</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="co">    distributions output of the RNN.</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a><span class="co">    parameters -- Python dictionary containing the parameters Waa, Wax, Wya, by, and b.</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a><span class="co">    char_to_ix -- Python dictionary mapping each character to an index.</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a><span class="co">    seed -- fixes the draws, so a given call always returns the same name.</span></span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a><span class="co">    indices -- A list of length n containing the indices of the sampled characters.</span></span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Retrieve parameters and relevant shapes from "parameters" dictionary</span></span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>    Waa, Wax, Wya, by, b <span class="op">=</span> parameters[<span class="st">'Waa'</span>], parameters[<span class="st">'Wax'</span>], parameters[<span class="st">'Wya'</span>], parameters[<span class="st">'by'</span>], parameters[<span class="st">'b'</span>]</span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>    vocab_size <span class="op">=</span> by.shape[<span class="dv">0</span>]</span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>    n_a <span class="op">=</span> Waa.shape[<span class="dv">1</span>]</span>
+<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-25"><a href="#cb11-25" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Step 1: Create the zero vector x used as the one-hot input of the first</span></span>
+<span id="cb11-26"><a href="#cb11-26" aria-hidden="true" tabindex="-1"></a>    <span class="co"># character, and the zero initial hidden state.</span></span>
+<span id="cb11-27"><a href="#cb11-27" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> np.zeros((vocab_size, <span class="dv">1</span>))</span>
+<span id="cb11-28"><a href="#cb11-28" aria-hidden="true" tabindex="-1"></a>    a_prev <span class="op">=</span> np.zeros((n_a, <span class="dv">1</span>))</span>
+<span id="cb11-29"><a href="#cb11-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-30"><a href="#cb11-30" aria-hidden="true" tabindex="-1"></a>    <span class="co"># The list of indices of the characters generated so far.</span></span>
+<span id="cb11-31"><a href="#cb11-31" aria-hidden="true" tabindex="-1"></a>    indices <span class="op">=</span> []</span>
+<span id="cb11-32"><a href="#cb11-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-33"><a href="#cb11-33" aria-hidden="true" tabindex="-1"></a>    <span class="co"># idx is the index of the entry of x that is set to 1. All others are zero.</span></span>
+<span id="cb11-34"><a href="#cb11-34" aria-hidden="true" tabindex="-1"></a>    idx <span class="op">=</span> <span class="op">-</span><span class="dv">1</span></span>
+<span id="cb11-35"><a href="#cb11-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-36"><a href="#cb11-36" aria-hidden="true" tabindex="-1"></a>    counter <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb11-37"><a href="#cb11-37" aria-hidden="true" tabindex="-1"></a>    newline_character <span class="op">=</span> char_to_ix[<span class="st">'</span><span class="ch">\n</span><span class="st">'</span>]</span>
+<span id="cb11-38"><a href="#cb11-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-39"><a href="#cb11-39" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> (idx <span class="op">!=</span> newline_character <span class="kw">and</span> counter <span class="op">!=</span> <span class="dv">50</span>):</span>
+<span id="cb11-40"><a href="#cb11-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-41"><a href="#cb11-41" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Step 2: Forward propagate x through one time step.</span></span>
+<span id="cb11-42"><a href="#cb11-42" aria-hidden="true" tabindex="-1"></a>        a <span class="op">=</span> np.tanh(np.dot(Wax, x) <span class="op">+</span> np.dot(Waa, a_prev) <span class="op">+</span> b)</span>
+<span id="cb11-43"><a href="#cb11-43" aria-hidden="true" tabindex="-1"></a>        z <span class="op">=</span> np.dot(Wya, a) <span class="op">+</span> by</span>
+<span id="cb11-44"><a href="#cb11-44" aria-hidden="true" tabindex="-1"></a>        y <span class="op">=</span> softmax(z)</span>
+<span id="cb11-45"><a href="#cb11-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-46"><a href="#cb11-46" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Fix the draw of this time step, so the whole name is reproducible.</span></span>
+<span id="cb11-47"><a href="#cb11-47" aria-hidden="true" tabindex="-1"></a>        np.random.seed(counter <span class="op">+</span> seed)</span>
+<span id="cb11-48"><a href="#cb11-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-49"><a href="#cb11-49" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Step 3: Draw the index of the next character from the distribution y.</span></span>
+<span id="cb11-50"><a href="#cb11-50" aria-hidden="true" tabindex="-1"></a>        idx <span class="op">=</span> np.random.choice(<span class="bu">range</span>(vocab_size), p<span class="op">=</span>y.ravel())</span>
+<span id="cb11-51"><a href="#cb11-51" aria-hidden="true" tabindex="-1"></a>        indices.append(idx)</span>
+<span id="cb11-52"><a href="#cb11-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-53"><a href="#cb11-53" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Step 4: Overwrite the input with the one-hot vector of the drawn index.</span></span>
+<span id="cb11-54"><a href="#cb11-54" aria-hidden="true" tabindex="-1"></a>        x <span class="op">=</span> np.zeros((vocab_size, <span class="dv">1</span>))</span>
+<span id="cb11-55"><a href="#cb11-55" aria-hidden="true" tabindex="-1"></a>        x[idx] <span class="op">=</span> <span class="dv">1</span></span>
+<span id="cb11-56"><a href="#cb11-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-57"><a href="#cb11-57" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Pass the hidden state on to the next time step.</span></span>
+<span id="cb11-58"><a href="#cb11-58" aria-hidden="true" tabindex="-1"></a>        a_prev <span class="op">=</span> a</span>
+<span id="cb11-59"><a href="#cb11-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-60"><a href="#cb11-60" aria-hidden="true" tabindex="-1"></a>        seed <span class="op">+=</span> <span class="dv">1</span></span>
+<span id="cb11-61"><a href="#cb11-61" aria-hidden="true" tabindex="-1"></a>        counter <span class="op">+=</span> <span class="dv">1</span></span>
+<span id="cb11-62"><a href="#cb11-62" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-63"><a href="#cb11-63" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Force an ending if the loop hit the 50 character safety valve.</span></span>
+<span id="cb11-64"><a href="#cb11-64" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (counter <span class="op">==</span> <span class="dv">50</span>):</span>
+<span id="cb11-65"><a href="#cb11-65" aria-hidden="true" tabindex="-1"></a>        indices.append(char_to_ix[<span class="st">'</span><span class="ch">\n</span><span class="st">'</span>])</span>
+<span id="cb11-66"><a href="#cb11-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-67"><a href="#cb11-67" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> indices</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The <code>seed</code> argument deserves a word, because it is unusual to see one inside a model function. Reseeding at every time step makes a given call to <code>sample</code> return the same name every time, which is what keeps the training output on this page stable across renders. A production sampler would simply not reseed, and would produce a different name on every call.</p>
+<p>Sampling from untrained parameters shows what the function does before the model knows anything.</p>
+<div id="e20970b8" class="cell" data-execution_count="11">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>np.random.seed(<span class="dv">24</span>)</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>n_a <span class="op">=</span> <span class="dv">100</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>Wax, Waa, Wya <span class="op">=</span> np.random.randn(n_a, vocab_size), np.random.randn(n_a, n_a), np.random.randn(vocab_size, n_a)</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>b, by <span class="op">=</span> np.random.randn(n_a, <span class="dv">1</span>), np.random.randn(vocab_size, <span class="dv">1</span>)</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>parameters_tmp <span class="op">=</span> {<span class="st">"Wax"</span>: Wax, <span class="st">"Waa"</span>: Waa, <span class="st">"Wya"</span>: Wya, <span class="st">"b"</span>: b, <span class="st">"by"</span>: by}</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>indices <span class="op">=</span> sample(parameters_tmp, char_to_ix, <span class="dv">0</span>)</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"list of sampled indices:</span><span class="ch">\n</span><span class="st">"</span>, [<span class="bu">int</span>(i) <span class="cf">for</span> i <span class="kw">in</span> indices])</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"list of sampled characters:</span><span class="ch">\n</span><span class="st">"</span>, [ix_to_char[i] <span class="cf">for</span> i <span class="kw">in</span> indices])</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"length ="</span>, <span class="bu">len</span>(indices), <span class="st">"and last character is a newline:"</span>, indices[<span class="op">-</span><span class="dv">1</span>] <span class="op">==</span> char_to_ix[<span class="st">'</span><span class="ch">\n</span><span class="st">'</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>list of sampled indices:
+ [23, 16, 26, 26, 24, 3, 21, 1, 7, 24, 15, 3, 25, 20, 6, 13, 10, 8, 20, 12, 2, 0]
+list of sampled characters:
+ ['w', 'p', 'z', 'z', 'x', 'c', 'u', 'a', 'g', 'x', 'o', 'c', 'y', 't', 'f', 'm', 'j', 'h', 't', 'l', 'b', '\n']
+length = 22 and last character is a newline: True</code></pre>
+</div>
+</div>
+<p>The result is gibberish, which is the correct outcome. These weights are random, so the softmax is close to arbitrary and the draws carry no structure. Two things are already right, though. The sequence ended on its own by drawing a newline rather than running into the 50 character limit, and every index lies inside the vocabulary, because <code>np.random.choice</code> can only return a position of the probability vector it was given.</p>
+<p>The <code>int(i)</code> in the first print is only there for readability. NumPy 2 prints its integer scalars as <code>np.int64(23)</code>, which makes a long list hard to read, and the conversion does not change the values.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What You Should Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>Very large, or exploding, gradient updates can overshoot the optimal values during backpropagation, which makes training difficult.</li>
+<li>Clip the gradients before updating the parameters to avoid this.</li>
+<li>Sampling picks the index of the next character according to a probability distribution, rather than always taking the most probable one.</li>
+<li>To sample, feed a dummy vector of zeros as the first input, run one step of forward propagation, draw from the resulting distribution with <code>np.random.choice</code>, and feed the drawn character back in as the next input.</li>
+</ul>
+</div>
+</div>
+</section>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<div id="clm-lab-review-q1">
+<p><strong>1. Why does <code>clip</code> pass <code>out=gradient</code> to <code>np.clip</code> instead of writing <code>gradient = np.clip(gradient, -maxValue, maxValue)</code>?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="clm-lab-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because the assignment form would rebind only the loop variable. The loop iterates over <code>[dWax, dWaa, dWya, db, dby]</code>, so <code>gradient</code> is a name pointing at one of those arrays. Assigning to it makes it point at a new array instead, and the original array, which is what gets packed into the returned dictionary, keeps its unclipped values. Passing <code>out=gradient</code> writes the clipped values into the existing array in place, so the change is visible through every other reference to it.</p>
+</div>
+</details>
+<hr>
+<div id="clm-lab-review-q2">
+<p><strong>1. Sampling draws from the softmax distribution instead of taking <code>np.argmax</code>. What would go wrong with <code>argmax</code>?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="clm-lab-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>The model would become deterministic. Every call starts from the same zero input and the same zero hidden state, so the first character would always be identical, and each following character would be the single most probable continuation. The model would emit exactly one name, no matter how many times it was called. Drawing from the distribution lets the generator explore the many continuations the model considers plausible, which is the entire point of using it to invent names.</p>
+</div>
+</details>
+<hr>
+<div id="clm-lab-review-q3">
+<p><strong>1. The while loop stops at 50 characters as well as on a newline. When does that second condition actually fire?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="clm-lab-review-q3">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Early in training, when the model has not yet learned that names end. An untrained network gives the newline roughly the same probability as any other character, so a run of draws can easily go 50 steps without hitting it. Once the model has been trained the newline becomes far more likely after a plausible ending, and the loop almost always exits on its own. The counter is a safety valve that keeps a bad model from generating forever, and the <code>if (counter == 50)</code> line afterwards appends a newline so the caller always receives a properly terminated name.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="building-the-language-model" class="level2">
+<h2 class="anchored" data-anchor-id="building-the-language-model">Building the Language Model</h2>
+<p>The two blocks above become a language model once they are wrapped in an optimization loop.</p>
+<section id="helper-functions-from-the-previous-assignment" class="level3">
+<h3 class="anchored" data-anchor-id="helper-functions-from-the-previous-assignment">Helper Functions From the Previous Assignment</h3>
+<p>The forward and backward passes over a sequence are given here rather than rewritten, because the <a href="../../../ai/deep-learning/sequence-models/lab-building-your-recurrent-neural-network.html">previous lab</a> built them line by line. Read them if the training loop below looks mysterious, and skip them otherwise. <code>rnn_forward</code> runs the network over one name and returns the cross-entropy loss, <code>rnn_backward</code> runs backpropagation through time and returns the gradients, and <code>update_parameters</code> applies the gradient descent rule.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Helper Functions Shipped With the Assignment
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<div id="37b0f72e" class="cell" data-execution_count="12">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> smooth(loss, cur_loss):</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Exponentially weighted average of the loss, so the printed curve is readable."""</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> loss <span class="op">*</span> <span class="fl">0.999</span> <span class="op">+</span> cur_loss <span class="op">*</span> <span class="fl">0.001</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> get_initial_loss(vocab_size, seq_length):</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Loss of a model that guesses uniformly, used to start the smoothing."""</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">-</span>np.log(<span class="fl">1.0</span> <span class="op">/</span> vocab_size) <span class="op">*</span> seq_length</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> get_sample(sample_ix, ix_to_char):</span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Turn a list of sampled indices into a capitalized string."""</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>    txt <span class="op">=</span> <span class="st">''</span>.join(ix_to_char[ix] <span class="cf">for</span> ix <span class="kw">in</span> sample_ix)</span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>    txt <span class="op">=</span> txt[<span class="dv">0</span>].upper() <span class="op">+</span> txt[<span class="dv">1</span>:]</span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> txt</span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> initialize_parameters(n_a, n_x, n_y):</span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Initialize the five parameters with small random values."""</span></span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a>    np.random.seed(<span class="dv">1</span>)</span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a>    Wax <span class="op">=</span> np.random.randn(n_a, n_x) <span class="op">*</span> <span class="fl">0.01</span>  <span class="co"># input to hidden</span></span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a>    Waa <span class="op">=</span> np.random.randn(n_a, n_a) <span class="op">*</span> <span class="fl">0.01</span>  <span class="co"># hidden to hidden</span></span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a>    Wya <span class="op">=</span> np.random.randn(n_y, n_a) <span class="op">*</span> <span class="fl">0.01</span>  <span class="co"># hidden to output</span></span>
+<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a>    b <span class="op">=</span> np.zeros((n_a, <span class="dv">1</span>))                  <span class="co"># hidden bias</span></span>
+<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a>    by <span class="op">=</span> np.zeros((n_y, <span class="dv">1</span>))                 <span class="co"># output bias</span></span>
+<span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">"Wax"</span>: Wax, <span class="st">"Waa"</span>: Waa, <span class="st">"Wya"</span>: Wya, <span class="st">"b"</span>: b, <span class="st">"by"</span>: by}</span>
+<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-25"><a href="#cb14-25" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> rnn_step_forward(parameters, a_prev, x):</span>
+<span id="cb14-26"><a href="#cb14-26" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""One time step forward, hidden state then softmax over the vocabulary."""</span></span>
+<span id="cb14-27"><a href="#cb14-27" aria-hidden="true" tabindex="-1"></a>    Waa, Wax, Wya, by, b <span class="op">=</span> parameters[<span class="st">'Waa'</span>], parameters[<span class="st">'Wax'</span>], parameters[<span class="st">'Wya'</span>], parameters[<span class="st">'by'</span>], parameters[<span class="st">'b'</span>]</span>
+<span id="cb14-28"><a href="#cb14-28" aria-hidden="true" tabindex="-1"></a>    a_next <span class="op">=</span> np.tanh(np.dot(Wax, x) <span class="op">+</span> np.dot(Waa, a_prev) <span class="op">+</span> b)</span>
+<span id="cb14-29"><a href="#cb14-29" aria-hidden="true" tabindex="-1"></a>    p_t <span class="op">=</span> softmax(np.dot(Wya, a_next) <span class="op">+</span> by)</span>
+<span id="cb14-30"><a href="#cb14-30" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> a_next, p_t</span>
+<span id="cb14-31"><a href="#cb14-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-32"><a href="#cb14-32" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> rnn_step_backward(dy, gradients, parameters, x, a, a_prev):</span>
+<span id="cb14-33"><a href="#cb14-33" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""One time step of backpropagation, accumulating into the gradient dictionary."""</span></span>
+<span id="cb14-34"><a href="#cb14-34" aria-hidden="true" tabindex="-1"></a>    gradients[<span class="st">'dWya'</span>] <span class="op">+=</span> np.dot(dy, a.T)</span>
+<span id="cb14-35"><a href="#cb14-35" aria-hidden="true" tabindex="-1"></a>    gradients[<span class="st">'dby'</span>] <span class="op">+=</span> dy</span>
+<span id="cb14-36"><a href="#cb14-36" aria-hidden="true" tabindex="-1"></a>    da <span class="op">=</span> np.dot(parameters[<span class="st">'Wya'</span>].T, dy) <span class="op">+</span> gradients[<span class="st">'da_next'</span>]  <span class="co"># backprop into a</span></span>
+<span id="cb14-37"><a href="#cb14-37" aria-hidden="true" tabindex="-1"></a>    daraw <span class="op">=</span> (<span class="dv">1</span> <span class="op">-</span> a <span class="op">*</span> a) <span class="op">*</span> da  <span class="co"># backprop through the tanh</span></span>
+<span id="cb14-38"><a href="#cb14-38" aria-hidden="true" tabindex="-1"></a>    gradients[<span class="st">'db'</span>] <span class="op">+=</span> daraw</span>
+<span id="cb14-39"><a href="#cb14-39" aria-hidden="true" tabindex="-1"></a>    gradients[<span class="st">'dWax'</span>] <span class="op">+=</span> np.dot(daraw, x.T)</span>
+<span id="cb14-40"><a href="#cb14-40" aria-hidden="true" tabindex="-1"></a>    gradients[<span class="st">'dWaa'</span>] <span class="op">+=</span> np.dot(daraw, a_prev.T)</span>
+<span id="cb14-41"><a href="#cb14-41" aria-hidden="true" tabindex="-1"></a>    gradients[<span class="st">'da_next'</span>] <span class="op">=</span> np.dot(parameters[<span class="st">'Waa'</span>].T, daraw)</span>
+<span id="cb14-42"><a href="#cb14-42" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> gradients</span>
+<span id="cb14-43"><a href="#cb14-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-44"><a href="#cb14-44" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> update_parameters(parameters, gradients, lr):</span>
+<span id="cb14-45"><a href="#cb14-45" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Gradient descent update, applied to all five parameters."""</span></span>
+<span id="cb14-46"><a href="#cb14-46" aria-hidden="true" tabindex="-1"></a>    parameters[<span class="st">'Wax'</span>] <span class="op">+=</span> <span class="op">-</span>lr <span class="op">*</span> gradients[<span class="st">'dWax'</span>]</span>
+<span id="cb14-47"><a href="#cb14-47" aria-hidden="true" tabindex="-1"></a>    parameters[<span class="st">'Waa'</span>] <span class="op">+=</span> <span class="op">-</span>lr <span class="op">*</span> gradients[<span class="st">'dWaa'</span>]</span>
+<span id="cb14-48"><a href="#cb14-48" aria-hidden="true" tabindex="-1"></a>    parameters[<span class="st">'Wya'</span>] <span class="op">+=</span> <span class="op">-</span>lr <span class="op">*</span> gradients[<span class="st">'dWya'</span>]</span>
+<span id="cb14-49"><a href="#cb14-49" aria-hidden="true" tabindex="-1"></a>    parameters[<span class="st">'b'</span>] <span class="op">+=</span> <span class="op">-</span>lr <span class="op">*</span> gradients[<span class="st">'db'</span>]</span>
+<span id="cb14-50"><a href="#cb14-50" aria-hidden="true" tabindex="-1"></a>    parameters[<span class="st">'by'</span>] <span class="op">+=</span> <span class="op">-</span>lr <span class="op">*</span> gradients[<span class="st">'dby'</span>]</span>
+<span id="cb14-51"><a href="#cb14-51" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> parameters</span>
+<span id="cb14-52"><a href="#cb14-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-53"><a href="#cb14-53" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> rnn_forward(X, Y, a0, parameters, vocab_size<span class="op">=</span><span class="dv">27</span>):</span>
+<span id="cb14-54"><a href="#cb14-54" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Forward propagate over one name and accumulate the cross-entropy loss."""</span></span>
+<span id="cb14-55"><a href="#cb14-55" aria-hidden="true" tabindex="-1"></a>    x, a, y_hat <span class="op">=</span> {}, {}, {}</span>
+<span id="cb14-56"><a href="#cb14-56" aria-hidden="true" tabindex="-1"></a>    a[<span class="op">-</span><span class="dv">1</span>] <span class="op">=</span> np.copy(a0)</span>
+<span id="cb14-57"><a href="#cb14-57" aria-hidden="true" tabindex="-1"></a>    loss <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb14-58"><a href="#cb14-58" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-59"><a href="#cb14-59" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> t <span class="kw">in</span> <span class="bu">range</span>(<span class="bu">len</span>(X)):</span>
+<span id="cb14-60"><a href="#cb14-60" aria-hidden="true" tabindex="-1"></a>        <span class="co"># One-hot the t-th character. X[t] is None at the first step, which</span></span>
+<span id="cb14-61"><a href="#cb14-61" aria-hidden="true" tabindex="-1"></a>        <span class="co"># leaves x[t] as the zero vector.</span></span>
+<span id="cb14-62"><a href="#cb14-62" aria-hidden="true" tabindex="-1"></a>        x[t] <span class="op">=</span> np.zeros((vocab_size, <span class="dv">1</span>))</span>
+<span id="cb14-63"><a href="#cb14-63" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (X[t] <span class="op">!=</span> <span class="va">None</span>):</span>
+<span id="cb14-64"><a href="#cb14-64" aria-hidden="true" tabindex="-1"></a>            x[t][X[t]] <span class="op">=</span> <span class="dv">1</span></span>
+<span id="cb14-65"><a href="#cb14-65" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-66"><a href="#cb14-66" aria-hidden="true" tabindex="-1"></a>        a[t], y_hat[t] <span class="op">=</span> rnn_step_forward(parameters, a[t <span class="op">-</span> <span class="dv">1</span>], x[t])</span>
+<span id="cb14-67"><a href="#cb14-67" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-68"><a href="#cb14-68" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Subtract the cross-entropy term of this time step.</span></span>
+<span id="cb14-69"><a href="#cb14-69" aria-hidden="true" tabindex="-1"></a>        loss <span class="op">-=</span> np.log(y_hat[t][Y[t], <span class="dv">0</span>])</span>
+<span id="cb14-70"><a href="#cb14-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-71"><a href="#cb14-71" aria-hidden="true" tabindex="-1"></a>    cache <span class="op">=</span> (y_hat, a, x)</span>
+<span id="cb14-72"><a href="#cb14-72" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> loss, cache</span>
+<span id="cb14-73"><a href="#cb14-73" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-74"><a href="#cb14-74" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> rnn_backward(X, Y, parameters, cache):</span>
+<span id="cb14-75"><a href="#cb14-75" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Backpropagate through time over one name."""</span></span>
+<span id="cb14-76"><a href="#cb14-76" aria-hidden="true" tabindex="-1"></a>    gradients <span class="op">=</span> {}</span>
+<span id="cb14-77"><a href="#cb14-77" aria-hidden="true" tabindex="-1"></a>    (y_hat, a, x) <span class="op">=</span> cache</span>
+<span id="cb14-78"><a href="#cb14-78" aria-hidden="true" tabindex="-1"></a>    Waa, Wax, Wya, by, b <span class="op">=</span> parameters[<span class="st">'Waa'</span>], parameters[<span class="st">'Wax'</span>], parameters[<span class="st">'Wya'</span>], parameters[<span class="st">'by'</span>], parameters[<span class="st">'b'</span>]</span>
+<span id="cb14-79"><a href="#cb14-79" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-80"><a href="#cb14-80" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Each gradient starts at zeros of the same shape as its parameter.</span></span>
+<span id="cb14-81"><a href="#cb14-81" aria-hidden="true" tabindex="-1"></a>    gradients[<span class="st">'dWax'</span>], gradients[<span class="st">'dWaa'</span>], gradients[<span class="st">'dWya'</span>] <span class="op">=</span> np.zeros_like(Wax), np.zeros_like(Waa), np.zeros_like(Wya)</span>
+<span id="cb14-82"><a href="#cb14-82" aria-hidden="true" tabindex="-1"></a>    gradients[<span class="st">'db'</span>], gradients[<span class="st">'dby'</span>] <span class="op">=</span> np.zeros_like(b), np.zeros_like(by)</span>
+<span id="cb14-83"><a href="#cb14-83" aria-hidden="true" tabindex="-1"></a>    gradients[<span class="st">'da_next'</span>] <span class="op">=</span> np.zeros_like(a[<span class="dv">0</span>])</span>
+<span id="cb14-84"><a href="#cb14-84" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-85"><a href="#cb14-85" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> t <span class="kw">in</span> <span class="bu">reversed</span>(<span class="bu">range</span>(<span class="bu">len</span>(X))):</span>
+<span id="cb14-86"><a href="#cb14-86" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Gradient of the softmax cross-entropy, y_hat minus the one-hot label.</span></span>
+<span id="cb14-87"><a href="#cb14-87" aria-hidden="true" tabindex="-1"></a>        dy <span class="op">=</span> np.copy(y_hat[t])</span>
+<span id="cb14-88"><a href="#cb14-88" aria-hidden="true" tabindex="-1"></a>        dy[Y[t]] <span class="op">-=</span> <span class="dv">1</span></span>
+<span id="cb14-89"><a href="#cb14-89" aria-hidden="true" tabindex="-1"></a>        gradients <span class="op">=</span> rnn_step_backward(dy, gradients, parameters, x[t], a[t], a[t <span class="op">-</span> <span class="dv">1</span>])</span>
+<span id="cb14-90"><a href="#cb14-90" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-91"><a href="#cb14-91" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> gradients, a</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</div>
+</div>
+<p>Two lines inside those helpers are worth pulling out, because they are the whole of the loss and the whole of its gradient.</p>
+<p>The loss line is <code>loss -= np.log(y_hat[t][Y[t], 0])</code>. At each time step it looks up the single probability the model assigned to the character that actually came next, takes its logarithm, and subtracts it. A confident correct prediction contributes almost nothing, and a confident wrong one contributes a large positive number. Summed over the name, that is the cross-entropy of the whole sequence.</p>
+<p>The gradient line is <code>dy = np.copy(y_hat[t])</code> followed by <code>dy[Y[t]] -= 1</code>. The derivative of softmax cross-entropy with respect to the pre-activation <span class="math inline">\(z\)</span> is <span class="math inline">\(\hat{y} - y\)</span>, and since <span class="math inline">\(y\)</span> is one-hot, subtracting it means subtracting 1 from a single entry. Two lines of code replace what would otherwise be a page of chain rule.</p>
+</section>
+<section id="gradient-descent" class="level3">
+<h3 class="anchored" data-anchor-id="gradient-descent">Gradient Descent</h3>
+<p>One optimization step is four calls. Forward propagate through the RNN to get the loss, backpropagate through time to get the gradients, clip those gradients between -5 and 5, then update the parameters with a learning rate of 0.01. Because each step processes exactly one name, this is stochastic gradient descent rather than batch gradient descent.</p>
+<div id="f3c54e30" class="cell" data-execution_count="13">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> optimize(X, Y, a_prev, parameters, learning_rate <span class="op">=</span> <span class="fl">0.01</span>):</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Execute one step of the optimization to train the model.</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="co">    X -- list of integers, where each integer maps to a character in the vocabulary.</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="co">    Y -- list of integers, exactly the same as X but shifted one index to the left.</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="co">    a_prev -- previous hidden state.</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="co">    parameters -- python dictionary containing Wax, Waa, Wya, b and by.</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="co">    learning_rate -- learning rate for the model.</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a><span class="co">    loss -- value of the loss function (cross-entropy)</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a><span class="co">    gradients -- python dictionary containing dWax, dWaa, dWya, db and dby</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a><span class="co">    a[len(X)-1] -- the last hidden state, of shape (n_a, 1)</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Forward propagate through time.</span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>    loss, cache <span class="op">=</span> rnn_forward(X, Y, a_prev, parameters)</span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Backpropagate through time.</span></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>    gradients, a <span class="op">=</span> rnn_backward(X, Y, parameters, cache)</span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Clip the gradients between -5 and 5.</span></span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a>    gradients <span class="op">=</span> clip(gradients, <span class="dv">5</span>)</span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Update the parameters.</span></span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a>    parameters <span class="op">=</span> update_parameters(parameters, gradients, learning_rate)</span>
+<span id="cb15-29"><a href="#cb15-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-30"><a href="#cb15-30" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> loss, gradients, a[<span class="bu">len</span>(X)<span class="op">-</span><span class="dv">1</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The function returns the loss, the gradients and the last hidden state, but not the parameters, even though the parameters were just updated. That is not an oversight. A Python dictionary is passed by reference, so <code>update_parameters</code> modified the very dictionary the caller holds. Returning it would be redundant. This trips people up regularly, and it is worth knowing which of your own functions mutate their arguments.</p>
+<p>Running one step on random parameters shows the pieces working together.</p>
+<div id="9d4a4fc2" class="cell" data-execution_count="14">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>np.random.seed(<span class="dv">1</span>)</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>n_a <span class="op">=</span> <span class="dv">100</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>a_prev_tmp <span class="op">=</span> np.random.randn(n_a, <span class="dv">1</span>)</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>Wax, Waa, Wya <span class="op">=</span> np.random.randn(n_a, vocab_size), np.random.randn(n_a, n_a), np.random.randn(vocab_size, n_a)</span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>b, by <span class="op">=</span> np.random.randn(n_a, <span class="dv">1</span>), np.random.randn(vocab_size, <span class="dv">1</span>)</span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>parameters_tmp <span class="op">=</span> {<span class="st">"Wax"</span>: Wax, <span class="st">"Waa"</span>: Waa, <span class="st">"Wya"</span>: Wya, <span class="st">"b"</span>: b, <span class="st">"by"</span>: by}</span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>X_tmp <span class="op">=</span> [<span class="dv">12</span>, <span class="dv">3</span>, <span class="dv">5</span>, <span class="dv">11</span>, <span class="dv">22</span>, <span class="dv">3</span>]</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>Y_tmp <span class="op">=</span> [<span class="dv">4</span>, <span class="dv">14</span>, <span class="dv">11</span>, <span class="dv">22</span>, <span class="dv">25</span>, <span class="dv">26</span>]</span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>Wya_before <span class="op">=</span> np.copy(parameters_tmp[<span class="st">"Wya"</span>])</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>loss, gradients, a_last <span class="op">=</span> optimize(X_tmp, Y_tmp, a_prev_tmp, parameters_tmp, learning_rate <span class="op">=</span> <span class="fl">0.01</span>)</span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Loss ="</span>, loss)</span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'gradients["dWaa"][1][2] ='</span>, gradients[<span class="st">"dWaa"</span>][<span class="dv">1</span>][<span class="dv">2</span>])</span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'np.argmax(gradients["dWax"]) ='</span>, np.argmax(gradients[<span class="st">"dWax"</span>]))</span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'gradients["dWya"][1][2] ='</span>, gradients[<span class="st">"dWya"</span>][<span class="dv">1</span>][<span class="dv">2</span>])</span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"a_last[4] ="</span>, a_last[<span class="dv">4</span>])</span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"largest gradient entry after clipping ="</span>, <span class="bu">max</span>(np.<span class="bu">max</span>(np.<span class="bu">abs</span>(g)) <span class="cf">for</span> g <span class="kw">in</span> gradients.values()))</span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Wya changed inside optimize ="</span>, <span class="kw">not</span> np.allclose(parameters_tmp[<span class="st">"Wya"</span>], Wya_before))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Loss = 126.50397572165367
+gradients["dWaa"][1][2] = 0.19470931534718616
+np.argmax(gradients["dWax"]) = 93
+gradients["dWya"][1][2] = -0.0077738760320037095
+a_last[4] = [-1.]
+largest gradient entry after clipping = 5.0
+Wya changed inside optimize = True</code></pre>
+</div>
+</div>
+<p>Three of those numbers say something. A loss of about 126.5 over six time steps is roughly 21 per character, against the roughly 3.3 that uniform guessing over 27 characters would give, which is what random weights of unit scale look like. The largest gradient entry is exactly 5, confirming that clipping bound the update. And <code>Wya</code> did change inside the call, which is the pass-by-reference behavior described above, verified rather than asserted.</p>
+<p>The last hidden state entry is exactly -1. That is a saturated <code>tanh</code>, caused by initializing these test weights from a standard normal rather than scaling them down. The real <code>initialize_parameters</code> multiplies by 0.01 for precisely this reason.</p>
+</section>
+<section id="training-the-model" class="level3">
+<h3 class="anchored" data-anchor-id="training-the-model">Training the Model</h3>
+<p>Each line of <code>dinos.txt</code> is one training example. The loop walks the shuffled list of names, converts one name into an <span class="math inline">\((X, Y)\)</span> pair, takes an optimization step, and every 2000 iterations prints the smoothed loss along with seven sampled names.</p>
+<p>Turning a name into a training pair is the fiddly part, so it is worth reading slowly. Given the string <code>"turiasaurus"</code>, the characters are converted to indices with <code>char_to_ix</code>. The input <code>X</code> is that list of indices with <code>None</code> prepended, and <code>rnn_forward</code> reads that <code>None</code> as the instruction to use a zero vector at the first time step. The label <code>Y</code> is <code>X</code> shifted one position to the left, with the newline index appended at the end. So the model sees nothing and must predict <code>t</code>, sees <code>t</code> and must predict <code>u</code>, and at the last character must predict the newline that ends the name.</p>
+<p>The index into the list of examples is <code>j % len(examples)</code>, which cycles back to the beginning once every name has been used, so the loop can run for more iterations than there are names.</p>
+<div id="6eb8847d" class="cell" data-execution_count="15">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> model(data_x, ix_to_char, char_to_ix, num_iterations <span class="op">=</span> <span class="dv">35000</span>, n_a <span class="op">=</span> <span class="dv">50</span>,</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>          dino_names <span class="op">=</span> <span class="dv">7</span>, vocab_size <span class="op">=</span> <span class="dv">27</span>, verbose <span class="op">=</span> <span class="va">False</span>):</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="co">    Trains the model and generates dinosaur names.</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="co">    data_x -- text corpus, divided in words</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a><span class="co">    ix_to_char -- dictionary that maps the index to a character</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="co">    char_to_ix -- dictionary that maps a character to an index</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a><span class="co">    num_iterations -- number of iterations to train the model for</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="co">    n_a -- number of units of the RNN cell</span></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a><span class="co">    dino_names -- number of dinosaur names to sample at each checkpoint</span></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a><span class="co">    vocab_size -- number of unique characters found in the text</span></span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a><span class="co">    parameters -- learned parameters</span></span>
+<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a>    <span class="co"># The input and output layers are both the size of the vocabulary.</span></span>
+<span id="cb18-20"><a href="#cb18-20" aria-hidden="true" tabindex="-1"></a>    n_x, n_y <span class="op">=</span> vocab_size, vocab_size</span>
+<span id="cb18-21"><a href="#cb18-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-22"><a href="#cb18-22" aria-hidden="true" tabindex="-1"></a>    parameters <span class="op">=</span> initialize_parameters(n_a, n_x, n_y)</span>
+<span id="cb18-23"><a href="#cb18-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-24"><a href="#cb18-24" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Start the smoothed loss at the value a uniform guesser would achieve.</span></span>
+<span id="cb18-25"><a href="#cb18-25" aria-hidden="true" tabindex="-1"></a>    loss <span class="op">=</span> get_initial_loss(vocab_size, dino_names)</span>
+<span id="cb18-26"><a href="#cb18-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-27"><a href="#cb18-27" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Build the list of dinosaur names and shuffle it.</span></span>
+<span id="cb18-28"><a href="#cb18-28" aria-hidden="true" tabindex="-1"></a>    examples <span class="op">=</span> [x.strip() <span class="cf">for</span> x <span class="kw">in</span> data_x]</span>
+<span id="cb18-29"><a href="#cb18-29" aria-hidden="true" tabindex="-1"></a>    np.random.seed(<span class="dv">0</span>)</span>
+<span id="cb18-30"><a href="#cb18-30" aria-hidden="true" tabindex="-1"></a>    np.random.shuffle(examples)</span>
+<span id="cb18-31"><a href="#cb18-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-32"><a href="#cb18-32" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Initialize the hidden state carried between iterations.</span></span>
+<span id="cb18-33"><a href="#cb18-33" aria-hidden="true" tabindex="-1"></a>    a_prev <span class="op">=</span> np.zeros((n_a, <span class="dv">1</span>))</span>
+<span id="cb18-34"><a href="#cb18-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-35"><a href="#cb18-35" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> j <span class="kw">in</span> <span class="bu">range</span>(num_iterations):</span>
+<span id="cb18-36"><a href="#cb18-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-37"><a href="#cb18-37" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Cycle through the examples, wrapping around at the end of the list.</span></span>
+<span id="cb18-38"><a href="#cb18-38" aria-hidden="true" tabindex="-1"></a>        idx <span class="op">=</span> j <span class="op">%</span> <span class="bu">len</span>(examples)</span>
+<span id="cb18-39"><a href="#cb18-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-40"><a href="#cb18-40" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Build X, the name as indices with None prepended for the zero input.</span></span>
+<span id="cb18-41"><a href="#cb18-41" aria-hidden="true" tabindex="-1"></a>        single_example <span class="op">=</span> examples[idx]</span>
+<span id="cb18-42"><a href="#cb18-42" aria-hidden="true" tabindex="-1"></a>        single_example_chars <span class="op">=</span> [c <span class="cf">for</span> c <span class="kw">in</span> single_example]</span>
+<span id="cb18-43"><a href="#cb18-43" aria-hidden="true" tabindex="-1"></a>        single_example_ix <span class="op">=</span> [char_to_ix[c] <span class="cf">for</span> c <span class="kw">in</span> single_example_chars]</span>
+<span id="cb18-44"><a href="#cb18-44" aria-hidden="true" tabindex="-1"></a>        X <span class="op">=</span> [<span class="va">None</span>] <span class="op">+</span> single_example_ix</span>
+<span id="cb18-45"><a href="#cb18-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-46"><a href="#cb18-46" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Build Y, the same list shifted left, ending on the newline.</span></span>
+<span id="cb18-47"><a href="#cb18-47" aria-hidden="true" tabindex="-1"></a>        ix_newline <span class="op">=</span> char_to_ix[<span class="st">'</span><span class="ch">\n</span><span class="st">'</span>]</span>
+<span id="cb18-48"><a href="#cb18-48" aria-hidden="true" tabindex="-1"></a>        Y <span class="op">=</span> X[<span class="dv">1</span>:] <span class="op">+</span> [ix_newline]</span>
+<span id="cb18-49"><a href="#cb18-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-50"><a href="#cb18-50" aria-hidden="true" tabindex="-1"></a>        <span class="co"># One step of forward prop, backprop, clipping and update.</span></span>
+<span id="cb18-51"><a href="#cb18-51" aria-hidden="true" tabindex="-1"></a>        curr_loss, gradients, a_prev <span class="op">=</span> optimize(X, Y, a_prev, parameters, learning_rate<span class="op">=</span><span class="fl">0.01</span>)</span>
+<span id="cb18-52"><a href="#cb18-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-53"><a href="#cb18-53" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Show how the first example was turned into X and Y.</span></span>
+<span id="cb18-54"><a href="#cb18-54" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> verbose <span class="kw">and</span> j <span class="kw">in</span> [<span class="dv">0</span>, <span class="bu">len</span>(examples) <span class="op">-</span> <span class="dv">1</span>, <span class="bu">len</span>(examples)]:</span>
+<span id="cb18-55"><a href="#cb18-55" aria-hidden="true" tabindex="-1"></a>            <span class="bu">print</span>(<span class="st">"j = "</span>, j, <span class="st">"idx = "</span>, idx)</span>
+<span id="cb18-56"><a href="#cb18-56" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> verbose <span class="kw">and</span> j <span class="kw">in</span> [<span class="dv">0</span>]:</span>
+<span id="cb18-57"><a href="#cb18-57" aria-hidden="true" tabindex="-1"></a>            <span class="bu">print</span>(<span class="st">"single_example ="</span>, single_example)</span>
+<span id="cb18-58"><a href="#cb18-58" aria-hidden="true" tabindex="-1"></a>            <span class="bu">print</span>(<span class="st">"single_example_chars"</span>, single_example_chars)</span>
+<span id="cb18-59"><a href="#cb18-59" aria-hidden="true" tabindex="-1"></a>            <span class="bu">print</span>(<span class="st">"single_example_ix"</span>, single_example_ix)</span>
+<span id="cb18-60"><a href="#cb18-60" aria-hidden="true" tabindex="-1"></a>            <span class="bu">print</span>(<span class="st">" X = "</span>, X, <span class="st">"</span><span class="ch">\n</span><span class="st">"</span>, <span class="st">"Y =       "</span>, Y, <span class="st">"</span><span class="ch">\n</span><span class="st">"</span>)</span>
+<span id="cb18-61"><a href="#cb18-61" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-62"><a href="#cb18-62" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Keep the reported loss smooth.</span></span>
+<span id="cb18-63"><a href="#cb18-63" aria-hidden="true" tabindex="-1"></a>        loss <span class="op">=</span> smooth(loss, curr_loss)</span>
+<span id="cb18-64"><a href="#cb18-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-65"><a href="#cb18-65" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Every 2000 iterations, sample a few names to see how training is going.</span></span>
+<span id="cb18-66"><a href="#cb18-66" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> j <span class="op">%</span> <span class="dv">2000</span> <span class="op">==</span> <span class="dv">0</span>:</span>
+<span id="cb18-67"><a href="#cb18-67" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-68"><a href="#cb18-68" aria-hidden="true" tabindex="-1"></a>            <span class="bu">print</span>(<span class="st">'Iteration: </span><span class="sc">%d</span><span class="st">, Loss: </span><span class="sc">%f</span><span class="st">'</span> <span class="op">%</span> (j, loss) <span class="op">+</span> <span class="st">'</span><span class="ch">\n</span><span class="st">'</span>)</span>
+<span id="cb18-69"><a href="#cb18-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-70"><a href="#cb18-70" aria-hidden="true" tabindex="-1"></a>            seed <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb18-71"><a href="#cb18-71" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> name <span class="kw">in</span> <span class="bu">range</span>(dino_names):</span>
+<span id="cb18-72"><a href="#cb18-72" aria-hidden="true" tabindex="-1"></a>                sampled_indices <span class="op">=</span> sample(parameters, char_to_ix, seed)</span>
+<span id="cb18-73"><a href="#cb18-73" aria-hidden="true" tabindex="-1"></a>                <span class="bu">print</span>(get_sample(sampled_indices, ix_to_char).replace(<span class="st">'</span><span class="ch">\n</span><span class="st">'</span>, <span class="st">''</span>))</span>
+<span id="cb18-74"><a href="#cb18-74" aria-hidden="true" tabindex="-1"></a>                seed <span class="op">+=</span> <span class="dv">1</span>  <span class="co"># A different seed per name, so the seven differ.</span></span>
+<span id="cb18-75"><a href="#cb18-75" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-76"><a href="#cb18-76" aria-hidden="true" tabindex="-1"></a>            <span class="bu">print</span>(<span class="st">'</span><span class="ch">\n</span><span class="st">'</span>)</span>
+<span id="cb18-77"><a href="#cb18-77" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-78"><a href="#cb18-78" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> parameters</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Running it takes a few seconds. Watch the first block of names, then the last.</p>
+<div id="3ee141be" class="cell" data-execution_count="16">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>parameters <span class="op">=</span> model(data.split(<span class="st">"</span><span class="ch">\n</span><span class="st">"</span>), ix_to_char, char_to_ix, <span class="dv">22001</span>, verbose <span class="op">=</span> <span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>j =  0 idx =  0
+single_example = turiasaurus
+single_example_chars ['t', 'u', 'r', 'i', 'a', 's', 'a', 'u', 'r', 'u', 's']
+single_example_ix [20, 21, 18, 9, 1, 19, 1, 21, 18, 21, 19]
+ X =  [None, 20, 21, 18, 9, 1, 19, 1, 21, 18, 21, 19] 
+ Y =        [20, 21, 18, 9, 1, 19, 1, 21, 18, 21, 19, 0] 
+
+Iteration: 0, Loss: 23.087336
+
+Nkzxwtdmfqoeyhsqwasjkjvu
+Kneb
+Kzxwtdmfqoeyhsqwasjkjvu
+Neb
+Zxwtdmfqoeyhsqwasjkjvu
+Eb
+Xwtdmfqoeyhsqwasjkjvu
+
+
+j =  1535 idx =  1535
+j =  1536 idx =  0
+Iteration: 2000, Loss: 27.884160
+
+Liusskeomnolxeros
+Hmdaairus
+Hytroligoraurus
+Lecalosapaus
+Xusicikoraurus
+Abalpsamantisaurus
+Tpraneronxeros
+
+
+Iteration: 4000, Loss: 25.901815
+
+Mivrosaurus
+Inee
+Ivtroplisaurus
+Mbaaisaurus
+Wusichisaurus
+Cabaselachus
+Toraperlethosdarenitochusthiamamumamaon
+
+
+Iteration: 6000, Loss: 24.608779
+
+Onwusceomosaurus
+Lieeaerosaurus
+Lxussaurus
+Oma
+Xusteonosaurus
+Eeahosaurus
+Toreonosaurus
+
+
+Iteration: 8000, Loss: 24.070350
+
+Onxusichepriuon
+Kilabersaurus
+Lutrodon
+Omaaerosaurus
+Xutrcheps
+Edaksoje
+Trodiktonus
+
+
+Iteration: 10000, Loss: 23.844446
+
+Onyusaurus
+Klecalosaurus
+Lustodon
+Ola
+Xusodonia
+Eeaeosaurus
+Troceosaurus
+
+
+Iteration: 12000, Loss: 23.291971
+
+Onyxosaurus
+Kica
+Lustrepiosaurus
+Olaagrraiansaurus
+Yuspangosaurus
+Eealosaurus
+Trognesaurus
+
+
+Iteration: 14000, Loss: 23.382337
+
+Meutromodromurus
+Inda
+Iutroinatorsaurus
+Maca
+Yusteratoptititan
+Ca
+Troclosaurus
+
+
+Iteration: 16000, Loss: 23.269597
+
+Meutrolopon
+Indaadrus
+Iustoiong
+Macacosaurus
+Yuspanenialfpatasaurus
+Daahosaurus
+Trpandon
+
+
+Iteration: 18000, Loss: 22.944011
+
+Phytrsaurus
+Mheg
+Mystrisaurus
+Pegaesphachxithopuradyemosaurus
+Yuspaorosaurus
+Ehalosaurus
+Trodon
+
+
+Iteration: 20000, Loss: 23.037299
+
+Novosaurus
+Lojaafrondanthus
+Lyussaurus
+Ngbalosaurus
+Yustangosaurus
+Ehahtopegosaurus
+Trocheosaurus
+
+
+Iteration: 22000, Loss: 22.877680
+
+Onusaurus
+Miga
+Mustreomimes
+Olbaerope
+Yurodon
+Ehadrus
+Troceoptes
+
+</code></pre>
+</div>
+</div>
+<p>At iteration 0 the parameters have had exactly one update, so the output is a run of unrelated characters. By iteration 22000 the names have the shape of dinosaur names. The model discovered the <code>saurus</code> ending, which is unsurprising given how much of the training set carries it, and <code>don</code>, <code>us</code> and <code>a</code> turn up as endings too. It also learned roughly how long a name should be, and where vowels belong among consonants. Samples from the middle of training sprawl, one of them to 39 letters, while every name in the final block runs between four and twelve. Nothing in the code told it any of that. All of it came from 22000 single-name gradient steps.</p>
+<p>The printed loss needs care when it is read. It starts near 23, which is what <code>get_initial_loss</code> returns for a uniform guesser over 27 characters on a seven character name, and it ends near 22.9, which looks like almost no progress. That comparison is misleading. The loss is a sum over the time steps of one name, and the average dinosaur name here runs about 13 time steps rather than seven, so uniform guessing would cost about 42.7 rather than 23. Ending near 22.9 works out to roughly 1.8 per character against the 3.3 of a uniform guesser. The generated names remain the clearer measure.</p>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Important</span>Names Differ From the Original Notebook
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The original assignment printed <code>Trodonosaurus</code> as its final name, and this page does not. Every seed in the code is fixed, so the run is reproducible on this machine, but 22000 sequential gradient steps amplify the tiny floating point differences between NumPy builds and BLAS libraries. Once one sampled draw lands differently, every later draw diverges. The loss curve and the quality of the names match the original. The exact strings do not, and cannot be expected to.</p>
+</div>
+</div>
+<p>This dataset is small enough to train on a CPU in seconds. A language model over English words rather than dinosaur characters needs a much larger corpus, far more computation, and many hours on GPUs.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What You Should Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>A character-level language model is trained by predicting each character from the ones before it, so the labels are the inputs shifted one step forward.</li>
+<li>One training example is one name, which makes this stochastic gradient descent, and the loop cycles through the shuffled examples with the modulo operator.</li>
+<li>Python dictionaries are passed by reference, so <code>update_parameters</code> changes the caller’s parameters without returning them.</li>
+<li>The smoothed loss is a slow indicator. Sampling from the model every few thousand iterations shows progress far more clearly.</li>
+</ul>
+</div>
+</div>
+</section>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<div id="clm-lab-review-q4">
+<p><strong>1. Why is <code>None</code> prepended to <code>X</code> rather than the index of some real character?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="clm-lab-review-q4">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because there is nothing to condition on before the first character. Inside <code>rnn_forward</code>, the line <code>if (X[t] != None)</code> leaves <code>x[t]</code> as a vector of zeros whenever the entry is <code>None</code>, so the first time step receives the same zero input that sampling uses. Choosing a real character instead would teach the model that every name begins after that particular letter, and sampling, which starts from zeros, would then be running the model on an input it never saw during training.</p>
+</div>
+</details>
+<hr>
+<div id="clm-lab-review-q5">
+<p><strong>1. <code>Y</code> is built as <code>X[1:] + [ix_newline]</code> rather than as its own list of indices. Why does that produce the correct labels?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="clm-lab-review-q5">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because the label at every time step is the input at the next one, <span class="math inline">\(y^{\langle t \rangle} = x^{\langle t+1 \rangle}\)</span>. <code>X</code> is <code>[None]</code> followed by the character indices, so <code>X[1:]</code> is exactly the character indices, which is what the model should predict at time steps 1 through the end. The final character has no successor inside the name, and what should follow it is the end of the name, so the newline index is appended. The result has the same length as <code>X</code>, which <code>rnn_forward</code> requires because it indexes <code>Y[t]</code> at every step.</p>
+</div>
+</details>
+<hr>
+<div id="clm-lab-review-q6">
+<p><strong>1. <code>a_prev</code> is carried from one call of <code>optimize</code> to the next, across different dinosaur names. Is that a bug?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="clm-lab-review-q6">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>It is a quirk of this implementation rather than a principled choice, and it is harmless here. Each name is an independent sequence, so the cleanest version would reset the hidden state to zeros before every example. Carrying it over means each name starts from whatever state the previous name ended in. With names this short and a learning rate this small, the effect washes out, and the model still learns. Note also what is not carried over. The gradients are rebuilt from zeros inside <code>rnn_backward</code> on every call, so no gradient leaks between examples.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="writing-like-shakespeare" class="level2">
+<h2 class="anchored" data-anchor-id="writing-like-shakespeare">Writing Like Shakespeare</h2>
+<p>Generating Shakespearean poetry is the same task as generating dinosaur names, scaled up. The final section of the assignment is ungraded and optional, and it is where the model stops being NumPy.</p>
+<p>Three things change. LSTM cells replace the basic RNN cell, so the network can hold information across many more characters, which matters for poetry in a way it did not for names of a dozen letters. The model is two LSTM layers deep rather than one. And it is written in Keras, which removes the loops entirely.</p>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Important</span>Updated From the Original Assignment
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The original <code>shakespeare_utils.py</code> does not run on a current Python stack, so this section reproduces its logic inline with four changes, made on 2026-08-24.</p>
+<ul>
+<li><code>np.bool</code> was removed in NumPy 1.24. The array dtype is the built-in <code>bool</code>, which is what <code>np.bool</code> aliased.</li>
+<li><code>load_model</code> is called with <code>compile=False</code>. The saved file records the optimizer with the Keras 2 argument name <code>lr</code>, which Keras 3.15 rejects. Skipping the optimizer and compiling fresh loads the trained weights without touching them.</li>
+<li><code>generate_output()</code> prompted for a seed phrase with <code>input()</code>, which cannot run while the page renders. A fixed phrase is used instead.</li>
+<li>The TensorFlow, NumPy and Python generators are seeded, which the original did not do, so the loss and the poem below are the same on every render.</li>
+</ul>
+<p>The model, the corpus, the window size, the sampling procedure, and the architecture are unchanged. The original file is available in the download list at the top of this page for comparison.</p>
+</div>
+</div>
+<section id="corpus-and-training-set" class="level3">
+<h3 class="anchored" data-anchor-id="corpus-and-training-set">Corpus and Training Set</h3>
+<p>The corpus is <em>The Sonnets</em>, roughly 94,000 characters of lowercased text with 38 distinct characters, which is more than the dinosaur vocabulary because punctuation and spaces now count.</p>
+<p>There is no natural unit here like a name, so training examples are cut out with a sliding window. A window of <span class="math inline">\(T_x = 40\)</span> characters is the input, the character immediately after it is the label, and the window then advances by a stride of 3. The stride is what keeps the dataset from being three times larger than it needs to be while still overlapping heavily.</p>
+<div id="083063a2" class="cell" data-execution_count="17">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>os.environ[<span class="st">"TF_CPP_MIN_LOG_LEVEL"</span>] <span class="op">=</span> <span class="st">"3"</span>      <span class="co"># quieten TensorFlow's startup logging</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> io</span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tensorflow <span class="im">as</span> tf</span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tensorflow.keras.models <span class="im">import</span> load_model</span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>tf.keras.utils.set_random_seed(<span class="dv">1</span>)             <span class="co"># Python, NumPy and TensorFlow generators</span></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"TensorFlow"</span>, tf.__version__)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>TensorFlow 2.21.0</code></pre>
+</div>
+</div>
+<div id="76017f86" class="cell" data-execution_count="18">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>text <span class="op">=</span> io.<span class="bu">open</span>(DATA <span class="op">+</span> <span class="st">"shakespeare.txt"</span>, encoding<span class="op">=</span><span class="st">"utf-8"</span>).read().lower()</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>Tx <span class="op">=</span> <span class="dv">40</span></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>chars_sp <span class="op">=</span> <span class="bu">sorted</span>(<span class="bu">list</span>(<span class="bu">set</span>(text)))</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>char_indices <span class="op">=</span> <span class="bu">dict</span>((c, i) <span class="cf">for</span> i, c <span class="kw">in</span> <span class="bu">enumerate</span>(chars_sp))</span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>indices_char <span class="op">=</span> <span class="bu">dict</span>((i, c) <span class="cf">for</span> i, c <span class="kw">in</span> <span class="bu">enumerate</span>(chars_sp))</span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"corpus length:"</span>, <span class="bu">len</span>(text))</span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"number of unique characters in the corpus:"</span>, <span class="bu">len</span>(chars_sp))</span>
+<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(chars_sp)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>corpus length: 94275
+number of unique characters in the corpus: 38
+['\n', ' ', '!', "'", '(', ')', ',', '-', '.', ':', ';', '?', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']</code></pre>
+</div>
+</div>
+<div id="50360621" class="cell" data-execution_count="19">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> build_data(text, Tx <span class="op">=</span> <span class="dv">40</span>, stride <span class="op">=</span> <span class="dv">3</span>):</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Create a training set by scanning a window of size Tx over the text corpus.</span></span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a><span class="co">    text -- string, corpus of Shakespearean poems</span></span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a><span class="co">    Tx -- sequence length, number of characters in one training example</span></span>
+<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a><span class="co">    stride -- how far the window shifts between examples</span></span>
+<span id="cb25-9"><a href="#cb25-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-10"><a href="#cb25-10" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb25-11"><a href="#cb25-11" aria-hidden="true" tabindex="-1"></a><span class="co">    X -- list of training examples, each a string of length Tx</span></span>
+<span id="cb25-12"><a href="#cb25-12" aria-hidden="true" tabindex="-1"></a><span class="co">    Y -- list of training labels, each the single character following the window</span></span>
+<span id="cb25-13"><a href="#cb25-13" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb25-14"><a href="#cb25-14" aria-hidden="true" tabindex="-1"></a>    X <span class="op">=</span> []</span>
+<span id="cb25-15"><a href="#cb25-15" aria-hidden="true" tabindex="-1"></a>    Y <span class="op">=</span> []</span>
+<span id="cb25-16"><a href="#cb25-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-17"><a href="#cb25-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">0</span>, <span class="bu">len</span>(text) <span class="op">-</span> Tx, stride):</span>
+<span id="cb25-18"><a href="#cb25-18" aria-hidden="true" tabindex="-1"></a>        X.append(text[i: i <span class="op">+</span> Tx])</span>
+<span id="cb25-19"><a href="#cb25-19" aria-hidden="true" tabindex="-1"></a>        Y.append(text[i <span class="op">+</span> Tx])</span>
+<span id="cb25-20"><a href="#cb25-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-21"><a href="#cb25-21" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'number of training examples:'</span>, <span class="bu">len</span>(X))</span>
+<span id="cb25-22"><a href="#cb25-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-23"><a href="#cb25-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> X, Y</span>
+<span id="cb25-24"><a href="#cb25-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-25"><a href="#cb25-25" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> vectorization(X, Y, n_x, char_indices, Tx <span class="op">=</span> <span class="dv">40</span>):</span>
+<span id="cb25-26"><a href="#cb25-26" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb25-27"><a href="#cb25-27" aria-hidden="true" tabindex="-1"></a><span class="co">    Convert the lists X and Y into the one-hot arrays a recurrent network expects.</span></span>
+<span id="cb25-28"><a href="#cb25-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-29"><a href="#cb25-29" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb25-30"><a href="#cb25-30" aria-hidden="true" tabindex="-1"></a><span class="co">    x -- array of shape (m, Tx, len(chars))</span></span>
+<span id="cb25-31"><a href="#cb25-31" aria-hidden="true" tabindex="-1"></a><span class="co">    y -- array of shape (m, len(chars))</span></span>
+<span id="cb25-32"><a href="#cb25-32" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb25-33"><a href="#cb25-33" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> <span class="bu">len</span>(X)</span>
+<span id="cb25-34"><a href="#cb25-34" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> np.zeros((m, Tx, n_x), dtype<span class="op">=</span><span class="bu">bool</span>)</span>
+<span id="cb25-35"><a href="#cb25-35" aria-hidden="true" tabindex="-1"></a>    y <span class="op">=</span> np.zeros((m, n_x), dtype<span class="op">=</span><span class="bu">bool</span>)</span>
+<span id="cb25-36"><a href="#cb25-36" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i, sentence <span class="kw">in</span> <span class="bu">enumerate</span>(X):</span>
+<span id="cb25-37"><a href="#cb25-37" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> t, char <span class="kw">in</span> <span class="bu">enumerate</span>(sentence):</span>
+<span id="cb25-38"><a href="#cb25-38" aria-hidden="true" tabindex="-1"></a>            x[i, t, char_indices[char]] <span class="op">=</span> <span class="dv">1</span></span>
+<span id="cb25-39"><a href="#cb25-39" aria-hidden="true" tabindex="-1"></a>        y[i, char_indices[Y[i]]] <span class="op">=</span> <span class="dv">1</span></span>
+<span id="cb25-40"><a href="#cb25-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-41"><a href="#cb25-41" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x, y</span>
+<span id="cb25-42"><a href="#cb25-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-43"><a href="#cb25-43" aria-hidden="true" tabindex="-1"></a>X_sp, Y_sp <span class="op">=</span> build_data(text, Tx, stride <span class="op">=</span> <span class="dv">3</span>)</span>
+<span id="cb25-44"><a href="#cb25-44" aria-hidden="true" tabindex="-1"></a>x_sp, y_sp <span class="op">=</span> vectorization(X_sp, Y_sp, n_x <span class="op">=</span> <span class="bu">len</span>(chars_sp), char_indices <span class="op">=</span> char_indices)</span>
+<span id="cb25-45"><a href="#cb25-45" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"x shape:"</span>, x_sp.shape)</span>
+<span id="cb25-46"><a href="#cb25-46" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"y shape:"</span>, y_sp.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>number of training examples: 31412
+x shape: (31412, 40, 38)
+y shape: (31412, 38)</code></pre>
+</div>
+</div>
+<p>Compare the shapes against the dinosaur model. There, one example was one name of variable length, and the loop over time steps was written by hand. Here every example has exactly 40 time steps, the whole dataset sits in one array of shape <span class="math inline">\((m, T_x, 38)\)</span>, and the batch axis comes first rather than last. Keras expects that ordering, which is the opposite of the column-per-example convention used everywhere in the NumPy parts of this course.</p>
+<p>Notice also that only the character after the window is a label. The dinosaur model predicted at every time step, while this one predicts once per example, which is why <code>y</code> has no time axis at all.</p>
+</section>
+<section id="pretrained-model" class="level3">
+<h3 class="anchored" data-anchor-id="pretrained-model">Pretrained Model</h3>
+<p>Training this network from scratch takes hours, so the assignment ships a model already trained on the sonnets. Loading it shows the architecture.</p>
+<div id="0830ad58" class="cell" data-execution_count="20">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> load_model(DATA <span class="op">+</span> <span class="st">"model_shakespeare_kiank_350_epoch.h5"</span>, <span class="bu">compile</span><span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>model.<span class="bu">compile</span>(loss<span class="op">=</span><span class="st">"categorical_crossentropy"</span>, optimizer<span class="op">=</span><span class="st">"adam"</span>)</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>model.summary()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold">Model: "model_1"</span>
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃<span style="font-weight: bold"> Layer (type)                    </span>┃<span style="font-weight: bold"> Output Shape           </span>┃<span style="font-weight: bold">       Param # </span>┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ input_3 (<span style="color: #0087ff; text-decoration-color: #0087ff">InputLayer</span>)            │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">40</span>, <span style="color: #00af00; text-decoration-color: #00af00">38</span>)         │             <span style="color: #00af00; text-decoration-color: #00af00">0</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ lstm_5 (<span style="color: #0087ff; text-decoration-color: #0087ff">LSTM</span>)                   │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">40</span>, <span style="color: #00af00; text-decoration-color: #00af00">128</span>)        │        <span style="color: #00af00; text-decoration-color: #00af00">85,504</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dropout_3 (<span style="color: #0087ff; text-decoration-color: #0087ff">Dropout</span>)             │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">40</span>, <span style="color: #00af00; text-decoration-color: #00af00">128</span>)        │             <span style="color: #00af00; text-decoration-color: #00af00">0</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ lstm_6 (<span style="color: #0087ff; text-decoration-color: #0087ff">LSTM</span>)                   │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">128</span>)            │       <span style="color: #00af00; text-decoration-color: #00af00">131,584</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dropout_4 (<span style="color: #0087ff; text-decoration-color: #0087ff">Dropout</span>)             │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">128</span>)            │             <span style="color: #00af00; text-decoration-color: #00af00">0</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dense_3 (<span style="color: #0087ff; text-decoration-color: #0087ff">Dense</span>)                 │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">38</span>)             │         <span style="color: #00af00; text-decoration-color: #00af00">4,902</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ activation_3 (<span style="color: #0087ff; text-decoration-color: #0087ff">Activation</span>)       │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">38</span>)             │             <span style="color: #00af00; text-decoration-color: #00af00">0</span> │
+└─────────────────────────────────┴────────────────────────┴───────────────┘
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold"> Total params: </span><span style="color: #00af00; text-decoration-color: #00af00">221,990</span> (867.15 KB)
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold"> Trainable params: </span><span style="color: #00af00; text-decoration-color: #00af00">221,990</span> (867.15 KB)
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold"> Non-trainable params: </span><span style="color: #00af00; text-decoration-color: #00af00">0</span> (0.00 B)
+</pre>
+</div>
+</div>
+<p>The stack is an LSTM returning its full sequence of 128 hidden states, dropout, a second LSTM returning only its final hidden state, dropout again, then a dense layer with one unit per character and a softmax. About 222,000 parameters in total, against the roughly 6,000 of the dinosaur model.</p>
+<p>The <code>return_sequences</code> distinction is what makes the two LSTM layers stack. The first returns a hidden state at every one of the 40 time steps, giving the second layer a sequence to read. The second returns only the state after the last time step, which is a single vector summarizing the whole window, and that is what the dense layer classifies.</p>
+<p>Measuring the loaded model before training it gives a baseline, and one further epoch shows what training does.</p>
+<div id="6698ac14" class="cell" data-execution_count="21">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"loss before the extra epoch:"</span>, <span class="bu">round</span>(<span class="bu">float</span>(model.evaluate(x_sp, y_sp, batch_size<span class="op">=</span><span class="dv">512</span>, verbose<span class="op">=</span><span class="dv">0</span>)), <span class="dv">4</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>loss before the extra epoch: 2.8977</code></pre>
+</div>
+</div>
+<div id="1695bbe3" class="cell" data-execution_count="22">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>model.fit(x_sp, y_sp, batch_size<span class="op">=</span><span class="dv">128</span>, epochs<span class="op">=</span><span class="dv">1</span>, verbose<span class="op">=</span><span class="dv">2</span>)</span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"loss after the extra epoch:"</span>, <span class="bu">round</span>(<span class="bu">float</span>(model.evaluate(x_sp, y_sp, batch_size<span class="op">=</span><span class="dv">512</span>, verbose<span class="op">=</span><span class="dv">0</span>)), <span class="dv">4</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>246/246 - 8s - 33ms/step - loss: 2.4521
+loss after the extra epoch: 1.7853</code></pre>
+</div>
+</div>
+<p>The drop is larger than one epoch on a converged model should produce, which says the shipped checkpoint was not trained to convergence despite its name. Note also that the loss printed during <code>fit</code> is higher than the one printed by <code>evaluate</code> immediately afterwards. Both numbers are correct. Dropout is active during training and disabled during evaluation, and the training figure is an average over an epoch during which the weights were still improving.</p>
+<p>For reference, a model guessing uniformly among 38 characters would score <span class="math inline">\(\ln 38 \approx 3.64\)</span>.</p>
+</section>
+<section id="generating-a-poem" class="level3">
+<h3 class="anchored" data-anchor-id="generating-a-poem">Generating a Poem</h3>
+<p>Generation is the same loop as the dinosaur sampler, with one addition. The <code>sample_from_preds</code> helper divides the log probabilities by a temperature before renormalizing. A temperature below 1 sharpens the distribution and makes the text more repetitive and more conservative, while a temperature above 1 flattens it and makes the text wilder. At exactly 1.0, which is what is used here, the distribution is left alone.</p>
+<div id="e363d10c" class="cell" data-execution_count="23">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> sample_from_preds(preds, temperature<span class="op">=</span><span class="fl">1.0</span>):</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Draw a character index from a prediction vector, sharpened by temperature."""</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>    preds <span class="op">=</span> np.asarray(preds).astype(<span class="st">'float64'</span>)</span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>    preds <span class="op">=</span> np.log(preds) <span class="op">/</span> temperature</span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>    exp_preds <span class="op">=</span> np.exp(preds)</span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>    preds <span class="op">=</span> exp_preds <span class="op">/</span> np.<span class="bu">sum</span>(exp_preds)</span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a>    probas <span class="op">=</span> np.random.multinomial(<span class="dv">1</span>, preds, <span class="dv">1</span>)</span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> np.random.choice(<span class="bu">range</span>(<span class="bu">len</span>(chars_sp)), p <span class="op">=</span> probas.ravel())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The last two lines are a curiosity of the original lab and worth flagging. <code>np.random.multinomial</code> already draws a character, returning a one-hot row, and <code>np.random.choice</code> then draws from that row, which can only return the position that is already 1. The second draw therefore cannot change the outcome. It is redundant rather than wrong, and it is kept here because it is what the assignment shipped.</p>
+<p>The generator takes a seed phrase, pads it on the left with the placeholder character <code>0</code> to fill the 40 character window, and then predicts one character at a time. After each prediction the window slides forward by one, dropping its oldest character and appending the new one, so the model is always looking at the most recent 40 characters of what it has written.</p>
+<div id="f9029e2b" class="cell" data-execution_count="24">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> generate_output(usr_input, n_chars<span class="op">=</span><span class="dv">400</span>, temperature<span class="op">=</span><span class="fl">1.0</span>):</span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Complete a seed phrase, one character at a time, for n_chars characters."""</span></span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Left-pad the seed to Tx characters with the placeholder '0'.</span></span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a>    sentence <span class="op">=</span> (<span class="st">'{0:0&gt;'</span> <span class="op">+</span> <span class="bu">str</span>(Tx) <span class="op">+</span> <span class="st">'}'</span>).<span class="bu">format</span>(usr_input).lower()</span>
+<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a>    generated <span class="op">=</span> usr_input</span>
+<span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(n_chars):</span>
+<span id="cb33-8"><a href="#cb33-8" aria-hidden="true" tabindex="-1"></a>        <span class="co"># One-hot the current window, leaving padding positions as zeros.</span></span>
+<span id="cb33-9"><a href="#cb33-9" aria-hidden="true" tabindex="-1"></a>        x_pred <span class="op">=</span> np.zeros((<span class="dv">1</span>, Tx, <span class="bu">len</span>(chars_sp)))</span>
+<span id="cb33-10"><a href="#cb33-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> t, char <span class="kw">in</span> <span class="bu">enumerate</span>(sentence):</span>
+<span id="cb33-11"><a href="#cb33-11" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> char <span class="op">!=</span> <span class="st">'0'</span>:</span>
+<span id="cb33-12"><a href="#cb33-12" aria-hidden="true" tabindex="-1"></a>                x_pred[<span class="dv">0</span>, t, char_indices[char]] <span class="op">=</span> <span class="fl">1.</span></span>
+<span id="cb33-13"><a href="#cb33-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-14"><a href="#cb33-14" aria-hidden="true" tabindex="-1"></a>        preds <span class="op">=</span> model.predict(x_pred, verbose<span class="op">=</span><span class="dv">0</span>)[<span class="dv">0</span>]</span>
+<span id="cb33-15"><a href="#cb33-15" aria-hidden="true" tabindex="-1"></a>        next_index <span class="op">=</span> sample_from_preds(preds, temperature<span class="op">=</span>temperature)</span>
+<span id="cb33-16"><a href="#cb33-16" aria-hidden="true" tabindex="-1"></a>        next_char <span class="op">=</span> indices_char[next_index]</span>
+<span id="cb33-17"><a href="#cb33-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-18"><a href="#cb33-18" aria-hidden="true" tabindex="-1"></a>        generated <span class="op">+=</span> next_char</span>
+<span id="cb33-19"><a href="#cb33-19" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Slide the window forward by one character.</span></span>
+<span id="cb33-20"><a href="#cb33-20" aria-hidden="true" tabindex="-1"></a>        sentence <span class="op">=</span> sentence[<span class="dv">1</span>:] <span class="op">+</span> next_char</span>
+<span id="cb33-21"><a href="#cb33-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-22"><a href="#cb33-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> generated</span>
+<span id="cb33-23"><a href="#cb33-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-24"><a href="#cb33-24" aria-hidden="true" tabindex="-1"></a>np.random.seed(<span class="dv">3</span>)</span>
+<span id="cb33-25"><a href="#cb33-25" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(generate_output(<span class="st">"Forsooth this maketh no sense "</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Forsooth this maketh no sense should i beunted,
+more pilly with commipcifce eyed,
+when i nist lopt i yet she that letsun grows,
+in the bettior, and wa enpoon my torce me.
+
+
+
+    wred do the bus oh pyout should wain,
+why how i recefrow not from thy lose nided.
+ 
+
+mote theich with lowsed will this bist fill san.
+
+fil other do deseored theathers whist comfors,
+my mistur exw fre that piry my gince fort,
+or preterver carince no sho</code></pre>
+</div>
+</div>
+<p>Read it for what it is. The model has learned the shape of the sonnets, meaning line lengths, line breaks in plausible places, and the frequent openings <code>and</code>, <code>that</code>, <code>my</code> and <code>when</code>. It has not learned to spell, and a fair share of the words are not words. That is what a loss near 1.8 looks like over 38 characters, and it is an honest picture of what a two-layer LSTM extracts from 94,000 characters of training text.</p>
+<p>The padding deserves one caution. The placeholder <code>0</code> leaves those positions as all-zero rows, which is not a character the model ever saw during training, since every training window was 40 real characters. The first few predictions are therefore made on an input of a kind the model was never trained on. Once 40 characters have been generated the padding has slid out of the window entirely, and the model is back on familiar ground.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What You Should Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>The Shakespeare model is the dinosaur model with three changes. LSTM cells instead of a basic RNN cell, two stacked layers instead of one, and Keras instead of hand-written loops.</li>
+<li>Where there is no natural example boundary, a sliding window of fixed length with a stride cuts a corpus into training examples.</li>
+<li>Keras puts the batch axis first, <span class="math inline">\((m, T_x, n_x)\)</span>, which is the reverse of the convention used in the NumPy assignments of this course.</li>
+<li>Temperature rescales the log probabilities before sampling. Below 1 the text is safer and more repetitive, above 1 it is more erratic.</li>
+</ul>
+</div>
+</div>
+</section>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<div id="clm-lab-review-q7">
+<p><strong>1. The dinosaur model produces a prediction at every time step, while the Shakespeare model produces one prediction per 40 character window. Does the Shakespeare model waste the other 39 steps?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="clm-lab-review-q7">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>No.&nbsp;The second LSTM returns the hidden state it holds after the fortieth step, and that state was built by reading all forty, so every one of them shapes the single prediction. They are context rather than waste.</p>
+<p>A different loss is worth noticing, though. <code>build_data</code> advances the window by a stride of 3 and takes only <code>text[i + Tx]</code> as the label, so exactly one character in three ever serves as a target. The other two appear in windows as context and are never predicted. A stride of 1 would use all of them, at three times the dataset size. The design costs some efficiency, since each example carries 40 time steps of computation for one label, and it buys simplicity, because the network only has to return one vector per example instead of a full sequence.</p>
+</div>
+</details>
+<hr>
+<div id="clm-lab-review-q8">
+<p><strong>1. The first LSTM layer returns its full sequence and the second returns only its last hidden state. What would break if both behaved the same way?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="clm-lab-review-q8">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>If the first layer returned only its final state, the second layer would receive a single vector rather than a sequence, and an LSTM has nothing to recur over in that case. If the second layer returned its full sequence, the dense layer would produce 40 character distributions instead of one, and the output shape would no longer match <code>y</code>, whose shape is <span class="math inline">\((m, 38)\)</span>. Stacking recurrent layers means every layer but the last returns a sequence, and the last one returns whatever the task needs.</p>
+</div>
+</details>
+<hr>
+<div id="clm-lab-review-q9">
+<p><strong>1. Why is the seed phrase padded on the left rather than on the right?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="clm-lab-review-q9">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because the model predicts the character that follows the end of the window. The seed phrase has to occupy the most recent positions, meaning the right-hand end, so that the prediction continues it. Padding on the right would bury the seed at the start of the window and ask the model to continue a run of empty positions, and the generated text would ignore the phrase it was given.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li>Karpathy, A. (2015). <em>The unreasonable effectiveness of recurrent neural networks</em> [Blog post]. <a href="http://karpathy.github.io/2015/05/21/rnn-effectiveness/" class="uri">http://karpathy.github.io/2015/05/21/rnn-effectiveness/</a></li>
+<li>Karpathy, A. (2015). <em>Minimal character-level Vanilla RNN model</em> [Source code]. GitHub Gist. <a href="https://gist.github.com/karpathy/d4dee566867f8291f086" class="uri">https://gist.github.com/karpathy/d4dee566867f8291f086</a></li>
+</ul>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 100%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">100% completed (802 of 802 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/sequence-models/lab-building-your-recurrent-neural-network.html" class="pagination-link" aria-label="Building Your Recurrent Neural Network Step by Step">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Building Your Recurrent Neural Network Step by Step</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
