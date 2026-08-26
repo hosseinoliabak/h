@@ -1,0 +1,1776 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-25">
+<meta name="description" content="Four algorithms that learn the embedding matrix, from a neural language model through skip-gram, negative sampling, and the GloVe co-occurrence objective.">
+
+<title>Learning Word Embeddings with Word2vec and GloVe – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html" rel="next">
+<link href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Learning Word Embeddings with Word2vec and GloVe – H’s Notes">
+<meta property="og:description" content="Four algorithms that learn the embedding matrix, from a neural language model through skip-gram, negative sampling, and the GloVe co-occurrence objective.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/learning-word-embeddings-word2vec-and-glove_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta property="og:image:alt" content="Six words each map to a one-hot vector, then through a shared matrix E to a 300-dimensional embedding. All six embeddings feed one hidden layer with parameters W superscript 1 and b superscript 1, which feeds a softmax layer with parameters W superscript 2 and b superscript 2, producing a distribution over 10,000 words.">
+<meta name="twitter:title" content="Learning Word Embeddings with Word2vec and GloVe – H’s Notes">
+<meta name="twitter:description" content="Four algorithms that learn the embedding matrix, from a neural language model through skip-gram, negative sampling, and the GloVe co-occurrence objective.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/learning-word-embeddings-word2vec-and-glove_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:image:alt" content="Six words each map to a one-hot vector, then through a shared matrix E to a 300-dimensional embedding. All six embeddings feed one hidden layer with parameters W superscript 1 and b superscript 1, which feeds a softmax layer with parameters W superscript 2 and b superscript 2, producing a distribution over 10,000 words.">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../infrastructure/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Classroom</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/randomizer.html">
+ <span class="dropdown-text">Randomizer</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/sequence-models/learning-word-embeddings-word2vec-and-glove.html">Learning Word Embeddings with Word2vec and GloVe</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence Models</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/recurrent-neural-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Recurrent Neural Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/rnn-architectures-and-language-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RNN Architectures and Language Models</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vanishing Gradients, GRUs, and LSTMs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/bidirectional-and-deep-rnns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bidirectional and Deep RNNs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-building-your-recurrent-neural-network.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Building Your Recurrent Neural Network Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-character-level-language-model.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Character Level Language Model</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-improvise-a-jazz-solo.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Improvise a Jazz Solo with an LSTM Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/learning-word-embeddings-word2vec-and-glove.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Learning Word Embeddings with Word2vec and GloVe</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sentiment Classification and Debiasing Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-operations-on-word-vectors.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Operations on Word Vectors</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-emojify.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Emojify</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#neural-language-model" id="toc-neural-language-model" class="nav-link active" data-scroll-target="#neural-language-model">Neural Language Model</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#choosing-context-and-target" id="toc-choosing-context-and-target" class="nav-link" data-scroll-target="#choosing-context-and-target">Choosing Context and Target</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#word2vec-skip-gram-model" id="toc-word2vec-skip-gram-model" class="nav-link" data-scroll-target="#word2vec-skip-gram-model">Word2Vec Skip-Gram Model</a>
+  <ul class="collapse">
+  <li><a href="#problems-with-softmax-classification" id="toc-problems-with-softmax-classification" class="nav-link" data-scroll-target="#problems-with-softmax-classification">Problems with Softmax Classification</a></li>
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#negative-sampling" id="toc-negative-sampling" class="nav-link" data-scroll-target="#negative-sampling">Negative Sampling</a>
+  <ul class="collapse">
+  <li><a href="#model" id="toc-model" class="nav-link" data-scroll-target="#model">Model</a></li>
+  <li><a href="#selecting-negative-examples" id="toc-selecting-negative-examples" class="nav-link" data-scroll-target="#selecting-negative-examples">Selecting Negative Examples</a></li>
+  <li><a href="#review-questions-3" id="toc-review-questions-3" class="nav-link" data-scroll-target="#review-questions-3">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#glove-word-vectors" id="toc-glove-word-vectors" class="nav-link" data-scroll-target="#glove-word-vectors">GloVe Word Vectors</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-4" id="toc-review-questions-4" class="nav-link" data-scroll-target="#review-questions-4">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#note-on-the-featurization-view" id="toc-note-on-the-featurization-view" class="nav-link" data-scroll-target="#note-on-the-featurization-view">Note on the Featurization View</a>
+  <ul class="collapse">
+  <li><a href="#review-questions-5" id="toc-review-questions-5" class="nav-link" data-scroll-target="#review-questions-5">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../breadcrumb-path.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Learning Word Embeddings with Word2vec and GloVe</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">sequence-models</div>
+    <div class="quarto-category">nlp</div>
+    <div class="quarto-category">word-embeddings</div>
+    <div class="quarto-category">word2vec</div>
+    <div class="quarto-category">skip-gram</div>
+    <div class="quarto-category">negative-sampling</div>
+    <div class="quarto-category">glove</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Four algorithms that learn the embedding matrix, from a neural language model through skip-gram, negative sampling, and the GloVe co-occurrence objective.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 25, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~126 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~6,700 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<p>The previous page showed what a word embedding is and where the <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings.html#embedding-matrix">embedding matrix</a> <span class="math inline">\(E\)</span> fits, but not where <span class="math inline">\(E\)</span> comes from. This page covers four concrete algorithms for learning it.</p>
+<p>The history runs from complicated to simple. People started with relatively complex algorithms, and over time researchers discovered that simpler and simpler methods still gave very good results, especially on a large dataset. Some of the most popular algorithms today are so simple that presenting them first would make them look almost magical. So the order here goes from the slightly more complex algorithm, where the intuition for why it works is easiest to develop, toward the simpler ones.</p>
+<section id="neural-language-model" class="level2">
+<h2 class="anchored" data-anchor-id="neural-language-model">Neural Language Model</h2>
+<p>Building a language model with a neural network turns out to be a reasonable way to learn a set of embeddings. The ideas in this section are due to <a href="https://www.jmlr.org/papers/v3/bengio03a.html">Bengio et al.&nbsp;(2003)</a>.</p>
+<p>During training you want the network to take an input such as <code>I want a glass of orange</code> and predict the next word in the sequence, which in this training example is <code>juice</code>. Each word carries its index in the vocabulary, so <code>I</code> is 4343, <code>want</code> is 9665, <code>a</code> is 1 because it comes first alphabetically, <code>glass</code> is 3852, <code>of</code> is 6163, and <code>orange</code> is 6257.</p>
+<p>Start with the first word. Construct the one-hot vector <span class="math inline">\(o_{4343}\)</span>, which is 10,000-dimensional with a single 1 in position 4343. Multiply by the matrix of parameters <span class="math inline">\(E\)</span> to get the embedding vector, <span class="math inline">\(e_{4343} = E \, o_{4343}\)</span>. Then do the same for every other word. The word <code>want</code> gives <span class="math inline">\(o_{9665}\)</span>, which becomes <span class="math inline">\(e_{9665}\)</span> after multiplication by <span class="math inline">\(E\)</span>, and so on down the phrase.</p>
+<div class="wide-network-hint">
+<p>On a small screen, scroll horizontally to see the full architecture.</p>
+</div>
+<div class="wide-network-figure" role="region" aria-label="Scrollable neural language model diagram" tabindex="0">
+<div id="82294420" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="learning-word-embeddings-word2vec-and-glove_files/figure-html/cell-2-output-1.svg" class="img-fluid figure-img" alt="Six words each map to a one-hot vector, then through a shared matrix E to a 300-dimensional embedding. All six embeddings feed one hidden layer with parameters W superscript 1 and b superscript 1, which feeds a softmax layer with parameters W superscript 2 and b superscript 2, producing a distribution over 10,000 words."></p>
+<figcaption>A neural language model. Every word is looked up through the same matrix E, the embeddings are stacked into one long vector, and a softmax predicts the next word.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<p>Now there is a bunch of 300-dimensional embedding vectors, and they all feed into a neural network layer. That layer feeds a softmax, which classifies among the 10,000 possible words in the vocabulary for the final word being predicted. If the training example showed <code>juice</code>, then the target for the softmax during training is that it should predict <code>juice</code> as the word that came next.</p>
+<p>The hidden layer has its own parameters, <span class="math inline">\(W^{[1]}\)</span> and <span class="math inline">\(b^{[1]}\)</span>, and the softmax has its own, <span class="math inline">\(W^{[2]}\)</span> and <span class="math inline">\(b^{[2]}\)</span>. With 300-dimensional word embeddings and six words in the input, that layer receives <span class="math inline">\(6 \times 300 = 1800\)</span> numbers, a 1800-dimensional vector obtained by stacking the six embedding vectors together.</p>
+<p>What is more commonly done is to use a fixed historical window. You might decide to always predict the next word given the previous four words, where four is a hyperparameter of the algorithm. That is how the model copes with very long or very short sentences. With a four-word history, the network takes a <span class="math inline">\(4 \times 300 = 1200\)</span> dimensional feature vector into the layer, then the softmax, and predicts the output. Using a fixed history means the model handles arbitrarily long sentences, because the input size is always fixed.</p>
+<p>The parameters of this model are the matrix <span class="math inline">\(E\)</span> plus the weights <span class="math inline">\(W^{[1]}, b^{[1]}, W^{[2]}, b^{[2]}\)</span>. The same matrix <span class="math inline">\(E\)</span> is used for every word, so there are not different matrices for the different positions among the preceding four words. Backpropagation and gradient descent then maximize the likelihood of the training set, repeatedly predicting, given four words in a sequence, what the next word in the corpus is.</p>
+<p>This algorithm learns pretty decent word embeddings. The reason goes back to the orange juice and apple juice example. The algorithm has an incentive to learn similar embeddings for <code>orange</code> and <code>apple</code>, because doing so lets it fit the training set better. It sees orange juice sometimes and apple juice sometimes, and with only a 300-dimensional feature vector to represent all these words, it fits the training set best if apples, oranges, grapes, pears, and even a very rare fruit like durian all get similar feature vectors.</p>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<div id="nlm-review-q1">
+<p><strong>1. The input layer receives 1800 numbers in the six-word version and 1200 in the four-word version. Where do those numbers come from?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="nlm-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Each word is turned into a 300-dimensional embedding, and the embeddings are stacked end to end into one long vector. Six words give <span class="math inline">\(6 \times 300 = 1800\)</span>, and a fixed four-word history gives <span class="math inline">\(4 \times 300 = 1200\)</span>.</p>
+</div>
+</details>
+<hr>
+<div id="nlm-review-q2">
+<p><strong>1. Why use a fixed historical window rather than the whole sentence?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="nlm-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because the input size to the network has to be fixed. Sentences vary in length, but always taking the previous four words means the input is always <span class="math inline">\(4 \times 300\)</span> numbers, so the model can handle arbitrarily long sentences without changing shape.</p>
+</div>
+</details>
+<hr>
+<div id="nlm-review-q3">
+<p><strong>1. How many copies of <span class="math inline">\(E\)</span> does this model have, and why does that matter?</strong></p>
+<ol type="a">
+<li><p>One per position in the four-word history, so four</p></li>
+<li><p>One, shared across every word and every position</p></li>
+<li><p>One per word in the vocabulary, so 10,000</p></li>
+<li><p>Two, one for the input and one for the output</p></li>
+</ol>
+</div>
+<details class="review-answer">
+<summary aria-describedby="nlm-review-q3">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>b.</strong> There is a single matrix <span class="math inline">\(E\)</span>, used for every word regardless of where it sits in the history. That sharing is what makes it a word embedding at all. A word gets the same vector wherever it appears, so what the model learns about <code>orange</code> in one position transfers to every other position.</p>
+</div>
+</details>
+<hr>
+<div id="nlm-review-q4">
+<p><strong>1. What pressure makes this model give <code>apple</code> and <code>orange</code> similar embeddings?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="nlm-review-q4">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Fitting the training set. The corpus contains both orange juice and apple juice, so a model that predicts <code>juice</code> well after both has to treat the two words alike. With only 300 numbers per word, the cheapest way to do that is to place <code>apple</code>, <code>orange</code>, <code>grape</code>, <code>pear</code>, and even <code>durian</code> near each other. The embedding quality is a side effect of the language modeling objective, not something the loss asks for directly.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="choosing-context-and-target" class="level2">
+<h2 class="anchored" data-anchor-id="choosing-context-and-target">Choosing Context and Target</h2>
+<p>The job of the algorithm on the previous slide was to predict some word, <code>juice</code>, which is called the <strong>target</strong> word, given some <strong>context</strong>, which was the last four words. To generalize the algorithm, use a longer example sentence.</p>
+<blockquote class="blockquote">
+<p>I want a glass of orange juice to go along with my cereal.</p>
+</blockquote>
+<p>Researchers have experimented with many different types of context. If the goal is to build a language model, then it is natural for the context to be a few words right before the target word. But if the goal is not the language model itself, then other contexts are open.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Context</th>
+<th>Example, with <code>juice</code> as the target</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Last 4 words</td>
+<td><code>a glass of orange</code></td>
+<td>Natural if you actually want a language model</td>
+</tr>
+<tr class="even">
+<td>4 words on the left and 4 on the right</td>
+<td><code>a glass of orange</code> and <code>to go along with</code></td>
+<td>Predicts the word in the middle</td>
+</tr>
+<tr class="odd">
+<td>Last 1 word</td>
+<td><code>orange</code></td>
+<td>Much simpler, still learns useful embeddings</td>
+</tr>
+<tr class="even">
+<td>Nearby 1 word</td>
+<td><code>glass</code></td>
+<td>The skip-gram idea</td>
+</tr>
+</tbody>
+</table>
+<p>Posing a learning problem where the embeddings of the four words on the left and the four on the right feed a neural network that predicts the word in the middle also learns word embeddings. Or you could use a simpler context still and take just the last one word. Given <code>orange</code>, what comes after it? You can build a network that takes the embedding of that single previous word and tries to predict the next one.</p>
+<p>One thing that works surprisingly well is to take a nearby one word. Somebody tells you that the word <code>glass</code> appears somewhere close by, and asks what word you think is near it. That is using a nearby single word as the context, and it is the idea behind the skip-gram model. The context is now much simpler, one word rather than four, but it works remarkably well.</p>
+<p>What researchers found is that if you really want to build a language model, it is natural to use the last few words as context. But if the main goal is to learn a word embedding, then all of these other contexts work, and they result in very meaningful embeddings as well.</p>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<div id="context-review-q1">
+<p><strong>1. Why does the choice of context depend on what you are actually trying to build?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="context-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>A <a href="../../../ai/deep-learning/sequence-models/rnn-architectures-and-language-models.html#language-model-and-sequence-generation">language model</a> has to estimate the probability of the next word given what came before, so its context is forced to be the preceding words. Learning an embedding has no such constraint. The prediction task is only a device for pushing similar words toward similar vectors, so a context of four words on each side, or one nearby word, does the job just as well.</p>
+</div>
+</details>
+<hr>
+<div id="context-review-q2">
+<p><strong>1. In the sentence above, if the context is “nearby 1 word” and the algorithm is given <code>glass</code>, what is it being asked to do?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="context-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>It is asked to name a word that appears somewhere close to <code>glass</code> in the sentence, without being told where. It is not a prediction of the immediate next word, and there is no single right answer. That looseness is deliberate, because the point is the embeddings, not the accuracy on this task.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="word2vec-skip-gram-model" class="level2">
+<h2 class="anchored" data-anchor-id="word2vec-skip-gram-model">Word2Vec Skip-Gram Model</h2>
+<p>The Word2Vec algorithm is a simpler and considerably more efficient way to learn these embeddings. Most of the ideas here are due to <a href="https://doi.org/10.48550/arXiv.1301.3781">Mikolov, Chen, et al.&nbsp;(2013)</a>.</p>
+<p>In the skip-gram model, the supervised learning problem is built from context-to-target pairs. Rather than the context always being the last four words immediately before the target, randomly pick a word to be the context word. Say the choice is <code>orange</code>. Then randomly pick another word within some window, say plus or minus five words or plus or minus ten words of the context word, and make that the target.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Context</th>
+<th>Target</th>
+<th>Where the target came from</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>orange</code></td>
+<td><code>juice</code></td>
+<td>One word later</td>
+</tr>
+<tr class="even">
+<td><code>orange</code></td>
+<td><code>glass</code></td>
+<td>Two words before</td>
+</tr>
+<tr class="odd">
+<td><code>orange</code></td>
+<td><code>my</code></td>
+<td>Further along, chosen by chance</td>
+</tr>
+</tbody>
+</table>
+<p>Obviously this is not an easy learning problem, because within plus or minus ten words of <code>orange</code> there could be a great many different words. But the goal in setting up this supervised problem is not to do well on it. The goal is to use the problem to learn good word embeddings.</p>
+<p>Here are the details. The vocabulary stays at 10,000 words, although vocabulary sizes exceeding a million words are used in practice. The mapping to learn goes from some context <span class="math inline">\(c\)</span>, such as the word <code>orange</code>, to some target <span class="math inline">\(t\)</span>, which might be <code>juice</code> or <code>glass</code> or <code>my</code>. In the vocabulary, <code>orange</code> is word 6257 and <code>juice</code> is word 4834.</p>
+<p>To represent the input, start with the one-hot vector <span class="math inline">\(o_c\)</span> for the context word. Take the embedding matrix <span class="math inline">\(E\)</span> and multiply, which gives <span class="math inline">\(e_c = E \, o_c\)</span>, the embedding vector for the context word. Feed <span class="math inline">\(e_c\)</span> into a <a href="../../../ai/deep-learning/improving-deep-neural-networks/softmax-regression.html">softmax</a> unit, and the softmax outputs <span class="math inline">\(\hat{y}\)</span>.</p>
+<div id="3de8db6c" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="learning-word-embeddings-word2vec-and-glove_files/figure-html/cell-3-output-1.svg" class="img-fluid figure-img" alt="A chain of four boxes. The one-hot vector o subscript c feeds the embedding matrix E, which produces the embedding e subscript c, which feeds a softmax unit, which outputs y hat over 10,000 words."></p>
+<figcaption>The whole skip-gram model. Look up one embedding, then run a single softmax over the vocabulary.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Written out, the softmax model gives the probability of different target words given the input context word.</p>
+<p><span class="math display">\[p(t \mid c) = \frac{e^{\,\theta_t^{T} e_c}}{\sum_{j=1}^{10{,}000} e^{\,\theta_j^{T} e_c}}\]</span></p>
+<p>Here <span class="math inline">\(\theta_t\)</span> is a parameter vector, the one associated with the chance of a particular word <span class="math inline">\(t\)</span> being the label. It has the same dimension as <span class="math inline">\(e_c\)</span>, so the inner product <span class="math inline">\(\theta_t^{T} e_c\)</span> is a single number. The bias term is left off here, although it could be included.</p>
+<p>The loss function is the usual one for softmax. Using <span class="math inline">\(y\)</span> to represent the target word as a one-hot vector, and <span class="math inline">\(\hat{y}\)</span> as the softmax output, the loss is the negative log likelihood.</p>
+<p><span class="math display">\[\mathcal{L}(\hat{y}, y) = -\sum_{i=1}^{10{,}000} y_i \log \hat{y}_i\]</span></p>
+<p>If the target word is <code>juice</code>, then <span class="math inline">\(y\)</span> has a 1 in element 4834 and zeros everywhere else, while <span class="math inline">\(\hat{y}\)</span> is a 10,000-dimensional vector of probabilities over all possible target words.</p>
+<p>So the whole model is small. It looks up an embedding and applies one softmax unit. The matrix <span class="math inline">\(E\)</span> holds a lot of parameters, one embedding vector per word, and the softmax has the <span class="math inline">\(\theta_t\)</span> parameters. Optimizing this loss with respect to all of them yields a pretty good set of embedding vectors. It is called the <strong>skip-gram</strong> model because it takes one word such as <code>orange</code> as input and tries to predict a word some distance to the left or the right, skipping a few words to get there.</p>
+<section id="problems-with-softmax-classification" class="level3">
+<h3 class="anchored" data-anchor-id="problems-with-softmax-classification">Problems with Softmax Classification</h3>
+<p>There are a couple of problems with this algorithm, and the primary one is computational speed. Every time you evaluate that probability, you have to carry out a sum over all 10,000 words in the vocabulary, the denominator of the softmax. Ten thousand is already slow, and it gets far worse with a vocabulary of 100,000 or a million.</p>
+<p>One solution seen in the literature is a <strong>hierarchical softmax classifier</strong>. Instead of categorizing into all 10,000 classes in one go, imagine a classifier that tells you whether the target word is in the first 5,000 words of the vocabulary or the second 5,000. If it says the first 5,000, a second classifier tells you whether it is in the first 2,500 of those or the second 2,500, and so on until you reach a leaf that identifies exactly which word it is. Every internal node of that tree is just a binary classifier, so you never sum over all 10,000 words to make a single classification. The cost of classifying with a tree like this scales like <span class="math inline">\(\log\)</span> of the vocabulary size rather than linearly in it.</p>
+<p>In practice the hierarchical softmax does not use a perfectly balanced, symmetric tree with equal numbers of words on the left and right of each branch. It is built so that common words tend to sit near the top while less common words like <code>durian</code> are buried much deeper. Common words such as <code>the</code> and <code>of</code> are seen far more often, so a few traversals should reach them, whereas an infrequent word is reached rarely and can afford to be deep.</p>
+<div id="c804e88c" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="learning-word-embeddings-word2vec-and-glove_files/figure-html/cell-4-output-1.svg" class="img-fluid figure-img" alt="Two binary trees. The left tree is symmetric, splitting 10,000 words into 5,000 and 5,000, then 2,500 each, at every level. The right tree is lopsided, with the frequent word the reached in one step from the root and of reached in two, while durian sits at the bottom of a long chain."></p>
+<figcaption>Left, a perfectly balanced tree. Right, the tree actually used, where frequent words sit near the root and rare words are buried deep.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Before moving on, one more question. How do you sample the context <span class="math inline">\(c\)</span>? Once <span class="math inline">\(c\)</span> is chosen, the target <span class="math inline">\(t\)</span> can be sampled within, say, a plus or minus ten word window of it, but the choice of <span class="math inline">\(c\)</span> itself matters.</p>
+<p>One option is to sample uniformly at random from the corpus. Do that and you find that words like <code>the</code>, <code>of</code>, <code>a</code>, <code>and</code>, and <code>to</code> appear extremely frequently, so the context-to-target pairs are dominated by them, while words like <code>orange</code>, <code>apple</code>, and <code>durian</code> show up rarely. You do not want the training set dominated by extremely frequent words, because then almost all the effort goes into updating <span class="math inline">\(e_c\)</span> for those words, and little into words like <span class="math inline">\(e_{\text{durian}}\)</span>. So in practice the distribution <span class="math inline">\(P(c)\)</span> is not taken uniformly at random. Different heuristics balance sampling from the common words against sampling from the less common ones.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Skip-gram is one of two Word2Vec models
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The original paper presents two versions of Word2Vec. The skip-gram model above is one. The other is <strong>CBOW</strong>, the continuous bag of words model, which takes the surrounding context of a middle word and uses those surrounding words to predict the middle word. That algorithm also works, with its own advantages and disadvantages.</p>
+</div>
+</div>
+<p>The key problem with the skip-gram model as presented so far remains the softmax step, which is expensive because of the sum over the whole vocabulary in the denominator. The next section modifies the training objective so it runs much more efficiently, which in turn lets you train on a much bigger dataset and learn better embeddings.</p>
+</section>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<div id="skipgram-review-q1">
+<p><strong>1. What exactly makes the softmax denominator expensive, and how does a hierarchical softmax reduce the cost?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="skipgram-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>The denominator is <span class="math inline">\(\sum_{j=1}^{10{,}000} e^{\theta_j^{T} e_c}\)</span>, so a single probability evaluation touches every word in the vocabulary. That is linear in vocabulary size, and it becomes painful at 100,000 or a million words. A hierarchical softmax replaces the one 10,000-way decision with a tree of binary decisions, so the cost of a single classification scales like <span class="math inline">\(\log\)</span> of the vocabulary size instead.</p>
+</div>
+</details>
+<hr>
+<div id="skipgram-review-q2">
+<p><strong>1. Why is the hierarchical softmax tree deliberately unbalanced?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="skipgram-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because the cost that matters is the average over how often each word actually gets looked up. Putting common words like <code>the</code> and <code>of</code> near the root makes the frequent lookups short, and burying <code>durian</code> deep costs little because that path is taken rarely. A balanced tree gives every word the same depth, which spends the same effort on a word seen once as on a word seen a million times.</p>
+</div>
+</details>
+<hr>
+<div id="skipgram-review-q3">
+<p><strong>1. If sampling the context word uniformly at random is a problem, what goes wrong?</strong></p>
+<ol type="a">
+<li><p>Rare words are sampled too often and dominate training</p></li>
+<li><p>Frequent words like <code>the</code> and <code>of</code> dominate, so most updates go to their embeddings</p></li>
+<li><p>The softmax denominator becomes undefined</p></li>
+<li><p>The context and target end up being the same word</p></li>
+</ol>
+</div>
+<details class="review-answer">
+<summary aria-describedby="skipgram-review-q3">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>b.</strong> Sampling uniformly from the running text means sampling in proportion to how often words occur, and a handful of function words occur enormously often. Nearly every update then adjusts <span class="math inline">\(e_{\text{the}}\)</span> or <span class="math inline">\(e_{\text{of}}\)</span>, while <span class="math inline">\(e_{\text{durian}}\)</span> is barely touched. Heuristics that sit between the empirical frequency and a flat distribution are used instead.</p>
+</div>
+</details>
+<hr>
+<div id="skipgram-review-q4">
+<p><strong>1. What is the difference between skip-gram and CBOW?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="skipgram-review-q4">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>They run in opposite directions. Skip-gram takes one word as the context and predicts a nearby word. CBOW, the continuous bag of words model, takes the surrounding words and predicts the word in the middle. Both are in the original Word2Vec paper, and each has its own advantages and disadvantages.</p>
+</div>
+</details>
+<hr>
+<div id="skipgram-review-q5">
+<p><strong>1. True or false. When learning word embeddings, we create an artificial task of estimating <span class="math inline">\(P(\text{target} \mid \text{context})\)</span>. It is okay if we do poorly on this artificial prediction task, because the more important by-product of the task is that we learn a useful set of word embeddings.</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="skipgram-review-q5">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>True.</strong> Predicting a randomly chosen word from somewhere in a wide window is a hard prediction problem, because a great many words could plausibly appear near <code>orange</code>. Doing well on it was never the point. The task is set up to create a gradient that pushes words appearing in similar contexts toward similar vectors, and it is those vectors you keep.</p>
+</div>
+</details>
+<hr>
+<div id="skipgram-review-q6">
+<p><strong>1. True or false. In the word2vec algorithm you estimate <span class="math inline">\(P(t \mid c)\)</span>, where <span class="math inline">\(t\)</span> is the target word and <span class="math inline">\(c\)</span> is a context word. The pair is drawn from the training set by taking <span class="math inline">\(c\)</span> to be the sequence of all the words in the sentence before <span class="math inline">\(t\)</span>.</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="skipgram-review-q6">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>False.</strong> <span class="math inline">\(t\)</span> and <span class="math inline">\(c\)</span> are chosen to be nearby words. A single context word is sampled, and the target is drawn from a window around it, so the target may lie on either side rather than always following. The stem resembles the neural language model from the first section of this page without quite describing it, because that model takes a fixed window of preceding words, four in the worked example, rather than every word in the sentence before the target. Skip-gram is neither one. Its context is a single nearby word.</p>
+</div>
+</details>
+<hr>
+<div id="skipgram-review-q7">
+<p><strong>1. Suppose you have a 10,000 word vocabulary and are learning 100-dimensional embeddings with the word2vec softmax above. True or false: after training, you should expect <span class="math inline">\(\theta_t\)</span> to be very close to <span class="math inline">\(e_c\)</span> when <span class="math inline">\(t\)</span> and <span class="math inline">\(c\)</span> are the same word.</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="skipgram-review-q7">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>False.</strong> <span class="math inline">\(\theta_t\)</span> and <span class="math inline">\(e_c\)</span> are two separate sets of parameters that play different roles. <span class="math inline">\(e_c\)</span> is the input embedding looked up from <span class="math inline">\(E\)</span>, while <span class="math inline">\(\theta_t\)</span> is an output-side parameter belonging to the softmax. The objective does couple them, through the inner product <span class="math inline">\(\theta_t^{T} e_c\)</span>, but coupling is not the same as agreement. No term anywhere in it requires the two vectors belonging to one and the same word to be equal, and they are initialized independently, so there is no reason to expect them to converge on each other.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="negative-sampling" class="level2">
+<h2 class="anchored" data-anchor-id="negative-sampling">Negative Sampling</h2>
+<p>Negative sampling is a modified learning problem that does something similar to the skip-gram model, but with a much more efficient learning algorithm. Most of the ideas here are due to <a href="https://doi.org/10.48550/arXiv.1310.4546">Mikolov, Sutskever, et al.&nbsp;(2013)</a>.</p>
+<p>The new supervised learning problem is this. Given a pair of words like <code>orange</code> and <code>juice</code>, predict whether this is a context-target pair. Here <code>orange</code> and <code>juice</code> is a positive example, so the label is 1. What about <code>orange</code> and <code>king</code>? That is a negative example, so the label is 0.</p>
+<p>The positive example is generated exactly as before. Sample a context word, look around a window of say plus or minus ten words, and pick a target word. That gives the first row of the table below. To generate the negative examples, take the same context word and pick a word at random from the dictionary. Here <code>king</code> was picked at random and labeled 0. Then <code>orange</code> again with another random word, <code>book</code>, on the assumption that a random word probably is not associated with <code>orange</code>. Then <code>the</code>, then <code>of</code>.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Context</th>
+<th>Word</th>
+<th>Target?</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>orange</code></td>
+<td><code>juice</code></td>
+<td>1</td>
+</tr>
+<tr class="even">
+<td><code>orange</code></td>
+<td><code>king</code></td>
+<td>0</td>
+</tr>
+<tr class="odd">
+<td><code>orange</code></td>
+<td><code>book</code></td>
+<td>0</td>
+</tr>
+<tr class="even">
+<td><code>orange</code></td>
+<td><code>the</code></td>
+<td>0</td>
+</tr>
+<tr class="odd">
+<td><code>orange</code></td>
+<td><code>of</code></td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p>Notice that all of these are labeled 0 even though the word <code>of</code> does actually appear next to <code>orange</code> as well. It is fine if, just by chance, one of the words picked at random from the dictionary happens to appear in a plus or minus ten word window next to the context word.</p>
+<p>To summarize the recipe, pick a context word and a target word to make one positive example labeled 1. Then, some number of times, say <span class="math inline">\(k\)</span> times, take that same context word and pick random words from the dictionary, labeling all of them 0. Those are the negative examples.</p>
+<p>The algorithm then takes <span class="math inline">\(x\)</span>, that pair of words, and predicts the target label <span class="math inline">\(y\)</span>. The question it answers is really whether these two words appeared together. Did I get these two words by sampling two words close to each other, or did I get one word from the text and one word chosen at random from the dictionary? The task is to distinguish between those two ways of drawing a pair.</p>
+<p>For the value of <span class="math inline">\(k\)</span>, the recommendation is <span class="math inline">\(k = 5\)</span> to <span class="math inline">\(20\)</span> for smaller datasets, and if you have a very large dataset then choose <span class="math inline">\(k\)</span> smaller, so <span class="math inline">\(k = 2\)</span> to <span class="math inline">\(5\)</span> for larger datasets. The table above uses <span class="math inline">\(k = 4\)</span>.</p>
+<section id="model" class="level3">
+<h3 class="anchored" data-anchor-id="model">Model</h3>
+<p>Write <span class="math inline">\(c\)</span> for the context word, <span class="math inline">\(t\)</span> for the possible target word, and <span class="math inline">\(y\)</span> for the 0 or 1 label. The model is a logistic regression.</p>
+<p><span class="math display">\[P(y = 1 \mid c, t) = \sigma\!\left(\theta_t^{T} e_c\right)\]</span></p>
+<p>The parameters are the same as before. There is one parameter vector <span class="math inline">\(\theta_t\)</span> for each possible target word, and a separate embedding vector <span class="math inline">\(e_c\)</span> for each possible context word. With <span class="math inline">\(k\)</span> negative examples per positive one, there is a <span class="math inline">\(k\)</span> to 1 ratio of negative to positive examples for training this logistic regression model.</p>
+<p>Drawn as a network, if the input word is <code>orange</code>, which is word 6257, then the one-hot vector passes through <span class="math inline">\(E\)</span> to give the embedding <span class="math inline">\(e_{6257}\)</span>. What sits on top is really 10,000 possible logistic regression classification problems. One of them asks whether the target word is <code>juice</code> or not, another asks whether it is <code>king</code> or not, and so on for every word in the vocabulary.</p>
+<div id="4c3441ad" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="learning-word-embeddings-word2vec-and-glove_files/figure-html/cell-5-output-1.svg" class="img-fluid figure-img" alt="The word orange maps to a one-hot vector, through E, to the embedding e subscript 6257. That embedding fans out to a column of binary classifiers labeled juice, king, book, the, of, and others. Five of them are highlighted as trained on this iteration and the rest are greyed out."></p>
+<figcaption>One embedding lookup feeds 10,000 binary classifiers, but only k + 1 of them are trained on any given iteration. Here k = 4.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Think of this as 10,000 binary logistic regression classifiers. But instead of training all 10,000 of them on every iteration, only five are trained. The one corresponding to the actual target word, plus the four randomly chosen negative examples, for the case <span class="math inline">\(k = 4\)</span>. Instead of one giant 10,000-way softmax, which is very expensive to compute, the problem has become 10,000 binary classification problems, each of which is cheap, and only <span class="math inline">\(k + 1\)</span> of them are touched per iteration, with <span class="math inline">\(k\)</span> negative examples and one positive example. That is why the computational cost is so much lower. The name <strong>negative sampling</strong> comes from exactly this. You have a positive example, <code>orange</code> and <code>juice</code>, then you deliberately generate a batch of negative examples to train the other binary classifiers, and on every iteration you pick a fresh set of <span class="math inline">\(k\)</span> random negative words.</p>
+</section>
+<section id="selecting-negative-examples" class="level3">
+<h3 class="anchored" data-anchor-id="selecting-negative-examples">Selecting Negative Examples</h3>
+<p>One more detail. Having chosen the context word <code>orange</code>, how do you sample the words that become the negative examples?</p>
+<p>One option is to sample according to the empirical frequency of words in the corpus, simply by how often different words appear. The problem is that this gives a very high representation of words like <code>the</code>, <code>of</code>, and <code>and</code>. The other extreme is to use <span class="math inline">\(1 / |V|\)</span>, sampling the negative examples uniformly at random, but that is also very unrepresentative of the distribution of English words.</p>
+<p>What the authors reported as working best empirically is a heuristic that sits between the two extremes. They sampled proportional to the frequency of a word raised to the power of three quarters. If <span class="math inline">\(f(w_i)\)</span> is the observed frequency of a particular word in the corpus, then</p>
+<p><span class="math display">\[P(w_i) = \frac{f(w_i)^{3/4}}{\sum_{j=1}^{10{,}000} f(w_j)^{3/4}}\]</span></p>
+<p>This lands somewhere between the uniform distribution and the observed distribution in the training set.</p>
+<div id="9f079503" class="cell" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="learning-word-embeddings-word2vec-and-glove_files/figure-html/cell-6-output-1.svg" class="img-fluid figure-img" alt="A log-log plot of sampling probability against word rank for thirty words. The empirical frequency curve falls steeply, the uniform distribution is a flat horizontal line, and the three-quarter power curve lies between them, less steep than the empirical curve but still favoring frequent words."></p>
+<figcaption>The three-quarter power sits between the two extremes. Illustrated on a synthetic corpus where word frequency falls off with rank, as it does in real text.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>This heuristic is not strongly theoretically justified, but multiple researchers use it and it seems to work decently well.</p>
+<p>As is the case elsewhere in deep learning, there are open source implementations and pre-trained word vectors that others have trained and released online under permissive licenses. To get going quickly on an NLP problem, downloading someone else’s word vectors and using them as a starting point is a reasonable move.</p>
+</section>
+<section id="review-questions-3" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
+<div id="negsampling-review-q1">
+<p><strong>1. Negative sampling still has 10,000 classifiers. Why is it so much cheaper than the softmax?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="negsampling-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because the 10,000 are independent binary classifiers rather than one coupled 10,000-way softmax. The softmax denominator forces every word to be evaluated for a single prediction. With binary classifiers there is no shared denominator, so an iteration can update just the <span class="math inline">\(k + 1\)</span> classifiers it cares about, one positive and <span class="math inline">\(k\)</span> negatives, and leave the other 9,995 alone.</p>
+</div>
+</details>
+<hr>
+<div id="negsampling-review-q2">
+<p><strong>1. In the table, <code>of</code> is labeled 0 even though <code>of</code> really does appear near <code>orange</code> in the sentence. Is that a mistake?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="negsampling-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>No.&nbsp;The negative examples are drawn at random from the dictionary, and it is fine if one of them happens to fall inside the window by chance. The label records how the pair was drawn, not whether the two words are genuinely near each other.</p>
+</div>
+</details>
+<hr>
+<div id="negsampling-review-q3">
+<p><strong>1. What values of <span class="math inline">\(k\)</span> are recommended for a smaller dataset and for a very large one?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="negsampling-review-q3">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>For smaller datasets the recommendation is <span class="math inline">\(k = 5\)</span> to <span class="math inline">\(20\)</span>. For a very large dataset, choose <span class="math inline">\(k\)</span> smaller, so <span class="math inline">\(k = 2\)</span> to <span class="math inline">\(5\)</span>. The worked example above uses <span class="math inline">\(k = 4\)</span>.</p>
+</div>
+</details>
+<hr>
+<div id="negsampling-review-q4">
+<p><strong>1. Why is the sampling distribution for negative examples set to <span class="math inline">\(f(w_i)^{3/4}\)</span> rather than <span class="math inline">\(f(w_i)\)</span> or <span class="math inline">\(1/|V|\)</span>?</strong></p>
+<ol type="a">
+<li><p>It is derived from the maximum likelihood solution</p></li>
+<li><p>It is an empirical compromise between over-sampling frequent words and ignoring their real frequency</p></li>
+<li><p>It makes the softmax denominator cancel</p></li>
+<li><p>It guarantees every word is sampled the same number of times</p></li>
+</ol>
+</div>
+<details class="review-answer">
+<summary aria-describedby="negsampling-review-q4">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>b.</strong> Sampling by raw frequency floods the negatives with <code>the</code> and <code>of</code>. Sampling uniformly ignores how English actually behaves. Raising the frequency to the power of three quarters flattens the distribution without erasing it. The choice is empirical rather than theoretically justified, but it is widely used and works decently well.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="glove-word-vectors" class="level2">
+<h2 class="anchored" data-anchor-id="glove-word-vectors">GloVe Word Vectors</h2>
+<p>GloVe is another algorithm with some momentum in the NLP community. It is not used as much as Word2Vec or the skip-gram model, but it has its enthusiasts, in part because of its simplicity. It was created by <a href="https://doi.org/10.3115/v1/D14-1162">Pennington et al.&nbsp;(2014)</a>, and GloVe stands for global vectors for word representation.</p>
+<p>Previously, pairs of words were sampled by picking two words that appear in close proximity to each other in the corpus. What GloVe does is start by making that explicit. Let <span class="math inline">\(X_{ij}\)</span> be the number of times word <span class="math inline">\(j\)</span> occurs in the context of word <span class="math inline">\(i\)</span>. Here <span class="math inline">\(i\)</span> and <span class="math inline">\(j\)</span> play the roles of <span class="math inline">\(t\)</span> and <span class="math inline">\(c\)</span>, so you can think of <span class="math inline">\(X_{ij}\)</span> as <span class="math inline">\(X_{tc}\)</span>. Go through the training corpus and count how many times each word occurs in the context of each other word.</p>
+<p>Whether <span class="math inline">\(X_{ij} = X_{ji}\)</span> depends on the definition of context and target. If context and target are defined by whether the two words appear within plus or minus ten words of each other, then the relationship is symmetric and <span class="math inline">\(X_{ij} = X_{ji}\)</span>. If instead the context is always the word immediately before the target, the two counts can differ. For GloVe, take the symmetric definition, so <span class="math inline">\(X_{ij}\)</span> is simply a count of how often words <span class="math inline">\(i\)</span> and <span class="math inline">\(j\)</span> appear close to each other.</p>
+<p>What the model optimizes is the following.</p>
+<p><span class="math display">\[\text{minimize} \ \sum_{i=1}^{10{,}000} \ \sum_{j=1}^{10{,}000} f(X_{ij}) \left( \theta_i^{T} e_j + b_i + b'_j - \log X_{ij} \right)^{2}\]</span></p>
+<p>Again, think of <span class="math inline">\(i\)</span> and <span class="math inline">\(j\)</span> as playing the roles of <span class="math inline">\(t\)</span> and <span class="math inline">\(c\)</span>, so the term <span class="math inline">\(\theta_i^{T} e_j\)</span> is the same kind of quantity as <span class="math inline">\(\theta_t^{T} e_c\)</span> from the skip-gram model. What you want is for it to say how related those two words are, as measured by how often they occur with each other, which is what <span class="math inline">\(X_{ij}\)</span> records. The terms <span class="math inline">\(b_i\)</span> and <span class="math inline">\(b'_j\)</span> are bias terms, one per word on each side. Solve for the parameters <span class="math inline">\(\theta\)</span>, <span class="math inline">\(e\)</span>, and the biases with gradient descent. The goal is simply to learn vectors whose inner product is a good predictor of how often the two words occur together.</p>
+<p>Two details fill in the rest of the equation.</p>
+<p><strong>The weighting term <span class="math inline">\(f(X_{ij})\)</span> handles the zeros.</strong> If <span class="math inline">\(X_{ij} = 0\)</span> then <span class="math inline">\(\log 0\)</span> is undefined, negative infinity. So <span class="math inline">\(f\)</span> is defined to be 0 whenever <span class="math inline">\(X_{ij} = 0\)</span>, under the convention that <span class="math inline">\(0 \log 0 = 0\)</span>. The effect is that pairs which never co-occurred are simply not summed over, so the <span class="math inline">\(\log 0\)</span> term never matters. The sum runs only over pairs of words that have co-occurred at least once.</p>
+<p><strong>The same weighting term balances frequent against infrequent words.</strong> Some words appear very often in English, such as <code>this</code>, <code>is</code>, <code>of</code>, and <code>a</code>. These are sometimes called stop words, although there is really a continuum between frequent and infrequent words rather than a clean line. And there are infrequent words like <code>durian</code> that you still want to take into account, just not as heavily as the common ones. So <span class="math inline">\(f\)</span> is chosen to give a meaningful amount of weight even to the less frequent words, and to give more weight, but not an unduly large amount, to words like <code>this</code>, <code>is</code>, <code>of</code>, and <code>a</code>. Various heuristics exist for choosing <span class="math inline">\(f\)</span> so that it neither over-weights the common words nor under-weights the rare ones. The GloVe paper has the details.</p>
+<p>One funny thing about this algorithm is that the roles of <span class="math inline">\(\theta\)</span> and <span class="math inline">\(e\)</span> are now completely symmetric. Looking at the math, <span class="math inline">\(\theta_i\)</span> and <span class="math inline">\(e_j\)</span> play essentially the same role, and swapping them leaves the same optimization objective. One way to train is to initialize <span class="math inline">\(\theta\)</span> and <span class="math inline">\(e\)</span> both uniformly at random, run gradient descent to minimize the objective, and then for every word take the average of the two.</p>
+<p><span class="math display">\[e_w^{(\text{final})} = \frac{e_w + \theta_w}{2}\]</span></p>
+<p>That averaging is legitimate here precisely because <span class="math inline">\(\theta\)</span> and <span class="math inline">\(e\)</span> play symmetric roles in this formulation, unlike the earlier models where they play different roles and could not be averaged.</p>
+<p>If the equation looks almost too simple, that reaction is reasonable. It is not obvious that minimizing a square cost function like this should produce meaningful word embeddings, but it does. The way the inventors arrived at it was by building on the history of much more complicated algorithms, first the neural language model, then the Word2Vec skip-gram model, and then this, each attempt simplifying what came before.</p>
+<section id="review-questions-4" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-4">Review Questions</h3>
+<div id="glove-review-q1">
+<p><strong>1. What does <span class="math inline">\(f(X_{ij})\)</span> do, and why does the algorithm break without it?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="glove-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>It does two jobs. First, it is defined as 0 when <span class="math inline">\(X_{ij} = 0\)</span>, which keeps <span class="math inline">\(\log 0\)</span> out of the objective. Most word pairs never co-occur, so without this the sum would be full of undefined terms. Second, it balances the weighting so common words like <code>of</code> and <code>a</code> do not dominate and rare words like <code>durian</code> are not ignored.</p>
+</div>
+</details>
+<hr>
+<div id="glove-review-q2">
+<p><strong>1. Why can GloVe average <span class="math inline">\(\theta_w\)</span> and <span class="math inline">\(e_w\)</span> at the end when the earlier algorithms cannot?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="glove-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because in the GloVe objective the two are symmetric. Swapping <span class="math inline">\(\theta_i\)</span> and <span class="math inline">\(e_j\)</span> gives the same optimization problem, so both end up as equally valid representations of the same word and averaging them is meaningful. In the skip-gram and negative sampling models, <span class="math inline">\(\theta_t\)</span> is an output-side parameter and <span class="math inline">\(e_c\)</span> is the input embedding. They mean different things, so averaging them would be mixing two different quantities.</p>
+</div>
+</details>
+<hr>
+<div id="glove-review-q3">
+<p><strong>1. Under which definition of context is <span class="math inline">\(X_{ij} = X_{ji}\)</span>?</strong></p>
+<ol type="a">
+<li><p>When context is always the word immediately before the target</p></li>
+<li><p>When context and target are any two words within plus or minus ten words of each other</p></li>
+<li><p>Under both definitions</p></li>
+<li><p>Under neither, the matrix is never symmetric</p></li>
+</ol>
+</div>
+<details class="review-answer">
+<summary aria-describedby="glove-review-q3">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>b.</strong> Being within ten words of each other is a symmetric relation, so counting from either side gives the same number. Taking the context to be the word immediately before the target is directional, and then <span class="math inline">\(X_{ij}\)</span> and <span class="math inline">\(X_{ji}\)</span> can differ. GloVe uses the symmetric definition.</p>
+</div>
+</details>
+<hr>
+<div id="glove-review-q4">
+<p><strong>1. True or false. In the GloVe objective, <span class="math inline">\(X_{ij}\)</span> is the number of times word <span class="math inline">\(j\)</span> appears in the context of word <span class="math inline">\(i\)</span>.</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="glove-review-q4">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>True.</strong> That is the definition, and the order of the two indices is easy to get backwards. Under the symmetric definition of context used here, two words within plus or minus ten words of each other, the direction happens not to matter for the value, since <span class="math inline">\(X_{ij} = X_{ji}\)</span>. It would matter under a directional definition, such as taking the context to be the word immediately before the target.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="note-on-the-featurization-view" class="level2">
+<h2 class="anchored" data-anchor-id="note-on-the-featurization-view">Note on the Featurization View</h2>
+<p>Before leaving the topic of learning word embeddings, one more property is worth discussing. The motivation for learning word vectors started from a featurization view, the <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings.html#word-representation">table of feature values</a> for man, woman, king, and queen. Perhaps the first component of the embedding vector represents gender, the second how royal the word is, then age, then whether it names a food, and so on.</p>
+<p>But when you learn an embedding with any of the algorithms above, you cannot guarantee that the individual components are interpretable.</p>
+<p>Why not? Suppose there is some space whose first axis is gender and whose second axis is royal. Nothing forces the first axis of the learned embedding vector to line up with that axis of meaning. The learning algorithm might pick some other direction as its first dimension, and its second dimension need not even be orthogonal to the first.</p>
+<div id="06c2bd54" class="cell" data-execution_count="6">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="learning-word-embeddings-word2vec-and-glove_files/figure-html/cell-7-output-1.svg" class="img-fluid figure-img" alt="Two orthogonal grey arrows labeled gender and royal are drawn from a common origin. Two orange arrows labeled e w 1 and e w 2 are drawn from the same origin at different angles, neither aligned with the grey axes and not perpendicular to each other."></p>
+<figcaption>The axes of meaning and the axes an algorithm actually learns need not line up, and the learned pair need not even be orthogonal.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>There is a short argument for why no algorithm of this form can pin the axes down. Look again at the GloVe objective, and note that <span class="math inline">\(\theta\)</span> and <span class="math inline">\(e\)</span> enter it in exactly one place.</p>
+<p><span class="math display">\[\text{minimize} \ \sum_{i=1}^{10{,}000} \ \sum_{j=1}^{10{,}000} f(X_{ij}) \bigl( \underbrace{\theta_i^{T} e_j}_{\text{the only term holding } \theta \text{ and } e} + b_i + b'_j - \log X_{ij} \bigr)^{2}\]</span></p>
+<p>Now take any invertible matrix <span class="math inline">\(A\)</span>. That single term could just as easily be produced by <span class="math inline">\(A\theta_i\)</span> and <span class="math inline">\(A^{-T} e_j\)</span> in place of <span class="math inline">\(\theta_i\)</span> and <span class="math inline">\(e_j\)</span>, because</p>
+<p><span class="math display">\[(A\theta_i)^{T} \left(A^{-T} e_j\right) = \theta_i^{T} A^{T} A^{-T} e_j = \theta_i^{T} e_j\]</span></p>
+<p>The middle term cancels, since <span class="math inline">\(A^{T} A^{-T} = A^{T} (A^{T})^{-1}\)</span> is the identity, and the objective is left exactly as it was. So a whole family of solutions, related to each other by an arbitrary invertible linear transformation, fits the training data equally well, and nothing in the objective prefers the one whose axes a human would find readable.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Reading the notation <span class="math inline">\(A^{-T}\)</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(A^{-T}\)</span> is shorthand for <span class="math inline">\((A^{-1})^{T}\)</span>, the transpose of the inverse, which is the same matrix as <span class="math inline">\((A^{T})^{-1}\)</span>, the inverse of the transpose. That equality is what makes the cancellation work. Transposing the product <span class="math inline">\(A\theta_i\)</span> turns it into <span class="math inline">\(\theta_i^{T} A^{T}\)</span>, and <span class="math inline">\(A^{T}\)</span> then meets <span class="math inline">\((A^{T})^{-1}\)</span> and disappears. Do not worry if the linear algebra is unfamiliar. The conclusion is what matters.</p>
+</div>
+</div>
+</div>
+<p>In practice this means the first feature might be some combination of gender, and royal, and age, and food, and cost, and size, and whether the word is a noun or an action verb, and everything else at once. It is very difficult to look at an individual row of the embedding matrix and assign a human interpretation to it.</p>
+<p>But despite this arbitrary linear transformation of the features, the <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings.html#properties-of-word-embeddings">parallelogram relationship</a> used for analogies still works. Analogy reasoning survives even though the individual axes do not mean anything you could name.</p>
+<section id="review-questions-5" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-5">Review Questions</h3>
+<div id="featurization-review-q1">
+<p><strong>1. Show why replacing <span class="math inline">\(\theta_i\)</span> with <span class="math inline">\(A\theta_i\)</span> and <span class="math inline">\(e_j\)</span> with <span class="math inline">\(A^{-T} e_j\)</span> leaves the objective unchanged.</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="featurization-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Transposing the first factor gives <span class="math inline">\((A\theta_i)^{T} = \theta_i^{T} A^{T}\)</span>, so the product becomes <span class="math display">\[(A\theta_i)^{T}\left(A^{-T} e_j\right) = \theta_i^{T} A^{T} A^{-T} e_j\]</span> Since <span class="math inline">\(A^{-T}\)</span> is the same matrix as <span class="math inline">\((A^{T})^{-1}\)</span>, the middle product <span class="math inline">\(A^{T} A^{-T}\)</span> is the identity, leaving <span class="math inline">\(\theta_i^{T} e_j\)</span>. Every term of the objective depends on <span class="math inline">\(\theta\)</span> and <span class="math inline">\(e\)</span> only through that inner product, so the objective is identical.</p>
+</div>
+</details>
+<hr>
+<div id="featurization-review-q2">
+<p><strong>1. If the learned axes carry no nameable meaning, why does analogy reasoning still work?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="featurization-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because analogies depend on differences between vectors and on how those differences compare, not on what any single coordinate means. An invertible linear transformation moves every point in the space but preserves the relationships between the differences, so the parallelogram formed by man, woman, king, and queen is still a parallelogram after the transformation.</p>
+</div>
+</details>
+<hr>
+<div id="featurization-review-q3">
+<p><strong>1. What does this say about interpreting a single row of the embedding matrix <span class="math inline">\(E\)</span>?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="featurization-review-q3">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>That it is not worth much effort. A row corresponds to one coordinate of the embedding space, and that coordinate is very likely a mixture of gender, royalty, age, food, cost, size, part of speech, and everything else at once. The featurization table was a way to build intuition, not a description of what the trained matrix contains.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li>Bengio, Y., Ducharme, R., Vincent, P., &amp; Jauvin, C. (2003). A neural probabilistic language model. <em>Journal of Machine Learning Research, 3</em>(Feb), 1137-1155. <a href="https://www.jmlr.org/papers/v3/bengio03a.html" class="uri">https://www.jmlr.org/papers/v3/bengio03a.html</a></li>
+<li>Mikolov, T., Chen, K., Corrado, G., &amp; Dean, J. (2013). <em>Efficient estimation of word representations in vector space</em>. arXiv. <a href="https://doi.org/10.48550/arXiv.1301.3781" class="uri">https://doi.org/10.48550/arXiv.1301.3781</a></li>
+<li>Mikolov, T., Sutskever, I., Chen, K., Corrado, G., &amp; Dean, J. (2013). <em>Distributed representations of words and phrases and their compositionality</em>. arXiv. <a href="https://doi.org/10.48550/arXiv.1310.4546" class="uri">https://doi.org/10.48550/arXiv.1310.4546</a></li>
+<li>Pennington, J., Socher, R., &amp; Manning, C. (2014). GloVe: Global vectors for word representation. In <em>Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP)</em> (pp.&nbsp;1532-1543). Association for Computational Linguistics. <a href="https://doi.org/10.3115/v1/D14-1162" class="uri">https://doi.org/10.3115/v1/D14-1162</a></li>
+</ul>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 78%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">78% completed (1170 of 1494 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings.html" class="pagination-link" aria-label="Introduction to Word Embeddings">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Introduction to Word Embeddings</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html" class="pagination-link" aria-label="Sentiment Classification and Debiasing Word Embeddings">
+        <span class="nav-page-text">Sentiment Classification and Debiasing Word Embeddings</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

@@ -1,0 +1,1953 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-26">
+<meta name="description" content="Load pretrained GloVe vectors, measure similarity with the cosine, solve word analogies, then neutralize biased words and equalize gender-specific pairs.">
+
+<title>Lab: Operations on Word Vectors – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/sequence-models/lab-emojify.html" rel="next">
+<link href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Lab: Operations on Word Vectors – H’s Notes">
+<meta property="og:description" content="Load pretrained GloVe vectors, measure similarity with the cosine, solve word analogies, then neutralize biased words and equalize gender-specific pairs.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/lab-operations-on-word-vectors_files/figure-html/cell-5-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta property="og:image:alt" content="Three panels, each showing two arrows from a common origin with the angle between them marked. Left, father and mother at 27 degrees with cosine 0.89. Center, ball and crocodile at 74 degrees with cosine 0.27. Right, france minus paris and rome minus italy at 132 degrees with cosine minus 0.68.">
+<meta name="twitter:title" content="Lab: Operations on Word Vectors – H’s Notes">
+<meta name="twitter:description" content="Load pretrained GloVe vectors, measure similarity with the cosine, solve word analogies, then neutralize biased words and equalize gender-specific pairs.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/lab-operations-on-word-vectors_files/figure-html/cell-5-output-1.svg">
+<meta name="twitter:image:alt" content="Three panels, each showing two arrows from a common origin with the angle between them marked. Left, father and mother at 27 degrees with cosine 0.89. Center, ball and crocodile at 74 degrees with cosine 0.27. Right, france minus paris and rome minus italy at 132 degrees with cosine minus 0.68.">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../infrastructure/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Classroom</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/randomizer.html">
+ <span class="dropdown-text">Randomizer</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/sequence-models/lab-operations-on-word-vectors.html">Operations on Word Vectors</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence Models</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/recurrent-neural-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Recurrent Neural Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/rnn-architectures-and-language-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RNN Architectures and Language Models</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vanishing Gradients, GRUs, and LSTMs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/bidirectional-and-deep-rnns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bidirectional and Deep RNNs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-building-your-recurrent-neural-network.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Building Your Recurrent Neural Network Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-character-level-language-model.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Character Level Language Model</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-improvise-a-jazz-solo.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Improvise a Jazz Solo with an LSTM Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/learning-word-embeddings-word2vec-and-glove.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning Word Embeddings with Word2vec and GloVe</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sentiment Classification and Debiasing Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-operations-on-word-vectors.html" class="sidebar-item-text sidebar-link active"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Operations on Word Vectors</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-emojify.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Emojify</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#packages" id="toc-packages" class="nav-link active" data-scroll-target="#packages">Packages</a></li>
+  <li><a href="#loading-the-word-vectors" id="toc-loading-the-word-vectors" class="nav-link" data-scroll-target="#loading-the-word-vectors">Loading the Word Vectors</a></li>
+  <li><a href="#embedding-vectors-versus-one-hot-vectors" id="toc-embedding-vectors-versus-one-hot-vectors" class="nav-link" data-scroll-target="#embedding-vectors-versus-one-hot-vectors">Embedding Vectors Versus One-Hot Vectors</a></li>
+  <li><a href="#cosine-similarity" id="toc-cosine-similarity" class="nav-link" data-scroll-target="#cosine-similarity">Cosine Similarity</a>
+  <ul class="collapse">
+  <li><a href="#implementing-cosine-similarity" id="toc-implementing-cosine-similarity" class="nav-link" data-scroll-target="#implementing-cosine-similarity">Implementing Cosine Similarity</a></li>
+  <li><a href="#similarity-between-words" id="toc-similarity-between-words" class="nav-link" data-scroll-target="#similarity-between-words">Similarity Between Words</a></li>
+  </ul></li>
+  <li><a href="#word-analogy-task" id="toc-word-analogy-task" class="nav-link" data-scroll-target="#word-analogy-task">Word Analogy Task</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#debiasing-word-vectors" id="toc-debiasing-word-vectors" class="nav-link" data-scroll-target="#debiasing-word-vectors">Debiasing Word Vectors</a>
+  <ul class="collapse">
+  <li><a href="#finding-the-bias-direction" id="toc-finding-the-bias-direction" class="nav-link" data-scroll-target="#finding-the-bias-direction">Finding the Bias Direction</a></li>
+  <li><a href="#neutralizing-bias-for-non-gender-specific-words" id="toc-neutralizing-bias-for-non-gender-specific-words" class="nav-link" data-scroll-target="#neutralizing-bias-for-non-gender-specific-words">Neutralizing Bias for Non-Gender-Specific Words</a></li>
+  <li><a href="#equalization-algorithm-for-gender-specific-words" id="toc-equalization-algorithm-for-gender-specific-words" class="nav-link" data-scroll-target="#equalization-algorithm-for-gender-specific-words">Equalization Algorithm for Gender-Specific Words</a></li>
+  <li><a href="#limits-of-this-procedure" id="toc-limits-of-this-procedure" class="nav-link" data-scroll-target="#limits-of-this-procedure">Limits of This Procedure</a></li>
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../breadcrumb-path.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title"><span class="bi bi-flask lab-title-icon" aria-hidden="true"></span><span class="visually-hidden">Lab:</span> Operations on Word Vectors</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">sequence-models</div>
+    <div class="quarto-category">nlp</div>
+    <div class="quarto-category">word-embeddings</div>
+    <div class="quarto-category">glove</div>
+    <div class="quarto-category">cosine-similarity</div>
+    <div class="quarto-category">bias</div>
+    <div class="quarto-category">fairness</div>
+    <div class="quarto-category">numpy</div>
+    <div class="quarto-category">lab</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Load pretrained GloVe vectors, measure similarity with the cosine, solve word analogies, then neutralize biased words and equalize gender-specific pairs.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 26, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~130 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~5,500 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<p>Word embeddings are expensive to train, so most practitioners load somebody else’s. That was the argument in <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings.html#using-word-embeddings">Using Word Embeddings</a>, and this lab is what it looks like in practice. A set of pretrained GloVe vectors from <a href="https://doi.org/10.3115/v1/D14-1162">Pennington et al.&nbsp;(2014)</a> is loaded from disk, and everything after that is arithmetic on 50-dimensional arrays.</p>
+<p>By the end of this lab you will be able to</p>
+<ul>
+<li>explain how word embeddings capture relationships between words,</li>
+<li>load a pretrained set of word vectors,</li>
+<li>measure similarity between two word vectors using cosine similarity,</li>
+<li>solve word analogy problems such as man is to woman as king is to what,</li>
+<li>modify an embedding to reduce its gender bias.</li>
+</ul>
+<p>There is no network here and nothing is trained. After three labs of building recurrent architectures, this one is entirely NumPy, and the hardest idea in it is a vector projection.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Differences From the Original Assignment
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Unusually for a lab on this site, nothing needed porting. The assignment is pure NumPy, it uses no framework API that has since changed, and every number the original notebook published is reproduced here to at least thirteen significant digits. The single exception is the near-zero residue after neutralization, which is floating point noise in both. Three presentational changes were made.</p>
+<ul>
+<li><strong>The grader is stripped.</strong> The assignment’s <code>cosine_similarity_test</code> and <code>complete_analogy_test</code> functions ran a batch of <code>assert</code> statements and printed a green “All tests passed”. The properties they were checking are genuinely interesting, so they are printed and explained here instead of being asserted silently.</li>
+<li><strong><code>read_glove_vecs</code> is written out rather than imported.</strong> The assignment calls <code>from w2v_utils import *</code>, which pulls in TensorFlow and the setup for an unrelated Word2Vec demonstration in order to obtain one six-line file reader. That reader is reproduced below, unchanged, where it can be read. The original module is linked for download.</li>
+<li><strong>The <code>tqdm</code> progress bar is dropped</strong> from the normalization step. Normalizing 400,000 vectors takes a fraction of a second, and a progress bar renders poorly on a static page.</li>
+</ul>
+</div>
+</div>
+<section id="packages" class="level2">
+<h2 class="anchored" data-anchor-id="packages">Packages</h2>
+<p>NumPy does all the arithmetic. Matplotlib is here only for the figures that visualize what the arithmetic did.</p>
+<div id="0f2cacd9" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>config InlineBackend.figure_formats <span class="op">=</span> [<span class="st">'svg'</span>]</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>DATA <span class="op">=</span> <span class="st">"../../../media/deep-learning/operations-on-word-vectors/"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Lab Files Download
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The word vectors are far too large to host with this site, so they live on Google Drive.</p>
+<ul>
+<li><a href="https://drive.google.com/file/d/1iGFk5jM8LqnWZLKvtx8j-XBFTMEiU1lL/view?usp=sharing">glove.6B.50d.txt</a> (171 MB), the 50-dimensional GloVe vectors this lab runs on, 400,000 words with 50 numbers each. Google warns that it cannot scan a file this size, which is expected, and the download proceeds after confirming.</li>
+<li><a href="../../../media/deep-learning/operations-on-word-vectors/w2v_utils.py">w2v_utils.py</a> (5 KB), the assignment’s helper module. This page does not import it, for the reason given above, but it is here for comparison.</li>
+</ul>
+<p>A command line download needs the confirmation supplied up front, because a plain request returns the warning page rather than the file.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-L</span> <span class="at">-o</span> glove.6B.50d.txt <span class="dt">\</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">"https://drive.usercontent.google.com/download?id=1iGFk5jM8LqnWZLKvtx8j-XBFTMEiU1lL&amp;export=download&amp;confirm=t"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The identical file also ships inside Stanford’s official <a href="https://nlp.stanford.edu/data/glove.6B.zip">glove.6B.zip</a> release. That archive is 822 MB, because it carries the 100, 200 and 300 dimensional vectors trained on the same 6 billion token corpus alongside the 50-dimensional ones.</p>
+<p>The original notebook reads <code>data/glove.6B.50d.txt</code> from a directory next to itself. This page keeps the file with the site’s other lab assets instead, which is what the <code>DATA</code> prefix defined just above points at. Running the code in your own notebook means setting <code>DATA</code> to <code>""</code> and putting the file in a <code>data/</code> directory beside it.</p>
+</div>
+</div>
+</section>
+<section id="loading-the-word-vectors" class="level2">
+<h2 class="anchored" data-anchor-id="loading-the-word-vectors">Loading the Word Vectors</h2>
+<p>The file is plain text with one word per line. Each line is the word itself, then 50 numbers separated by spaces, so the parser splits on whitespace, takes the first field as the word, and turns the rest into a NumPy array. This is the assignment’s <code>read_glove_vecs</code>, reproduced unchanged.</p>
+<p>Two things come back. <code>words</code> is the set of every word in the vocabulary, useful for asking whether a word is present at all. <code>word_to_vec_map</code> is a dictionary from a word to its 50-dimensional vector, which is what the rest of the lab uses.</p>
+<div id="903afa8f" class="cell" data-execution_count="2">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> read_glove_vecs(glove_file):</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> <span class="bu">open</span>(glove_file, <span class="st">'r'</span>) <span class="im">as</span> f:</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>        words <span class="op">=</span> <span class="bu">set</span>()</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>        word_to_vec_map <span class="op">=</span> {}</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> line <span class="kw">in</span> f:</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>            line <span class="op">=</span> line.strip().split()      <span class="co"># word, then 50 numbers as strings</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>            curr_word <span class="op">=</span> line[<span class="dv">0</span>]</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>            words.add(curr_word)</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>            word_to_vec_map[curr_word] <span class="op">=</span> np.array(line[<span class="dv">1</span>:], dtype<span class="op">=</span>np.float64)</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> words, word_to_vec_map</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>words, word_to_vec_map <span class="op">=</span> read_glove_vecs(DATA <span class="op">+</span> <span class="st">"data/glove.6B.50d.txt"</span>)</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"vocabulary size:"</span>, <span class="bu">len</span>(words))</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"vector dimension:"</span>, word_to_vec_map[<span class="st">"king"</span>].shape[<span class="dv">0</span>])</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"word_to_vec_map['king'][:8] ="</span>, np.<span class="bu">round</span>(word_to_vec_map[<span class="st">"king"</span>][:<span class="dv">8</span>], <span class="dv">3</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>vocabulary size: 400000
+vector dimension: 50
+word_to_vec_map['king'][:8] = [ 0.505  0.686 -0.595 -0.023  0.6   -0.135 -0.088  0.474]</code></pre>
+</div>
+</div>
+<p>Four hundred thousand words, fifty numbers each. Those numbers are not readable individually. No dimension means gender or royalty or plurality, and nothing about the vector for <code>king</code> can be interpreted by inspection. What the vectors carry is <em>relative</em> information, and the way to get at it is to compare two of them.</p>
+</section>
+<section id="embedding-vectors-versus-one-hot-vectors" class="level2">
+<h2 class="anchored" data-anchor-id="embedding-vectors-versus-one-hot-vectors">Embedding Vectors Versus One-Hot Vectors</h2>
+<p>Recall from <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings.html#word-representation">Word Representation</a> that one-hot vectors do not capture similarity between words. It is worth watching that fail concretely.</p>
+<p>A one-hot vector has a single 1 at the word’s index in the vocabulary and 0 everywhere else. Take any two distinct words. Their one-hot vectors differ in exactly two positions, one where the first has its 1 and one where the second has its 1, so the squared distance between them is <span class="math inline">\(1^2 + 1^2 = 2\)</span> no matter which two words they are. Every pair of distinct words sits at the same distance <span class="math inline">\(\sqrt{2}\)</span>.</p>
+<div id="443e7d70" class="cell" data-execution_count="3">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>vocab_index <span class="op">=</span> {<span class="st">"cat"</span>: <span class="dv">0</span>, <span class="st">"kitten"</span>: <span class="dv">1</span>, <span class="st">"hurricane"</span>: <span class="dv">2</span>}</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> one_hot(word, size<span class="op">=</span><span class="dv">3</span>):</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    v <span class="op">=</span> np.zeros(size)</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    v[vocab_index[word]] <span class="op">=</span> <span class="dv">1</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> v</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"one-hot distance cat to kitten:   "</span>,</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>      <span class="bu">round</span>(np.linalg.norm(one_hot(<span class="st">"cat"</span>) <span class="op">-</span> one_hot(<span class="st">"kitten"</span>)), <span class="dv">4</span>))</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"one-hot distance cat to hurricane:"</span>,</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>      <span class="bu">round</span>(np.linalg.norm(one_hot(<span class="st">"cat"</span>) <span class="op">-</span> one_hot(<span class="st">"hurricane"</span>)), <span class="dv">4</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>one-hot distance cat to kitten:    1.4142
+one-hot distance cat to hurricane: 1.4142</code></pre>
+</div>
+</div>
+<p>Identical, and the representation has no way to say that a kitten is more like a cat than a hurricane is. GloVe vectors do carry that information, and the next section is the tool for reading it out.</p>
+</section>
+<section id="cosine-similarity" class="level2">
+<h2 class="anchored" data-anchor-id="cosine-similarity">Cosine Similarity</h2>
+<p>To measure how similar two words are, measure the angle between their embedding vectors. Given two vectors <span class="math inline">\(u\)</span> and <span class="math inline">\(v\)</span>, the cosine similarity is</p>
+<p><span class="math display">\[\text{CosineSimilarity}(u, v) = \frac{u \cdot v}{\|u\|_2 \|v\|_2} = \cos(\theta) \tag{1}\]</span></p>
+<p>where <span class="math inline">\(u \cdot v\)</span> is the dot product, <span class="math inline">\(\|u\|_2\)</span> is the norm (or length) of <span class="math inline">\(u\)</span>, and <span class="math inline">\(\theta\)</span> is the angle between the two vectors. The norm is defined as <span class="math inline">\(\|u\|_2 = \sqrt{\sum_{i=1}^{n} u_i^2}\)</span>.</p>
+<p>Dividing by both norms is what makes this a measure of direction alone. The dot product on its own grows when either vector is long, so a common word with a large vector would look similar to everything. After the division, only the angle survives. Two vectors pointing the same way score 1, two at right angles score 0, and two pointing in opposite directions score -1.</p>
+<div id="8417cf02" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-operations-on-word-vectors_files/figure-html/cell-5-output-1.svg" class="img-fluid figure-img" alt="Three panels, each showing two arrows from a common origin with the angle between them marked. Left, father and mother at 27 degrees with cosine 0.89. Center, ball and crocodile at 74 degrees with cosine 0.27. Right, france minus paris and rome minus italy at 132 degrees with cosine minus 0.68."></p>
+<figcaption>Cosine similarity as an angle. Each panel draws two vectors separated by the true angle between the corresponding GloVe vectors, projected into the plane. Only the angle is real, since the underlying vectors live in 50 dimensions.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<section id="implementing-cosine-similarity" class="level3">
+<h3 class="anchored" data-anchor-id="implementing-cosine-similarity">Implementing Cosine Similarity</h3>
+<p>The function is formula (1) written out. Two guards sit around it. The first returns 1 when the two vectors are identical, which sidesteps a rounding error that could otherwise return something like 0.9999999999999998 for a vector compared against itself. The second returns 0 when either vector is the zero vector, because dividing by a zero norm is undefined.</p>
+<div id="d2dda9e2" class="cell" data-execution_count="5">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> cosine_similarity(u, v):</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Cosine similarity reflects the degree of similarity between u and v</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="co">        u -- a word vector of shape (n,)</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="co">        v -- a word vector of shape (n,)</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="co">        cosine_similarity -- the cosine similarity between u and v defined by the formula above.</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Special case. Consider the case u = [0, 0], v=[0, 0]</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> np.<span class="bu">all</span>(u <span class="op">==</span> v):</span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="dv">1</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>    dot <span class="op">=</span> np.dot(u, v)</span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a>    norm_u <span class="op">=</span> np.sqrt(np.<span class="bu">sum</span>(u <span class="op">**</span> <span class="dv">2</span>))</span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>    norm_v <span class="op">=</span> np.sqrt(np.<span class="bu">sum</span>(v <span class="op">**</span> <span class="dv">2</span>))</span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Avoid division by 0</span></span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> np.isclose(norm_u <span class="op">*</span> norm_v, <span class="dv">0</span>, atol<span class="op">=</span><span class="fl">1e-32</span>):</span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="dv">0</span></span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> dot <span class="op">/</span> (norm_u <span class="op">*</span> norm_v)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Before using it on words, it is worth confirming that it behaves the way the geometry says it should. The assignment checked these four properties with <code>assert</code> statements and printed a green “All tests passed”, which hides the numbers. They are more useful visible.</p>
+<div id="7def0934" class="cell" data-execution_count="6">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.default_rng(<span class="dv">0</span>)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>a <span class="op">=</span> rng.uniform(<span class="op">-</span><span class="dv">10</span>, <span class="dv">10</span>, <span class="dv">10</span>)</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>b <span class="op">=</span> rng.uniform(<span class="op">-</span><span class="dv">10</span>, <span class="dv">10</span>, <span class="dv">10</span>)</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>c <span class="op">=</span> rng.uniform(<span class="op">-</span><span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">23</span>)</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"a with itself:                "</span>, cosine_similarity(a, a))</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"a with its negation:          "</span>, cosine_similarity(a, <span class="op">-</span>a))</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"a mask with its complement:   "</span>, cosine_similarity((c <span class="op">&gt;=</span> <span class="dv">0</span>) <span class="op">*</span> <span class="dv">1</span>, (c <span class="op">&lt;</span> <span class="dv">0</span>) <span class="op">*</span> <span class="dv">1</span>))</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"a with b:                     "</span>, cosine_similarity(a, b))</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"2a with 4b:                   "</span>, cosine_similarity(a <span class="op">*</span> <span class="dv">2</span>, b <span class="op">*</span> <span class="dv">4</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>a with itself:                 1
+a with its negation:           -1.0000000000000002
+a mask with its complement:    0.0
+a with b:                      0.15760749034580937
+2a with 4b:                    0.15760749034580937</code></pre>
+</div>
+</div>
+<p>Each line says something about the measure. A vector compared with itself has an angle of zero, so the cosine is 1, and it prints as exactly <code>1</code> because the identical-vectors guard returns before any arithmetic happens. Compared with its negation the angle is 180 degrees and the cosine is -1, which takes the long route through the formula and so prints as -1.0000000000000002. That gap of <span class="math inline">\(2 \times 10^{-16}\)</span> is one rounding step in <code>float64</code>, and it is worth noticing now, because the debiasing section later leans on the same fact. The third line builds two vectors that are 1 exactly where the other is 0, so they share no non-zero coordinate, their dot product is zero, and they are at right angles. The last two lines are the same score, which is the point of dividing by the norms. Scaling either vector stretches it without turning it, and cosine similarity only sees the turn.</p>
+</section>
+<section id="similarity-between-words" class="level3">
+<h3 class="anchored" data-anchor-id="similarity-between-words">Similarity Between Words</h3>
+<p>Now the real thing. Three comparisons, chosen to show the range.</p>
+<div id="ebaab263" class="cell" data-execution_count="7">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>father <span class="op">=</span> word_to_vec_map[<span class="st">"father"</span>]</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>mother <span class="op">=</span> word_to_vec_map[<span class="st">"mother"</span>]</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>ball <span class="op">=</span> word_to_vec_map[<span class="st">"ball"</span>]</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>crocodile <span class="op">=</span> word_to_vec_map[<span class="st">"crocodile"</span>]</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>france <span class="op">=</span> word_to_vec_map[<span class="st">"france"</span>]</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>italy <span class="op">=</span> word_to_vec_map[<span class="st">"italy"</span>]</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>paris <span class="op">=</span> word_to_vec_map[<span class="st">"paris"</span>]</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>rome <span class="op">=</span> word_to_vec_map[<span class="st">"rome"</span>]</span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cosine_similarity(father, mother) = "</span>, cosine_similarity(father, mother))</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cosine_similarity(ball, crocodile) = "</span>, cosine_similarity(ball, crocodile))</span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cosine_similarity(france - paris, rome - italy) = "</span>,</span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>      cosine_similarity(france <span class="op">-</span> paris, rome <span class="op">-</span> italy))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>cosine_similarity(father, mother) =  0.8909038442893615
+cosine_similarity(ball, crocodile) =  0.2743924626137942
+cosine_similarity(france - paris, rome - italy) =  -0.6751479308174202</code></pre>
+</div>
+</div>
+<p><code>father</code> and <code>mother</code> score 0.89, which is very close to 1. Nothing in the training procedure was told these are related words. They score highly because they appear in the same kinds of sentences, so the co-occurrence statistics that GloVe factorizes place them in nearly the same direction.</p>
+<p><code>ball</code> and <code>crocodile</code> score 0.27. That is low, but notice it is not near zero. Almost any two English words share some context, so real embeddings live in a fairly narrow cone rather than spreading over the whole sphere. Judge these numbers against each other rather than against an absolute scale.</p>
+<p>The third comparison is the interesting one, and it is doing something different from the first two. It compares two <em>differences</em> rather than two words. Reading it carefully, <span class="math inline">\(\text{france} - \text{paris}\)</span> points from a capital to its country, and <span class="math inline">\(\text{rome} - \text{italy}\)</span> points from a country to its capital. Those are opposite journeys along the same relationship, so the score is strongly negative. Reverse one of them and it would be strongly positive. That the direction of a relationship is itself a vector is the fact the next section runs on.</p>
+</section>
+</section>
+<section id="word-analogy-task" class="level2">
+<h2 class="anchored" data-anchor-id="word-analogy-task">Word Analogy Task</h2>
+<p>In the analogy task the sentence to complete is “<span class="math inline">\(a\)</span> is to <span class="math inline">\(b\)</span> as <span class="math inline">\(c\)</span> is to ____”, for example “man is to woman as king is to queen”. The word to find is a word <span class="math inline">\(d\)</span> whose embedding satisfies</p>
+<p><span class="math display">\[e_b - e_a \approx e_d - e_c\]</span></p>
+<p>where <span class="math inline">\(e_w\)</span> is the embedding for word <span class="math inline">\(w\)</span>. In words, the step from <span class="math inline">\(a\)</span> to <span class="math inline">\(b\)</span> should be the same step as the one from <span class="math inline">\(c\)</span> to <span class="math inline">\(d\)</span>. Since “the same step” means the same direction, the way to measure it is cosine similarity between the two difference vectors.</p>
+<p>There is no clever solution. The implementation computes <span class="math inline">\(e_b - e_a\)</span> once, then walks the entire vocabulary, and for each candidate word <span class="math inline">\(w\)</span> measures the cosine similarity between <span class="math inline">\(e_b - e_a\)</span> and <span class="math inline">\(e_w - e_c\)</span>, keeping the best. The one word excluded from the search is <span class="math inline">\(c\)</span> itself, since <span class="math inline">\(e_c - e_c\)</span> is the zero vector and the answer is supposed to be somewhere else.</p>
+<div id="98b770b5" class="cell" data-execution_count="8">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> complete_analogy(word_a, word_b, word_c, word_to_vec_map):</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Performs the word analogy task as explained above: a is to b as c is to ____.</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="co">    word_a -- a word, string</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="co">    word_b -- a word, string</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="co">    word_c -- a word, string</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a><span class="co">    word_to_vec_map -- dictionary that maps words to their corresponding vectors.</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a><span class="co">    best_word --  the word such that v_b - v_a is close to v_best_word - v_c,</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a><span class="co">                  as measured by cosine similarity</span></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>    word_a, word_b, word_c <span class="op">=</span> word_a.lower(), word_b.lower(), word_c.lower()</span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>    e_a, e_b, e_c <span class="op">=</span> word_to_vec_map[word_a], word_to_vec_map[word_b], word_to_vec_map[word_c]</span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>    words <span class="op">=</span> word_to_vec_map.keys()</span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>    max_cosine_sim <span class="op">=</span> <span class="op">-</span><span class="dv">100</span>              <span class="co"># any real cosine similarity beats this</span></span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>    best_word <span class="op">=</span> <span class="va">None</span></span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> w <span class="kw">in</span> words:</span>
+<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a>        <span class="co"># e_c - e_c is the zero vector, so word_c would be a degenerate answer</span></span>
+<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> w <span class="op">==</span> word_c:</span>
+<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a>            <span class="cf">continue</span></span>
+<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a>        cosine_sim <span class="op">=</span> cosine_similarity(e_b <span class="op">-</span> e_a, word_to_vec_map[w] <span class="op">-</span> e_c)</span>
+<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> cosine_sim <span class="op">&gt;</span> max_cosine_sim:</span>
+<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a>            max_cosine_sim <span class="op">=</span> cosine_sim</span>
+<span id="cb12-33"><a href="#cb12-33" aria-hidden="true" tabindex="-1"></a>            best_word <span class="op">=</span> w</span>
+<span id="cb12-34"><a href="#cb12-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-35"><a href="#cb12-35" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> best_word</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Before turning it loose on 400,000 words, it helps to watch it on a vocabulary small enough to draw. The assignment hid this inside a test function, but the little map it builds is a good picture of what the search is doing.</p>
+<p>Thirteen fake words sit on a grid. Four cluster around the point <span class="math inline">\(a = (3, 3)\)</span>, and eight surround a second point <span class="math inline">\(c = (-2, 1)\)</span>, named by compass direction. <code>a_nw</code> is one step north-west of <code>a</code>, <code>c_nw</code> is one step north-west of <code>c</code>, and so on. Asking “<code>a</code> is to <code>a_nw</code> as <code>c</code> is to what” should therefore return <code>c_nw</code>, because the north-west step is the same vector in both neighborhoods.</p>
+<div id="5e5cda81" class="cell" data-execution_count="9">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>toy_map <span class="op">=</span> {</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    <span class="st">'a'</span>: [<span class="dv">3</span>, <span class="dv">3</span>], <span class="st">'synonym_of_a'</span>: [<span class="dv">3</span>, <span class="dv">3</span>], <span class="st">'a_nw'</span>: [<span class="dv">2</span>, <span class="dv">4</span>], <span class="st">'a_s'</span>: [<span class="dv">3</span>, <span class="dv">2</span>],</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">'c'</span>: [<span class="op">-</span><span class="dv">2</span>, <span class="dv">1</span>],</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">'c_n'</span>: [<span class="op">-</span><span class="dv">2</span>, <span class="dv">2</span>], <span class="st">'c_ne'</span>: [<span class="op">-</span><span class="dv">1</span>, <span class="dv">2</span>], <span class="st">'c_e'</span>: [<span class="op">-</span><span class="dv">1</span>, <span class="dv">1</span>], <span class="st">'c_se'</span>: [<span class="op">-</span><span class="dv">1</span>, <span class="dv">0</span>],</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">'c_s'</span>: [<span class="op">-</span><span class="dv">2</span>, <span class="dv">0</span>], <span class="st">'c_sw'</span>: [<span class="op">-</span><span class="dv">3</span>, <span class="dv">0</span>], <span class="st">'c_w'</span>: [<span class="op">-</span><span class="dv">3</span>, <span class="dv">1</span>], <span class="st">'c_nw'</span>: [<span class="op">-</span><span class="dv">3</span>, <span class="dv">2</span>],</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>toy_map <span class="op">=</span> {k: np.array(v) <span class="cf">for</span> k, v <span class="kw">in</span> toy_map.items()}</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"a -&gt; a_nw          :: c -&gt; "</span>, complete_analogy(<span class="st">'a'</span>, <span class="st">'a_nw'</span>, <span class="st">'c'</span>, toy_map))</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"a -&gt; a_s           :: c -&gt; "</span>, complete_analogy(<span class="st">'a'</span>, <span class="st">'a_s'</span>, <span class="st">'c'</span>, toy_map))</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"a -&gt; synonym_of_a  :: c -&gt; "</span>, complete_analogy(<span class="st">'a'</span>, <span class="st">'synonym_of_a'</span>, <span class="st">'c'</span>, toy_map))</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"a -&gt; c             :: a -&gt; "</span>, complete_analogy(<span class="st">'a'</span>, <span class="st">'c'</span>, <span class="st">'a'</span>, toy_map))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>a -&gt; a_nw          :: c -&gt;  c_nw
+a -&gt; a_s           :: c -&gt;  c_s
+a -&gt; synonym_of_a  :: c -&gt;  a
+a -&gt; c             :: a -&gt;  c</code></pre>
+</div>
+</div>
+<p>The first two are the compass result. The fourth is a consistency check, because “a is to c as a is to what” has to be <code>c</code>.</p>
+<p>The third is the one to look at. <code>a</code> to <code>synonym_of_a</code> is a step of zero length, so <span class="math inline">\(e_b - e_a\)</span> is the zero vector and every candidate scores 0 through the zero-norm guard. Without the skip, <code>c</code> itself would score 1 through the identical-vectors guard and win, which is why the assignment’s hidden test asserted that the answer must not be the input query. With the skip, the winner is whichever word the loop saw first, which is <code>a</code>. A meaningless question gets an arbitrary answer rather than a confidently wrong one.</p>
+<p>Now the real vocabulary. Each call compares 400,000 pairs of 50-dimensional vectors in a Python loop, so four analogies take roughly ten seconds.</p>
+<div id="e38eebdb" class="cell" data-execution_count="10">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>triads_to_try <span class="op">=</span> [(<span class="st">'italy'</span>, <span class="st">'italian'</span>, <span class="st">'spain'</span>),</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>                 (<span class="st">'india'</span>, <span class="st">'delhi'</span>, <span class="st">'japan'</span>),</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>                 (<span class="st">'man'</span>, <span class="st">'woman'</span>, <span class="st">'boy'</span>),</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>                 (<span class="st">'small'</span>, <span class="st">'smaller'</span>, <span class="st">'large'</span>)]</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> triad <span class="kw">in</span> triads_to_try:</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'</span><span class="sc">{}</span><span class="st"> -&gt; </span><span class="sc">{}</span><span class="st"> :: </span><span class="sc">{}</span><span class="st"> -&gt; </span><span class="sc">{}</span><span class="st">'</span>.<span class="bu">format</span>(<span class="op">*</span>triad, complete_analogy(<span class="op">*</span>triad, word_to_vec_map)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>italy -&gt; italian :: spain -&gt; spanish
+india -&gt; delhi :: japan -&gt; tokyo
+man -&gt; woman :: boy -&gt; girl
+small -&gt; smaller :: large -&gt; smaller</code></pre>
+</div>
+</div>
+<p>Three out of four. A country to its adjective, a country to its capital, and a male word to its female counterpart all resolve correctly, and none of those relationships was ever labeled anywhere. They fall out of co-occurrence counts on unannotated text.</p>
+<p>The fourth is wrong, and worth sitting with. <code>small</code> to <code>smaller</code> is the comparative relationship, so <code>large</code> should give <code>larger</code>. It gives <code>smaller</code> instead. The reason is that the difference vector <span class="math inline">\(e_{\text{smaller}} - e_{\text{small}}\)</span> is dominated by the comparative-ness rather than by the removal of smallness, and <code>smaller</code> itself sits in almost exactly that direction from <code>large</code>. The method has no notion that a word cannot be its own analogue in a different size, because the only thing it can see is an angle. Excluding <code>word_b</code> as well as <code>word_c</code> fixes this particular case, and would break others.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What You Should Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>Cosine similarity is a good way to compare the similarity between pairs of word vectors. L2 distance works too.</li>
+<li>Dividing by both norms is what removes vector length from the comparison and leaves only direction.</li>
+<li>A relationship between two words is itself a vector, which is why a difference of embeddings can be compared to another difference of embeddings.</li>
+<li>For NLP applications, starting from a pretrained set of word vectors is often the fastest way to get a useful system.</li>
+<li>Analogies work often enough to be striking and fail often enough that they are a demonstration rather than a component to build on.</li>
+</ul>
+</div>
+</div>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<div id="opword-review-q1">
+<p><strong>1. Why does cosine similarity divide by <span class="math inline">\(\|u\|_2 \|v\|_2\)</span> rather than using the raw dot product?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="opword-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because the raw dot product mixes two things together, the angle between the vectors and their lengths. A frequent word tends to end up with a longer vector, so under the raw dot product it would look similar to everything simply by being long. Dividing by both norms rescales each vector to unit length before comparing, which leaves the angle as the only thing being measured. The printed check above shows the consequence directly, since <code>cosine_similarity(a, b)</code> and <code>cosine_similarity(2a, 4b)</code> return the same number.</p>
+</div>
+</details>
+<hr>
+<div id="opword-review-q2">
+<p><strong>1. <code>cosine_similarity(france - paris, rome - italy)</code> returns about -0.68. What would <code>cosine_similarity(france - paris, italy - rome)</code> return, and why?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="opword-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>About +0.68. Negating one of the two vectors turns it through 180 degrees, and <span class="math inline">\(\cos(180^\circ - \theta) = -\cos(\theta)\)</span>, so the sign flips and the magnitude does not. What the two numbers say together is that <code>france - paris</code> and <code>italy - rome</code> are close to the same vector. That vector is the capital-to-country relationship, and it is shared across pairs, which is the property the analogy task exploits.</p>
+</div>
+</details>
+<hr>
+<div id="opword-review-q3">
+<p><strong>1. <code>complete_analogy</code> skips <code>word_c</code> inside the loop. What goes wrong if that line is removed?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="opword-review-q3">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>The function becomes able to answer with the word it was handed. When <span class="math inline">\(w\)</span> is <code>word_c</code>, the candidate difference <span class="math inline">\(e_w - e_c\)</span> is the zero vector, so the score depends on the other argument. For a real analogy such as “man is to woman as king is to what”, <span class="math inline">\(e_b - e_a\)</span> is not zero, the zero-norm guard returns 0, and <code>word_c</code> loses to a genuine match scoring around 0.9. The skip changes nothing there.</p>
+<p>Where it matters is the degenerate case. When <span class="math inline">\(e_b - e_a\)</span> is also the zero vector, as in the toy “a is to synonym_of_a” step, both arguments are zero, <code>np.all(u == v)</code> is true, and <code>cosine_similarity</code> returns 1, which is the highest score available. Without the skip, <code>c</code> wins every zero-step question. That is precisely what the assignment’s hidden test asserted against, and it is the case the skip is there for.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="debiasing-word-vectors" class="level2">
+<h2 class="anchored" data-anchor-id="debiasing-word-vectors">Debiasing Word Vectors</h2>
+<p>Everything so far has been a demonstration that embeddings absorb the structure of the text they were trained on. That structure includes the parts nobody wants. <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html#bias-in-word-embeddings">Bias in Word Embeddings</a> laid out the problem and sketched the three-step fix from <a href="https://doi.org/10.48550/arXiv.1607.06520">Bolukbasi et al.&nbsp;(2016)</a>. This section runs it on the vectors just loaded.</p>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Important</span>Different sense of the word bias
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Throughout this section, <strong>bias</strong> means gender, ethnicity, and sexual orientation bias. It does not mean the bias-variance sense used elsewhere in machine learning, and it does not mean the parameter <span class="math inline">\(b\)</span> in <span class="math inline">\(z = w^T x + b\)</span>.</p>
+</div>
+</div>
+<section id="finding-the-bias-direction" class="level3">
+<h3 class="anchored" data-anchor-id="finding-the-bias-direction">Finding the Bias Direction</h3>
+<p>The first step is to find the direction in the 50-dimensional space that corresponds to gender. The simplest estimate is one difference,</p>
+<p><span class="math display">\[g = e_{\text{woman}} - e_{\text{man}}\]</span></p>
+<p>which is the same construction used for the analogy task, applied to a pair that differs mainly in gender. Averaging several such differences, <span class="math inline">\(e_{\text{mother}} - e_{\text{father}}\)</span> and <span class="math inline">\(e_{\text{girl}} - e_{\text{boy}}\)</span> and so on, gives a better estimate, and the paper uses singular value decomposition rather than an average. One pair is good enough to see the effect.</p>
+<div id="6de114c2" class="cell" data-execution_count="11">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> word_to_vec_map[<span class="st">'woman'</span>] <span class="op">-</span> word_to_vec_map[<span class="st">'man'</span>]</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"g.shape ="</span>, g.shape)</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(g)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>g.shape = (50,)
+[-0.087144    0.2182     -0.40986    -0.03922    -0.1032      0.94165
+ -0.06042     0.32988     0.46144    -0.35962     0.31102    -0.86824
+  0.96006     0.01073     0.24337     0.08193    -1.02722    -0.21122
+  0.695044   -0.00222     0.29106     0.5053     -0.099454    0.40445
+  0.30181     0.1355     -0.0606     -0.07131    -0.19245    -0.06115
+ -0.3204      0.07165    -0.13337    -0.25068714 -0.14293    -0.224957
+ -0.149       0.048882    0.12191    -0.27362    -0.165476   -0.20426
+  0.54376    -0.271425   -0.10245    -0.32108     0.2516     -0.33455
+ -0.04371     0.01258   ]</code></pre>
+</div>
+</div>
+<p>Fifty numbers, none of them individually meaningful. What matters is the direction they define. Project a word onto it and the result says how far that word leans toward <code>woman</code> or toward <code>man</code>.</p>
+<div id="c73dc030" class="cell" data-execution_count="12">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>name_list <span class="op">=</span> [<span class="st">'john'</span>, <span class="st">'marie'</span>, <span class="st">'sophie'</span>, <span class="st">'ronaldo'</span>, <span class="st">'priya'</span>, <span class="st">'rahul'</span>,</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>             <span class="st">'danielle'</span>, <span class="st">'reza'</span>, <span class="st">'katy'</span>, <span class="st">'yasmin'</span>]</span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'List of names and their similarities with constructed vector:'</span>)</span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> w <span class="kw">in</span> name_list:</span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(w, cosine_similarity(word_to_vec_map[w], g))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>List of names and their similarities with constructed vector:
+john -0.23163356145973724
+marie 0.315597935396073
+sophie 0.31868789859418784
+ronaldo -0.31244796850329437
+priya 0.17632041839009402
+rahul -0.16915471039231722
+danielle 0.24393299216283895
+reza -0.07930429672199553
+katy 0.2831068659572615
+yasmin 0.23313857767928753</code></pre>
+</div>
+</div>
+<p>Names conventionally given to girls come out positive and names conventionally given to boys come out negative. That is the expected result and there is nothing wrong with it. First names really do carry gender information, and an embedding that failed to represent it would be a worse model of English.</p>
+<p>Now the same measurement on words that have no business carrying gender at all.</p>
+<div id="cea5e161" class="cell" data-execution_count="13">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>word_list <span class="op">=</span> [<span class="st">'lipstick'</span>, <span class="st">'guns'</span>, <span class="st">'science'</span>, <span class="st">'arts'</span>, <span class="st">'literature'</span>, <span class="st">'warrior'</span>,</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>             <span class="st">'doctor'</span>, <span class="st">'tree'</span>, <span class="st">'receptionist'</span>, <span class="st">'technology'</span>, <span class="st">'fashion'</span>,</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>             <span class="st">'teacher'</span>, <span class="st">'engineer'</span>, <span class="st">'pilot'</span>, <span class="st">'computer'</span>, <span class="st">'singer'</span>]</span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'Other words and their similarities:'</span>)</span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> w <span class="kw">in</span> word_list:</span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(w, cosine_similarity(word_to_vec_map[w], g))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Other words and their similarities:
+lipstick 0.2769191625638267
+guns -0.1888485567898898
+science -0.06082906540929701
+arts 0.008189312385880339
+literature 0.06472504433459926
+warrior -0.20920164641125288
+doctor 0.11895289410935041
+tree -0.07089399175478091
+receptionist 0.3307794175059374
+technology -0.13193732447554293
+fashion 0.035638946257727
+teacher 0.17920923431825664
+engineer -0.0803928049452407
+pilot 0.001076449899191738
+computer -0.103303588738505
+singer 0.1850051813649629</code></pre>
+</div>
+</div>
+<div id="af83aa49" class="cell" data-execution_count="14">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-operations-on-word-vectors_files/figure-html/cell-15-output-1.svg" class="img-fluid figure-img" alt="Two horizontal bar charts sharing a scale from minus 0.35 to 0.35. The left chart shows ten first names, six leaning positive and four negative. The right chart shows sixteen occupations and objects, with receptionist, lipstick and fashion leaning positive and technology, computer, guns and warrior leaning negative."></p>
+<figcaption>Cosine similarity with the gender direction <span class="math inline">\(g = e_{woman} - e_{man}\)</span>. Left, first names, where a gender component is part of what the word means. Right, occupations and objects, where it is not.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p><code>receptionist</code> at 0.33 leans female about as strongly as <code>sophie</code> does, and <code>lipstick</code> at 0.28 is not far behind. On the other side <code>warrior</code> at -0.21 and <code>guns</code> at -0.19 lean male about as strongly as <code>rahul</code> does. <code>singer</code> and <code>teacher</code> sit around 0.18, <code>technology</code> and <code>computer</code> around -0.11. None of that is a fact about receptionists or computers. It is a fact about the 6 billion tokens of text these vectors were fit to, faithfully reproduced.</p>
+<p>Most of the list is much weaker than that, and the size is worth keeping in view alongside the sign. <code>literature</code> at 0.065, <code>engineer</code> at -0.080, <code>tree</code> at -0.071, <code>arts</code> at 0.008 and <code>pilot</code> at 0.001 all sit close to zero, so their leanings are faint and deserve to be read as faint. The notebook builds its point on two of them, contrasting <code>computer</code> on the male side with <code>literature</code> on the female side, and that contrast is real in its sign. What the chart adds is a sense of scale. A handful of these words carry a large gender component and most carry very little, which is also the evidence that the effect is not a uniform artifact of the method.</p>
+<p>The fix has to treat two kinds of word differently. <code>grandmother</code> and <code>grandfather</code> should keep their gender component, because gender is part of what those words mean. <code>receptionist</code> and <code>technology</code> should have theirs removed. The first operation is neutralization and the second is equalization.</p>
+</section>
+<section id="neutralizing-bias-for-non-gender-specific-words" class="level3">
+<h3 class="anchored" data-anchor-id="neutralizing-bias-for-non-gender-specific-words">Neutralizing Bias for Non-Gender-Specific Words</h3>
+<p>Split the 50-dimensional space into two parts. One is the bias direction <span class="math inline">\(g\)</span>, which is 1-dimensional. The other is everything perpendicular to it, written <span class="math inline">\(g_{\perp}\)</span>, which is 49-dimensional. Any word vector <span class="math inline">\(e\)</span> can be written as a piece along <span class="math inline">\(g\)</span> plus a piece in <span class="math inline">\(g_{\perp}\)</span>, and neutralizing means throwing the first piece away.</p>
+<p><span class="math display">\[e^{\text{bias\_component}} = \frac{e \cdot g}{\|g\|_2^2} \, g \tag{2}\]</span></p>
+<p><span class="math display">\[e^{\text{debiased}} = e - e^{\text{bias\_component}} \tag{3}\]</span></p>
+<p>Formula (2) is the projection of <span class="math inline">\(e\)</span> onto the direction of <span class="math inline">\(g\)</span>. Reading it left to right, <span class="math inline">\(e \cdot g\)</span> measures how much of <span class="math inline">\(e\)</span> lies along <span class="math inline">\(g\)</span>, dividing by <span class="math inline">\(\|g\|_2^2\)</span> turns that measurement into a coefficient that does not depend on how long <span class="math inline">\(g\)</span> happens to be, and multiplying by <span class="math inline">\(g\)</span> turns the coefficient back into a vector pointing along <span class="math inline">\(g\)</span>. Subtracting it in formula (3) leaves a vector with no component in the gender direction at all.</p>
+<p>The paper assumes every word vector has L2 norm 1, so the vectors are normalized first. Dividing each vector by its own length changes no angle and therefore no cosine similarity, but it does put every word on the unit sphere, which is what makes the equalization arithmetic in the next section work out.</p>
+<div id="4be06696" class="cell" data-execution_count="15">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>word_to_vec_map_unit_vectors <span class="op">=</span> {</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>    word: embedding <span class="op">/</span> np.linalg.norm(embedding)</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> word, embedding <span class="kw">in</span> word_to_vec_map.items()</span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>g_unit <span class="op">=</span> word_to_vec_map_unit_vectors[<span class="st">'woman'</span>] <span class="op">-</span> word_to_vec_map_unit_vectors[<span class="st">'man'</span>]</span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"norm of the raw vector for 'woman': "</span>,</span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>      <span class="bu">round</span>(np.linalg.norm(word_to_vec_map[<span class="st">'woman'</span>]), <span class="dv">4</span>))</span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"norm of the unit vector for 'woman':"</span>,</span>
+<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a>      <span class="bu">round</span>(np.linalg.norm(word_to_vec_map_unit_vectors[<span class="st">'woman'</span>]), <span class="dv">4</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>norm of the raw vector for 'woman':  5.5751
+norm of the unit vector for 'woman': 1.0</code></pre>
+</div>
+</div>
+<div id="281cce21" class="cell" data-execution_count="16">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> neutralize(word, g, word_to_vec_map):</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Removes the bias of "word" by projecting it on the space orthogonal to the bias axis.</span></span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a><span class="co">    This function ensures that gender neutral words are zero in the gender subspace.</span></span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a><span class="co">        word -- string indicating the word to debias</span></span>
+<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a><span class="co">        g -- numpy-array of shape (50,), corresponding to the bias axis (such as gender)</span></span>
+<span id="cb25-9"><a href="#cb25-9" aria-hidden="true" tabindex="-1"></a><span class="co">        word_to_vec_map -- dictionary mapping words to their corresponding vectors.</span></span>
+<span id="cb25-10"><a href="#cb25-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-11"><a href="#cb25-11" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb25-12"><a href="#cb25-12" aria-hidden="true" tabindex="-1"></a><span class="co">        e_debiased -- neutralized word vector representation of the input "word"</span></span>
+<span id="cb25-13"><a href="#cb25-13" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb25-14"><a href="#cb25-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-15"><a href="#cb25-15" aria-hidden="true" tabindex="-1"></a>    e <span class="op">=</span> word_to_vec_map[word]</span>
+<span id="cb25-16"><a href="#cb25-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-17"><a href="#cb25-17" aria-hidden="true" tabindex="-1"></a>    e_biascomponent <span class="op">=</span> (np.dot(e, g) <span class="op">/</span> np.<span class="bu">sum</span>(g <span class="op">**</span> <span class="dv">2</span>)) <span class="op">*</span> g</span>
+<span id="cb25-18"><a href="#cb25-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-19"><a href="#cb25-19" aria-hidden="true" tabindex="-1"></a>    e_debiased <span class="op">=</span> e <span class="op">-</span> e_biascomponent</span>
+<span id="cb25-20"><a href="#cb25-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-21"><a href="#cb25-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> e_debiased</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="a05f40c7" class="cell" data-execution_count="17">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>word <span class="op">=</span> <span class="st">"receptionist"</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cosine similarity between "</span> <span class="op">+</span> word <span class="op">+</span> <span class="st">" and g, before neutralizing: "</span>,</span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>      cosine_similarity(word_to_vec_map[word], g))</span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a>e_debiased <span class="op">=</span> neutralize(word, g_unit, word_to_vec_map_unit_vectors)</span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cosine similarity between "</span> <span class="op">+</span> word <span class="op">+</span> <span class="st">" and g_unit, after neutralizing: "</span>,</span>
+<span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a>      cosine_similarity(e_debiased, g_unit))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>cosine similarity between receptionist and g, before neutralizing:  0.3307794175059374
+cosine similarity between receptionist and g_unit, after neutralizing:  2.274357847240278e-17</code></pre>
+</div>
+</div>
+<p>The second number is zero. It prints as something on the order of <span class="math inline">\(10^{-17}\)</span> rather than as <code>0.0</code> because subtracting the projection involves 50 floating point multiplications and additions, each carrying a rounding error of about <span class="math inline">\(10^{-16}\)</span> relative to 1. What survives is that residue. Geometrically the two vectors are exactly perpendicular.</p>
+<p>Only the gender component moved. The following figure plots each word by its coordinate along the unit gender axis, horizontally, and by the length of what remains after that coordinate is removed, vertically. Neutralization slides a word left or right onto the vertical axis without changing its height, which is the visual statement that the other 49 dimensions were untouched.</p>
+<p>One side effect is visible there. Since the vectors were normalized, every word starts on the unit circle, so removing a horizontal component leaves a vector shorter than 1. A neutralized <code>receptionist</code> has length 0.959 rather than 1. That shortening is the reason the equalization formulas in the next section carry a square root factor, which is there to put the length back.</p>
+<div id="a15cad9c" class="cell" data-execution_count="18">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-operations-on-word-vectors_files/figure-html/cell-19-output-1.svg" class="img-fluid figure-img" alt="A scatter plot with a horizontal axis for the gender component and a vertical axis for the length of the remaining 49 dimensions. Six words sit on a faint arc of the unit circle, receptionist and lipstick to the right, computer and warrior to the left, doctor and pilot near the center. Gray arrows point horizontally from each word to the vertical axis."></p>
+<figcaption>Six words before neutralization, with arrows to where they land after. The horizontal coordinate is the component along the unit gender axis, and the vertical one is the length of everything left over. Every word starts on the unit circle, because the vectors were normalized, so neutralizing a word both removes its gender component and shortens it.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="equalization-algorithm-for-gender-specific-words" class="level3">
+<h3 class="anchored" data-anchor-id="equalization-algorithm-for-gender-specific-words">Equalization Algorithm for Gender-Specific Words</h3>
+<p>Neutralization is the wrong tool for <code>grandmother</code> and <code>grandfather</code>, since stripping gender out of those words would destroy their meaning. What should be true of them is something weaker. They should differ from each other <em>only</em> by gender, and they should sit at equal distances from every word that has been neutralized.</p>
+<p>That is not automatic. Suppose <code>grandmother</code> sits closer to a neutralized <code>receptionist</code> than <code>grandfather</code> does. Then the embedding still carries the suggestion that receptionists are grandmothers rather than grandfathers, even though <code>receptionist</code> itself has no gender component left. Equalization fixes the pair rather than the neutral word.</p>
+<p>Given a pair <span class="math inline">\((w_1, w_2)\)</span> and a bias axis, the algorithm is seven steps of linear algebra.</p>
+<p><span class="math display">\[\mu = \frac{e_{w1} + e_{w2}}{2} \tag{4}\]</span></p>
+<p><span class="math display">\[\mu_{B} = \frac{\mu \cdot \text{bias\_axis}}{\|\text{bias\_axis}\|_2^2} \, \text{bias\_axis} \tag{5}\]</span></p>
+<p><span class="math display">\[\mu_{\perp} = \mu - \mu_{B} \tag{6}\]</span></p>
+<p><span class="math display">\[e_{w1B} = \frac{e_{w1} \cdot \text{bias\_axis}}{\|\text{bias\_axis}\|_2^2} \, \text{bias\_axis} \tag{7}\]</span></p>
+<p><span class="math display">\[e_{w2B} = \frac{e_{w2} \cdot \text{bias\_axis}}{\|\text{bias\_axis}\|_2^2} \, \text{bias\_axis} \tag{8}\]</span></p>
+<p><span class="math display">\[e_{w1B}^{\text{corrected}} = \sqrt{1 - \|\mu_{\perp}\|^2_2} \cdot \frac{e_{w1B} - \mu_B}{\|e_{w1B} - \mu_B\|_2} \tag{9}\]</span></p>
+<p><span class="math display">\[e_{w2B}^{\text{corrected}} = \sqrt{1 - \|\mu_{\perp}\|^2_2} \cdot \frac{e_{w2B} - \mu_B}{\|e_{w2B} - \mu_B\|_2} \tag{10}\]</span></p>
+<p><span class="math display">\[e_1 = e_{w1B}^{\text{corrected}} + \mu_{\perp} \tag{11}\]</span></p>
+<p><span class="math display">\[e_2 = e_{w2B}^{\text{corrected}} + \mu_{\perp} \tag{12}\]</span></p>
+<p>Underneath the notation the plan is short. Formulas (4) to (6) find the midpoint of the pair and split it into a gender part and a non-gender part. Formulas (11) and (12) then rebuild both words on top of the <em>same</em> non-gender part <span class="math inline">\(\mu_{\perp}\)</span>, which is what makes gender the only difference left between them. Formulas (7) to (10) take each word’s own gender component, keep its sign, and rescale both to the same magnitude, which is what puts the two words at equal distances from the neutral subspace. The square root factor is what sets that shared magnitude, and as the formulas are written it is chosen so that the rebuilt vectors come back out at length exactly 1, which is why the whole section works on the normalized copy of the map.</p>
+<div id="2c8416b7" class="cell" data-execution_count="19">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> equalize(pair, bias_axis, word_to_vec_map):</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Debias gender specific words by following the equalize method described above.</span></span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a><span class="co">    pair -- pair of strings of gender specific words to debias, e.g. ("actress", "actor")</span></span>
+<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a><span class="co">    bias_axis -- numpy-array of shape (50,), vector corresponding to the bias axis, e.g. gender</span></span>
+<span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a><span class="co">    word_to_vec_map -- dictionary mapping words to their corresponding vectors</span></span>
+<span id="cb28-9"><a href="#cb28-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-10"><a href="#cb28-10" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns</span></span>
+<span id="cb28-11"><a href="#cb28-11" aria-hidden="true" tabindex="-1"></a><span class="co">    e_1 -- word vector corresponding to the first word</span></span>
+<span id="cb28-12"><a href="#cb28-12" aria-hidden="true" tabindex="-1"></a><span class="co">    e_2 -- word vector corresponding to the second word</span></span>
+<span id="cb28-13"><a href="#cb28-13" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb28-14"><a href="#cb28-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-15"><a href="#cb28-15" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Step 1: select the two word vectors</span></span>
+<span id="cb28-16"><a href="#cb28-16" aria-hidden="true" tabindex="-1"></a>    w1, w2 <span class="op">=</span> pair</span>
+<span id="cb28-17"><a href="#cb28-17" aria-hidden="true" tabindex="-1"></a>    e_w1, e_w2 <span class="op">=</span> word_to_vec_map[w1], word_to_vec_map[w2]</span>
+<span id="cb28-18"><a href="#cb28-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-19"><a href="#cb28-19" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Step 2: the midpoint of the pair</span></span>
+<span id="cb28-20"><a href="#cb28-20" aria-hidden="true" tabindex="-1"></a>    mu <span class="op">=</span> (e_w1 <span class="op">+</span> e_w2) <span class="op">/</span> <span class="fl">2.0</span></span>
+<span id="cb28-21"><a href="#cb28-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-22"><a href="#cb28-22" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Step 3: split the midpoint into its bias part and its orthogonal part</span></span>
+<span id="cb28-23"><a href="#cb28-23" aria-hidden="true" tabindex="-1"></a>    mu_B <span class="op">=</span> (np.dot(mu, bias_axis) <span class="op">/</span> np.<span class="bu">sum</span>(bias_axis <span class="op">**</span> <span class="dv">2</span>)) <span class="op">*</span> bias_axis</span>
+<span id="cb28-24"><a href="#cb28-24" aria-hidden="true" tabindex="-1"></a>    mu_orth <span class="op">=</span> mu <span class="op">-</span> mu_B</span>
+<span id="cb28-25"><a href="#cb28-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-26"><a href="#cb28-26" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Step 4: the bias part of each word on its own</span></span>
+<span id="cb28-27"><a href="#cb28-27" aria-hidden="true" tabindex="-1"></a>    e_w1B <span class="op">=</span> (np.dot(e_w1, bias_axis) <span class="op">/</span> np.<span class="bu">sum</span>(bias_axis <span class="op">**</span> <span class="dv">2</span>)) <span class="op">*</span> bias_axis</span>
+<span id="cb28-28"><a href="#cb28-28" aria-hidden="true" tabindex="-1"></a>    e_w2B <span class="op">=</span> (np.dot(e_w2, bias_axis) <span class="op">/</span> np.<span class="bu">sum</span>(bias_axis <span class="op">**</span> <span class="dv">2</span>)) <span class="op">*</span> bias_axis</span>
+<span id="cb28-29"><a href="#cb28-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-30"><a href="#cb28-30" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Step 5: rescale both bias parts to the same magnitude, keeping their signs</span></span>
+<span id="cb28-31"><a href="#cb28-31" aria-hidden="true" tabindex="-1"></a>    corrected_e_w1B <span class="op">=</span> np.sqrt(np.<span class="bu">abs</span>(<span class="dv">1</span> <span class="op">-</span> np.<span class="bu">sum</span>(mu_orth <span class="op">**</span> <span class="dv">2</span>))) <span class="op">*</span> (e_w1B <span class="op">-</span> mu_B) <span class="op">/</span> np.linalg.norm(e_w1 <span class="op">-</span> mu_orth <span class="op">-</span> mu_B)</span>
+<span id="cb28-32"><a href="#cb28-32" aria-hidden="true" tabindex="-1"></a>    corrected_e_w2B <span class="op">=</span> np.sqrt(np.<span class="bu">abs</span>(<span class="dv">1</span> <span class="op">-</span> np.<span class="bu">sum</span>(mu_orth <span class="op">**</span> <span class="dv">2</span>))) <span class="op">*</span> (e_w2B <span class="op">-</span> mu_B) <span class="op">/</span> np.linalg.norm(e_w2 <span class="op">-</span> mu_orth <span class="op">-</span> mu_B)</span>
+<span id="cb28-33"><a href="#cb28-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-34"><a href="#cb28-34" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Step 6: rebuild both words on the shared orthogonal part</span></span>
+<span id="cb28-35"><a href="#cb28-35" aria-hidden="true" tabindex="-1"></a>    e1 <span class="op">=</span> corrected_e_w1B <span class="op">+</span> mu_orth</span>
+<span id="cb28-36"><a href="#cb28-36" aria-hidden="true" tabindex="-1"></a>    e2 <span class="op">=</span> corrected_e_w2B <span class="op">+</span> mu_orth</span>
+<span id="cb28-37"><a href="#cb28-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-38"><a href="#cb28-38" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> e1, e2</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Important</span>Printed Equations and Shipped Code Disagree
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Step 5 above is not formulas (9) and (10). The formulas divide by <span class="math inline">\(\|e_{w1B} - \mu_B\|_2\)</span>, the length of the word’s own gender component measured from the midpoint’s. The code divides by <span class="math inline">\(\|e_{w1} - \mu_{\perp} - \mu_B\|_2\)</span>, which is the distance from the whole word vector to the whole midpoint. The two agree only when a word’s non-gender part already equals <span class="math inline">\(\mu_{\perp}\)</span>, which is to say only when the pair already shares one. That is exactly the situation for the <code>man</code> and <code>woman</code> pair the assignment demonstrates, so the discrepancy is invisible there. It shows up on any pair whose non-gender parts differ, which is the ordinary case and includes <code>grandfather</code> and <code>grandmother</code>.</p>
+<p>For <code>grandfather</code> and <code>grandmother</code> the formulas call for a denominator of 0.1762 and the code uses 0.3078. Measured against <code>g_unit</code>, the formulas would return vectors of length exactly 1 with a cosine similarity of <span class="math inline">\(\mp 0.3304\)</span>, and the code returns length 0.9626 and <span class="math inline">\(\mp 0.1965\)</span>. Both versions produce the symmetry the algorithm exists to produce, and both put the pair at equal distances from a neutralized word, so the conclusions in this section hold either way. The numbers differ.</p>
+<p>The code is reproduced here exactly as the assignment ships it, because that is what produced the published outputs. It is worth knowing about the mismatch before reusing either version.</p>
+</div>
+</div>
+<p>The assignment demonstrates this on <code>man</code> and <code>woman</code>.</p>
+<div id="61dd1955" class="cell" data-execution_count="20">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cosine similarities before equalizing:"</span>)</span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cosine_similarity(word_to_vec_map[</span><span class="ch">\"</span><span class="st">man</span><span class="ch">\"</span><span class="st">], gender) = "</span>,</span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>      cosine_similarity(word_to_vec_map[<span class="st">"man"</span>], g))</span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cosine_similarity(word_to_vec_map[</span><span class="ch">\"</span><span class="st">woman</span><span class="ch">\"</span><span class="st">], gender) = "</span>,</span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>      cosine_similarity(word_to_vec_map[<span class="st">"woman"</span>], g))</span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>()</span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a>e1, e2 <span class="op">=</span> equalize((<span class="st">"man"</span>, <span class="st">"woman"</span>), g_unit, word_to_vec_map_unit_vectors)</span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cosine similarities after equalizing:"</span>)</span>
+<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cosine_similarity(e1, gender) = "</span>, cosine_similarity(e1, g_unit))</span>
+<span id="cb29-10"><a href="#cb29-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"cosine_similarity(e2, gender) = "</span>, cosine_similarity(e2, g_unit))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>cosine similarities before equalizing:
+cosine_similarity(word_to_vec_map["man"], gender) =  -0.1171109576533683
+cosine_similarity(word_to_vec_map["woman"], gender) =  0.3566661884627037
+
+cosine similarities after equalizing:
+cosine_similarity(e1, gender) =  -0.23871136142883698
+cosine_similarity(e2, gender) =  0.23871136142883703</code></pre>
+</div>
+</div>
+<p>The two numbers after equalizing are symmetric, -0.2387 and +0.2387, and the two before are not. It looks like a clean demonstration, and it is not quite one, for two reasons worth being explicit about.</p>
+<p>The “before” lines measure the raw vectors against the raw <code>g</code>, while the “after” lines measure normalized vectors against <code>g_unit</code>. Those are different measurements, so the four numbers are not directly comparable. Measure the same pair the same way on both sides and something else appears.</p>
+<div id="528f3899" class="cell" data-execution_count="21">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"man, in the unit map, before equalizing:  "</span>,</span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>      cosine_similarity(word_to_vec_map_unit_vectors[<span class="st">"man"</span>], g_unit))</span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"woman, in the unit map, before equalizing:"</span>,</span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a>      cosine_similarity(word_to_vec_map_unit_vectors[<span class="st">"woman"</span>], g_unit))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>man, in the unit map, before equalizing:   -0.23871136142883737
+woman, in the unit map, before equalizing: 0.23871136142883745</code></pre>
+</div>
+</div>
+<p>Already symmetric, and already the values that came out afterwards, to within floating point roundoff. Equalizing <code>man</code> and <code>woman</code> against <code>g_unit</code> does nothing at all, because <code>g_unit</code> was <em>defined</em> as <span class="math inline">\(e_{\text{woman}} - e_{\text{man}}\)</span> on those very vectors.</p>
+<p>The reason is one line of algebra. The midpoint is <span class="math inline">\(\mu = (e_{\text{man}} + e_{\text{woman}})/2\)</span>, so <span class="math inline">\(\mu \cdot g = (\|e_{\text{woman}}\|^2 - \|e_{\text{man}}\|^2)/2\)</span>, and both vectors were normalized to length 1, so that is zero. The midpoint therefore has no gender component at all, <span class="math inline">\(\mu_B\)</span> is the zero vector, and <span class="math inline">\(\mu_{\perp}\)</span> is the whole midpoint. Each word’s own gender component then works out to exactly <span class="math inline">\(\pm g/2\)</span>, already equal and opposite, and the rescaling factor works out to exactly 1. The function returns what it was given. The assignment’s example is the one pair in the vocabulary guaranteed to show no effect.</p>
+<p>A pair that does not already share a non-gender part does show an effect. <code>grandfather</code> and <code>grandmother</code> are the pair used as the example on the <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html#equalize-pairs">theory page</a>.</p>
+<div id="e66896c8" class="cell" data-execution_count="22">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>pair <span class="op">=</span> (<span class="st">"grandfather"</span>, <span class="st">"grandmother"</span>)</span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"before equalizing:"</span>)</span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> w <span class="kw">in</span> pair:</span>
+<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"  </span><span class="sc">{</span>w<span class="sc">:12s}</span><span class="ss">"</span>, cosine_similarity(word_to_vec_map_unit_vectors[w], g_unit))</span>
+<span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a>e1, e2 <span class="op">=</span> equalize(pair, g_unit, word_to_vec_map_unit_vectors)</span>
+<span id="cb33-8"><a href="#cb33-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-9"><a href="#cb33-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"after equalizing:"</span>)</span>
+<span id="cb33-10"><a href="#cb33-10" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> w, e <span class="kw">in</span> <span class="bu">zip</span>(pair, (e1, e2)):</span>
+<span id="cb33-11"><a href="#cb33-11" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"  </span><span class="sc">{</span>w<span class="sc">:12s}</span><span class="ss">"</span>, cosine_similarity(e, g_unit))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>before equalizing:
+  grandfather  -0.055935315880308666
+  grandmother  0.29637118120697725
+after equalizing:
+  grandfather  -0.19646291017307452
+  grandmother  0.19646291017307468</code></pre>
+</div>
+</div>
+<p>Before, <code>grandmother</code> leans female five times as strongly as <code>grandfather</code> leans male. After, the two lean by equal and opposite amounts. Neither has been made gender-neutral, which is the point. They have been made gender-symmetric.</p>
+<p>The claim that motivated all this was about distances to neutralized words, so it is worth measuring that directly rather than trusting the geometry.</p>
+<div id="f147c4fb" class="cell" data-execution_count="23">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>receptionist_debiased <span class="op">=</span> neutralize(<span class="st">"receptionist"</span>, g_unit, word_to_vec_map_unit_vectors)</span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> dist(u, v):</span>
+<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> np.linalg.norm(u <span class="op">-</span> v)</span>
+<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-6"><a href="#cb35-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"distance to the neutralized 'receptionist'"</span>)</span>
+<span id="cb35-7"><a href="#cb35-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"  before:  grandfather </span><span class="sc">%.4f</span><span class="st">   grandmother </span><span class="sc">%.4f</span><span class="st">"</span></span>
+<span id="cb35-8"><a href="#cb35-8" aria-hidden="true" tabindex="-1"></a>      <span class="op">%</span> (dist(word_to_vec_map_unit_vectors[<span class="st">"grandfather"</span>], receptionist_debiased),</span>
+<span id="cb35-9"><a href="#cb35-9" aria-hidden="true" tabindex="-1"></a>         dist(word_to_vec_map_unit_vectors[<span class="st">"grandmother"</span>], receptionist_debiased)))</span>
+<span id="cb35-10"><a href="#cb35-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"  after:   grandfather </span><span class="sc">%.4f</span><span class="st">   grandmother </span><span class="sc">%.4f</span><span class="st">"</span></span>
+<span id="cb35-11"><a href="#cb35-11" aria-hidden="true" tabindex="-1"></a>      <span class="op">%</span> (dist(e1, receptionist_debiased), dist(e2, receptionist_debiased)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>distance to the neutralized 'receptionist'
+  before:  grandfather 1.1824   grandmother 1.0328
+  after:   grandfather 1.0766   grandmother 1.0766</code></pre>
+</div>
+</div>
+<p>Before equalization the neutralized <code>receptionist</code> is measurably closer to <code>grandmother</code> than to <code>grandfather</code>, even though <code>receptionist</code> itself has had its gender component removed. That residue is exactly the stereotype the paper is chasing. After equalization the two distances agree to four decimal places.</p>
+<div id="3a937579" class="cell" data-execution_count="24">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-operations-on-word-vectors_files/figure-html/cell-25-output-1.svg" class="img-fluid figure-img" alt="A scatter plot with a horizontal axis for the gender component and a vertical axis for the length of the remaining 49 dimensions. Open circles mark grandfather slightly left of center and grandmother well to the right, both on a faint unit circle at different heights. Filled circles mark both after equalization, symmetric about the vertical axis and at the same height, just inside the circle, with dashed arrows connecting each word to its new position. A green marker shows the neutralized receptionist on the vertical axis."></p>
+<figcaption>The grandfather and grandmother pair before and after equalization, on the same axes as the previous figure. Equalization moves both words to equal and opposite coordinates along the gender axis and rebuilds them on a shared remainder, so their heights match as well. Both land just inside the unit circle, which comes from the denominator the shipped code uses in step 5 and not from formulas (9) and (10) as printed.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="limits-of-this-procedure" class="level3">
+<h3 class="anchored" data-anchor-id="limits-of-this-procedure">Limits of This Procedure</h3>
+<p>These algorithms reduce bias. They do not remove it.</p>
+<p>The bias direction here was estimated from a single pair of words, <code>woman</code> and <code>man</code>. Averaging over <span class="math inline">\(e_{\text{woman}} - e_{\text{man}}\)</span>, <span class="math inline">\(e_{\text{mother}} - e_{\text{father}}\)</span>, <span class="math inline">\(e_{\text{girl}} - e_{\text{boy}}\)</span> and more would give a better estimate of the gender direction, and the paper uses singular value decomposition over many such pairs instead.</p>
+<p>Deciding which words to neutralize is its own problem. The paper trains a classifier to separate definitional words from the rest, and the list of pairs to equalize is largely hand-picked.</p>
+<p>Most importantly, projecting out one direction only removes the bias that happened to lie along that direction. Gender information distributed across a subspace, or encoded in which words neighbor which, survives the projection untouched. The measurement afterwards is also easy to fool, since a <code>receptionist</code> with a cosine similarity of <span class="math inline">\(10^{-17}\)</span> to <span class="math inline">\(g\)</span> can still have <code>she</code> and <code>secretary</code> among its nearest neighbors. This is an active research area rather than a solved problem, and a debiased embedding is better described as one specific measurable bias having been removed.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What You Should Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>A bias direction is estimated as a difference of embeddings, in the same way an analogy relationship is.</li>
+<li>Neutralizing a word means subtracting its projection onto that direction, which leaves the other 49 dimensions untouched.</li>
+<li>Equalizing a pair means rebuilding both words on a shared non-bias part with equal and opposite bias parts, so the two end up as mirror images across the non-bias subspace rather than about the bias axis itself.</li>
+<li>Definitional words such as <code>grandmother</code> are equalized, not neutralized, since gender is part of what they mean.</li>
+<li>Both operations are applied to unit-normalized vectors, because the paper’s arithmetic assumes an L2 norm of 1.</li>
+<li>Removing one measurable direction is not the same as removing bias.</li>
+</ul>
+</div>
+</div>
+</section>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<div id="opword-review-q4">
+<p><strong>1. Why is <code>receptionist</code> neutralized while <code>grandmother</code> is equalized instead?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="opword-review-q4">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because gender is part of the definition of <code>grandmother</code> and is not part of the definition of <code>receptionist</code>. A grandmother is female by definition, so an embedding that placed <code>grandmother</code> at zero on the gender axis would be a worse model of English. A receptionist has no gender by definition, so the component it carries is a statistical residue of who the training text described as receptionists, and removing it costs nothing true. Neutralization removes the component. Equalization keeps it and only makes it symmetric with the partner word, so that neither member of the pair sits closer to the neutralized words than the other.</p>
+</div>
+</details>
+<hr>
+<div id="opword-review-q5">
+<p><strong>1. After neutralizing, <code>cosine_similarity(e_debiased, g_unit)</code> prints roughly <span class="math inline">\(2 \times 10^{-17}\)</span> rather than exactly zero. Is this a bug?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="opword-review-q5">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>No.&nbsp;The vectors are exactly perpendicular in exact arithmetic, and the residue is floating point rounding. A <code>float64</code> carries about 16 significant decimal digits, so each of the 50 multiplications and additions in the dot product introduces a relative error near <span class="math inline">\(10^{-16}\)</span>. A result of <span class="math inline">\(10^{-17}\)</span> against operands of order 1 is what a true zero looks like after that arithmetic. The original notebook prints <span class="math inline">\(3.57 \times 10^{-17}\)</span> and this page prints <span class="math inline">\(2.27 \times 10^{-17}\)</span>. Both are zero. The residue differs because the dot product is accumulated in a different order by the NumPy build each one ran on.</p>
+</div>
+</details>
+<hr>
+<div id="opword-review-q6">
+<p><strong>1. Equalizing the pair <code>("man", "woman")</code> against <code>g_unit</code> leaves both vectors unchanged. Why?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="opword-review-q6">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because <code>g_unit</code> was built from that pair, as <span class="math inline">\(e_{\text{woman}} - e_{\text{man}}\)</span> on the unit-normalized vectors. Both vectors have length 1, so the midpoint satisfies <span class="math inline">\(\mu \cdot g = (\|e_{\text{woman}}\|^2 - \|e_{\text{man}}\|^2)/2 = 0\)</span>. The midpoint lies entirely in the non-gender subspace, which means the pair already shares the <span class="math inline">\(\mu_{\perp}\)</span> that equalization would give it, and each word’s gender component is already <span class="math inline">\(\pm g/2\)</span>, equal and opposite. Equalization has nothing left to do, and the printed cosine similarities agree before and after to fourteen decimal places, which is floating point equality rather than a coincidence. The assignment obscures this by measuring the “before” case on the raw vectors and the “after” case on the normalized ones, which makes an unchanged pair look like it moved. A pair that does not already share a non-gender part, such as <code>grandfather</code> and <code>grandmother</code>, does move.</p>
+</div>
+</details>
+<hr>
+<div id="opword-review-q7">
+<p><strong>1. <code>receptionist</code> has been neutralized, so its similarity with <span class="math inline">\(g\)</span> is zero. Does that mean the embedding no longer associates it with women?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="opword-review-q7">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>No.&nbsp;It means the embedding no longer associates it with women <em>along the one direction that was measured and removed</em>. Gender information in a 50-dimensional space is not confined to a single axis, and it also lives in the relative positions of words rather than in any coordinate. A vector orthogonal to <span class="math inline">\(g\)</span> can still have <code>secretary</code>, <code>nurse</code> and <code>she</code> as its nearest neighbors, and every downstream model reads those neighborhoods rather than reading the cosine with <span class="math inline">\(g\)</span>. That is why the paper’s own evaluation goes well beyond checking the projection, and why the honest description of this procedure is that one measurable form of bias was removed, not that the embedding was made fair.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li>Bolukbasi, T., Chang, K.-W., Zou, J., Saligrama, V., &amp; Kalai, A. (2016). <em>Man is to computer programmer as woman is to homemaker? Debiasing word embeddings</em>. arXiv. <a href="https://doi.org/10.48550/arXiv.1607.06520" class="uri">https://doi.org/10.48550/arXiv.1607.06520</a></li>
+<li>Pennington, J., Socher, R., &amp; Manning, C. (2014). GloVe: Global vectors for word representation. In <em>Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP)</em> (pp.&nbsp;1532-1543). Association for Computational Linguistics. <a href="https://doi.org/10.3115/v1/D14-1162" class="uri">https://doi.org/10.3115/v1/D14-1162</a></li>
+</ul>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 89%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">89% completed (1340 of 1494 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html" class="pagination-link" aria-label="Sentiment Classification and Debiasing Word Embeddings">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Sentiment Classification and Debiasing Word Embeddings</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../../ai/deep-learning/sequence-models/lab-emojify.html" class="pagination-link" aria-label="Emojify">
+        <span class="nav-page-text">Emojify</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

@@ -1,0 +1,2217 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-08-26">
+<meta name="description" content="Build two emoji classifiers on 132 sentences, a softmax layer over averaged GloVe vectors and a two-layer LSTM with a frozen pretrained embedding.">
+
+<title>Lab: Emojify – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js" integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2" crossorigin="anonymous"></script><script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/sequence-models/lab-operations-on-word-vectors.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-622ec7ce41a9ca5e1e463d77623c85b1.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script src="https://cdn.jsdelivr.net/npm/requirejs@2.3.6/require.min.js" integrity="sha384-c9c+LnTbwQ3aujuU7ULEPVvgLs+Fn6fJUvIGTsuu1ZcCf11fiEubah0ttpca4ntM sha384-6V1/AdqZRWk1KAlWbKBlGhN7VG4iE/yAZcO6NZPMF8od0vukrvr0tg4qY6NSrItx" crossorigin="anonymous"></script>
+
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Lab: Emojify – H’s Notes">
+<meta property="og:description" content="Build two emoji classifiers on 132 sentences, a softmax layer over averaged GloVe vectors and a two-layer LSTM with a frozen pretrained embedding.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/lab-emojify_files/figure-html/cell-7-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta property="og:image:alt" content="A grouped horizontal bar chart with five rows, one per emoji class. Each row has a training bar and a test bar. The smile class is the largest in both splits. Fork is the smallest in training, while heart and fork tie for smallest in the test split.">
+<meta name="twitter:title" content="Lab: Emojify – H’s Notes">
+<meta name="twitter:description" content="Build two emoji classifiers on 132 sentences, a softmax layer over averaged GloVe vectors and a two-layer LSTM with a frozen pretrained embedding.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/lab-emojify_files/figure-html/cell-7-output-1.svg">
+<meta name="twitter:image:alt" content="A grouped horizontal bar chart with five rows, one per emoji class. Each row has a training bar and a test bar. The smile class is the largest in both splits. Fork is the smallest in training, while heart and fork tie for smallest in the test split.">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../infrastructure/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Classroom</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/randomizer.html">
+ <span class="dropdown-text">Randomizer</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/sequence-models/lab-emojify.html">Emojify</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence Models</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/recurrent-neural-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Recurrent Neural Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/rnn-architectures-and-language-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RNN Architectures and Language Models</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vanishing Gradients, GRUs, and LSTMs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/bidirectional-and-deep-rnns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bidirectional and Deep RNNs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-building-your-recurrent-neural-network.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Building Your Recurrent Neural Network Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-character-level-language-model.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Character Level Language Model</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-improvise-a-jazz-solo.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Improvise a Jazz Solo with an LSTM Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/learning-word-embeddings-word2vec-and-glove.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning Word Embeddings with Word2vec and GloVe</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sentiment Classification and Debiasing Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-operations-on-word-vectors.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Operations on Word Vectors</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-emojify.html" class="sidebar-item-text sidebar-link active"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Emojify</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#packages" id="toc-packages" class="nav-link active" data-scroll-target="#packages">Packages</a></li>
+  <li><a href="#dataset-emojiset" id="toc-dataset-emojiset" class="nav-link" data-scroll-target="#dataset-emojiset">Dataset EMOJISET</a></li>
+  <li><a href="#baseline-model-emojifier-v1" id="toc-baseline-model-emojifier-v1" class="nav-link" data-scroll-target="#baseline-model-emojifier-v1">Baseline Model, Emojifier-V1</a>
+  <ul class="collapse">
+  <li><a href="#loading-the-word-vectors" id="toc-loading-the-word-vectors" class="nav-link" data-scroll-target="#loading-the-word-vectors">Loading the Word Vectors</a></li>
+  <li><a href="#one-hot-encoding-the-labels" id="toc-one-hot-encoding-the-labels" class="nav-link" data-scroll-target="#one-hot-encoding-the-labels">One-Hot Encoding the Labels</a></li>
+  <li><a href="#averaging-a-sentence" id="toc-averaging-a-sentence" class="nav-link" data-scroll-target="#averaging-a-sentence">Averaging a Sentence</a></li>
+  <li><a href="#training-emojifier-v1" id="toc-training-emojifier-v1" class="nav-link" data-scroll-target="#training-emojifier-v1">Training Emojifier-V1</a></li>
+  <li><a href="#optimizer-is-unstable-and-it-matters" id="toc-optimizer-is-unstable-and-it-matters" class="nav-link" data-scroll-target="#optimizer-is-unstable-and-it-matters">Optimizer Is Unstable, and It Matters</a></li>
+  <li><a href="#examining-test-set-performance" id="toc-examining-test-set-performance" class="nav-link" data-scroll-target="#examining-test-set-performance">Examining Test Set Performance</a></li>
+  <li><a href="#confusion-matrix" id="toc-confusion-matrix" class="nav-link" data-scroll-target="#confusion-matrix">Confusion Matrix</a></li>
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#emojifier-v2-using-lstms-in-keras" id="toc-emojifier-v2-using-lstms-in-keras" class="nav-link" data-scroll-target="#emojifier-v2-using-lstms-in-keras">Emojifier-V2, Using LSTMs in Keras</a>
+  <ul class="collapse">
+  <li><a href="#keras-and-mini-batching" id="toc-keras-and-mini-batching" class="nav-link" data-scroll-target="#keras-and-mini-batching">Keras and Mini-Batching</a></li>
+  <li><a href="#embedding-layer" id="toc-embedding-layer" class="nav-link" data-scroll-target="#embedding-layer">Embedding Layer</a></li>
+  <li><a href="#building-emojifier-v2" id="toc-building-emojifier-v2" class="nav-link" data-scroll-target="#building-emojifier-v2">Building Emojifier-V2</a></li>
+  <li><a href="#training-emojifier-v2" id="toc-training-emojifier-v2" class="nav-link" data-scroll-target="#training-emojifier-v2">Training Emojifier-V2</a></li>
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#acknowledgments" id="toc-acknowledgments" class="nav-link" data-scroll-target="#acknowledgments">Acknowledgments</a></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../breadcrumb-path.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title"><span class="bi bi-flask lab-title-icon" aria-hidden="true"></span><span class="visually-hidden">Lab:</span> Emojify</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">sequence-models</div>
+    <div class="quarto-category">nlp</div>
+    <div class="quarto-category">word-embeddings</div>
+    <div class="quarto-category">glove</div>
+    <div class="quarto-category">lstm</div>
+    <div class="quarto-category">keras</div>
+    <div class="quarto-category">embedding-layer</div>
+    <div class="quarto-category">sentiment-classification</div>
+    <div class="quarto-category">lab</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Build two emoji classifiers on 132 sentences, a softmax layer over averaged GloVe vectors and a two-layer LSTM with a frozen pretrained embedding.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 26, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~154 min read <span class="rt-info" style="cursor:help;opacity:0.6;font-size:0.85em;position:relative;">ⓘ<span class="rt-tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~5,400 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #333;margin-right:3px;vertical-align:middle;"></span></p></div>';
+    meta.appendChild(diffDiv);
+    var dateEl = meta.querySelector(".date");
+    if (dateEl) {
+      var pw = dateEl.parentNode && dateEl.parentNode.parentNode;
+      if (pw) pw.style.order = "2";    }
+    var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dateCells = ["date", "date-modified"];
+    dateCells.forEach(function (cls) {
+      var el = meta.querySelector("." + cls);
+      if (!el || el.dataset.weekdayified) return;
+      var text = el.textContent.trim();
+      var d = new Date(text);
+      if (!isNaN(d.getTime())) {
+        el.textContent = days[d.getDay()] + ", " + text;
+      }
+      el.dataset.weekdayified = "1";
+    });
+  }
+});
+</script>
+
+<p><a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html#sentiment-classification">Sentiment Classification</a> argued that a small labeled dataset is enough when the words themselves arrive pretrained, and it sketched two models. This lab builds both of them and measures the gap.</p>
+<p>The task is to pick an emoji for a sentence. Give the model “Let us go see the baseball game tonight” and it should answer ⚾. There are five emoji to choose from and 132 training sentences, which is a tiny dataset by any standard. It works anyway, because the <a href="../../../ai/deep-learning/sequence-models/lab-operations-on-word-vectors.html">GloVe vectors</a> of <a href="https://doi.org/10.3115/v1/D14-1162">Pennington et al.&nbsp;(2014)</a>, loaded in the previous lab, already know that <em>treasure</em> is close to <em>love</em>, and that knowledge came from 6 billion tokens rather than from these 132 sentences.</p>
+<p>By the end of this lab you will be able to</p>
+<ul>
+<li>create an embedding layer in Keras initialized with pretrained word vectors,</li>
+<li>build a sentiment classifier from word embeddings,</li>
+<li>explain why padding is needed to train a sequence model in mini-batches,</li>
+<li>build and train a more capable classifier using an LSTM,</li>
+<li>state what averaging word vectors throws away, and see it cost the model an example.</li>
+</ul>
+<p>Two models get built. <strong>Emojifier-V1</strong> averages the word vectors of a sentence and pushes the average through a single softmax layer, written in NumPy with the gradients by hand. <strong>Emojifier-V2</strong> feeds the word vectors into a two-layer LSTM in Keras, so that word order survives.</p>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Important</span>Updated From the Original Assignment
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The original assignment was written against TensorFlow 2.3, Keras 2, NumPy 1.x and the <code>emoji</code> package. Five changes were needed to run it on TensorFlow 2.21, Keras 3.15 and NumPy 2.4, made on 2026-08-26.</p>
+<ul>
+<li><strong>The <code>emoji</code> package is gone.</strong> <code>emo_utils.label_to_emoji</code> called <code>emoji.emojize(":baseball:", use_aliases=True)</code>, and the <code>use_aliases</code> argument was removed in <code>emoji</code> 2.0. The whole dependency existed to convert five fixed alias strings into five characters, so the five characters are written out directly here instead. They were read off the original notebook’s own saved output, so they are the same glyphs the assignment produced.</li>
+<li><strong><code>int()</code> on a one-element array is an error in NumPy 2.</strong> <code>emo_utils.print_predictions</code> calls <code>label_to_emoji(int(pred[i]))</code> where <code>pred[i]</code> has shape <code>(1,)</code>. NumPy 1.25 deprecated that conversion and NumPy 2.0 raises <code>TypeError: only 0-dimensional arrays can be converted to Python scalars</code>. The indexing is explicit here.</li>
+<li><strong>The grader is stripped.</strong> <code>test_utils.py</code> and its <code>comparator</code> and <code>summary</code> helpers are gone, along with the five <code>*_test</code> functions and the <code>assert type(cost) == np.float64</code> inside <code>model</code>. The grader’s import of <code>tensorflow.python.keras.engine.functional</code> would fail on Keras 3 in any case, since that module no longer exists, and <code>summary</code> reads <code>layer.output_shape</code>, which Keras 3 replaced with <code>layer.output.shape</code>.</li>
+<li><strong>The dataset is 132 training sentences, not 127.</strong> The notebook says 127 four times across three markdown cells, but <code>data/train_emoji.csv</code> as shipped has 132 rows, and the assignment’s own saved output confirms it. A training accuracy of 0.5454 is 72 out of 132, and Keras reports 5 mini-batches of 32. The figure 127 is not used anywhere in the code, so nothing downstream changes.</li>
+<li><strong>Emojifier-V1’s intermediate costs do not reproduce, and its test accuracy differs.</strong> This one needs an explanation of its own, and it gets one in the section where it happens. The short version is that the assignment’s optimizer is unstable by construction, so nudging the initial weights by the smallest amount a <code>float64</code> can represent changes the cost printed at epoch 100 while leaving epoch 0 unchanged to four decimal places.</li>
+</ul>
+<p>Every deterministic output below matches the original exactly. That covers the averaged vector for a sample sentence, the vocabulary indices, the padded index matrix, the embedding weights, and all three parameter counts in the V2 model summary. The epoch 0 training cost agrees to fifteen significant digits rather than exactly, for the reason given in the section where it is printed. The V1 costs after epoch 0 and everything Keras trains are not deterministic across environments, and both are discussed where they occur. The only other edit to reproduced code is the <code>read_csv</code> signature, which loses a default argument pointing at a path that does not exist on this site.</p>
+</div>
+</div>
+<section id="packages" class="level2">
+<h2 class="anchored" data-anchor-id="packages">Packages</h2>
+<p>NumPy and Keras, plus pandas for the confusion matrix.</p>
+<div id="f1f2ee39" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>config InlineBackend.figure_formats <span class="op">=</span> [<span class="st">'svg'</span>]</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>os.environ[<span class="st">"TF_CPP_MIN_LOG_LEVEL"</span>] <span class="op">=</span> <span class="st">"3"</span>      <span class="co"># quieten TensorFlow's startup logging</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> csv</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tensorflow <span class="im">as</span> tf</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> keras</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tensorflow.keras.models <span class="im">import</span> Model</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tensorflow.keras.layers <span class="im">import</span> Dense, Input, Dropout, LSTM, Activation, Embedding</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>DATA <span class="op">=</span> <span class="st">"../../../media/deep-learning/emojify/"</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="co"># The same GloVe file the previous lab used, byte for byte. It is not duplicated here.</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>GLOVE <span class="op">=</span> <span class="st">"../../../media/deep-learning/operations-on-word-vectors/data/glove.6B.50d.txt"</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"TensorFlow"</span>, tf.__version__, <span class="st">"| Keras"</span>, keras.__version__, <span class="st">"| NumPy"</span>, np.__version__)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>TensorFlow 2.21.0 | Keras 3.15.0 | NumPy 2.4.4</code></pre>
+</div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Lab Files Download
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The sentences are tiny and hosted here. The word vectors are the same 171 MB file as the previous lab, so they live on Google Drive.</p>
+<ul>
+<li><a href="../../../media/deep-learning/emojify/data/train_emoji.csv">train_emoji.csv</a> (4 KB), 132 labeled training sentences.</li>
+<li><a href="../../../media/deep-learning/emojify/data/tesss.csv">tesss.csv</a> (1 KB), 56 labeled test sentences. The odd name is the assignment’s.</li>
+<li><a href="../../../media/deep-learning/emojify/data/emojify_data.csv">emojify_data.csv</a> (5 KB), a 183-row companion set the lab never reads. It is not the pool the two splits were drawn from, since 5 training rows and 18 test rows do not appear in it and 132 plus 56 exceeds 183 in any case.</li>
+<li><a href="../../../media/deep-learning/emojify/emo_utils.py">emo_utils.py</a> (4 KB), the assignment’s helper module. This page does not import it, for the reasons in the callout above, but it is here for comparison.</li>
+<li><a href="https://drive.google.com/file/d/1iGFk5jM8LqnWZLKvtx8j-XBFTMEiU1lL/view?usp=sharing">glove.6B.50d.txt</a> (171 MB), the 50-dimensional GloVe vectors, identical to the file used in <a href="../../../ai/deep-learning/sequence-models/lab-operations-on-word-vectors.html">Operations on Word Vectors</a>.</li>
+</ul>
+<p>Five more data files ship with the assignment and are read by nothing in the notebook. <a href="../../../media/deep-learning/emojify/data/test_emoji.csv">test_emoji.csv</a>, <a href="../../../media/deep-learning/emojify/data/tes.csv">tes.csv</a> and <a href="../../../media/deep-learning/emojify/data/tess.csv">tess.csv</a> are near-duplicate 56-row test splits that differ from <code>tesss.csv</code> and from each other, and <a href="../../../media/deep-learning/emojify/data/testing.csv">testing.csv</a> is a tab-separated variant of the same. <a href="../../../media/deep-learning/emojify/data/fake_glove.6B.50d.txt">fake_glove.6B.50d.txt</a> holds 15 two-dimensional toy vectors on a compass grid. Nothing in the notebook or its helpers reads it, and its entries overlap the map the tests build in Python, which this page reproduces inline as <code>toy_map</code> with 13 of the 15. All five are mirrored for completeness. <code>test_utils.py</code> is grader scaffolding and is deliberately not hosted.</p>
+</div>
+</div>
+</section>
+<section id="dataset-emojiset" class="level2">
+<h2 class="anchored" data-anchor-id="dataset-emojiset">Dataset EMOJISET</h2>
+<p>EMOJISET is a five-class classification problem. Each example is a sentence and an integer label from 0 to 4, and each label stands for one emoji.</p>
+<p>The label-to-emoji mapping is where the original code needed its first repair. The assignment stored four of the five as alias strings such as <code>:baseball:</code> and called the <code>emoji</code> package to expand them, which is a dependency for five constants and no longer works as written. The characters go in directly.</p>
+<div id="acd246f1" class="cell" data-execution_count="2">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>EMOJI <span class="op">=</span> {<span class="dv">0</span>: <span class="st">"❤️"</span>,     <span class="co"># red heart, exactly the literal the assignment used for class 0</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>         <span class="dv">1</span>: <span class="st">"⚾"</span>,           <span class="co"># baseball</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>         <span class="dv">2</span>: <span class="st">"</span><span class="ch">\U0001f604</span><span class="st">"</span>,       <span class="co"># smiling face with smiling eyes</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>         <span class="dv">3</span>: <span class="st">"</span><span class="ch">\U0001f61e</span><span class="st">"</span>,       <span class="co"># disappointed face</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>         <span class="dv">4</span>: <span class="st">"</span><span class="ch">\U0001f374</span><span class="st">"</span>}       <span class="co"># fork and knife</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> label_to_emoji(label):</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Convert a label (int or string) into the emoji character it stands for."""</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> EMOJI[<span class="bu">int</span>(label)]</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">" "</span>.join(<span class="ss">f"</span><span class="sc">{</span>k<span class="sc">}</span><span class="ss"> = </span><span class="sc">{</span>v<span class="sc">}</span><span class="ss">"</span> <span class="cf">for</span> k, v <span class="kw">in</span> EMOJI.items()))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>0 = ❤️ 1 = ⚾ 2 = 😄 3 = 😞 4 = 🍴</code></pre>
+</div>
+</div>
+<p>Reading the data is two lines of <code>csv</code>. Column 0 is the sentence and column 1 is the label. The assignment’s own <code>read_csv</code> is reproduced below, with the shape of what it returns made visible. Its default argument of <code>'data/emojify_data.csv'</code> is dropped, because that path is relative to the notebook and means nothing here, so the filename is always passed explicitly.</p>
+<div id="fb9a90d6" class="cell" data-execution_count="3">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> read_csv(filename):</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    phrase <span class="op">=</span> []</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    emoji <span class="op">=</span> []</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> <span class="bu">open</span>(filename) <span class="im">as</span> csvDataFile:</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>        csvReader <span class="op">=</span> csv.reader(csvDataFile)</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> row <span class="kw">in</span> csvReader:</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>            phrase.append(row[<span class="dv">0</span>])</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>            emoji.append(row[<span class="dv">1</span>])</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    X <span class="op">=</span> np.asarray(phrase)</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    Y <span class="op">=</span> np.asarray(emoji, dtype<span class="op">=</span><span class="bu">int</span>)</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> X, Y</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>X_train, Y_train <span class="op">=</span> read_csv(DATA <span class="op">+</span> <span class="st">"data/train_emoji.csv"</span>)</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>X_test, Y_test <span class="op">=</span> read_csv(DATA <span class="op">+</span> <span class="st">"data/tesss.csv"</span>)</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"training sentences:"</span>, X_train.shape[<span class="dv">0</span>])</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"test sentences:    "</span>, X_test.shape[<span class="dv">0</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>training sentences: 132
+test sentences:     56</code></pre>
+</div>
+</div>
+<p>132 and 56. The notebook’s prose says 127 training sentences, but the file it ships has 132 rows and every number the assignment printed is consistent with 132. Nothing in the code reads the figure, so the discrepancy is cosmetic.</p>
+<p>The longest sentence sets the length everything will be padded to later.</p>
+<div id="35d266c9" class="cell" data-execution_count="4">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>maxLen <span class="op">=</span> <span class="bu">len</span>(<span class="bu">max</span>(X_train, key<span class="op">=</span><span class="kw">lambda</span> x: <span class="bu">len</span>(x.split())).split())</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"longest training sentence:"</span>, maxLen, <span class="st">"words"</span>)</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"that sentence is:"</span>, <span class="bu">max</span>(X_train, key<span class="op">=</span><span class="kw">lambda</span> x: <span class="bu">len</span>(x.split())))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>longest training sentence: 10 words
+that sentence is: I am so excited to see you after so long</code></pre>
+</div>
+</div>
+<p><code>max</code> takes a <code>key</code> argument that says what to compare on. Here the key is the word count, so <code>max</code> returns the sentence with the most words rather than the alphabetically last one, and wrapping the result in <code>len(... .split())</code> turns that sentence back into its length.</p>
+<p>Here are the first ten training examples with their emoji.</p>
+<div id="d0796b14" class="cell" data-execution_count="5">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> idx <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">10</span>):</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(X_train[idx], label_to_emoji(Y_train[idx]))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>never talk to me again 😞
+I am proud of your achievements 😄
+It is the worst day in my life 😞
+Miss you so much ❤️
+food is life 🍴
+I love you mum ❤️
+Stop saying bullshit 😞
+congratulations on your acceptance 😄
+The assignment is too long  😞
+I want to go play ⚾</code></pre>
+</div>
+</div>
+<div id="00cb140e" class="cell" data-execution_count="6">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-emojify_files/figure-html/cell-7-output-1.svg" class="img-fluid figure-img" alt="A grouped horizontal bar chart with five rows, one per emoji class. Each row has a training bar and a test bar. The smile class is the largest in both splits. Fork is the smallest in training, while heart and fork tie for smallest in the test split."></p>
+<figcaption>Class balance in EMOJISET. The five classes are unevenly represented, and the training and test splits do not carry the same proportions, which matters when reading a single accuracy number.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The classes are not balanced. <code>smile</code> has 18 of the 56 test sentences and <code>fork</code> has 7, so a model that only learned to say <code>smile</code> would already score 32 percent. Random guessing across five classes scores 20 percent. Both are the floor to judge the numbers below against.</p>
+</section>
+<section id="baseline-model-emojifier-v1" class="level2">
+<h2 class="anchored" data-anchor-id="baseline-model-emojifier-v1">Baseline Model, Emojifier-V1</h2>
+<p>The first model is the <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html#simple-averaging-model">simple averaging model</a> from the theory page. Take the sentence, look up the GloVe vector for every word, average them into one 50-dimensional vector, and push that through a softmax layer with five outputs.</p>
+<div id="dee096dc" class="cell" data-execution_count="7">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-emojify_files/figure-html/cell-8-output-1.svg" class="img-fluid figure-img" alt="A left to right diagram. Four word boxes labeled I, love, you and mum feed into four gray vector boxes, which converge on a single averaging box, which feeds a softmax layer drawn as five circles, which feeds an argmax box producing a heart emoji."></p>
+<figcaption>Emojifier-V1. Every word in the sentence is replaced by its 50-dimensional GloVe vector, the vectors are averaged into one, and a single softmax layer turns that average into five class probabilities. Nothing in the path is sensitive to the order of the words.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<section id="loading-the-word-vectors" class="level3">
+<h3 class="anchored" data-anchor-id="loading-the-word-vectors">Loading the Word Vectors</h3>
+<p>The loader is the same one from the previous lab with two dictionaries added. Sorting the vocabulary and numbering it from 1 gives <code>word_to_index</code>, which Emojifier-V2 will need because a Keras embedding layer is indexed by integer, not by string. Index 0 is deliberately left unused, so that it can mean “padding” later.</p>
+<div id="8eb423b0" class="cell" data-execution_count="8">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> read_glove_vecs(glove_file):</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> <span class="bu">open</span>(glove_file, <span class="st">'r'</span>) <span class="im">as</span> f:</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>        words <span class="op">=</span> <span class="bu">set</span>()</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>        word_to_vec_map <span class="op">=</span> {}</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> line <span class="kw">in</span> f:</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>            line <span class="op">=</span> line.strip().split()</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>            curr_word <span class="op">=</span> line[<span class="dv">0</span>]</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>            words.add(curr_word)</span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>            word_to_vec_map[curr_word] <span class="op">=</span> np.array(line[<span class="dv">1</span>:], dtype<span class="op">=</span>np.float64)</span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>        i <span class="op">=</span> <span class="dv">1</span>                          <span class="co"># index 0 is reserved for padding</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>        words_to_index <span class="op">=</span> {}</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>        index_to_words <span class="op">=</span> {}</span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> w <span class="kw">in</span> <span class="bu">sorted</span>(words):</span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>            words_to_index[w] <span class="op">=</span> i</span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>            index_to_words[i] <span class="op">=</span> w</span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>            i <span class="op">=</span> i <span class="op">+</span> <span class="dv">1</span></span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> words_to_index, index_to_words, word_to_vec_map</span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>word_to_index, index_to_word, word_to_vec_map <span class="op">=</span> read_glove_vecs(GLOVE)</span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>word <span class="op">=</span> <span class="st">"cucumber"</span></span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>idx <span class="op">=</span> <span class="dv">289846</span></span>
+<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"the index of"</span>, word, <span class="st">"in the vocabulary is"</span>, word_to_index[word])</span>
+<span id="cb11-25"><a href="#cb11-25" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"the"</span>, <span class="bu">str</span>(idx) <span class="op">+</span> <span class="st">"th word in the vocabulary is"</span>, index_to_word[idx])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>the index of cucumber in the vocabulary is 113317
+the 289846th word in the vocabulary is potatos</code></pre>
+</div>
+</div>
+</section>
+<section id="one-hot-encoding-the-labels" class="level3">
+<h3 class="anchored" data-anchor-id="one-hot-encoding-the-labels">One-Hot Encoding the Labels</h3>
+<p>A softmax classifier compares its five output probabilities against a five-element target, so the integer labels have to become rows of five numbers with a single 1. <code>np.eye(C)</code> is the <span class="math inline">\(C \times C\)</span> identity matrix, and indexing it by a label picks out the row that has its 1 in the right place.</p>
+<div id="6904e34f" class="cell" data-execution_count="9">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> convert_to_one_hot(Y, C):</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    Y <span class="op">=</span> np.eye(C)[Y.reshape(<span class="op">-</span><span class="dv">1</span>)]</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> Y</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>Y_oh_train <span class="op">=</span> convert_to_one_hot(Y_train, C<span class="op">=</span><span class="dv">5</span>)</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>Y_oh_test <span class="op">=</span> convert_to_one_hot(Y_test, C<span class="op">=</span><span class="dv">5</span>)</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>idx <span class="op">=</span> <span class="dv">50</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Sentence '</span><span class="sc">{</span>X_train[idx]<span class="sc">}</span><span class="ss">' has label index </span><span class="sc">{</span>Y_train[idx]<span class="sc">}</span><span class="ss">, "</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>      <span class="ss">f"which is emoji </span><span class="sc">{</span>label_to_emoji(Y_train[idx])<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Label index </span><span class="sc">{</span>Y_train[idx]<span class="sc">}</span><span class="ss"> in one-hot encoding format is </span><span class="sc">{</span>Y_oh_train[idx]<span class="sc">}</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Sentence 'I missed you' has label index 0, which is emoji ❤️
+Label index 0 in one-hot encoding format is [1. 0. 0. 0. 0.]</code></pre>
+</div>
+</div>
+</section>
+<section id="averaging-a-sentence" class="level3">
+<h3 class="anchored" data-anchor-id="averaging-a-sentence">Averaging a Sentence</h3>
+<p><code>sentence_to_avg</code> lowercases the sentence, splits it on whitespace, looks up each word, and averages whatever it finds. Words absent from GloVe are skipped, and the division is by the number of words actually found rather than by the number of words in the sentence, which is why <code>count</code> is tracked separately.</p>
+<p>The shape of the zero vector comes from a word taken out of the map rather than from a hardcoded 50, so the same function works with any embedding size.</p>
+<div id="60eaeb98" class="cell" data-execution_count="10">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> sentence_to_avg(sentence, word_to_vec_map):</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Converts a sentence (string) into a list of words (strings). Extracts the GloVe representation</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="co">    of each word and averages its value into a single vector encoding the meaning of the sentence.</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="co">    sentence -- string, one training example from X</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="co">    word_to_vec_map -- dictionary mapping every word in a vocabulary into its 50-dimensional</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="co">                       vector representation</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="co">    avg -- average vector encoding information about the sentence, numpy-array of shape (J,)</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Get a valid word contained in the word_to_vec_map.</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>    any_word <span class="op">=</span> <span class="bu">next</span>(<span class="bu">iter</span>(word_to_vec_map.keys()))</span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>    words <span class="op">=</span> sentence.lower().split()</span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>    avg <span class="op">=</span> np.zeros(word_to_vec_map[any_word].shape)</span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>    count <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> w <span class="kw">in</span> words:</span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> w <span class="kw">in</span> word_to_vec_map:          <span class="co"># skip words GloVe has never seen</span></span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a>            avg <span class="op">+=</span> word_to_vec_map[w]</span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a>            count <span class="op">+=</span> <span class="dv">1</span></span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> count <span class="op">&gt;</span> <span class="dv">0</span>:</span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a>        avg <span class="op">=</span> avg <span class="op">/</span> count                 <span class="co"># only if at least one word was found</span></span>
+<span id="cb15-29"><a href="#cb15-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-30"><a href="#cb15-30" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> avg</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The assignment checked this function with five assertions inside a test helper. Each one is a real property of the average, so they are computed and shown instead. The controlled map below is the same compass grid used in the previous lab, with words at known coordinates so that the correct average can be worked out by hand.</p>
+<div id="57aa59a3" class="cell" data-execution_count="11">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>toy_map <span class="op">=</span> {<span class="st">'a'</span>: [<span class="dv">3</span>, <span class="dv">3</span>], <span class="st">'synonym_of_a'</span>: [<span class="dv">3</span>, <span class="dv">3</span>], <span class="st">'a_nw'</span>: [<span class="dv">2</span>, <span class="dv">4</span>], <span class="st">'a_s'</span>: [<span class="dv">3</span>, <span class="dv">2</span>],</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>           <span class="st">'c'</span>: [<span class="op">-</span><span class="dv">2</span>, <span class="dv">1</span>], <span class="st">'c_n'</span>: [<span class="op">-</span><span class="dv">2</span>, <span class="dv">2</span>], <span class="st">'c_ne'</span>: [<span class="op">-</span><span class="dv">1</span>, <span class="dv">2</span>], <span class="st">'c_e'</span>: [<span class="op">-</span><span class="dv">1</span>, <span class="dv">1</span>],</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>           <span class="st">'c_se'</span>: [<span class="op">-</span><span class="dv">1</span>, <span class="dv">0</span>], <span class="st">'c_s'</span>: [<span class="op">-</span><span class="dv">2</span>, <span class="dv">0</span>], <span class="st">'c_sw'</span>: [<span class="op">-</span><span class="dv">3</span>, <span class="dv">0</span>], <span class="st">'c_w'</span>: [<span class="op">-</span><span class="dv">3</span>, <span class="dv">1</span>],</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>           <span class="st">'c_nw'</span>: [<span class="op">-</span><span class="dv">3</span>, <span class="dv">2</span>]}</span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>toy_map <span class="op">=</span> {k: np.array(v) <span class="cf">for</span> k, v <span class="kw">in</span> toy_map.items()}</span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"shape follows the word vectors: "</span>, sentence_to_avg(<span class="st">"a a_nw c_w a_s"</span>, toy_map).shape,</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>      <span class="st">"vs"</span>, toy_map[<span class="st">'a'</span>].shape)</span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"mean of a, a_nw, c_w, a_s:      "</span>, sentence_to_avg(<span class="st">"a a_nw c_w a_s"</span>, toy_map))</span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"same, with 'love' prepended:    "</span>, sentence_to_avg(<span class="st">"love a a_nw c_w a_s"</span>, toy_map))</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"a sentence of unknown words:    "</span>, sentence_to_avg(<span class="st">"love"</span>, toy_map))</span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"six known words, two unknown:   "</span>,</span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>      sentence_to_avg(<span class="st">"c_se foo a a_nw c_w a_s deeplearning c_nw"</span>, toy_map))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>shape follows the word vectors:  (2,) vs (2,)
+mean of a, a_nw, c_w, a_s:       [1.25 2.5 ]
+same, with 'love' prepended:     [1.25 2.5 ]
+a sentence of unknown words:     [0. 0.]
+six known words, two unknown:    [0.16666667 2.        ]</code></pre>
+</div>
+</div>
+<p>The four vectors <code>a</code>, <code>a_nw</code>, <code>c_w</code> and <code>a_s</code> average to <code>[1.25, 2.5]</code>, which is what the second line prints. The third line prints the same thing, and that is the point of dividing by <code>count</code>. Adding the unknown word <code>love</code> changes the number of words in the sentence from four to five but not the number of words found, so dividing by <code>len(words)</code> would have shifted the answer to <code>[1.0, 2.0]</code> and quietly pulled every sentence toward the origin in proportion to how many rare words it contained. The fourth line shows the boundary case, where nothing was found and the guard on <code>count</code> returns zeros rather than dividing by zero.</p>
+<p>The last line is the two rules working together on eight tokens. <code>foo</code> and <code>deeplearning</code> are absent from the map, so the six that remain are <code>c_se</code>, <code>a</code>, <code>a_nw</code>, <code>c_w</code>, <code>a_s</code> and <code>c_nw</code>, at <span class="math inline">\((-1,0)\)</span>, <span class="math inline">\((3,3)\)</span>, <span class="math inline">\((2,4)\)</span>, <span class="math inline">\((-3,1)\)</span>, <span class="math inline">\((3,2)\)</span> and <span class="math inline">\((-3,2)\)</span>. Those sum to <span class="math inline">\((1, 12)\)</span>, and dividing by six rather than by eight gives <span class="math inline">\((0.1\overline{6}, 2.0)\)</span>, which is what prints.</p>
+<p>Run it on a real sentence.</p>
+<div id="210db015" class="cell" data-execution_count="12">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>avg <span class="op">=</span> sentence_to_avg(<span class="st">"Morrocan couscous is my favorite dish"</span>, word_to_vec_map)</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"avg = </span><span class="ch">\n</span><span class="st">"</span>, avg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>avg = 
+ [-0.008005    0.56370833 -0.50427333  0.258865    0.55131103  0.03104983
+ -0.21013718  0.16893933 -0.09590267  0.141784   -0.15708967  0.18525867
+  0.6495785   0.38371117  0.21102167  0.11301667  0.02613967  0.26037767
+  0.05820667 -0.01578167 -0.12078833 -0.02471267  0.4128455   0.5152061
+  0.38756167 -0.898661   -0.535145    0.33501167  0.68806933 -0.2156265
+  1.797155    0.10476933 -0.36775333  0.750785    0.10282583  0.348925
+ -0.27262833  0.66768    -0.10706167 -0.283635    0.59580117  0.28747333
+ -0.3366635   0.23393817  0.34349183  0.178405    0.1166155  -0.076433
+  0.1445417   0.09808667]</code></pre>
+</div>
+</div>
+</section>
+<section id="training-emojifier-v1" class="level3">
+<h3 class="anchored" data-anchor-id="training-emojifier-v1">Training Emojifier-V1</h3>
+<p>The model is one softmax layer. For training example <span class="math inline">\(i\)</span>,</p>
+<p><span class="math display">\[z^{(i)} = W \, avg^{(i)} + b\]</span></p>
+<p><span class="math display">\[a^{(i)} = \text{softmax}(z^{(i)})\]</span></p>
+<p><span class="math display">\[\mathcal{L}^{(i)} = - \sum_{k=0}^{n_y - 1} Y_{oh,k}^{(i)} \log(a^{(i)}_k)\]</span></p>
+<p>where <span class="math inline">\(W\)</span> is <span class="math inline">\(5 \times 50\)</span>, <span class="math inline">\(b\)</span> has five entries, and <span class="math inline">\(Y_{oh}^{(i)}\)</span> is the one-hot row for example <span class="math inline">\(i\)</span>. Because the label is one-hot, the sum in the loss has exactly one non-zero term, so the loss is the negative log of the probability the model assigned to the correct emoji.</p>
+<p>The gradients are the standard softmax-with-cross-entropy result, and they are short enough to state. Writing <span class="math inline">\(dz^{(i)} = a^{(i)} - Y_{oh}^{(i)}\)</span>,</p>
+<p><span class="math display">\[\frac{\partial \mathcal{L}^{(i)}}{\partial W} = dz^{(i)} \, (avg^{(i)})^T \qquad \frac{\partial \mathcal{L}^{(i)}}{\partial b} = dz^{(i)}\]</span></p>
+<p>The <code>reshape</code> calls in the code turn <span class="math inline">\(dz\)</span> into a <span class="math inline">\(5 \times 1\)</span> column and <span class="math inline">\(avg\)</span> into a <span class="math inline">\(1 \times 50\)</span> row so that their product is the <span class="math inline">\(5 \times 50\)</span> matrix <span class="math inline">\(W\)</span> needs.</p>
+<div id="371446c2" class="cell" data-execution_count="13">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> softmax(x):</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Compute softmax values for each sets of scores in x."""</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>    e_x <span class="op">=</span> np.exp(x <span class="op">-</span> np.<span class="bu">max</span>(x))       <span class="co"># subtract the max for numerical stability</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> e_x <span class="op">/</span> e_x.<span class="bu">sum</span>()</span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> model(X, Y, word_to_vec_map, learning_rate<span class="op">=</span><span class="fl">0.01</span>, num_iterations<span class="op">=</span><span class="dv">400</span>):</span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a><span class="co">    Model to train word vector representations in numpy.</span></span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="co">    X -- input data, numpy array of sentences as strings, of shape (m,)</span></span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a><span class="co">    Y -- labels, numpy array of integers giving the label values for the emojis, shape (m, 1)</span></span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a><span class="co">    word_to_vec_map -- dictionary mapping every word in a vocabulary into its 50-dimensional</span></span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a><span class="co">                       vector representation</span></span>
+<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a><span class="co">    learning_rate -- learning_rate for the stochastic gradient descent algorithm</span></span>
+<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a><span class="co">    num_iterations -- number of iterations</span></span>
+<span id="cb20-17"><a href="#cb20-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-18"><a href="#cb20-18" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb20-19"><a href="#cb20-19" aria-hidden="true" tabindex="-1"></a><span class="co">    pred -- vector of predictions, numpy-array of shape (m, 1)</span></span>
+<span id="cb20-20"><a href="#cb20-20" aria-hidden="true" tabindex="-1"></a><span class="co">    W -- weight matrix of the softmax layer, of shape (n_y, n_h)</span></span>
+<span id="cb20-21"><a href="#cb20-21" aria-hidden="true" tabindex="-1"></a><span class="co">    b -- bias of the softmax layer, of shape (n_y,)</span></span>
+<span id="cb20-22"><a href="#cb20-22" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb20-23"><a href="#cb20-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-24"><a href="#cb20-24" aria-hidden="true" tabindex="-1"></a>    any_word <span class="op">=</span> <span class="bu">next</span>(<span class="bu">iter</span>(word_to_vec_map.keys()))</span>
+<span id="cb20-25"><a href="#cb20-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-26"><a href="#cb20-26" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> Y.shape[<span class="dv">0</span>]                             <span class="co"># number of training examples</span></span>
+<span id="cb20-27"><a href="#cb20-27" aria-hidden="true" tabindex="-1"></a>    n_y <span class="op">=</span> <span class="bu">len</span>(np.unique(Y))                    <span class="co"># number of classes</span></span>
+<span id="cb20-28"><a href="#cb20-28" aria-hidden="true" tabindex="-1"></a>    n_h <span class="op">=</span> word_to_vec_map[any_word].shape[<span class="dv">0</span>]   <span class="co"># dimensions of the GloVe vectors</span></span>
+<span id="cb20-29"><a href="#cb20-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-30"><a href="#cb20-30" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Initialize parameters using Xavier initialization</span></span>
+<span id="cb20-31"><a href="#cb20-31" aria-hidden="true" tabindex="-1"></a>    W <span class="op">=</span> np.random.randn(n_y, n_h) <span class="op">/</span> np.sqrt(n_h)</span>
+<span id="cb20-32"><a href="#cb20-32" aria-hidden="true" tabindex="-1"></a>    b <span class="op">=</span> np.zeros((n_y,))</span>
+<span id="cb20-33"><a href="#cb20-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-34"><a href="#cb20-34" aria-hidden="true" tabindex="-1"></a>    Y_oh <span class="op">=</span> convert_to_one_hot(Y, C<span class="op">=</span>n_y)</span>
+<span id="cb20-35"><a href="#cb20-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-36"><a href="#cb20-36" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> t <span class="kw">in</span> <span class="bu">range</span>(num_iterations):</span>
+<span id="cb20-37"><a href="#cb20-37" aria-hidden="true" tabindex="-1"></a>        cost <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb20-38"><a href="#cb20-38" aria-hidden="true" tabindex="-1"></a>        dW <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb20-39"><a href="#cb20-39" aria-hidden="true" tabindex="-1"></a>        db <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb20-40"><a href="#cb20-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-41"><a href="#cb20-41" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(m):</span>
+<span id="cb20-42"><a href="#cb20-42" aria-hidden="true" tabindex="-1"></a>            avg <span class="op">=</span> sentence_to_avg(X[i], word_to_vec_map)</span>
+<span id="cb20-43"><a href="#cb20-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-44"><a href="#cb20-44" aria-hidden="true" tabindex="-1"></a>            z <span class="op">=</span> np.dot(W, avg) <span class="op">+</span> b</span>
+<span id="cb20-45"><a href="#cb20-45" aria-hidden="true" tabindex="-1"></a>            a <span class="op">=</span> softmax(z)</span>
+<span id="cb20-46"><a href="#cb20-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-47"><a href="#cb20-47" aria-hidden="true" tabindex="-1"></a>            cost <span class="op">+=</span> <span class="op">-</span>np.<span class="bu">sum</span>(Y_oh[i] <span class="op">*</span> np.log(a))</span>
+<span id="cb20-48"><a href="#cb20-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-49"><a href="#cb20-49" aria-hidden="true" tabindex="-1"></a>            dz <span class="op">=</span> a <span class="op">-</span> Y_oh[i]</span>
+<span id="cb20-50"><a href="#cb20-50" aria-hidden="true" tabindex="-1"></a>            dW <span class="op">+=</span> np.dot(dz.reshape(n_y, <span class="dv">1</span>), avg.reshape(<span class="dv">1</span>, n_h))</span>
+<span id="cb20-51"><a href="#cb20-51" aria-hidden="true" tabindex="-1"></a>            db <span class="op">+=</span> dz</span>
+<span id="cb20-52"><a href="#cb20-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-53"><a href="#cb20-53" aria-hidden="true" tabindex="-1"></a>            W <span class="op">=</span> W <span class="op">-</span> learning_rate <span class="op">*</span> dW</span>
+<span id="cb20-54"><a href="#cb20-54" aria-hidden="true" tabindex="-1"></a>            b <span class="op">=</span> b <span class="op">-</span> learning_rate <span class="op">*</span> db</span>
+<span id="cb20-55"><a href="#cb20-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-56"><a href="#cb20-56" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> t <span class="op">%</span> <span class="dv">100</span> <span class="op">==</span> <span class="dv">0</span>:</span>
+<span id="cb20-57"><a href="#cb20-57" aria-hidden="true" tabindex="-1"></a>            <span class="bu">print</span>(<span class="st">"Epoch: "</span> <span class="op">+</span> <span class="bu">str</span>(t) <span class="op">+</span> <span class="st">" --- cost = "</span> <span class="op">+</span> <span class="bu">str</span>(cost))</span>
+<span id="cb20-58"><a href="#cb20-58" aria-hidden="true" tabindex="-1"></a>            pred <span class="op">=</span> predict(X, Y, W, b, word_to_vec_map)</span>
+<span id="cb20-59"><a href="#cb20-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-60"><a href="#cb20-60" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> pred, W, b</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>predict</code> runs the same forward pass over a whole set and reports accuracy. It is reproduced from the assignment’s helper module, which this page does not import.</p>
+<div id="560a2c0a" class="cell" data-execution_count="14">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> predict(X, Y, W, b, word_to_vec_map):</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Given X (sentences) and Y (emoji indices), predict emojis and compute the accuracy</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="co">    of your model over the given set.</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> X.shape[<span class="dv">0</span>]</span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>    pred <span class="op">=</span> np.zeros((m, <span class="dv">1</span>))</span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>    any_word <span class="op">=</span> <span class="bu">list</span>(word_to_vec_map.keys())[<span class="dv">0</span>]</span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>    n_h <span class="op">=</span> word_to_vec_map[any_word].shape[<span class="dv">0</span>]</span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> j <span class="kw">in</span> <span class="bu">range</span>(m):</span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a>        words <span class="op">=</span> X[j].lower().split()</span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a>        avg <span class="op">=</span> np.zeros((n_h,))</span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a>        count <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> w <span class="kw">in</span> words:</span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> w <span class="kw">in</span> word_to_vec_map:</span>
+<span id="cb21-18"><a href="#cb21-18" aria-hidden="true" tabindex="-1"></a>                avg <span class="op">+=</span> word_to_vec_map[w]</span>
+<span id="cb21-19"><a href="#cb21-19" aria-hidden="true" tabindex="-1"></a>                count <span class="op">+=</span> <span class="dv">1</span></span>
+<span id="cb21-20"><a href="#cb21-20" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> count <span class="op">&gt;</span> <span class="dv">0</span>:</span>
+<span id="cb21-21"><a href="#cb21-21" aria-hidden="true" tabindex="-1"></a>            avg <span class="op">=</span> avg <span class="op">/</span> count</span>
+<span id="cb21-22"><a href="#cb21-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-23"><a href="#cb21-23" aria-hidden="true" tabindex="-1"></a>        Z <span class="op">=</span> np.dot(W, avg) <span class="op">+</span> b</span>
+<span id="cb21-24"><a href="#cb21-24" aria-hidden="true" tabindex="-1"></a>        A <span class="op">=</span> softmax(Z)</span>
+<span id="cb21-25"><a href="#cb21-25" aria-hidden="true" tabindex="-1"></a>        pred[j] <span class="op">=</span> np.argmax(A)</span>
+<span id="cb21-26"><a href="#cb21-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-27"><a href="#cb21-27" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"Accuracy: "</span> <span class="op">+</span> <span class="bu">str</span>(np.mean((pred[:] <span class="op">==</span> Y.reshape(Y.shape[<span class="dv">0</span>], <span class="dv">1</span>)[:]))))</span>
+<span id="cb21-28"><a href="#cb21-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-29"><a href="#cb21-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> pred</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>400 passes over 132 sentences, in a Python loop.</p>
+<div id="e93fd65a" class="cell" data-execution_count="15">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>np.random.seed(<span class="dv">1</span>)</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>pred, W, b <span class="op">=</span> model(X_train, Y_train, word_to_vec_map)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Epoch: 0 --- cost = 410.43365788314713
+Accuracy: 0.5454545454545454
+Epoch: 100 --- cost = 47.83944321339184
+Accuracy: 0.9393939393939394
+Epoch: 200 --- cost = 32.56953778342097
+Accuracy: 0.9696969696969697
+Epoch: 300 --- cost = 0.2972356467403321
+Accuracy: 1.0</code></pre>
+</div>
+</div>
+</section>
+<section id="optimizer-is-unstable-and-it-matters" class="level3">
+<h3 class="anchored" data-anchor-id="optimizer-is-unstable-and-it-matters">Optimizer Is Unstable, and It Matters</h3>
+<p>Look again at the inner loop. <code>dW</code> and <code>db</code> are set to zero once per epoch, outside the loop over examples, but <code>W</code> and <code>b</code> are updated once per example. So the update applied at example <span class="math inline">\(i\)</span> uses the sum of the gradients from examples 0 through <span class="math inline">\(i\)</span>, not the gradient at example <span class="math inline">\(i\)</span>. The accumulator is never cleared between updates.</p>
+<p>That is not stochastic gradient descent and it is not batch gradient descent. It is a hybrid that applies a growing sum of stale gradients, and it makes the trajectory chaotic. The demonstration takes one line.</p>
+<div id="55eab33b" class="cell" data-execution_count="16">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> first_epochs(nudge, epochs<span class="op">=</span><span class="dv">201</span>):</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Rerun the first few epochs of training, optionally nudging W by one float64 step."""</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>    np.random.seed(<span class="dv">1</span>)</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>    W <span class="op">=</span> np.random.randn(<span class="dv">5</span>, <span class="dv">50</span>) <span class="op">/</span> np.sqrt(<span class="dv">50</span>)</span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> nudge:</span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>        W <span class="op">=</span> np.nextafter(W, np.inf)     <span class="co"># every weight moved to the very next float64</span></span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>    b <span class="op">=</span> np.zeros((<span class="dv">5</span>,))</span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>    Y_oh <span class="op">=</span> convert_to_one_hot(Y_train, C<span class="op">=</span><span class="dv">5</span>)</span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> {}</span>
+<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> t <span class="kw">in</span> <span class="bu">range</span>(epochs):</span>
+<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a>        cost <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb24-12"><a href="#cb24-12" aria-hidden="true" tabindex="-1"></a>        dW <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb24-13"><a href="#cb24-13" aria-hidden="true" tabindex="-1"></a>        db <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb24-14"><a href="#cb24-14" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(Y_train.shape[<span class="dv">0</span>]):</span>
+<span id="cb24-15"><a href="#cb24-15" aria-hidden="true" tabindex="-1"></a>            avg <span class="op">=</span> sentence_to_avg(X_train[i], word_to_vec_map)</span>
+<span id="cb24-16"><a href="#cb24-16" aria-hidden="true" tabindex="-1"></a>            a <span class="op">=</span> softmax(np.dot(W, avg) <span class="op">+</span> b)</span>
+<span id="cb24-17"><a href="#cb24-17" aria-hidden="true" tabindex="-1"></a>            cost <span class="op">+=</span> <span class="op">-</span>np.<span class="bu">sum</span>(Y_oh[i] <span class="op">*</span> np.log(a))</span>
+<span id="cb24-18"><a href="#cb24-18" aria-hidden="true" tabindex="-1"></a>            dz <span class="op">=</span> a <span class="op">-</span> Y_oh[i]</span>
+<span id="cb24-19"><a href="#cb24-19" aria-hidden="true" tabindex="-1"></a>            dW <span class="op">+=</span> np.dot(dz.reshape(<span class="dv">5</span>, <span class="dv">1</span>), avg.reshape(<span class="dv">1</span>, <span class="dv">50</span>))</span>
+<span id="cb24-20"><a href="#cb24-20" aria-hidden="true" tabindex="-1"></a>            db <span class="op">+=</span> dz</span>
+<span id="cb24-21"><a href="#cb24-21" aria-hidden="true" tabindex="-1"></a>            W <span class="op">=</span> W <span class="op">-</span> <span class="fl">0.01</span> <span class="op">*</span> dW</span>
+<span id="cb24-22"><a href="#cb24-22" aria-hidden="true" tabindex="-1"></a>            b <span class="op">=</span> b <span class="op">-</span> <span class="fl">0.01</span> <span class="op">*</span> db</span>
+<span id="cb24-23"><a href="#cb24-23" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> t <span class="op">%</span> <span class="dv">100</span> <span class="op">==</span> <span class="dv">0</span>:</span>
+<span id="cb24-24"><a href="#cb24-24" aria-hidden="true" tabindex="-1"></a>            out[t] <span class="op">=</span> cost</span>
+<span id="cb24-25"><a href="#cb24-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out</span>
+<span id="cb24-26"><a href="#cb24-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-27"><a href="#cb24-27" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> show(label, costs):</span>
+<span id="cb24-28"><a href="#cb24-28" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(label, <span class="st">"  "</span>.join(<span class="ss">f"epoch </span><span class="sc">{</span>k<span class="sc">}</span><span class="ss">: </span><span class="sc">{</span>v<span class="sc">:10.4f}</span><span class="ss">"</span> <span class="cf">for</span> k, v <span class="kw">in</span> costs.items()))</span>
+<span id="cb24-29"><a href="#cb24-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-30"><a href="#cb24-30" aria-hidden="true" tabindex="-1"></a>np.random.seed(<span class="dv">1</span>)</span>
+<span id="cb24-31"><a href="#cb24-31" aria-hidden="true" tabindex="-1"></a>w0 <span class="op">=</span> np.<span class="bu">abs</span>(np.random.randn(<span class="dv">5</span>, <span class="dv">50</span>) <span class="op">/</span> np.sqrt(<span class="dv">50</span>)).mean()</span>
+<span id="cb24-32"><a href="#cb24-32" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"typical weight magnitude </span><span class="sc">{</span>w0<span class="sc">:.4f}</span><span class="ss">, one float64 step there is </span><span class="sc">{</span>np<span class="sc">.</span>spacing(w0)<span class="sc">:.3e}</span><span class="ch">\n</span><span class="ss">"</span>)</span>
+<span id="cb24-33"><a href="#cb24-33" aria-hidden="true" tabindex="-1"></a>show(<span class="st">"as initialized:  "</span>, first_epochs(<span class="va">False</span>))</span>
+<span id="cb24-34"><a href="#cb24-34" aria-hidden="true" tabindex="-1"></a>show(<span class="st">"nudged by 1 step:"</span>, first_epochs(<span class="va">True</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>typical weight magnitude 0.1081, one float64 step there is 1.388e-17
+
+as initialized:   epoch 0:   410.4337  epoch 100:    47.8394  epoch 200:    32.5695
+nudged by 1 step: epoch 0:   410.4337  epoch 100:   110.1965  epoch 200:    40.1173</code></pre>
+</div>
+</div>
+<p><code>np.nextafter(W, np.inf)</code> moves every weight to the very next representable <code>float64</code>, a change of around <span class="math inline">\(1.4 \times 10^{-17}\)</span> at these magnitudes. No smaller edit can be expressed in double precision at all. It leaves the cost at epoch 0 identical to four decimal places and roughly doubles the cost at epoch 100. The run is perfectly deterministic on any one machine, and it need not reproduce on another whose numerical stack differs in the last bit.</p>
+<p>This is why the costs printed above match the original notebook’s at epoch 0 and at no epoch after it. The original printed 410.4337, 63.6126, 0.7391 and 0.3105 at epochs 0, 100, 200 and 300.</p>
+<p>Epoch 0 agrees to fifteen significant digits, and not because it escaped the updates. It does not. The cost is summed as the loop runs, so 131 of its 132 terms come from weights that have already moved. What saves it is that one pass of 132 updates is not enough for the amplification to reach the fifteenth digit, while the more than 13,000 updates standing behind the epoch 100 figure are more than enough to reach the first. <code>np.random.seed(1)</code> still produces bit-identical initial weights, since the legacy generator is frozen, so the two runs start from the same place and separate gradually. The likeliest source of the initial difference is a change in how NumPy orders the summations inside <code>np.dot</code>, though this page does not isolate it and does not need to. A last-bit difference from any cause can produce the same picture.</p>
+<p>What does survive is the destination. Training accuracy reaches 1.0 either way, and the test accuracy lands one example apart from the original.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What the Loop Should Have Said
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Clearing the accumulators inside the example loop turns it into ordinary stochastic gradient descent, which is what the surrounding comments describe.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(m):</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>    avg <span class="op">=</span> sentence_to_avg(X[i], word_to_vec_map)</span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>    a <span class="op">=</span> softmax(np.dot(W, avg) <span class="op">+</span> b)</span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>    cost <span class="op">+=</span> <span class="op">-</span>np.<span class="bu">sum</span>(Y_oh[i] <span class="op">*</span> np.log(a))</span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a>    dz <span class="op">=</span> a <span class="op">-</span> Y_oh[i]</span>
+<span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a>    dW <span class="op">=</span> np.dot(dz.reshape(n_y, <span class="dv">1</span>), avg.reshape(<span class="dv">1</span>, n_h))   <span class="co"># assignment, not accumulation</span></span>
+<span id="cb26-8"><a href="#cb26-8" aria-hidden="true" tabindex="-1"></a>    db <span class="op">=</span> dz</span>
+<span id="cb26-9"><a href="#cb26-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-10"><a href="#cb26-10" aria-hidden="true" tabindex="-1"></a>    W <span class="op">=</span> W <span class="op">-</span> learning_rate <span class="op">*</span> dW</span>
+<span id="cb26-11"><a href="#cb26-11" aria-hidden="true" tabindex="-1"></a>    b <span class="op">=</span> b <span class="op">-</span> learning_rate <span class="op">*</span> db</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The assignment’s version is kept on this page because it is what produced the published outputs, and because it converges regardless. It is worth knowing which one you are copying.</p>
+</div>
+</div>
+</div>
+</section>
+<section id="examining-test-set-performance" class="level3">
+<h3 class="anchored" data-anchor-id="examining-test-set-performance">Examining Test Set Performance</h3>
+<div id="028d986e" class="cell" data-execution_count="17">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Training set:"</span>)</span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>pred_train <span class="op">=</span> predict(X_train, Y_train, W, b, word_to_vec_map)</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'Test set:'</span>)</span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>pred_test <span class="op">=</span> predict(X_test, Y_test, W, b, word_to_vec_map)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Training set:
+Accuracy: 1.0
+Test set:
+Accuracy: 0.8928571428571429</code></pre>
+</div>
+</div>
+<p>Around 89 percent on sentences it has never seen, from 132 training examples and a model with 255 parameters. Random guessing scores 20 percent and always answering <code>smile</code> scores 32 percent, so the word vectors are carrying almost all of the weight here. They were trained on 6 billion tokens, and this lab is renting that.</p>
+<p>The clearest evidence is a word the model never saw.</p>
+<div id="5129a927" class="cell" data-execution_count="18">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>X_my_sentences <span class="op">=</span> np.array([<span class="st">"i treasure you"</span>, <span class="st">"i love you"</span>, <span class="st">"funny lol"</span>,</span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>                           <span class="st">"lets play with a ball"</span>, <span class="st">"food is ready"</span>, <span class="st">"today is not good"</span>])</span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>Y_my_labels <span class="op">=</span> np.array([[<span class="dv">0</span>], [<span class="dv">0</span>], [<span class="dv">2</span>], [<span class="dv">1</span>], [<span class="dv">4</span>], [<span class="dv">3</span>]])</span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>pred <span class="op">=</span> predict(X_my_sentences, Y_my_labels, W, b, word_to_vec_map)</span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>()</span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(X_my_sentences.shape[<span class="dv">0</span>]):</span>
+<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(X_my_sentences[i], label_to_emoji(<span class="bu">int</span>(pred[i, <span class="dv">0</span>])))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Accuracy: 0.8333333333333334
+
+i treasure you ❤️
+i love you ❤️
+funny lol 😄
+lets play with a ball ⚾
+food is ready 🍴
+today is not good 😄</code></pre>
+</div>
+</div>
+<p><code>treasure</code> does not appear anywhere in the training set, and “i treasure you” still gets a heart. Nothing taught the model about that word. GloVe placed <code>treasure</code> near <code>love</code> because the two appear in similar contexts across the corpus, the average of the sentence therefore lands near the average of “i love you”, and the softmax layer had already learned that region of the space means heart. That is the whole argument for pretrained embeddings on a small dataset, running end to end in one line of output.</p>
+<p>The last sentence is the failure. “today is not good” gets a smile. The model does see <code>not</code>, since GloVe has a vector for it and that vector goes into the average like any other. What it cannot see is where <code>not</code> sits. Averaging is symmetric in its arguments, so the vector for “today is not good” is exactly the vector for “good is not today” and for every other arrangement of those four words. A linear layer reading that average can learn that the presence of <code>not</code> shifts the answer somewhat, which is a blunt instrument, and it can never learn what the word is negating. Here <code>good</code> pulls the average toward the smile region and wins.</p>
+</section>
+<section id="confusion-matrix" class="level3">
+<h3 class="anchored" data-anchor-id="confusion-matrix">Confusion Matrix</h3>
+<p>Accuracy compresses 56 predictions into one number. A confusion matrix keeps the detail, showing for each true class how often the model answered each of the five.</p>
+<div id="80c6180b" class="cell" data-execution_count="19">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'           '</span> <span class="op">+</span> label_to_emoji(<span class="dv">0</span>) <span class="op">+</span> <span class="st">'    '</span> <span class="op">+</span> label_to_emoji(<span class="dv">1</span>) <span class="op">+</span> <span class="st">'    '</span> <span class="op">+</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>      label_to_emoji(<span class="dv">2</span>) <span class="op">+</span> <span class="st">'    '</span> <span class="op">+</span> label_to_emoji(<span class="dv">3</span>) <span class="op">+</span> <span class="st">'   '</span> <span class="op">+</span> label_to_emoji(<span class="dv">4</span>))</span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(pd.crosstab(Y_test, pred_test.reshape(<span class="dv">56</span>,),</span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a>                  rownames<span class="op">=</span>[<span class="st">'Actual'</span>], colnames<span class="op">=</span>[<span class="st">'Predicted'</span>], margins<span class="op">=</span><span class="va">True</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>           ❤️    ⚾    😄    😞   🍴
+Predicted  0.0  1.0  2.0  3.0  4.0  All
+Actual                                 
+0            5    1    0    1    0    7
+1            0    8    0    0    0    8
+2            1    0   17    0    0   18
+3            1    0    2   13    0   16
+4            0    0    0    0    7    7
+All          7    9   19   14    7   56</code></pre>
+</div>
+</div>
+<div id="e227d0f2" class="cell" data-execution_count="20">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-emojify_files/figure-html/cell-21-output-1.svg" class="img-fluid figure-img" alt="A five by five grid heatmap of counts. The diagonal is dark, holding the correct predictions. A handful of off-diagonal cells hold one or two sentences each, the largest being two disappointed sentences predicted as smile."></p>
+<figcaption>Emojifier-V1 on the 56 test sentences. Rows are the true class and columns are the prediction, so everything on the diagonal is correct and every off-diagonal cell is a mistake.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The mistakes are not spread evenly. Read across the <code>disappointed</code> row and the <code>smile</code> column and you find the model calling unhappy sentences happy, which is the same failure “today is not good” showed. Sentences that carry a negation, or that are unhappy in a wordy way, average out to something the model reads as positive.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What You Should Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>With 132 training examples you can still get a reasonably good model, because the word vectors did the hard part on a corpus a million times larger.</li>
+<li>Word embeddings let a model handle test words that never appeared in training, which is what <code>treasure</code> demonstrated.</li>
+<li>Averaging discards word order completely, so “not good” and “good not” are the same input.</li>
+<li>What that costs is scope rather than vocabulary. The model can learn that <code>not</code> matters on average, and it can never learn which word <code>not</code> applies to, however much data it is given.</li>
+<li>Read a small accuracy number against the majority-class baseline, not against zero.</li>
+</ul>
+</div>
+</div>
+</section>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<div id="emojify-review-q1">
+<p><strong>1. The model never saw the word <code>treasure</code> during training, yet it labels “i treasure you” with a heart. Where did that ability come from?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="emojify-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>From GloVe, not from this lab. The 132 training sentences taught the softmax layer that a certain region of the 50-dimensional space means heart, and they taught it using sentences containing <code>love</code>, <code>adore</code> and similar words. GloVe had already placed <code>treasure</code> near <code>love</code>, because the two words appear in similar contexts across the 6 billion token corpus it was fit to. So the average vector for “i treasure you” lands in the region the softmax layer already labeled, without a single training example ever containing the word. The 255 parameters trained here contribute the mapping from regions to emoji, and the 20 million frozen numbers in GloVe contribute the geometry that makes those regions meaningful.</p>
+</div>
+</details>
+<hr>
+<div id="emojify-review-q2">
+<p><strong>1. <code>sentence_to_avg</code> divides by <code>count</code> rather than by <code>len(words)</code>. What would break if it divided by <code>len(words)</code>?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="emojify-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Every sentence containing a word GloVe does not know would be shrunk toward the origin, in proportion to how many unknown words it had. The printed check shows it directly. <code>a a_nw c_w a_s</code> averages to <code>[1.25, 2.5]</code>, and prepending the unknown word <code>love</code> leaves that unchanged under <code>count</code> but would give <code>[1.0, 2.0]</code> under <code>len(words)</code>. Since the softmax layer reads the direction and magnitude of the average, that shrinkage is a systematic distortion that has nothing to do with what the sentence means. It would also make the model’s behavior depend on GloVe’s coverage of proper nouns and typos, which is not a property of the task.</p>
+</div>
+</details>
+<hr>
+<div id="emojify-review-q3">
+<p><strong>1. Why does the cost at epoch 0 match the original notebook to fifteen significant digits while the cost at epoch 100 does not?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="emojify-review-q3">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Not because epoch 0 avoids the updates, which is the tempting answer and the wrong one. The cost is accumulated as the loop runs, so all but the first of its 132 terms use weights that have already moved. What matters is how far the two runs have drifted apart by the time each number is printed. <code>np.random.seed(1)</code> gives both runs bit-identical initial weights, since the legacy generator is frozen for exactly this reason, and the training loop then amplifies whatever difference appears rather than damping it, because it applies an accumulated sum of gradients that is never cleared. After one pass of 132 updates the gap is still below the fifteenth significant digit. After the more than 13,000 that precede epoch 100 it has reached the first. The experiment above shows that amplification directly, without needing a second machine, by moving every initial weight to the next representable <code>float64</code> and watching epoch 100 change while epoch 0 does not.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="emojifier-v2-using-lstms-in-keras" class="level2">
+<h2 class="anchored" data-anchor-id="emojifier-v2-using-lstms-in-keras">Emojifier-V2, Using LSTMs in Keras</h2>
+<p>Emojifier-V1 fails on negation because it never sees a sequence. The fix is the <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html#rnn-for-sentiment-classification">RNN model</a> from the theory page. Feed the word vectors into an <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm.html#long-short-term-memory">LSTM</a> one at a time, so the hidden state carries what came before, and take the class from the final state.</p>
+<p>The embeddings stay pretrained and stay frozen. With 132 training sentences there is no hope of improving 20 million embedding numbers, and every attempt would be overfitting.</p>
+<div id="4d835b73" class="cell" data-execution_count="21">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-emojify_files/figure-html/cell-22-output-1.svg" class="img-fluid figure-img" alt="A diagram with time running left to right over five steps. The bottom row holds word index boxes for I, love, you and two padding zeros. Above them sit embedding boxes, then a row of first-layer LSTM cells linked by horizontal arrows, a dropout band, a second row of LSTM cells, another dropout band, and a single softmax output at the far right producing a heart."></p>
+<figcaption>Emojifier-V2, a two-layer LSTM sequence classifier. The bottom row is the padded index sequence, the embedding layer turns each index into a 50-dimensional vector, the first LSTM returns a value at every step, and the second returns only its final state, which a dense layer maps to five class scores.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<section id="keras-and-mini-batching" class="level3">
+<h3 class="anchored" data-anchor-id="keras-and-mini-batching">Keras and Mini-Batching</h3>
+<p>Most deep learning frameworks require every sequence in a mini-batch to have the same length. That is what makes vectorization possible. A three-word sentence takes three LSTM steps and a four-word sentence takes four, and those two computations cannot be run as one batched operation.</p>
+<p>The standard answer is padding. Pick a maximum length, then pad every sequence out to it with a reserved index that means “nothing here”. Under <code>maxLen = 10</code>, the sentence “I love you” becomes the index sequence for those three words followed by seven zeros, and the embedding lookup turns each of those zeros into the all-zero vector, because row 0 of the embedding matrix was never filled in. Any sentence longer than the maximum would have to be truncated, and picking the longest training sentence as the maximum is what avoids that here.</p>
+<p>Be careful about what the zero row does and does not buy. It guarantees that every padded position presents the same content-free input, rather than some arbitrary word’s vector. It does not cause those positions to be skipped. Keras has a <code>mask_zero=True</code> option on <code>Embedding</code> that would make the recurrent layers ignore them, and the assignment does not use it, so both LSTMs run over all ten steps for every sentence. A padded step still advances the hidden and cell states through the recurrent weights and biases, and since the second LSTM hands its <em>final</em> state to the classifier, that state is read after the padding rather than at the last real word.</p>
+</section>
+<section id="embedding-layer" class="level3">
+<h3 class="anchored" data-anchor-id="embedding-layer">Embedding Layer</h3>
+<p>In Keras the embedding matrix is a layer. Its input is an integer matrix of shape (batch size, max length), and its output has shape (batch size, max length, embedding dimension). Nothing is computed. The layer is a lookup table, and the “weights” are the GloVe vectors arranged one per row.</p>
+<div id="2f85b4b0" class="cell" data-execution_count="22">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-emojify_files/figure-html/cell-23-output-1.svg" class="img-fluid figure-img" alt="On the left, a two row grid of word index boxes, one row per sentence, with trailing zeros for padding in the first row. An arrow labeled embedding lookup points right, where the same grid is drawn as tall columns each marked 50, with the padding columns drawn faint and labeled zero vector."></p>
+<figcaption>Two sentences through the embedding layer, padded to a length of 5. The layer maps each integer to the row of the embedding matrix at that index, turning a 2 by 5 matrix of indices into a 2 by 5 by 50 array of vectors. Index 0 maps to the all-zero row, so every padded position presents the same content-free input, though without <code>mask_zero</code> the LSTMs still process it.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<section id="preparing-the-input-sentences" class="level4">
+<h4 class="anchored" data-anchor-id="preparing-the-input-sentences">Preparing the Input Sentences</h4>
+<p><code>sentences_to_indices</code> turns an array of sentences into the integer matrix the embedding layer wants. It allocates a zero matrix of the right shape first, so every position that never gets written stays 0 and is therefore already padding.</p>
+<p>The counter <code>j</code> is incremented only when a word is found, rather than being taken from <code>enumerate</code>. That is deliberate. An unknown word is skipped without leaving a gap, so “food is xyzzy ready” packs into three consecutive positions rather than leaving a zero in the middle that the LSTM would read as a pad.</p>
+<div id="16c0876d" class="cell" data-execution_count="23">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> sentences_to_indices(X, word_to_index, max_len):</span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Converts an array of sentences (strings) into an array of indices corresponding to words</span></span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a><span class="co">    in the sentences. The output shape should be such that it can be given to `Embedding()`.</span></span>
+<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a><span class="co">    X -- array of sentences (strings), of shape (m,)</span></span>
+<span id="cb33-8"><a href="#cb33-8" aria-hidden="true" tabindex="-1"></a><span class="co">    word_to_index -- a dictionary containing the each word mapped to its index</span></span>
+<span id="cb33-9"><a href="#cb33-9" aria-hidden="true" tabindex="-1"></a><span class="co">    max_len -- maximum number of words in a sentence</span></span>
+<span id="cb33-10"><a href="#cb33-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-11"><a href="#cb33-11" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb33-12"><a href="#cb33-12" aria-hidden="true" tabindex="-1"></a><span class="co">    X_indices -- array of indices corresponding to words in the sentences from X,</span></span>
+<span id="cb33-13"><a href="#cb33-13" aria-hidden="true" tabindex="-1"></a><span class="co">                 of shape (m, max_len)</span></span>
+<span id="cb33-14"><a href="#cb33-14" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb33-15"><a href="#cb33-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-16"><a href="#cb33-16" aria-hidden="true" tabindex="-1"></a>    m <span class="op">=</span> X.shape[<span class="dv">0</span>]</span>
+<span id="cb33-17"><a href="#cb33-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-18"><a href="#cb33-18" aria-hidden="true" tabindex="-1"></a>    X_indices <span class="op">=</span> np.zeros((m, max_len))</span>
+<span id="cb33-19"><a href="#cb33-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-20"><a href="#cb33-20" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(m):</span>
+<span id="cb33-21"><a href="#cb33-21" aria-hidden="true" tabindex="-1"></a>        sentence_words <span class="op">=</span> X[i].lower().split()</span>
+<span id="cb33-22"><a href="#cb33-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-23"><a href="#cb33-23" aria-hidden="true" tabindex="-1"></a>        j <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb33-24"><a href="#cb33-24" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> w <span class="kw">in</span> sentence_words:</span>
+<span id="cb33-25"><a href="#cb33-25" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> w <span class="kw">in</span> word_to_index:</span>
+<span id="cb33-26"><a href="#cb33-26" aria-hidden="true" tabindex="-1"></a>                X_indices[i, j] <span class="op">=</span> word_to_index[w]</span>
+<span id="cb33-27"><a href="#cb33-27" aria-hidden="true" tabindex="-1"></a>                j <span class="op">=</span> j <span class="op">+</span> <span class="dv">1</span></span>
+<span id="cb33-28"><a href="#cb33-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-29"><a href="#cb33-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> X_indices</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The assignment tested this against a hand-built eight-word vocabulary. The expected matrix is worth reading rather than asserting, because three of its four rows are edge cases.</p>
+<div id="c2be0ace" class="cell" data-execution_count="24">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>tiny_index <span class="op">=</span> {val: idx <span class="op">+</span> <span class="dv">1</span> <span class="cf">for</span> idx, val <span class="kw">in</span></span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a>              <span class="bu">enumerate</span>([<span class="st">"i"</span>, <span class="st">"like"</span>, <span class="st">"learning"</span>, <span class="st">"deep"</span>, <span class="st">"machine"</span>, <span class="st">"love"</span>, <span class="st">"smile"</span>, <span class="st">"´0.="</span>])}</span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a>sentences <span class="op">=</span> np.array([<span class="st">"I like deep learning"</span>, <span class="st">"deep ´0.= love machine"</span>,</span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a>                      <span class="st">"machine learning smile"</span>, <span class="st">"$"</span>])</span>
+<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(sentences_to_indices(sentences, tiny_index, max_len<span class="op">=</span><span class="dv">4</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[[1. 2. 4. 3.]
+ [4. 8. 6. 5.]
+ [5. 3. 7. 0.]
+ [0. 0. 0. 0.]]</code></pre>
+</div>
+</div>
+<p>Row 1 shows the lookup is case insensitive, since “I” matched the key <code>i</code>. Row 2 shows a punctuation-only token counts as a word when the vocabulary happens to contain it. Row 3 is a three-word sentence padded out to four. Row 4 is a sentence whose only token is absent from the vocabulary, and it comes back as all padding, which is the same thing the model would see for an empty string.</p>
+<p>Run it on the real vocabulary and the same three cases appear at full scale.</p>
+<div id="59f410cf" class="cell" data-execution_count="25">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>X1 <span class="op">=</span> np.array([<span class="st">"funny lol"</span>, <span class="st">"lets play baseball"</span>, <span class="st">"food is ready for you"</span>])</span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>X1_indices <span class="op">=</span> sentences_to_indices(X1, word_to_index, max_len<span class="op">=</span><span class="dv">5</span>)</span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"X1 ="</span>, X1)</span>
+<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"X1_indices =</span><span class="ch">\n</span><span class="st">"</span>, X1_indices)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>X1 = ['funny lol' 'lets play baseball' 'food is ready for you']
+X1_indices =
+ [[155345. 225122.      0.      0.      0.]
+ [220930. 286375.  69714.      0.      0.]
+ [151204. 192973. 302254. 151349. 394475.]]</code></pre>
+</div>
+</div>
+</section>
+<section id="building-the-embedding-layer" class="level4">
+<h4 class="anchored" data-anchor-id="building-the-embedding-layer">Building the Embedding Layer</h4>
+<p><code>pretrained_embedding_layer</code> builds the lookup table. The vocabulary has 400,000 words at indices 1 through 400,000, and the matrix needs one more row for index 0, so <code>vocab_size</code> is <code>len(word_to_index) + 1</code>. That extra row is left as zeros and is the padding vector.</p>
+<p><code>trainable=False</code> is what freezes it. <code>build((None,))</code> allocates the weights before they can be assigned, which <code>set_weights</code> then does.</p>
+<div id="a48014e2" class="cell" data-execution_count="26">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> pretrained_embedding_layer(word_to_vec_map, word_to_index):</span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Creates a Keras Embedding() layer and loads in pre-trained GloVe 50-dimensional vectors.</span></span>
+<span id="cb38-4"><a href="#cb38-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-5"><a href="#cb38-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb38-6"><a href="#cb38-6" aria-hidden="true" tabindex="-1"></a><span class="co">    word_to_vec_map -- dictionary mapping words to their GloVe vector representation.</span></span>
+<span id="cb38-7"><a href="#cb38-7" aria-hidden="true" tabindex="-1"></a><span class="co">    word_to_index -- dictionary mapping from words to their indices in the vocabulary</span></span>
+<span id="cb38-8"><a href="#cb38-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-9"><a href="#cb38-9" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb38-10"><a href="#cb38-10" aria-hidden="true" tabindex="-1"></a><span class="co">    embedding_layer -- pretrained layer Keras instance</span></span>
+<span id="cb38-11"><a href="#cb38-11" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb38-12"><a href="#cb38-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-13"><a href="#cb38-13" aria-hidden="true" tabindex="-1"></a>    vocab_size <span class="op">=</span> <span class="bu">len</span>(word_to_index) <span class="op">+</span> <span class="dv">1</span>              <span class="co"># row 0 is the padding vector</span></span>
+<span id="cb38-14"><a href="#cb38-14" aria-hidden="true" tabindex="-1"></a>    any_word <span class="op">=</span> <span class="bu">next</span>(<span class="bu">iter</span>(word_to_vec_map.keys()))</span>
+<span id="cb38-15"><a href="#cb38-15" aria-hidden="true" tabindex="-1"></a>    emb_dim <span class="op">=</span> word_to_vec_map[any_word].shape[<span class="dv">0</span>]     <span class="co"># 50</span></span>
+<span id="cb38-16"><a href="#cb38-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-17"><a href="#cb38-17" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Step 1: one row per vocabulary entry, all zeros to start</span></span>
+<span id="cb38-18"><a href="#cb38-18" aria-hidden="true" tabindex="-1"></a>    emb_matrix <span class="op">=</span> np.zeros((vocab_size, emb_dim))</span>
+<span id="cb38-19"><a href="#cb38-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-20"><a href="#cb38-20" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Step 2: write each word's GloVe vector into its own row</span></span>
+<span id="cb38-21"><a href="#cb38-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> word, idx <span class="kw">in</span> word_to_index.items():</span>
+<span id="cb38-22"><a href="#cb38-22" aria-hidden="true" tabindex="-1"></a>        emb_matrix[idx, :] <span class="op">=</span> word_to_vec_map[word]</span>
+<span id="cb38-23"><a href="#cb38-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-24"><a href="#cb38-24" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Step 3: a lookup table that gradient descent will not touch</span></span>
+<span id="cb38-25"><a href="#cb38-25" aria-hidden="true" tabindex="-1"></a>    embedding_layer <span class="op">=</span> Embedding(input_dim<span class="op">=</span>vocab_size, output_dim<span class="op">=</span>emb_dim, trainable<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb38-26"><a href="#cb38-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-27"><a href="#cb38-27" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Step 4: allocate the weights, then set them to the matrix just built</span></span>
+<span id="cb38-28"><a href="#cb38-28" aria-hidden="true" tabindex="-1"></a>    embedding_layer.build((<span class="va">None</span>,))</span>
+<span id="cb38-29"><a href="#cb38-29" aria-hidden="true" tabindex="-1"></a>    embedding_layer.set_weights([emb_matrix])</span>
+<span id="cb38-30"><a href="#cb38-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-31"><a href="#cb38-31" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> embedding_layer</span>
+<span id="cb38-32"><a href="#cb38-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-33"><a href="#cb38-33" aria-hidden="true" tabindex="-1"></a>embedding_layer <span class="op">=</span> pretrained_embedding_layer(word_to_vec_map, word_to_index)</span>
+<span id="cb38-34"><a href="#cb38-34" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"weights[0][1][1] ="</span>, embedding_layer.get_weights()[<span class="dv">0</span>][<span class="dv">1</span>][<span class="dv">1</span>])</span>
+<span id="cb38-35"><a href="#cb38-35" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Input_dim "</span>, embedding_layer.input_dim)</span>
+<span id="cb38-36"><a href="#cb38-36" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Output_dim"</span>, embedding_layer.output_dim)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>weights[0][1][1] = 0.39031
+Input_dim  400001
+Output_dim 50</code></pre>
+</div>
+</div>
+<p>That single number is a useful check. Row 1 of the embedding matrix is the first word in sorted order, and element 1 of its vector is 0.39031, which is the value the original assignment printed.</p>
+</section>
+</section>
+<section id="building-emojifier-v2" class="level3">
+<h3 class="anchored" data-anchor-id="building-emojifier-v2">Building Emojifier-V2</h3>
+<p>The architecture is the figure above, in eight lines. Note the two <code>return_sequences</code> settings. The first LSTM has to hand a value to the second at every time step, so it returns the whole sequence. The second feeds a classifier that wants one vector for the whole sentence, so it returns only its final state.</p>
+<div id="b130aac3" class="cell" data-execution_count="27">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> Emojify_V2(input_shape, word_to_vec_map, word_to_index):</span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Function creating the Emojify-v2 model's graph.</span></span>
+<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a><span class="co">    input_shape -- shape of the input, usually (max_len,)</span></span>
+<span id="cb40-7"><a href="#cb40-7" aria-hidden="true" tabindex="-1"></a><span class="co">    word_to_vec_map -- dictionary mapping every word in a vocabulary into its 50-dimensional</span></span>
+<span id="cb40-8"><a href="#cb40-8" aria-hidden="true" tabindex="-1"></a><span class="co">                       vector representation</span></span>
+<span id="cb40-9"><a href="#cb40-9" aria-hidden="true" tabindex="-1"></a><span class="co">    word_to_index -- dictionary mapping from words to their indices in the vocabulary</span></span>
+<span id="cb40-10"><a href="#cb40-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-11"><a href="#cb40-11" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb40-12"><a href="#cb40-12" aria-hidden="true" tabindex="-1"></a><span class="co">    model -- a model instance in Keras</span></span>
+<span id="cb40-13"><a href="#cb40-13" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb40-14"><a href="#cb40-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-15"><a href="#cb40-15" aria-hidden="true" tabindex="-1"></a>    <span class="co"># indices are integers, so the input dtype is int32 rather than the usual float</span></span>
+<span id="cb40-16"><a href="#cb40-16" aria-hidden="true" tabindex="-1"></a>    sentence_indices <span class="op">=</span> Input(shape<span class="op">=</span>input_shape, dtype<span class="op">=</span><span class="st">'int32'</span>)</span>
+<span id="cb40-17"><a href="#cb40-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-18"><a href="#cb40-18" aria-hidden="true" tabindex="-1"></a>    embedding_layer <span class="op">=</span> pretrained_embedding_layer(word_to_vec_map, word_to_index)</span>
+<span id="cb40-19"><a href="#cb40-19" aria-hidden="true" tabindex="-1"></a>    embeddings <span class="op">=</span> embedding_layer(sentence_indices)</span>
+<span id="cb40-20"><a href="#cb40-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-21"><a href="#cb40-21" aria-hidden="true" tabindex="-1"></a>    <span class="co"># a value at every time step, because another LSTM consumes them</span></span>
+<span id="cb40-22"><a href="#cb40-22" aria-hidden="true" tabindex="-1"></a>    X <span class="op">=</span> LSTM(<span class="dv">128</span>, return_sequences<span class="op">=</span><span class="va">True</span>)(embeddings)</span>
+<span id="cb40-23"><a href="#cb40-23" aria-hidden="true" tabindex="-1"></a>    X <span class="op">=</span> Dropout(<span class="fl">0.5</span>)(X)</span>
+<span id="cb40-24"><a href="#cb40-24" aria-hidden="true" tabindex="-1"></a>    <span class="co"># one vector for the whole sentence, because a classifier consumes it</span></span>
+<span id="cb40-25"><a href="#cb40-25" aria-hidden="true" tabindex="-1"></a>    X <span class="op">=</span> LSTM(<span class="dv">128</span>, return_sequences<span class="op">=</span><span class="va">False</span>)(X)</span>
+<span id="cb40-26"><a href="#cb40-26" aria-hidden="true" tabindex="-1"></a>    X <span class="op">=</span> Dropout(<span class="fl">0.5</span>)(X)</span>
+<span id="cb40-27"><a href="#cb40-27" aria-hidden="true" tabindex="-1"></a>    X <span class="op">=</span> Dense(<span class="dv">5</span>)(X)</span>
+<span id="cb40-28"><a href="#cb40-28" aria-hidden="true" tabindex="-1"></a>    X <span class="op">=</span> Activation(<span class="st">'softmax'</span>)(X)</span>
+<span id="cb40-29"><a href="#cb40-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-30"><a href="#cb40-30" aria-hidden="true" tabindex="-1"></a>    model <span class="op">=</span> Model(inputs<span class="op">=</span>sentence_indices, outputs<span class="op">=</span>X)</span>
+<span id="cb40-31"><a href="#cb40-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-32"><a href="#cb40-32" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> model</span>
+<span id="cb40-33"><a href="#cb40-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-34"><a href="#cb40-34" aria-hidden="true" tabindex="-1"></a>tf.keras.utils.set_random_seed(<span class="dv">1</span>)             <span class="co"># Python, NumPy and TensorFlow generators</span></span>
+<span id="cb40-35"><a href="#cb40-35" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> Emojify_V2((maxLen,), word_to_vec_map, word_to_index)</span>
+<span id="cb40-36"><a href="#cb40-36" aria-hidden="true" tabindex="-1"></a>model.summary()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold">Model: "functional"</span>
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃<span style="font-weight: bold"> Layer (type)                    </span>┃<span style="font-weight: bold"> Output Shape           </span>┃<span style="font-weight: bold">       Param # </span>┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ input_layer (<span style="color: #0087ff; text-decoration-color: #0087ff">InputLayer</span>)        │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">10</span>)             │             <span style="color: #00af00; text-decoration-color: #00af00">0</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ embedding_1 (<span style="color: #0087ff; text-decoration-color: #0087ff">Embedding</span>)         │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">10</span>, <span style="color: #00af00; text-decoration-color: #00af00">50</span>)         │    <span style="color: #00af00; text-decoration-color: #00af00">20,000,050</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ lstm (<span style="color: #0087ff; text-decoration-color: #0087ff">LSTM</span>)                     │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">10</span>, <span style="color: #00af00; text-decoration-color: #00af00">128</span>)        │        <span style="color: #00af00; text-decoration-color: #00af00">91,648</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dropout (<span style="color: #0087ff; text-decoration-color: #0087ff">Dropout</span>)               │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">10</span>, <span style="color: #00af00; text-decoration-color: #00af00">128</span>)        │             <span style="color: #00af00; text-decoration-color: #00af00">0</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ lstm_1 (<span style="color: #0087ff; text-decoration-color: #0087ff">LSTM</span>)                   │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">128</span>)            │       <span style="color: #00af00; text-decoration-color: #00af00">131,584</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dropout_1 (<span style="color: #0087ff; text-decoration-color: #0087ff">Dropout</span>)             │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">128</span>)            │             <span style="color: #00af00; text-decoration-color: #00af00">0</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dense (<span style="color: #0087ff; text-decoration-color: #0087ff">Dense</span>)                   │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">5</span>)              │           <span style="color: #00af00; text-decoration-color: #00af00">645</span> │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ activation (<span style="color: #0087ff; text-decoration-color: #0087ff">Activation</span>)         │ (<span style="color: #00d7ff; text-decoration-color: #00d7ff">None</span>, <span style="color: #00af00; text-decoration-color: #00af00">5</span>)              │             <span style="color: #00af00; text-decoration-color: #00af00">0</span> │
+└─────────────────────────────────┴────────────────────────┴───────────────┘
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold"> Total params: </span><span style="color: #00af00; text-decoration-color: #00af00">20,223,927</span> (77.15 MB)
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold"> Trainable params: </span><span style="color: #00af00; text-decoration-color: #00af00">223,877</span> (874.52 KB)
+</pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="font-weight: bold"> Non-trainable params: </span><span style="color: #00af00; text-decoration-color: #00af00">20,000,050</span> (76.29 MB)
+</pre>
+</div>
+</div>
+<p>Look at the parameter split. Of 20,223,927 parameters, 20,000,050 are the frozen embedding, which is <span class="math inline">\(400{,}001 \times 50\)</span>. Only 223,877 are trainable, and those are the two LSTMs and the dense layer. So a model that looks like it has 20 million parameters is really a 224,000-parameter model sitting on top of a large fixed lookup table, which is the only reason 132 training sentences are enough to fit it.</p>
+<div id="57988436" class="cell" data-execution_count="28">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>model.<span class="bu">compile</span>(loss<span class="op">=</span><span class="st">'categorical_crossentropy'</span>, optimizer<span class="op">=</span><span class="st">'adam'</span>, metrics<span class="op">=</span>[<span class="st">'accuracy'</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="training-emojifier-v2" class="level3">
+<h3 class="anchored" data-anchor-id="training-emojifier-v2">Training Emojifier-V2</h3>
+<p>Convert the sentences to padded index matrices and the labels to one-hot rows, then fit.</p>
+<div id="2f18d766" class="cell" data-execution_count="29">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>X_train_indices <span class="op">=</span> sentences_to_indices(X_train, word_to_index, maxLen)</span>
+<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a>Y_train_oh <span class="op">=</span> convert_to_one_hot(Y_train, C<span class="op">=</span><span class="dv">5</span>)</span>
+<span id="cb42-3"><a href="#cb42-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb42-4"><a href="#cb42-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"X_train_indices.shape ="</span>, X_train_indices.shape)</span>
+<span id="cb42-5"><a href="#cb42-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Y_train_oh.shape      ="</span>, Y_train_oh.shape)</span>
+<span id="cb42-6"><a href="#cb42-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb42-7"><a href="#cb42-7" aria-hidden="true" tabindex="-1"></a>history <span class="op">=</span> model.fit(X_train_indices, Y_train_oh, epochs<span class="op">=</span><span class="dv">50</span>, batch_size<span class="op">=</span><span class="dv">32</span>,</span>
+<span id="cb42-8"><a href="#cb42-8" aria-hidden="true" tabindex="-1"></a>                    shuffle<span class="op">=</span><span class="va">True</span>, verbose<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb42-9"><a href="#cb42-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb42-10"><a href="#cb42-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"final training loss     = </span><span class="sc">%.4f</span><span class="st">"</span> <span class="op">%</span> history.history[<span class="st">'loss'</span>][<span class="op">-</span><span class="dv">1</span>])</span>
+<span id="cb42-11"><a href="#cb42-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"final training accuracy = </span><span class="sc">%.4f</span><span class="st">"</span> <span class="op">%</span> history.history[<span class="st">'accuracy'</span>][<span class="op">-</span><span class="dv">1</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>X_train_indices.shape = (132, 10)
+Y_train_oh.shape      = (132, 5)
+final training loss     = 0.0094
+final training accuracy = 1.0000</code></pre>
+</div>
+</div>
+<div id="84628c89" class="cell" data-execution_count="30">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-emojify_files/figure-html/cell-31-output-1.svg" class="img-fluid figure-img" alt="Two line charts side by side. The left shows categorical cross-entropy loss falling from about 1.6 to near zero. The right shows training accuracy rising from about 0.25 to 1.0, with a dashed line marking the majority-class baseline."></p>
+<figcaption>Emojifier-V2 over 50 epochs on 132 sentences. Both curves are training-set only, since the dataset is too small to hold out a validation split, so the flattening at the top right says the model has fitted the training data and says nothing about generalization.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Now the test set, which the model has not seen.</p>
+<div id="84c2f444" class="cell" data-execution_count="31">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>X_test_indices <span class="op">=</span> sentences_to_indices(X_test, word_to_index, max_len<span class="op">=</span>maxLen)</span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a>Y_test_oh <span class="op">=</span> convert_to_one_hot(Y_test, C<span class="op">=</span><span class="dv">5</span>)</span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a>loss, acc <span class="op">=</span> model.evaluate(X_test_indices, Y_test_oh, verbose<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Test accuracy = "</span>, acc)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Test accuracy =  0.875</code></pre>
+</div>
+</div>
+<p>The original notebook says to expect somewhere between 80 and 95 percent, and it reported 89.3 percent. This page lands inside that band. The number moves from run to run and from machine to machine, because Keras seeds and cuDNN kernel selection are not reproducible the way <code>np.random.seed</code> is, and because 56 test sentences means one example is worth 1.8 percentage points. Treat any single figure here as approximate.</p>
+<p>The sentences it gets wrong are more informative than the number.</p>
+<div id="fe8d6d1c" class="cell" data-execution_count="32">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a>pred <span class="op">=</span> model.predict(X_test_indices, verbose<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb46-2"><a href="#cb46-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-3"><a href="#cb46-3" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="bu">len</span>(X_test)):</span>
+<span id="cb46-4"><a href="#cb46-4" aria-hidden="true" tabindex="-1"></a>    num <span class="op">=</span> np.argmax(pred[i])</span>
+<span id="cb46-5"><a href="#cb46-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> num <span class="op">!=</span> Y_test[i]:</span>
+<span id="cb46-6"><a href="#cb46-6" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(<span class="st">"Expected "</span> <span class="op">+</span> label_to_emoji(Y_test[i]) <span class="op">+</span></span>
+<span id="cb46-7"><a href="#cb46-7" aria-hidden="true" tabindex="-1"></a>              <span class="st">"  predicted "</span> <span class="op">+</span> label_to_emoji(num) <span class="op">+</span></span>
+<span id="cb46-8"><a href="#cb46-8" aria-hidden="true" tabindex="-1"></a>              <span class="st">"  :: "</span> <span class="op">+</span> X_test[i].strip())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Expected 😞  predicted ❤️  :: This girl is messing with me
+Expected 😞  predicted 😄  :: work is horrible
+Expected 🍴  predicted 😄  :: any suggestions for dinner
+Expected 😄  predicted ❤️  :: you brighten my day
+Expected 😄  predicted ❤️  :: will you be my valentine
+Expected 😞  predicted ⚾  :: go away
+Expected 🍴  predicted ❤️  :: I did not have breakfast</code></pre>
+</div>
+</div>
+<p>Finally, the sentence Emojifier-V1 could not do.</p>
+<div id="3f06c6fc" class="cell" data-execution_count="33">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb48"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> sentence <span class="kw">in</span> [<span class="st">'not feeling happy'</span>, <span class="st">'today is not good'</span>, <span class="st">'i treasure you'</span>, <span class="st">'I cannot play'</span>]:</span>
+<span id="cb48-2"><a href="#cb48-2" aria-hidden="true" tabindex="-1"></a>    indices <span class="op">=</span> sentences_to_indices(np.array([sentence]), word_to_index, maxLen)</span>
+<span id="cb48-3"><a href="#cb48-3" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(sentence, label_to_emoji(np.argmax(model.predict(indices, verbose<span class="op">=</span><span class="dv">0</span>))))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>not feeling happy 😞
+today is not good 😄
+i treasure you ❤️
+I cannot play ⚾</code></pre>
+</div>
+</div>
+<p>“not feeling happy” comes back disappointed. Averaging is not barred from that answer, since the bag of <code>not</code>, <code>feeling</code> and <code>happy</code> has an average like any other and a linear layer could map it to the disappointed class. What averaging is barred from is telling that sentence apart from “happy feeling not”, because the two produce the same vector. The LSTM reads <code>not</code> first and carries its effect in the hidden state, so <code>happy</code> arrives in a context that has already been negated, and the two orderings are no longer the same input.</p>
+<p>Do not read too much into it. The training set has almost no examples of negation, so the model has not learned a general rule about the word <code>not</code>. It has learned something narrower that happens to cover this phrase. A larger training set is what would turn that into a real capability, and the architecture is the part that makes the capability possible at all.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What You Should Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>When an NLP training set is small, pretrained word embeddings do most of the work, and the trained model on top can be small.</li>
+<li>Word embeddings let a model handle test words that never appeared in training.</li>
+<li>Mini-batching a sequence model requires padding, because every sequence in a batch must be the same length.</li>
+<li>A Keras <code>Embedding()</code> layer is a lookup table that can be initialized from pretrained vectors, and <code>trainable=False</code> freezes them.</li>
+<li>With a small labeled dataset, freezing is usually the right call, since fine-tuning 20 million embedding numbers on 132 sentences is overfitting by another name.</li>
+<li><code>return_sequences=True</code> hands a value to the next layer at every time step, <code>return_sequences=False</code> hands over only the final state.</li>
+</ul>
+</div>
+</div>
+</section>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<div id="emojify-review-q4">
+<p><strong>1. The embedding matrix has 400,001 rows for a 400,000-word vocabulary. What is the extra row, and what would break without it?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="emojify-review-q4">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Row 0 is the padding vector, and it is deliberately left as zeros. <code>read_glove_vecs</code> numbers the vocabulary from 1 precisely so that index 0 stays free, and <code>sentences_to_indices</code> allocates a zero matrix so that every unwritten position already holds 0. Without the extra row the vocabulary would have to start at index 0, some real word would own it, and every padded position in every short sentence would be silently fed that word’s vector. Short sentences would be read as if they ended with a run of repetitions of whichever word happened to sort first.</p>
+</div>
+</details>
+<hr>
+<div id="emojify-review-q5">
+<p><strong>1. The model reports 20,223,927 parameters but only 223,877 trainable ones. Where did the other 20 million go, and why is the split necessary here?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="emojify-review-q5">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>They are the embedding matrix, <span class="math inline">\(400{,}001 \times 50 = 20{,}000{,}050\)</span> numbers, and they are excluded from training by <code>trainable=False</code>. The split is what makes the lab possible. Fitting 20 million parameters to 132 labeled sentences would be hopeless, and the resulting embeddings would be worse than the ones GloVe fit to 6 billion tokens. Freezing them means gradient descent only has to find 223,877 numbers, which is the two LSTMs and the dense layer, and even that is a lot for 132 examples. The dropout at 0.5 after each LSTM is the other half of the answer to that problem.</p>
+</div>
+</details>
+<hr>
+<div id="emojify-review-q6">
+<p><strong>1. Both LSTM layers have 128 units, yet the first has 91,648 parameters and the second has 131,584. Why are they different?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="emojify-review-q6">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because an LSTM’s parameter count depends on the width of its input as well as its own width. Each of the four gates holds a weight matrix over the concatenation of the incoming vector and the previous hidden state, plus a bias, so the count is <span class="math inline">\(4 \times 128 \times (\text{input width} + 128 + 1)\)</span>. The first layer receives 50-dimensional embeddings, giving <span class="math inline">\(4 \times 128 \times 179 = 91{,}648\)</span>. The second receives the first layer’s 128-dimensional output, giving <span class="math inline">\(4 \times 128 \times 257 = 131{,}584\)</span>. Neither count depends on the number of time steps, because the same weights are reused at every step, which is the defining property of a recurrent layer.</p>
+</div>
+</details>
+<hr>
+<div id="emojify-review-q7">
+<p><strong>1. Emojifier-V1 cannot tell “not feeling happy” apart from “happy feeling not”, and Emojifier-V2 can. Is that because the LSTM learned what the word <code>not</code> means?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="emojify-review-q7">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>No, and the distinction matters. What changed is that the architecture can now represent an order-dependent function at all. Averaging is symmetric, so Emojifier-V1 gives those two sentences the same vector and is structurally incapable of separating them, no matter how much data it sees. That is a limit on scope rather than on vocabulary, since the average does contain <code>not</code> and a linear layer can learn that its presence matters. An LSTM reads the words in sequence, so <code>not</code> can influence how <code>happy</code> is interpreted. Whether this model actually learned to do that is a question about the data, and 132 training sentences contain almost no negation, so it has more likely learned a narrow association that happens to cover this phrase. The right conclusion is that V2 made the capability possible and a larger dataset would be needed to realize it.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="acknowledgments" class="level2">
+<h2 class="anchored" data-anchor-id="acknowledgments">Acknowledgments</h2>
+<p>The assignment credits Alison Darcy and the Woebot team for advice on its design. Woebot is a conversational agent for mental health, and part of its technology uses word embeddings to interpret what a user says, which is the same idea this lab applies to a much smaller problem.</p>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li>Pennington, J., Socher, R., &amp; Manning, C. (2014). GloVe: Global vectors for word representation. In <em>Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP)</em> (pp.&nbsp;1532-1543). Association for Computational Linguistics. <a href="https://doi.org/10.3115/v1/D14-1162" class="uri">https://doi.org/10.3115/v1/D14-1162</a></li>
+</ul>
+
+
+<div id="section-progress-widget" style="display:none; padding: 0.8em 1em; background: inherit; border-top: 1px solid var(--bs-border-color, #dee2e6); position: sticky; bottom: 0; z-index: 10;">
+  <p style="font-size: 0.8em; color: var(--bs-secondary-color, #6c757d); margin: 0 0 0.4em 0; font-weight: 600;">Progress</p>
+  <div style="background: var(--bs-secondary-bg, #e9ecef); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
+    <div style="background: var(--bs-primary, #2c3e50); height: 100%; width: 100%; border-radius: 6px;"></div>
+  </div>
+  <p style="font-size: 0.75em; color: var(--bs-tertiary-color, #adb5bd); margin: 0.3em 0 0 0;">100% completed (1494 of 1494 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.style.display = "block"; sb.appendChild(w); }
+});
+</script>
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/sequence-models/lab-operations-on-word-vectors.html" class="pagination-link" aria-label="Operations on Word Vectors">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Operations on Word Vectors</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
