@@ -5,7 +5,7 @@
   // applying a saved reader layout after the project control is removed.
   try { localStorage.removeItem('quarto-reader-mode'); } catch (e) {}
 
-  var themes = ['default', 'lion', 'red'];
+  var themes = ['lion', 'red', 'default'];
   var themeClasses = ['theme-lion', 'theme-red'];
   var legacyDark = false;
 
@@ -16,12 +16,12 @@
       legacyDark = true;
       return 'default';
     }
-    return themes.indexOf(id) === -1 ? 'default' : id;
+    return themes.indexOf(id) === -1 ? 'lion' : id;
   }
 
   function readTheme() {
-    var stored = 'default';
-    try { stored = localStorage.getItem('site-theme') || 'default'; } catch (e) {}
+    var stored = 'lion';
+    try { stored = localStorage.getItem('site-theme') || 'lion'; } catch (e) {}
     var normalized = normalizeTheme(stored);
     if (normalized !== stored) {
       try { localStorage.setItem('site-theme', normalized); } catch (e) {}
@@ -248,25 +248,21 @@
   var colorModeWasDark = null;
   var colorModeChangeFromControl = false;
   var colorModeChangeReset = null;
-  var DARK_IMAGE_NOTICE_KEY = 'site-dark-image-notice-dismissed-v1';
+
+  // Earlier versions remembered dismissal permanently. The notice now returns
+  // on every intentional switch to dark mode, so remove that retired setting.
+  try { localStorage.removeItem('site-dark-image-notice-dismissed-v1'); } catch (e) {}
 
   // Quarto provides the native color-mode switch, but it has no contextual
   // notice for content whose raster images retain light backgrounds. Keep this
-  // small enhancement beside the native control and remember dismissal locally.
-  function darkImageNoticeWasDismissed() {
-    try { return localStorage.getItem(DARK_IMAGE_NOTICE_KEY) === '1'; }
-    catch (e) { return false; }
-  }
-
-  function hideDarkImageNotice(remember) {
-    if (remember) {
-      try { localStorage.setItem(DARK_IMAGE_NOTICE_KEY, '1'); } catch (e) {}
-    }
+  // small enhancement beside the native control. Closing it applies only to
+  // the current visit to dark mode.
+  function hideDarkImageNotice() {
     if (darkImageNotice) darkImageNotice.hidden = true;
   }
 
   function showDarkImageNotice() {
-    if (!darkImageNotice || darkImageNoticeWasDismissed()) return;
+    if (!darkImageNotice) return;
     darkImageNotice.hidden = false;
   }
 
@@ -306,7 +302,7 @@
     close.className = 'site-dark-image-notice-close';
     close.setAttribute('aria-label', 'Dismiss dark mode image notice');
     close.textContent = '\u00d7';
-    close.addEventListener('click', function() { hideDarkImageNotice(true); });
+    close.addEventListener('click', hideDarkImageNotice);
 
     copy.appendChild(title);
     copy.appendChild(message);
@@ -338,7 +334,7 @@
     if (colorModeWasDark === false && dark && colorModeChangeFromControl) {
       showDarkImageNotice();
     } else if (!dark) {
-      hideDarkImageNotice(false);
+      hideDarkImageNotice();
     }
     if (colorModeWasDark !== dark) {
       colorModeChangeFromControl = false;

@@ -31,7 +31,7 @@ jobs:
           pip install --quiet firebase-admin
 
           python3 <<'PY'
-          import json, os, smtplib, time
+          import hashlib, json, os, smtplib, time
           from email.message import EmailMessage
 
           import firebase_admin
@@ -43,10 +43,9 @@ jobs:
           MONTH = 30 * 24 * 60 * 60 * 1000
           WARN_AFTER = 23 * MONTH
           DELETE_AFTER = 24 * MONTH
-          # An anonymous session owns no record and nothing is keyed to its uid.
-          # It exists only so a signed-out reader can contribute to the shared
-          # chess position cache, so it is pure residue once the browser stops
-          # using it. A returning visitor simply gets a new one, losing nothing.
+          # Anonymous sessions normally hold no progress. T-shirt sharing is the
+          # exception: revocation is bound to the creating uid for the full
+          # lifetime of an active link, so those owners must be retained.
           ANON_MAX_AGE = 24 * 60 * 60 * 1000
           NOW = int(time.time() * 1000)
 
@@ -94,17 +93,35 @@ jobs:
               # on sight. Treat a missing timestamp as unknown, never as ancient.
               return fallback if fallback > 0 else None
 
+          def has_active_tshirt_share(uid):
+              """Return True while this anonymous identity owns an unexpired
+              share. Return None on read failure so retention fails closed."""
+              owner = hashlib.sha256(('owner\n' + uid).encode('utf-8')).hexdigest()
+              try:
+                  active = db.reference('tshirt-share-owners/%s/active' % owner).get()
+              except Exception as err:
+                  print('  could not verify one anonymous share owner: %s' % type(err).__name__)
+                  return None
+              if not isinstance(active, dict):
+                  return False
+              return any(
+                  isinstance(entry, dict)
+                  and isinstance(entry.get('expiresAt'), (int, float))
+                  and entry['expiresAt'] > NOW
+                  for entry in active.values()
+              )
+
           # No uid is ever printed. chess/lb is world-readable and maps uids to
           # handles, and this repository is public, so a uid in an Actions log
           # would publish "this handle has been idle for two years". The
           # position in the run is enough to follow a report.
-          warned = deleted = skipped = anon = seen_n = 0
+          warned = deleted = skipped = anon = anon_protected = seen_n = 0
           anon_stale = []
           page = auth.list_users()
           while page:
               for user in page.users:
                   seen_n += 1
-                  # Anonymous sessions hold no progress and own no account record.
+                  # An active T-shirt share keeps its creator identity revocable.
                   if not user.provider_data and not user.email:
                       anon += 1
                       meta = user.user_metadata
@@ -113,7 +130,11 @@ jobs:
                       # only genuinely abandoned sessions age out.
                       last = int(meta.last_refresh_timestamp or meta.creation_timestamp or 0)
                       if last > 0 and (NOW - last) >= ANON_MAX_AGE:
-                          anon_stale.append(user.uid)
+                          active_share = has_active_tshirt_share(user.uid)
+                          if active_share is False:
+                              anon_stale.append(user.uid)
+                          else:
+                              anon_protected += 1
                       continue
 
                   seen = last_seen(user)
@@ -152,11 +173,24 @@ jobs:
               print('anonymous sessions idle over 24h: %d of %d' % (len(anon_stale), anon))
               if APPLY:
                   for i in range(0, len(anon_stale), 1000):
-                      res = auth.delete_users(anon_stale[i:i + 1000])
+                      # Recheck immediately before deletion so a share created
+                      # during this run cannot lose its creator identity.
+                      deletable = []
+                      for uid in anon_stale[i:i + 1000]:
+                          active_share = has_active_tshirt_share(uid)
+                          if active_share is False:
+                              deletable.append(uid)
+                          else:
+                              anon_protected += 1
+                      if not deletable:
+                          continue
+                      res = auth.delete_users(deletable)
                       anon_deleted += res.success_count
                       if res.failure_count:
                           print('  %d could not be deleted this run' % res.failure_count)
 
+          if anon_protected:
+              print('anonymous sessions retained for active shares or failed verification: %d' % anon_protected)
           mode = 'APPLIED' if APPLY else 'DRY RUN (set the RETENTION_APPLY variable to "true" to act)'
           print('\n%s: %d warned, %d deleted, %d skipped.' % (mode, warned, deleted, skipped))
           print('anonymous: %d seen, %d stale, %d removed.' % (anon, len(anon_stale), anon_deleted))
