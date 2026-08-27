@@ -1354,7 +1354,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
           <div style="font-weight:700;font-family:'Nunito',sans-serif;">🔬 Analysis board</div>
           <div class="ana-lines" id="anaLines" style="margin-top:6px;"></div>
           <div class="ana-row" id="anaCtrls">
-            <button id="anaSetupBtn">Set up position</button>
+            <button id="anaSetupBtn" title="Open the current analysis position in the board editor">Edit this position</button>
             <button id="anaStartBtn">Start position</button>
             <button id="anaFlipBtn">Flip</button>
             <button id="anaUndoBtn">Undo</button>
@@ -2066,7 +2066,8 @@ let mode = 'game';              // game | deck | guess
 let drillActive = null;         // current endgame drill (mode stays 'game')
 let trainSeq = 0;               // guards stale async callbacks in training modes
 let deckSession = null, guessSession = null, repSession = null;
-let anaSetup = false, anaPalPick = null, anaPreFen = null, anaLines = [null, null, null], anaSeq = 0;
+let anaSetup = false, anaPalPick = null, anaPreFen = null, anaPreGame = null;
+let anaLines = [null, null, null], anaSeq = 0;
 let pendingPre = null;          // SAN moves applied before a normal game starts (themed openings, tree practice)
 let customStart = false;        // game began from a custom position: play normally, record nothing
 /* assisted analysis */
@@ -6629,27 +6630,45 @@ $('fpStopBtn').onclick = fpStop;
 }
 $('anaFenBtn').onclick = anaLoadText;
 $('anaFenIn').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); anaLoadText(); } });
-$('anaSetupBtn').onclick = () => {
+/* Quarto has no native stateful chess-board editor. Keep this custom handoff
+   narrow. Edit a FEN clone so Cancel can restore the complete analysis line,
+   including its move history and Undo path, instead of only its final board. */
+function beginAnaEdit() {
   if (mode !== 'analysis' || anaSetup) return;
-  anaSetup = true; anaPreFen = game.fen(); anaPalPick = null;
+  anaSetup = true; anaPreGame = game; anaPreFen = game.fen(); anaPalPick = null;
+  game = new Chess(anaPreFen);
+  $('anaPal').querySelectorAll('.sel').forEach(x => x.classList.remove('sel'));
+  const fields = anaPreFen.split(' ');
+  const turn = fields[1] === 'b' ? 'b' : 'w';
+  $('anaTurnSeg').querySelectorAll('button').forEach(x => x.classList.toggle('sel', x.dataset.v === turn));
   /* a right the position could not have held anyway says nothing about what the
      user is about to build, so it starts ticked rather than off */
-  const held = anaPreFen.split(' ')[2];
+  const held = fields[2];
   for (const r of CASTLE_RIGHTS) anaCastleWant[r] = castleSupported(r) ? held.includes(r) : true;
   anaSeq++; anaStopSearches();
   $('anaSetupUI').style.display = 'block'; $('anaCtrls').style.display = 'none'; whyShow(false);
   $('anaLines').innerHTML = '';
   $('anaSetupNote').textContent = 'Drag pieces from the palette onto the board, drag pieces around, or drag them off the board to remove them. Clicking works too: pick a palette piece (or the ✕ eraser), then click squares. Both kings are required.';
   selected = null; lastMove = null;
-  coachMsg.textContent = 'Setup mode. Arrange the position, choose who moves, then press Analyze this position.';
+  coachMsg.textContent = 'Edit mode. Adjust the position, choose who moves, then press Analyze this position.';
   renderBoard();
-};
+}
+$('anaSetupBtn').onclick = beginAnaEdit;
 $('anaClearBtn').onclick = () => { if (anaSetup) { game.clear(); renderBoard(); } };
 $('anaCancelBtn').onclick = () => {
   if (!anaSetup) return;
+  const restore = anaPreGame, fallbackFen = anaPreFen;
   anaSetup = false;
+  anaPreGame = null; anaPreFen = null;
   $('anaSetupUI').style.display = 'none'; $('anaCtrls').style.display = '';
-  anaLoadFen(anaPreFen);
+  if (restore) {
+    game = restore;
+    selected = null;
+    anaRebuildLog();
+    renderBoard();
+    anaAnalyse();
+    coachMsg.textContent = 'Edit canceled. The analysis position and move history are unchanged.';
+  } else if (fallbackFen) anaLoadFen(fallbackFen);
 };
 $('anaDoneBtn').onclick = () => {
   if (!anaSetup) return;
@@ -6669,12 +6688,18 @@ $('anaDoneBtn').onclick = () => {
     $('anaSetupNote').textContent = 'This position is impossible: whichever side moves, the other king could be captured. Adjust the pieces.';
     return;
   }
+  const prior = (anaPreFen || '').split(' ');
+  const samePlacementAndTurn = prior.length >= 6 && board === prior[0] && turn === prior[1];
+  const enPassant = samePlacementAndTurn ? prior[3] : '-';
+  const halfmove = samePlacementAndTurn ? prior[4] : '0';
+  const fullmove = prior[5] || '1';
   anaSetup = false;
-  if (!anaLoadFen(`${board} ${turn} ${anaCastleField()} - 0 1`)) {
+  if (!anaLoadFen(`${board} ${turn} ${anaCastleField()} ${enPassant} ${halfmove} ${fullmove}`)) {
     anaSetup = true;
     $('anaSetupNote').textContent = 'That position could not be loaded. Adjust the pieces and try again.';
     return;
   }
+  anaPreGame = null; anaPreFen = null;
   $('anaTurnSeg').querySelectorAll('button').forEach(x => x.classList.toggle('sel', x.dataset.v === turn));
   $('anaSetupUI').style.display = 'none'; $('anaCtrls').style.display = '';
   coachMsg.textContent = turn === want

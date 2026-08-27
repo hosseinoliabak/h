@@ -5,7 +5,7 @@
   // applying a saved reader layout after the project control is removed.
   try { localStorage.removeItem('quarto-reader-mode'); } catch (e) {}
 
-  var themes = ['lion', 'red', 'default'];
+  var themes = ['default', 'lion', 'red'];
   var themeClasses = ['theme-lion', 'theme-red'];
   var legacyDark = false;
 
@@ -16,12 +16,12 @@
       legacyDark = true;
       return 'default';
     }
-    return themes.indexOf(id) === -1 ? 'lion' : id;
+    return themes.indexOf(id) === -1 ? 'default' : id;
   }
 
   function readTheme() {
-    var stored = 'lion';
-    try { stored = localStorage.getItem('site-theme') || 'lion'; } catch (e) {}
+    var stored = 'default';
+    try { stored = localStorage.getItem('site-theme') || 'default'; } catch (e) {}
     var normalized = normalizeTheme(stored);
     if (normalized !== stored) {
       try { localStorage.setItem('site-theme', normalized); } catch (e) {}
