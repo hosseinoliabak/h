@@ -244,13 +244,84 @@
   var fontBadge = null;
   var themeButton = null;
   var darkModeButton = null;
+  var darkImageNotice = null;
+  var colorModeWasDark = null;
+  var colorModeChangeFromControl = false;
+  var colorModeChangeReset = null;
+  var DARK_IMAGE_NOTICE_KEY = 'site-dark-image-notice-dismissed-v1';
+
+  // Quarto provides the native color-mode switch, but it has no contextual
+  // notice for content whose raster images retain light backgrounds. Keep this
+  // small enhancement beside the native control and remember dismissal locally.
+  function darkImageNoticeWasDismissed() {
+    try { return localStorage.getItem(DARK_IMAGE_NOTICE_KEY) === '1'; }
+    catch (e) { return false; }
+  }
+
+  function hideDarkImageNotice(remember) {
+    if (remember) {
+      try { localStorage.setItem(DARK_IMAGE_NOTICE_KEY, '1'); } catch (e) {}
+    }
+    if (darkImageNotice) darkImageNotice.hidden = true;
+  }
+
+  function showDarkImageNotice() {
+    if (!darkImageNotice || darkImageNoticeWasDismissed()) return;
+    darkImageNotice.hidden = false;
+  }
+
+  function markColorModeControlUse() {
+    colorModeChangeFromControl = true;
+    if (colorModeChangeReset) window.clearTimeout(colorModeChangeReset);
+    colorModeChangeReset = window.setTimeout(function() {
+      colorModeChangeFromControl = false;
+      colorModeChangeReset = null;
+    }, 1000);
+  }
+
+  function makeDarkImageNotice() {
+    var notice = document.createElement('aside');
+    notice.id = 'site-dark-image-notice';
+    notice.setAttribute('role', 'status');
+    notice.setAttribute('aria-live', 'polite');
+    notice.setAttribute('aria-atomic', 'true');
+    notice.hidden = true;
+
+    var icon = document.createElement('span');
+    icon.className = 'site-dark-image-notice-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = 'i';
+
+    var copy = document.createElement('div');
+    copy.className = 'site-dark-image-notice-copy';
+
+    var title = document.createElement('strong');
+    title.textContent = 'Image brightness';
+
+    var message = document.createElement('p');
+    message.textContent = 'Some pages contain images with light backgrounds. They may appear bright while you use dark mode.';
+
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'site-dark-image-notice-close';
+    close.setAttribute('aria-label', 'Dismiss dark mode image notice');
+    close.textContent = '\u00d7';
+    close.addEventListener('click', function() { hideDarkImageNotice(true); });
+
+    copy.appendChild(title);
+    copy.appendChild(message);
+    notice.appendChild(icon);
+    notice.appendChild(copy);
+    notice.appendChild(close);
+    return notice;
+  }
 
   function syncColorMode() {
     var current = readTheme();
+    var dark = isDarkMode();
     applyTheme(current);
     setGiscusTheme(current);
     if (themeButton) {
-      var dark = isDarkMode();
       themeButton.disabled = dark;
       themeButton.style.opacity = dark ? '0.55' : '1';
       themeButton.style.cursor = dark ? 'not-allowed' : 'pointer';
@@ -259,12 +330,20 @@
         : 'Switch light color palette';
     }
     if (darkModeButton) {
-      var darkMode = isDarkMode();
-      var darkModeLabel = darkMode ? 'Switch to light mode' : 'Switch to dark mode';
+      var darkModeLabel = dark ? 'Switch to light mode' : 'Switch to dark mode';
       darkModeButton.title = darkModeLabel;
       darkModeButton.setAttribute('aria-label', darkModeLabel);
-      darkModeButton.setAttribute('aria-pressed', darkMode ? 'true' : 'false');
+      darkModeButton.setAttribute('aria-pressed', dark ? 'true' : 'false');
     }
+    if (colorModeWasDark === false && dark && colorModeChangeFromControl) {
+      showDarkImageNotice();
+    } else if (!dark) {
+      hideDarkImageNotice(false);
+    }
+    if (colorModeWasDark !== dark) {
+      colorModeChangeFromControl = false;
+    }
+    colorModeWasDark = dark;
   }
 
   // Create toggle button after DOM loads
@@ -310,6 +389,7 @@
     // used. Suppress the saved light palette in Darkly, then restore it when
     // the reader returns to light mode. This observes Quarto's documented
     // public class contract instead of reimplementing its switch.
+    colorModeWasDark = isDarkMode();
     var modeObserver = new MutationObserver(syncColorMode);
     modeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
@@ -361,6 +441,8 @@
       darkToggle.classList.add('site-display-control', 'site-dark-control');
       darkToggle.classList.remove('px-1');
       darkToggle.setAttribute('role', 'button');
+      darkToggle.setAttribute('aria-controls', 'site-dark-image-notice');
+      darkToggle.addEventListener('click', markColorModeControlUse, true);
       darkToggle.addEventListener('keydown', function(event) {
         if (event.key === ' ') {
           event.preventDefault();
@@ -375,6 +457,11 @@
     var header = document.getElementById('quarto-header');
     if (header && header.parentNode) header.parentNode.insertBefore(controls, header.nextSibling);
     else document.body.appendChild(controls);
+    darkImageNotice = makeDarkImageNotice();
+    if (controls.parentNode) {
+      if (controls.nextSibling) controls.parentNode.insertBefore(darkImageNotice, controls.nextSibling);
+      else controls.parentNode.appendChild(darkImageNotice);
+    }
     syncColorMode();
   });
 
