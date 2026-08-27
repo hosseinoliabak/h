@@ -599,7 +599,9 @@
         if (!ok || !window.firebase || !window.firebase.functions) {
           throw new Error('Firebase functions are unavailable');
         }
-        return window.firebase.functions('us-central1');
+        // us-central1 is Firebase Functions' default region. The compat
+        // namespace accepts an optional Firebase App here, not a region string.
+        return window.firebase.functions();
       });
     },
     db: function () { return db; },

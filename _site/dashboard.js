@@ -9,6 +9,13 @@
 
   var DATA_URL = '/about/dashboard-data.json';
   var MAX_DATA_BYTES = 1024 * 1024;
+  /* Quarto has no native remote-deployment timestamp. This exact public API
+   * endpoint supplies the latest commit that changed deployable site output.
+   */
+  var UPDATE_API_URL = 'https://api.github.com/repos/hosseinoliabak/h/commits?path=_site&per_page=1';
+  var UPDATE_API_ORIGIN = 'https://api.github.com';
+  var UPDATE_API_PATH = '/repos/hosseinoliabak/h/commits';
+  var MAX_UPDATE_BYTES = 256 * 1024;
   var SUBJECTS = new Set([
     'Artificial Intelligence', 'Cybersecurity', 'Deep Learning',
     'Machine Learning', 'Mathematics', 'Networking', 'Other'
@@ -18,6 +25,12 @@
     year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
   });
   var monthFormat = new Intl.DateTimeFormat(undefined, { month: 'short', timeZone: 'UTC' });
+  var updateDayFormat = new Intl.DateTimeFormat(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric'
+  });
+  var updateTimeFormat = new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+  });
 
   function element(tag, className, text) {
     var node = document.createElement(tag);
@@ -118,6 +131,67 @@
     });
   }
 
+  function updateApiUrl() {
+    var url = new URL(UPDATE_API_URL);
+    if (url.origin !== UPDATE_API_ORIGIN || url.pathname !== UPDATE_API_PATH
+        || url.searchParams.get('path') !== '_site' || url.searchParams.get('per_page') !== '1'
+        || Array.from(url.searchParams).length !== 2) {
+      throw new Error('Website update endpoint is not allowed');
+    }
+    return url;
+  }
+
+  function validateWebsiteUpdate(value) {
+    if (!Array.isArray(value) || value.length !== 1) {
+      throw new Error('Website update data has an unsupported shape');
+    }
+    var item = value[0];
+    var timestamp = item && item.commit && item.commit.committer && item.commit.committer.date;
+    if (!item || typeof item.sha !== 'string' || !/^[0-9a-f]{40}$/.test(item.sha)
+        || typeof timestamp !== 'string'
+        || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(timestamp)) {
+      throw new Error('Website update data is invalid');
+    }
+    var date = new Date(timestamp);
+    if (Number.isNaN(date.getTime()) || date.getUTCFullYear() < 2020
+        || date.getTime() > Date.now() + 300000) {
+      throw new Error('Website update time is invalid');
+    }
+    return date;
+  }
+
+  function loadWebsiteUpdate() {
+    var url;
+    try {
+      url = updateApiUrl();
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    var controller = new AbortController();
+    var timer = window.setTimeout(function () { controller.abort(); }, 8000);
+    return window.fetch(url.href, {
+      credentials: 'omit',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2026-03-10'
+      },
+      redirect: 'error',
+      referrerPolicy: 'no-referrer',
+      signal: controller.signal
+    }).then(function (response) {
+      if (!response.ok) throw new Error('Website update request failed');
+      var type = String(response.headers.get('content-type') || '').toLowerCase();
+      if (type.indexOf('application/json') === -1) {
+        throw new Error('Website update data type is not supported');
+      }
+      return readBoundedBody(response, MAX_UPDATE_BYTES);
+    }).then(function (source) {
+      return validateWebsiteUpdate(JSON.parse(source));
+    }).finally(function () {
+      window.clearTimeout(timer);
+    });
+  }
+
   function groupBy(items, keyFunction) {
     var grouped = new Map();
     items.forEach(function (item) {
@@ -144,11 +218,39 @@
     var thisYear = data.articles.filter(function (item) { return item.date.slice(0, 4) === String(currentYear); }).length;
     var first = data.articles.length ? data.articles[data.articles.length - 1].date : null;
     var subjects = new Set(data.articles.map(function (item) { return item.subject; }));
+    var updateCard = statCard('Checking', 'Last website update', 'Live publication status');
+    updateCard.id = 'website-update-stat';
+    updateCard.setAttribute('aria-live', 'polite');
     host.replaceChildren(
+      updateCard,
       statCard(numberFormat.format(data.articles.length), 'Published articles', 'Original publication dates'),
       statCard(numberFormat.format(thisYear), 'Published in ' + currentYear, 'Through ' + dateFormat.format(today)),
       statCard(numberFormat.format(byDate.size), 'Active publishing days', 'Days with at least one release'),
       statCard(numberFormat.format(subjects.size), 'Subjects', first ? 'Publishing since ' + dateFormat.format(utcDate(first)) : 'No publications yet')
+    );
+  }
+
+  function renderWebsiteUpdate(date) {
+    var host = document.getElementById('website-update-stat');
+    if (!host) return;
+    var value = element('strong', 'dashboard-stat-value dashboard-stat-value-date');
+    var time = element('time', '', updateDayFormat.format(date));
+    time.dateTime = date.toISOString();
+    value.appendChild(time);
+    host.replaceChildren(
+      value,
+      element('span', 'dashboard-stat-label', 'Last website update'),
+      element('small', 'dashboard-stat-note', updateTimeFormat.format(date) + '. Live publication status')
+    );
+  }
+
+  function renderWebsiteUpdateUnavailable() {
+    var host = document.getElementById('website-update-stat');
+    if (!host) return;
+    host.replaceChildren(
+      element('strong', 'dashboard-stat-value dashboard-stat-value-date', 'Unavailable'),
+      element('span', 'dashboard-stat-label', 'Last website update'),
+      element('small', 'dashboard-stat-note', 'The latest publication time could not be verified')
     );
   }
 
@@ -417,6 +519,7 @@
     if (!root) return;
     loadPublicationData().then(function (data) {
       renderPublicationStats(data);
+      loadWebsiteUpdate().then(renderWebsiteUpdate).catch(renderWebsiteUpdateUnavailable);
       renderYearControl(data);
       renderBreakdowns(data);
       renderRecent(data);
