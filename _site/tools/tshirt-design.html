@@ -2677,7 +2677,7 @@ body.quarto-dark .tee-studio svg * {
           </div>
           <div class="tee-artwork-pane" id="tee-artwork-upload" role="tabpanel" aria-labelledby="tee-artwork-upload-tab" hidden="">
             <div class="tee-logo-picker"><input type="file" id="tee-logo-file" accept="image/svg+xml,image/png,image/jpeg,image/webp" multiple=""><label class="tee-file-label" for="tee-logo-file">＋ Add artwork</label></div>
-            <p class="tee-artwork-status">Add one or several files. SVG is preferred; PNG, JPEG, and WebP are supported up to 7 MB each.</p>
+            <p class="tee-artwork-status">Add one or several files. SVG is preferred; PNG, JPEG, and WebP are supported up to 7 MiB each.</p>
           </div>
           <div class="tee-artwork-selected" id="tee-artwork-selected">
             <span class="tee-logo-name" id="tee-logo-name">No artwork added</span>
@@ -3182,6 +3182,7 @@ body.quarto-dark .tee-studio svg * {
   var shareBusy = false;
   var shareMessage = '';
   var shareFirebasePromise = null;
+  var shareAuthPromise = null;
   var currentShare = null;
   var shareDirty = false;
   var revokeArmedUntil = 0;
@@ -5816,7 +5817,7 @@ body.quarto-dark .tee-studio svg * {
     };
     if (snapshot.design.artworks.length > MAX_SHARED_ARTWORKS) throw new Error('A shared design can contain at most 12 artworks');
     var bytes = new TextEncoder().encode(JSON.stringify(snapshot)).length;
-    if (bytes > MAX_SHARE_JSON_BYTES) throw new Error('The shared design package is larger than 20 MB');
+    if (bytes > MAX_SHARE_JSON_BYTES) throw new Error('The shared design package is larger than 20 MiB');
     return snapshot;
   }
 
@@ -6055,10 +6056,9 @@ body.quarto-dark .tee-studio svg * {
     });
   }
 
-  function ensureShareAuth() {
+  function waitForRestoredShareUser() {
     return new Promise(function (resolve, reject) {
       var settled = false;
-      var signingIn = false;
       var timeout = setTimeout(function () { finish(new Error('Firebase Authentication timed out')); }, 15000);
       var unsubscribe = function () {};
       function finish(error, user) {
@@ -6069,13 +6069,48 @@ body.quarto-dark .tee-studio svg * {
         if (error) reject(error); else resolve(user);
       }
       unsubscribe = window.firebase.auth().onAuthStateChanged(function (user) {
-        if (user) { finish(null, user); return; }
-        if (signingIn) return;
-        signingIn = true;
-        window.firebase.auth().signInAnonymously().then(function (credential) {
-          finish(null, credential.user);
-        }).catch(function (error) { finish(error); });
+        finish(null, user || null);
       }, function (error) { finish(error); });
+    });
+  }
+
+  function supportedShareCreator(user) {
+    if (!user || user.isAnonymous || !Array.isArray(user.providerData)) return false;
+    return user.providerData.some(function (provider) {
+      return provider && (provider.providerId === 'google.com' || provider.providerId === 'github.com');
+    });
+  }
+
+  function loadShareAuth() {
+    if (shareAuthPromise) return shareAuthPromise;
+    shareAuthPromise = loadPinnedShareScript('firebase-auth-compat.js', function () {
+      return Boolean(window.firebase && window.firebase.auth);
+    }).catch(function (error) {
+      shareAuthPromise = null;
+      throw error;
+    });
+    return shareAuthPromise;
+  }
+
+  function shareAuthError(code) {
+    var error = new Error(code);
+    error.code = code;
+    return error;
+  }
+
+  function requireShareCreator() {
+    return waitForRestoredShareUser().then(function (user) {
+      if (!supportedShareCreator(user)) throw shareAuthError('auth/sign-in-required');
+      return user;
+    });
+  }
+
+  function requireShareRevoker() {
+    return waitForRestoredShareUser().then(function (user) {
+      /* Existing anonymous creators retain revocation access during the
+         migration grace period. This function never creates a session. */
+      if (!user) throw shareAuthError('auth/revoke-sign-in-required');
+      return user;
     });
   }
 
@@ -6084,7 +6119,6 @@ body.quarto-dark .tee-studio svg * {
     shareFirebasePromise = loadPinnedShareScript('firebase-app-compat.js', function () { return Boolean(window.firebase && window.firebase.initializeApp); })
       .then(function () {
         return Promise.all([
-          loadPinnedShareScript('firebase-auth-compat.js', function () { return Boolean(window.firebase && window.firebase.auth); }),
           loadPinnedShareScript('firebase-app-check-compat.js', function () { return Boolean(window.firebase && window.firebase.appCheck); }),
           loadPinnedShareScript('firebase-functions-compat.js', function () { return Boolean(window.firebase && window.firebase.functions); })
         ]);
@@ -6092,9 +6126,8 @@ body.quarto-dark .tee-studio svg * {
       .then(function () {
         if (!window.firebase.apps.length) window.firebase.initializeApp(SHARE_FIREBASE_CONFIG);
         try { window.firebase.appCheck().activate(SHARE_RECAPTCHA_KEY, true); } catch (error) {}
-        return ensureShareAuth();
       })
-      .then(function () { return window.firebase.functions('us-central1'); })
+      .then(function () { return window.firebase.app().functions('us-central1'); })
       .catch(function (error) {
         shareFirebasePromise = null;
         throw error;
@@ -6108,7 +6141,9 @@ body.quarto-dark .tee-studio svg * {
     if (code === 'not-found') return 'This shared design is unavailable or has expired.';
     if (code === 'invalid-argument' || code === 'data-loss') return 'The shared design could not be verified safely.';
     if (code === 'permission-denied') return 'This browser cannot revoke that link.';
-    if (code === 'unauthenticated') return 'A private anonymous session could not be created.';
+    if (code === 'auth/sign-in-required') return 'Sign in at the top of the page with Google or GitHub to create a share link.';
+    if (code === 'auth/revoke-sign-in-required') return 'Sign in at the top of the page to revoke this link.';
+    if (code === 'unauthenticated') return 'Sign in at the top of the page and try again.';
     if (code === 'failed-precondition') return 'App verification is unavailable. Please reload and try again.';
     return 'The sharing service is unavailable. Your design remains in this browser.';
   }
@@ -6128,6 +6163,8 @@ body.quarto-dark .tee-studio svg * {
     var version = shareStateVersion;
     updateShareUi('Creating an immutable 10-day snapshot.');
     loadShareFirebase().then(function (functions) {
+      return loadShareAuth().then(requireShareCreator).then(function () { return functions; });
+    }).then(function (functions) {
       var callable = functions.httpsCallable('createTshirtShare', { timeout: 60000, limitedUseAppCheckTokens: true });
       return callable({ snapshot: snapshot });
     }).then(function (result) {
@@ -6177,6 +6214,8 @@ body.quarto-dark .tee-studio svg * {
     var serial = ++shareRequestSerial;
     updateShareUi('Revoking the shared link.');
     loadShareFirebase().then(function (functions) {
+      return loadShareAuth().then(requireShareRevoker).then(function () { return functions; });
+    }).then(function (functions) {
       var callable = functions.httpsCallable('revokeTshirtShare', { timeout: 60000, limitedUseAppCheckTokens: true });
       return callable({ id: id, revocationToken: token });
     }).then(function () {
@@ -7401,6 +7440,32 @@ body.quarto-dark .tee-studio svg * {
     'vector-effect': true, 'shape-rendering': true
   };
 
+  var safeSvgAttributes = {
+    'alignment-baseline': true, 'aria-label': true, 'aria-labelledby': true,
+    'baseline-shift': true, 'clip-path': true, 'clip-rule': true, 'color': true,
+    'cx': true, 'cy': true, 'd': true, 'display': true, 'dominant-baseline': true,
+    'dx': true, 'dy': true, 'fill': true, 'fill-opacity': true, 'fill-rule': true,
+    'font-family': true, 'font-size': true, 'font-style': true, 'font-weight': true,
+    'gradienttransform': true, 'gradientunits': true, 'height': true, 'href': true,
+    'id': true, 'lengthadjust': true, 'letter-spacing': true, 'marker-end': true,
+    'marker-mid': true, 'marker-start': true, 'markerheight': true,
+    'markerunits': true, 'markerwidth': true, 'mask': true, 'maskcontentunits': true,
+    'maskunits': true, 'offset': true, 'opacity': true, 'orient': true,
+    'overflow': true, 'paint-order': true, 'pathlength': true,
+    'patterncontentunits': true, 'patterntransform': true, 'patternunits': true,
+    'points': true, 'preserveaspectratio': true, 'r': true, 'refx': true,
+    'refy': true, 'role': true, 'rotate': true, 'rx': true, 'ry': true,
+    'shape-rendering': true, 'space': true, 'spreadmethod': true,
+    'stop-color': true, 'stop-opacity': true, 'stroke': true,
+    'stroke-dasharray': true, 'stroke-dashoffset': true, 'stroke-linecap': true,
+    'stroke-linejoin': true, 'stroke-miterlimit': true, 'stroke-opacity': true,
+    'stroke-width': true, 'style': true, 'text-anchor': true, 'textlength': true,
+    'transform': true, 'transform-origin': true, 'vector-effect': true,
+    'version': true, 'viewbox': true, 'visibility': true, 'width': true,
+    'word-spacing': true, 'x': true, 'x1': true, 'x2': true, 'y': true,
+    'y1': true, 'y2': true
+  };
+
   function sanitizeSvgStyle(style) {
     var clean = [];
     String(style).split(';').forEach(function (declaration) {
@@ -7464,6 +7529,12 @@ body.quarto-dark .tee-studio svg * {
           return;
         }
         if (attribute.namespaceURI && attribute.namespaceURI !== XLINK_NAMESPACE && attribute.namespaceURI !== 'http://www.w3.org/XML/1998/namespace') {
+          node.removeAttributeNode(attribute);
+          return;
+        }
+        if ((attribute.namespaceURI === XLINK_NAMESPACE && localName !== 'href')
+            || (attribute.namespaceURI === 'http://www.w3.org/XML/1998/namespace' && localName !== 'space')
+            || !safeSvgAttributes[localName]) {
           node.removeAttributeNode(attribute);
           return;
         }
@@ -7594,7 +7665,7 @@ body.quarto-dark .tee-studio svg * {
   function processUploadedArtwork(file) {
     var name = document.getElementById('tee-logo-name');
     if (file.size > MAX_LOGO_BYTES) {
-      name.textContent = file.name + ' is larger than 7 MB.';
+      name.textContent = file.name + ' is larger than 7 MiB.';
       return Promise.resolve(false);
     }
     return file.arrayBuffer().then(function (buffer) {

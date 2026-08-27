@@ -1507,7 +1507,6 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script>
 /* same Firebase project as the Pastebin tool; the chess page only touches /chess/ */
 try {
@@ -1528,23 +1527,6 @@ try {
     firebase.appCheck().activate('6LdhmdosAAAAAGh4ojYqXCU0JOeVo3X-R1qmMaZq', true);
   }
   window.__chessFdb = firebase.database();
-  /* Anonymous sign-in is a fallback for readers who are NOT signed in, so they
-     still get an auth.uid and can contribute to the shared position cache.
-     It must never run when a real session exists: signInAnonymously replaces
-     the current user, which would silently sign a Google or GitHub reader out.
-     Waiting for the first auth state settles that before deciding. */
-  try {
-    window.__chessAuthP = new Promise(resolve => {
-      const auth = firebase.auth();
-      const stop = auth.onAuthStateChanged(u => {
-        stop();
-        if (u) { resolve(u.uid); return; }
-        auth.signInAnonymously()
-          .then(c => resolve((c && c.user && c.user.uid) || null))
-          .catch(e => { window.__chessAuthErr = (e && e.code) || 'unknown'; resolve(null); });
-      });
-    });
-  } catch (e) { window.__chessAuthP = null; window.__chessAuthErr = 'script-blocked'; }
 } catch (e) { window.__chessFdb = null; }
 </script>
 
@@ -2216,7 +2198,6 @@ function renderProgress() {
 }
 /* ---------- online identity + leaderboard (optional, Firebase) ---------- */
 const fdb = window.__chessFdb || null;
-const authP = window.__chessAuthP || Promise.resolve(null);
 const CLOUD_KEY = 'chess-coach-cloud-v1';        // legacy profile, read once to migrate
 const MIGRATED_KEY = 'chess-coach-migrated-v1';
 
@@ -2228,6 +2209,12 @@ const MIGRATED_KEY = 'chess-coach-migrated-v1';
    read the list and take over an account. A uid cannot be used that way,
    because auth.uid comes from a verified token rather than from the client. */
 let cloudProfile = null;   // { uid, name } while signed in, otherwise null
+
+function supportedSiteAccount(user) {
+  return Boolean(user && !user.isAnonymous && Array.isArray(user.providerData) && user.providerData.some(provider =>
+    provider && (provider.providerId === 'google.com' || provider.providerId === 'github.com')
+  ));
+}
 
 /* Every read and write of this player's own data goes through here. */
 function meRef(sub) {
@@ -2291,7 +2278,7 @@ function pullCloud() {
    immediately and again when the handle arrives, hence the uid guard. */
 let wiredUid = null;
 function onIdentity(user) {
-  cloudProfile = user
+  cloudProfile = supportedSiteAccount(user)
     ? { uid: user.uid, name: (window.siteAuth && window.siteAuth.handle()) || 'Player' }
     : null;
   renderCloudBox();
@@ -2825,14 +2812,15 @@ function lcKey(fen) {
   return /^[a-zA-Z0-9_-]{1,100}$/.test(k) ? k : null;
 }
 function lcActive() { return !!fdb && mode === 'game' && !drillActive && game.history().length <= 30; }
+function lcCanWrite() { return lcActive() && !!cloudProfile; }
 function lcLookup() {
   const el = $('bookLine');
   el.style.display = 'none';
   if (!lcActive()) return;
   const fen = game.fen(), key = lcKey(fen), seq = gameSeq;
   if (!key) return;
-  const countIt = !lcCounted.has(key);
-  lcCounted.add(key);
+  const countIt = lcCanWrite() && !lcCounted.has(key);
+  if (countIt) lcCounted.add(key);
   fdb.ref('chess/positions/' + key).once('value').then(snap => {
     const v = snap.val();
     if (seq === gameSeq && phase === 'player' && game.fen() === fen && v && v.d >= 12 && typeof v.cp === 'number') {
@@ -2847,7 +2835,7 @@ function lcLookup() {
   }).catch(() => {});
 }
 function lcMaybeWrite(fen, info) {
-  if (!lcActive() || info.depth < 18 || !info.pv || !info.pv[0]) return;
+  if (!lcCanWrite() || info.depth < 18 || !info.pv || !info.pv[0]) return;
   const key = lcKey(fen);
   if (!key || info.depth < (lcDepth.get(key) || 0) + 4) return;   // write at ~depth 18 and again near 22
   lcDepth.set(key, info.depth);

@@ -234,13 +234,13 @@
     var host = document.getElementById('website-update-stat');
     if (!host) return;
     var value = element('strong', 'dashboard-stat-value dashboard-stat-value-date');
-    var time = element('time', '', updateDayFormat.format(date));
+    var time = element('time', '', updateDayFormat.format(date) + ', ' + updateTimeFormat.format(date));
     time.dateTime = date.toISOString();
     value.appendChild(time);
     host.replaceChildren(
       value,
       element('span', 'dashboard-stat-label', 'Last website update'),
-      element('small', 'dashboard-stat-note', updateTimeFormat.format(date) + '. Live publication status')
+      element('small', 'dashboard-stat-note', 'Live publication status')
     );
   }
 

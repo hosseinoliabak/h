@@ -178,7 +178,7 @@
     if (authWatching) return;
     authWatching = true;
     window.firebase.auth().onAuthStateChanged(function (user) {
-      // An anonymous session (the chess page opens one) is not a signed-in reader.
+      // A legacy anonymous session is not a signed-in reader.
       currentUser = user && !user.isAnonymous ? user : null;
       if (currentUser) {
         lsSet(SEEN_KEY, '1');
