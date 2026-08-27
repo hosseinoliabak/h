@@ -1,0 +1,1691 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="The approximate search that finds the most likely translation, the log and length-normalization refinements, and how to tell search errors from model errors.">
+
+<title>Beam Search – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/sequence-models/bleu-score.html" rel="next">
+<link href="../../../ai/deep-learning/sequence-models/sequence-to-sequence-models.html" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-dark-5a1953863e1f72ef3b996ef827f01ca7.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-72f0d0848bd44e30f74044ddea63e70c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../../../site_libs/bootstrap/bootstrap-dark-2c993d82a95f65a68c89c17a41953382.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../../../site_libs/bootstrap/bootstrap-72f0d0848bd44e30f74044ddea63e70c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": true,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": "tree",
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Beam Search – H’s Notes">
+<meta property="og:description" content="The approximate search that finds the most likely translation, the log and length-normalization refinements, and how to tell search errors from model errors.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/beam-search_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta property="og:image:alt" content="A tree growing left to right over three columns. The first column holds in, Jane and September. The second holds in September, Jane is and Jane visits, with orange arrows showing that two of them came from Jane and none from September. The third holds in September Jane, Jane is visiting and Jane visits Africa. Five faint stubs fan out of every node in the first two columns, standing in for the thousands of discarded alternatives.">
+<meta name="twitter:title" content="Beam Search – H’s Notes">
+<meta name="twitter:description" content="The approximate search that finds the most likely translation, the log and length-normalization refinements, and how to tell search errors from model errors.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/beam-search_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:image:alt" content="A tree growing left to right over three columns. The first column holds in, Jane and September. The second holds in September, Jane is and Jane visits, with orange arrows showing that two of them came from Jane and none from September. The third holds in September Jane, Jane is visiting and Jane visits Africa. Five faint stubs fan out of every node in the first two columns, standing in for the thousands of discarded alternatives.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://h.oliabak.com/ai/deep-learning/sequence-models/beam-search.html">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../index.html">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/index.html">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/index.html">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/index.html">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/index.html">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive.html">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/kali-linux/index.html">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/index.html">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/index.html">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/index.html">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/index.html">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/index.html">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/index.html">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/index.html">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/index.html">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/index.html">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/index.html">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/index.html">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/index.html">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/index.html">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/index.html">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/index.html">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/index.html">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info.html">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion.html">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator.html">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit.html">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin.html">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code.html">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text.html">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values.html">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Classroom</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/randomizer.html">
+ <span class="dropdown-text">Randomizer</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs.html">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula.html">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview.html">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview.html">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas.html">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium.html">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview.html">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet.html">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography.html">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design.html">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess.html">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess.html">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess.html">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about.html">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/dashboard.html">
+ <span class="dropdown-text">Dashboard</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap.html">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website.html">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="Toggle dark mode"><i class="bi"></i></a>
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/sequence-models/beam-search.html">Beam Search</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence Models</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/recurrent-neural-networks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Recurrent Neural Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/rnn-architectures-and-language-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RNN Architectures and Language Models</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vanishing Gradients, GRUs, and LSTMs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/bidirectional-and-deep-rnns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bidirectional and Deep RNNs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-building-your-recurrent-neural-network.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Building Your Recurrent Neural Network Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-character-level-language-model.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Character Level Language Model</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-improvise-a-jazz-solo.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Improvise a Jazz Solo with an LSTM Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/learning-word-embeddings-word2vec-and-glove.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning Word Embeddings with Word2vec and GloVe</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sentiment Classification and Debiasing Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-operations-on-word-vectors.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Operations on Word Vectors</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-emojify.html" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Emojify</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/sequence-to-sequence-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence to Sequence Models</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/beam-search.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Beam Search</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/bleu-score.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BLEU Score</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/attention-model.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Attention Model</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" style="text-align:center; margin-bottom:12px;">
+  <canvas id="page-qr-canvas"></canvas>
+  <div style="font-size:11px; color:#888; margin-top:4px;">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var canvas = document.getElementById('page-qr-canvas');
+  if (!canvas || typeof QRCode === 'undefined') return;
+  QRCode.toCanvas(canvas, window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err) {
+    if (err) canvas.style.display = 'none';
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#beam-search-algorithm" id="toc-beam-search-algorithm" class="nav-link active" data-scroll-target="#beam-search-algorithm">Beam Search Algorithm</a>
+  <ul class="collapse">
+  <li><a href="#first-step" id="toc-first-step" class="nav-link" data-scroll-target="#first-step">First Step</a></li>
+  <li><a href="#second-step" id="toc-second-step" class="nav-link" data-scroll-target="#second-step">Second Step</a></li>
+  <li><a href="#third-step-and-onward" id="toc-third-step-and-onward" class="nav-link" data-scroll-target="#third-step-and-onward">Third Step and Onward</a></li>
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#refinements-to-beam-search" id="toc-refinements-to-beam-search" class="nav-link" data-scroll-target="#refinements-to-beam-search">Refinements to Beam Search</a>
+  <ul class="collapse">
+  <li><a href="#take-logs" id="toc-take-logs" class="nav-link" data-scroll-target="#take-logs">Take Logs</a></li>
+  <li><a href="#length-normalization" id="toc-length-normalization" class="nav-link" data-scroll-target="#length-normalization">Length Normalization</a></li>
+  <li><a href="#putting-it-together" id="toc-putting-it-together" class="nav-link" data-scroll-target="#putting-it-together">Putting It Together</a></li>
+  <li><a href="#choosing-the-beam-width" id="toc-choosing-the-beam-width" class="nav-link" data-scroll-target="#choosing-the-beam-width">Choosing the Beam Width</a></li>
+  <li><a href="#review-questions-1" id="toc-review-questions-1" class="nav-link" data-scroll-target="#review-questions-1">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#error-analysis-on-beam-search" id="toc-error-analysis-on-beam-search" class="nav-link" data-scroll-target="#error-analysis-on-beam-search">Error Analysis on Beam Search</a>
+  <ul class="collapse">
+  <li><a href="#attributing-a-single-error" id="toc-attributing-a-single-error" class="nav-link" data-scroll-target="#attributing-a-single-error">Attributing a Single Error</a></li>
+  <li><a href="#doing-it-across-the-development-set" id="toc-doing-it-across-the-development-set" class="nav-link" data-scroll-target="#doing-it-across-the-development-set">Doing It Across the Development Set</a></li>
+  <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../site-metrics.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Beam Search</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">sequence-models</div>
+    <div class="quarto-category">nlp</div>
+    <div class="quarto-category">machine-translation</div>
+    <div class="quarto-category">beam-search</div>
+    <div class="quarto-category">length-normalization</div>
+    <div class="quarto-category">error-analysis</div>
+    <div class="quarto-category">decoding</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    The approximate search that finds the most likely translation, the log and length-normalization refinements, and how to tell search errors from model errors.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">Wednesday, August 26, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~47 min read <span class="rt-info" tabindex="0" aria-describedby="reading-time-method"><span aria-hidden="true">ⓘ</span><span class="rt-tooltip" id="reading-time-method" role="tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,000 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p class="difficulty-rating" aria-label="Difficulty 3 out of 5"><span aria-hidden="true"><span class="difficulty-dot is-filled"></span><span class="difficulty-dot is-filled"></span><span class="difficulty-dot is-filled"></span><span class="difficulty-dot"></span><span class="difficulty-dot"></span></span></p></div>';
+    meta.appendChild(diffDiv);
+  }
+});
+</script>
+
+<p><a href="../../../ai/deep-learning/sequence-models/sequence-to-sequence-models.html">Sequence to Sequence Models</a> left off with a problem. The model gives <span class="math inline">\(P(y \mid x)\)</span> for any candidate translation, the sentence you want is the one that maximizes it, greedy search does not find it, and the space of candidates is too large to enumerate.</p>
+<p><strong>Beam search</strong> is the algorithm that resolves this, and it is the one most production translation systems use. The same problem appears in speech recognition, where you want the best transcript of an audio clip rather than a random one, and beam search answers it there too.</p>
+<section id="beam-search-algorithm" class="level2">
+<h2 class="anchored" data-anchor-id="beam-search-algorithm">Beam Search Algorithm</h2>
+<p>Beam search has one parameter, the <strong>beam width</strong> <span class="math inline">\(B\)</span>. Where greedy search keeps the single best option at each step, beam search keeps the best <span class="math inline">\(B\)</span>. The running example uses <span class="math inline">\(B = 3\)</span> and the sentence <code>Jane visite l'Afrique en septembre</code>, with capitalization ignored to keep things simple.</p>
+<section id="first-step" class="level3">
+<h3 class="anchored" data-anchor-id="first-step">First Step</h3>
+<p>Run the French sentence through the encoder, then run one step of the decoder. Its softmax produces <span class="math inline">\(P(y^{\langle 1 \rangle} \mid x)\)</span> over all 10,000 words in the vocabulary. Greedy search would take the single most likely word. Beam search takes the top three and stores them.</p>
+<p>Say those three are <code>in</code>, <code>Jane</code> and <code>September</code>. With a beam width of 10 it would have kept ten instead.</p>
+</section>
+<section id="second-step" class="level3">
+<h3 class="anchored" data-anchor-id="second-step">Second Step</h3>
+<p>For each of those three first words, consider every possible second word.</p>
+<p>Take <code>in</code>. Hard-wire <span class="math inline">\(\hat{y}^{\langle 1 \rangle}\)</span> to <code>in</code>, feed it back into the decoder, and the network fragment now gives <span class="math inline">\(P(y^{\langle 2 \rangle} \mid x, \text{`in'})\)</span>. That is the probability of the second word given the French sentence and given that the first word was <code>in</code>.</p>
+<p>What matters is not the most likely second word on its own but the most likely <em>pair</em>. By the chain rule,</p>
+<p><span class="math display">\[P(y^{\langle 1 \rangle}, y^{\langle 2 \rangle} \mid x) = P(y^{\langle 1 \rangle} \mid x) \; P(y^{\langle 2 \rangle} \mid x, y^{\langle 1 \rangle})\]</span></p>
+<p>The first factor was saved in step one and the second comes from this fragment, so multiplying them gives the probability of the pair. Do the same with <code>Jane</code> hard-wired, and again with <code>September</code>.</p>
+<p>Three first words times 10,000 second words is 30,000 candidate pairs. Evaluate all of them and keep the best three.</p>
+<p>Suppose those turn out to be <code>in September</code>, <code>Jane is</code> and <code>Jane visits</code>. Notice what just happened. <code>September</code> has been rejected as a first word entirely, so only two first words survive, while the beam still holds three pairs.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Three copies of the network, not thirty thousand
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Because <span class="math inline">\(B = 3\)</span>, every step instantiates three copies of the decoder to evaluate the partial fragments. Each copy produces a softmax over the whole vocabulary in one pass, so three copies cover all 30,000 options. You never instantiate 30,000 networks.</p>
+</div>
+</div>
+</section>
+<section id="third-step-and-onward" class="level3">
+<h3 class="anchored" data-anchor-id="third-step-and-onward">Third Step and Onward</h3>
+<p>Same again. For <code>in September</code>, hard-wire the first two words and evaluate <span class="math inline">\(P(y^{\langle 3 \rangle} \mid x, \text{`in September'})\)</span> across the vocabulary. Repeat for <code>Jane is</code> and for <code>Jane visits</code>, take the best three triples, and continue.</p>
+<div class="wide-network-hint">
+<p>On a small screen, scroll horizontally to follow all three steps.</p>
+</div>
+<div class="wide-network-figure" role="region" aria-label="Scrollable beam search diagram" tabindex="0">
+<div id="a22fdbae" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="beam-search_files/figure-html/cell-2-output-1.svg" class="img-fluid figure-img" alt="A tree growing left to right over three columns. The first column holds in, Jane and September. The second holds in September, Jane is and Jane visits, with orange arrows showing that two of them came from Jane and none from September. The third holds in September Jane, Jane is visiting and Jane visits Africa. Five faint stubs fan out of every node in the first two columns, standing in for the thousands of discarded alternatives."></p>
+<figcaption>Three steps of beam search with a beam width of 3. Every surviving prefix is extended by all 10,000 words in the vocabulary, of which five representative discards are drawn as faint stubs at each expanded node, and only the best three extensions survive. September wins a place in the beam after step one and then loses it, because none of its continuations makes the top three.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<p>Eventually beam search reaches the end-of-sentence token, and the hope is that it settles on <code>Jane visits Africa in September</code>.</p>
+<p>Notice that a beam width of 1 makes this exactly greedy search. Keeping several possibilities instead, three or ten or more, usually finds a much better sentence.</p>
+</section>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<div id="beam-review-q1">
+<p><strong>1. At the second step, beam search evaluates 30,000 candidate pairs but instantiates only three copies of the network. Explain both numbers.</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="beam-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>The 30,000 is the beam width times the vocabulary size, three surviving first words each extended by 10,000 possible second words. The three is the number of distinct decoder states, one per surviving prefix. Each copy is run once with its prefix hard-wired, and its softmax output already gives the probability of every one of the 10,000 second words at once. So the fan-out is in the softmax rather than in the number of networks, and one forward pass per prefix covers 10,000 candidates.</p>
+</div>
+</details>
+<hr>
+<div id="beam-review-q2">
+<p><strong>1. After step two the beam holds <code>in September</code>, <code>Jane is</code> and <code>Jane visits</code>. How many distinct first words survive, and why is that not a contradiction?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="beam-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Two, <code>in</code> and <code>Jane</code>. <code>September</code> was in the beam after step one and no continuation of it made the top three, so it is gone. There is no contradiction because the beam width bounds the number of <em>hypotheses</em> carried forward, not the number of distinct first words. Two of the three surviving hypotheses happen to share a first word. This is the mechanism that lets beam search recover from a bad greedy first choice, and also the mechanism that can lose the right answer if its prefix looks unpromising early.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="refinements-to-beam-search" class="level2">
+<h2 class="anchored" data-anchor-id="refinements-to-beam-search">Refinements to Beam Search</h2>
+<p>The algorithm as described works. Two changes make it work considerably better.</p>
+<section id="take-logs" class="level3">
+<h3 class="anchored" data-anchor-id="take-logs">Take Logs</h3>
+<p>Beam search maximizes</p>
+<p><span class="math display">\[\arg\max_{y} \prod_{t=1}^{T_y} P(y^{\langle t \rangle} \mid x, y^{\langle 1 \rangle}, \ldots, y^{\langle t-1 \rangle})\]</span></p>
+<p>which is just the chain rule written out. Every factor is a probability, so every factor is less than 1, and often much less. Multiplying many of them gives a number too small for a floating point representation to store accurately, which is <strong>numerical underflow</strong>.</p>
+<p>The fix is to maximize the logarithm instead.</p>
+<p><span class="math display">\[\arg\max_{y} \sum_{t=1}^{T_y} \log P(y^{\langle t \rangle} \mid x, y^{\langle 1 \rangle}, \ldots, y^{\langle t-1 \rangle})\]</span></p>
+<p>A log of a product is a sum of logs, and because the logarithm is strictly monotonically increasing, whichever <span class="math inline">\(y\)</span> maximizes the log also maximizes the original product. Same answer, and a numerically stable algorithm that is far less prone to underflow. Most implementations keep the sum of logs rather than the product.</p>
+<div id="8996c30e" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="beam-search_files/figure-html/cell-3-output-1.svg" class="img-fluid figure-img" alt="Three straight descending lines against sentence length up to 1,160 words, one per hypothetical per-word probability of 0.5, 0.2 and 0.05. The vertical axis is the base-10 logarithm of the product. Two close horizontal dashed lines mark the smallest normal float64 at about minus 307.7 and the point where the product rounds to zero at about minus 323.3. The zero threshold is crossed at 249 words by the 0.05 line, at 463 words by the 0.2 line and at 1,075 words by the 0.5 line."></p>
+<figcaption>The same quantity in both forms. Plotted is the base-10 logarithm of the product of per-word probabilities, which is the sum of logs the algorithm actually keeps. The upper dashed line is the smallest normal float64, below which the product is still representable but as a subnormal with progressively fewer significant digits. The lower line is where it rounds to zero outright, at the lengths marked. The sum of logs plotted here is an ordinary number throughout. The three per-word probabilities are hypothetical rather than measured.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="length-normalization" class="level3">
+<h3 class="anchored" data-anchor-id="length-normalization">Length Normalization</h3>
+<p>There is a second problem, and taking logs does not fix it. It makes it easier to see.</p>
+<p>A long sentence multiplies together more numbers less than 1, so its probability is lower simply for being long. In the log form, every term is negative, so the more terms you add the more negative the total becomes. Either way the objective has an undesirable bias. It prefers short translations, not because they are better but because they are short.</p>
+<p>The fix is to normalize by the number of words, which turns the sum into an average and removes most of the penalty for length.</p>
+<p><span class="math display">\[\frac{1}{T_y^{\alpha}} \sum_{t=1}^{T_y} \log P(y^{\langle t \rangle} \mid x, y^{\langle 1 \rangle}, \ldots, y^{\langle t-1 \rangle})\]</span></p>
+<p>The exponent <span class="math inline">\(\alpha\)</span> is a softer version of the same idea. With <span class="math inline">\(\alpha = 1\)</span> the objective is fully normalized by length. With <span class="math inline">\(\alpha = 0\)</span> it is not normalized at all, since <span class="math inline">\(T_y^0 = 1\)</span>. A value such as <span class="math inline">\(\alpha = 0.7\)</span> sits somewhere in between. It is another hyperparameter to tune.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>This one is a heuristic
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>There is no great theoretical justification for the <span class="math inline">\(\alpha\)</span> exponent. People found it works well in practice, so many groups do it. Try different values and see which gives the best result on your data.</p>
+</div>
+</div>
+<div id="a310bd3e" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="beam-search_files/figure-html/cell-4-output-1.svg" class="img-fluid figure-img" alt="A grouped bar chart with three groups, one per alpha value of 0, 0.7 and 1. Each group has a bar for a six-word translation and a nine-word translation, all negative. At alpha 0 the six-word bar is the less negative of the two. At alpha 0.7 and at alpha 1 the nine-word bar is the less negative one."></p>
+<figcaption>Two candidate translations scored three ways, with hypothetical per-word log probabilities chosen for illustration. The nine-word version has the better per-word probabilities, since its extra words are common and easy to predict, but the lower total. At <span class="math inline">\(\alpha = 0\)</span> the objective prefers the six-word version purely for having fewer terms, and normalizing removes that preference. Which answer is right is what tuning <span class="math inline">\(\alpha\)</span> decides.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="putting-it-together" class="level3">
+<h3 class="anchored" data-anchor-id="putting-it-together">Putting It Together</h3>
+<p>As beam search runs, it produces candidate sentences of length 1, length 2, length 3 and so on. Run it for 30 steps with a beam width of 3 and you have kept the top three hypotheses at each of those lengths.</p>
+<p>At the end, score all of those sentences with the normalized log probability objective above and output whichever scores highest. That final score is sometimes called the <strong>normalized log likelihood objective</strong>.</p>
+</section>
+<section id="choosing-the-beam-width" class="level3">
+<h3 class="anchored" data-anchor-id="choosing-the-beam-width">Choosing the Beam Width</h3>
+<p>A large beam width considers more possibilities, so it tends to give a better result, but it is slower and uses more memory. A small beam width gives a worse result because fewer possibilities are kept in mind, but it is faster and lighter.</p>
+<p>The running example used <span class="math inline">\(B = 3\)</span>, which is on the small side. In production systems a beam width of around 10 is not uncommon. A beam width of 100 would be considered very large for production, depending on the application. Research systems trying to squeeze out every last drop of performance for a paper sometimes use 1,000 or 3,000, though this is very application and domain dependent.</p>
+<p>Expect diminishing returns. Going from 1, which is greedy search, to 3 and then to 10 tends to give a large gain. Going from 1,000 to 3,000 usually does not.</p>
+<div id="19df13a8" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="beam-search_files/figure-html/cell-5-output-1.svg" class="img-fluid figure-img" alt="Two curves against beam width on a logarithmic horizontal axis from 1 to 3000. A translation quality curve rises steeply from beam width 1 to about 10 and then flattens. A cost line rises steadily in proportion to the beam width across the whole range."></p>
+<figcaption>The shape of the tradeoff. Quality rises steeply over the first few units of beam width and then flattens, while cost grows in proportion to it. The quality curve is illustrative rather than measured.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>If you have met breadth-first search or depth-first search in a computer science course, the contrast is worth noting. Those are exact search algorithms. Beam search runs much faster and is not guaranteed to find the exact maximum of the objective. If you have not met them, nothing here depends on it.</p>
+</section>
+<section id="review-questions-1" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
+<div id="beam-review-q3">
+<p><strong>1. Why does maximizing the sum of log probabilities give the same answer as maximizing the product?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="beam-review-q3">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because the logarithm is strictly monotonically increasing. If <span class="math inline">\(a &gt; b\)</span> then <span class="math inline">\(\log a &gt; \log b\)</span>, so ranking candidates by <span class="math inline">\(\log P\)</span> produces exactly the same ordering as ranking them by <span class="math inline">\(P\)</span>, and in particular the same maximum. The change is purely numerical. A product of many probabilities underflows a <code>float64</code> once it drops below about <span class="math inline">\(10^{-308}\)</span>, while the corresponding sum of logs is a moderate negative number that a computer stores without difficulty.</p>
+</div>
+</details>
+<hr>
+<div id="beam-review-q4">
+<p><strong>1. Length normalization divides by <span class="math inline">\(T_y^{\alpha}\)</span>. What does the objective reduce to at <span class="math inline">\(\alpha = 0\)</span> and at <span class="math inline">\(\alpha = 1\)</span>, and why is neither always right?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="beam-review-q4">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>At <span class="math inline">\(\alpha = 0\)</span> the divisor is <span class="math inline">\(T_y^0 = 1\)</span>, so nothing is normalized and the objective is the plain sum of log probabilities. That biases the search toward short outputs, since every extra word adds another negative term. At <span class="math inline">\(\alpha = 1\)</span> the objective becomes the average log probability per word, which removes the length penalty entirely. That is not obviously right either, because a longer translation genuinely does make more claims and a per-word average can flatter a padded sentence that keeps adding easy, high-probability words. Neither endpoint is principled, which is why <span class="math inline">\(\alpha\)</span> is tuned as a hyperparameter, often around 0.7.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="error-analysis-on-beam-search" class="level2">
+<h2 class="anchored" data-anchor-id="error-analysis-on-beam-search">Error Analysis on Beam Search</h2>
+<p>Beam search is approximate, so it does not always output the most likely sentence. When a translation comes out wrong, the fault could lie with beam search or with the RNN model itself, and it matters which, because the fixes are completely different.</p>
+<p>Increasing the beam width is tempting the way collecting more training data is tempting. It rarely hurts. But like more data, it may not get you where you want to go, and the way to decide whether it is a good use of your time is to measure.</p>
+<section id="attributing-a-single-error" class="level3">
+<h3 class="anchored" data-anchor-id="attributing-a-single-error">Attributing a Single Error</h3>
+<p>Take an example from the development set. The French sentence is <code>Jane visite l'Afrique en septembre</code>. A human produced</p>
+<p><span class="math display">\[y^* = \text{`Jane visits Africa in September'}\]</span></p>
+<p>and the system produced</p>
+<p><span class="math display">\[\hat{y} = \text{`Jane visited Africa last September'}\]</span></p>
+<p>which is a much worse translation, and one that changes the meaning.</p>
+<p>The system has two components. The RNN, meaning the encoder and decoder together, computes <span class="math inline">\(P(y \mid x)\)</span>. Beam search runs on top of it with some beam width <span class="math inline">\(B\)</span> and tries to find the <span class="math inline">\(y\)</span> that maximizes that. So use the RNN to compute both <span class="math inline">\(P(y^* \mid x)\)</span> and <span class="math inline">\(P(\hat{y} \mid x)\)</span>, then compare.</p>
+<p><strong>Case 1, <span class="math inline">\(P(y^* \mid x) &gt; P(\hat{y} \mid x)\)</span>.</strong> Beam search chose <span class="math inline">\(\hat{y}\)</span>. Its one job was to find the <span class="math inline">\(y\)</span> that maximizes <span class="math inline">\(P(y \mid x)\)</span>, and <span class="math inline">\(y^*\)</span> attains a higher value than the <span class="math inline">\(\hat{y}\)</span> it returned. So beam search failed at its job. <strong>Beam search is at fault.</strong></p>
+<p><strong>Case 2, <span class="math inline">\(P(y^* \mid x) \leq P(\hat{y} \mid x)\)</span>.</strong> Here <span class="math inline">\(y^*\)</span> is the better translation, and the RNN does not score it above the inferior <span class="math inline">\(\hat{y}\)</span>. Beam search did what it was asked, and returned a sentence the model rates at least as highly as the better one. The model told it the wrong thing. <strong>The RNN is at fault.</strong></p>
+<p>One of the two cases must hold, so every error gets attributed.</p>
+<div id="d3f66169" class="cell" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="beam-search_files/figure-html/cell-6-output-1.svg" class="img-fluid figure-img" alt="A decision diagram. A single box computing both probabilities splits into two branches. The left branch, where the human translation scores strictly higher, is labeled beam search at fault. The right branch, where the human translation scores lower than or equal to the system output, is labeled RNN at fault."></p>
+<figcaption>The attribution rule. Compute the model’s probability for the human translation and for the one the system produced, then compare. A strictly higher score for the human translation means the search failed, and anything else, including a tie, means the model did.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>One subtlety being glossed over
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If you are using length normalization, you should compare the normalized objective rather than the raw probabilities, since that normalized objective is what beam search is actually maximizing. Comparing raw <span class="math inline">\(P(y \mid x)\)</span> when the search optimizes something else would misattribute errors that come from the normalization itself.</p>
+</div>
+</div>
+</section>
+<section id="doing-it-across-the-development-set" class="level3">
+<h3 class="anchored" data-anchor-id="doing-it-across-the-development-set">Doing It Across the Development Set</h3>
+<p>The process scales to a table. Go through the development set, find the examples where the algorithm produced a much worse output than the human translation, and for each one compute both probabilities and record which component was at fault.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Human translation <span class="math inline">\(y^*\)</span></th>
+<th>System output <span class="math inline">\(\hat{y}\)</span></th>
+<th><span class="math inline">\(P(y^* \mid x)\)</span></th>
+<th><span class="math inline">\(P(\hat{y} \mid x)\)</span></th>
+<th>At fault</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Jane visits Africa in September</td>
+<td>Jane visited Africa last September</td>
+<td><span class="math inline">\(2 \times 10^{-10}\)</span></td>
+<td><span class="math inline">\(1 \times 10^{-10}\)</span></td>
+<td>B</td>
+</tr>
+<tr class="even">
+<td>…</td>
+<td>…</td>
+<td>…</td>
+<td>…</td>
+<td>R</td>
+</tr>
+<tr class="odd">
+<td>…</td>
+<td>…</td>
+<td>…</td>
+<td>…</td>
+<td>B</td>
+</tr>
+</tbody>
+</table>
+<p>In the first row, beam search chose the output with the lower probability, so beam search is at fault and the row is marked B. Work down the list marking B or R, and the fraction of errors in each column tells you where the problem is.</p>
+<p>Only if beam search is responsible for a large share of the errors is it worth working hard to increase the beam width. If the RNN is at fault, that calls for a different investigation entirely, into regularization, more training data, a different architecture, or something else.</p>
+<p>This process generalizes. It is useful whenever an approximate optimization algorithm is working to optimize an objective produced by a learning algorithm, because it separates a failure of the search from a failure of the thing being searched.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What You Should Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>Beam search keeps the best <span class="math inline">\(B\)</span> hypotheses at every step rather than the single best, and <span class="math inline">\(B = 1\)</span> is greedy search.</li>
+<li>Each step evaluates <span class="math inline">\(B\)</span> times the vocabulary size in candidates, using only <span class="math inline">\(B\)</span> forward passes.</li>
+<li>Maximize the sum of log probabilities rather than the product, to avoid numerical underflow.</li>
+<li>Divide by <span class="math inline">\(T_y^{\alpha}\)</span> so the objective stops preferring short translations, with <span class="math inline">\(\alpha\)</span> tuned as a hyperparameter.</li>
+<li>Beam search is approximate and gives no guarantee of finding the maximum, unlike an exact search such as breadth-first search.</li>
+<li>When a translation is wrong, compare <span class="math inline">\(P(y^* \mid x)\)</span> against <span class="math inline">\(P(\hat{y} \mid x)\)</span> to decide whether the search or the model is at fault.</li>
+</ul>
+</div>
+</div>
+</section>
+<section id="review-questions-2" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
+<div id="beam-review-q5">
+<p><strong>1. A system produces a bad translation. The model scores the human translation at <span class="math inline">\(3 \times 10^{-8}\)</span> and its own output at <span class="math inline">\(9 \times 10^{-8}\)</span>. Which component do you work on?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="beam-review-q5">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>The RNN. This is case 2, since <span class="math inline">\(P(y^* \mid x) \leq P(\hat{y} \mid x)\)</span>. Beam search was asked to find the <span class="math inline">\(y\)</span> that maximizes the model’s score, and among these two candidates it did exactly that. The failure is that the model itself assigns higher probability to the worse sentence, which is a modeling problem rather than a search problem. Increasing the beam width would not help here and might make things slightly worse, since a wider beam is better at finding the high-probability sentence the model wrongly prefers.</p>
+</div>
+</details>
+<hr>
+<div id="beam-review-q6">
+<p><strong>1. Why is it not enough to just increase the beam width whenever translations look bad?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="beam-review-q6">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because a wider beam only helps with one of the two failure modes. It makes the search better at finding the sentence the model scores highest, which fixes case 1 errors and does nothing for case 2 errors. If most of your errors are the model preferring worse sentences, a wider beam buys you slower, more expensive decoding and roughly the same translations. The error analysis exists precisely to tell you which situation you are in before spending the effort, in the same way that collecting more training data is tempting, rarely harmful, and often not the bottleneck.</p>
+</div>
+</details>
+<hr>
+<div id="beam-review-q7">
+<p><strong>1. If you use length normalization, what should you actually compare during error analysis, and why?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="beam-review-q7">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>The normalized objective, <span class="math inline">\(\frac{1}{T_y^{\alpha}} \sum_t \log P(y^{\langle t \rangle} \mid x, y^{\langle 1 \rangle}, \ldots, y^{\langle t-1 \rangle})\)</span>, rather than the raw <span class="math inline">\(P(y \mid x)\)</span>. The attribution logic rests on asking whether beam search found the maximum of the thing it was optimizing. If the search optimizes the normalized score and you compare raw probabilities, the two can disagree, and errors caused by the choice of <span class="math inline">\(\alpha\)</span> would get blamed on the model. Since <span class="math inline">\(y^*\)</span> and <span class="math inline">\(\hat{y}\)</span> frequently differ in length, that mismatch is likely rather than rare.</p>
+</div>
+</details>
+
+
+<div id="section-progress-widget" class="section-progress-widget" hidden="">
+  <p class="section-progress-label">Progress through this section</p>
+  <progress class="section-progress" value="95" max="100" aria-label="95 percent through this section"></progress>
+  <p class="section-progress-detail">95% through this section (1575 of 1649 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.hidden = false; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+<a onclick="window.scrollTo(0, 0); return false;" role="button" id="quarto-back-to-top"><i class="bi bi-arrow-up"></i> Back to top</a></main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme-dark.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      if (authorPrefersDark) {
+          [baseTheme, altTheme] = [altTheme, baseTheme];
+      }
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/sequence-models/sequence-to-sequence-models.html" class="pagination-link" aria-label="Sequence to Sequence Models">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Sequence to Sequence Models</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../../ai/deep-learning/sequence-models/bleu-score.html" class="pagination-link" aria-label="BLEU Score">
+        <span class="nav-page-text">BLEU Score</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+<p>H’s Notes</p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    </div>
+    <div class="nav-footer-right">
+      <ul class="footer-items list-unstyled">
+    <li class="nav-item">
+    <a class="nav-link" href="../../../about.html">
+<p>About</p>
+</a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="../../../about/dashboard.html">
+<p>Dashboard</p>
+</a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="../../../about/roadmap.html">
+<p>Roadmap</p>
+</a>
+  </li>  
+</ul>
+    </div>
+  </div>
+</footer>
+
+
+
+
+</body></html>

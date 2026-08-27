@@ -11,9 +11,10 @@
  * name is deliberately not read, because it would end up on a public
  * leaderboard.
  *
- * The Firebase SDK is ~250 KB, so it is fetched only when this browser has
- * signed in before or the reader actually clicks sign in. A first-time
- * visitor reading a notes page pays nothing.
+ * Firebase modules are loaded after the page becomes usable. Identity asks
+ * for Authentication and Database only for returning or actively signing-in
+ * readers. The aggregate page counter asks for the smaller App Check and
+ * Functions subset once per browser tab session.
  *
  * Public surface (window.siteAuth), mirroring window.siteChrome:
  *   siteAuth.user()                current firebase user, or null
@@ -25,6 +26,7 @@
  *   siteAuth.db()                  raw database handle, or null
  *   siteAuth.setHandle(name)       promise, validates and stores the handle
  *   siteAuth.askHandle()           promise, opens the handle chooser
+ *   siteAuth.firebaseFunctions()   protected callable-functions service
  */
 (function () {
   'use strict';
@@ -59,32 +61,70 @@
   var handleLoaded = false;
   var db = null;
   var loading = null;
+  var functionsLoading = null;
+  var scriptLoads = {};
+  var authWatching = false;
 
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
 
-  function loadScript(src) {
-    return new Promise(function (resolve, reject) {
-      var s = document.createElement('script');
-      s.src = src;
-      s.onload = resolve;
-      s.onerror = function () { reject(new Error('blocked: ' + src)); };
-      document.head.appendChild(s);
+  function loadScript(file, ready) {
+    if (ready()) return Promise.resolve();
+    if (scriptLoads[file]) return scriptLoads[file];
+    scriptLoads[file] = new Promise(function (resolve, reject) {
+      var url = new URL(file, SDK);
+      if (url.origin !== 'https://www.gstatic.com' || url.pathname.indexOf('/firebasejs/10.12.0/') !== 0) {
+        reject(new Error('Firebase module origin is not allowed'));
+        return;
+      }
+      var finished = false;
+      var timer = window.setTimeout(function () { finish(new Error('Firebase module timed out')); }, 15000);
+      var poll = window.setInterval(function () {
+        if (ready()) finish();
+      }, 40);
+      var script = Array.prototype.slice.call(document.scripts).filter(function (item) {
+        return item.src === url.href;
+      })[0];
+
+      function finish(error) {
+        if (finished) return;
+        finished = true;
+        window.clearTimeout(timer);
+        window.clearInterval(poll);
+        if (error || !ready()) reject(error || new Error('Firebase module did not initialize'));
+        else resolve();
+      }
+
+      if (!script) {
+        script = document.createElement('script');
+        script.src = url.href;
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        script.referrerPolicy = 'no-referrer';
+        document.head.appendChild(script);
+      }
+      script.addEventListener('load', function () { finish(); }, { once: true });
+      script.addEventListener('error', function () { finish(new Error('Firebase module was blocked')); }, { once: true });
+    }).catch(function (error) {
+      delete scriptLoads[file];
+      throw error;
     });
+    return scriptLoads[file];
   }
 
   /* Load the SDK once. Resolves to true when Firebase is usable. */
   function loadSDK() {
     if (loading) return loading;
     loading = (function () {
-      if (window.firebase && window.firebase.auth) return Promise.resolve(true);
-      return loadScript(SDK + 'firebase-app-compat.js')
+      return loadScript('firebase-app-compat.js', function () {
+        return Boolean(window.firebase && window.firebase.initializeApp);
+      })
         .then(function () {
           return Promise.all([
-            loadScript(SDK + 'firebase-auth-compat.js'),
-            loadScript(SDK + 'firebase-database-compat.js'),
-            loadScript(SDK + 'firebase-app-check-compat.js')
+            loadScript('firebase-auth-compat.js', function () { return Boolean(window.firebase && window.firebase.auth); }),
+            loadScript('firebase-database-compat.js', function () { return Boolean(window.firebase && window.firebase.database); }),
+            loadScript('firebase-app-check-compat.js', function () { return Boolean(window.firebase && window.firebase.appCheck); })
           ]);
         })
         .then(function () { return true; })
@@ -95,8 +135,8 @@
         // The tool pages initialize the same project; reuse their app if present.
         if (!window.firebase.apps.length) {
           window.firebase.initializeApp(CONFIG);
-          window.firebase.appCheck().activate(RECAPTCHA, true);
         }
+        try { window.firebase.appCheck().activate(RECAPTCHA, true); } catch (e) {}
         db = window.firebase.database();
         watchAuth();
         return true;
@@ -107,12 +147,36 @@
     return loading;
   }
 
+  /* Metrics do not need Authentication or Database in the browser. Keeping
+     this path separate avoids downloading those modules for signed-out readers. */
+  function loadFunctionsSDK() {
+    if (functionsLoading) return functionsLoading;
+    functionsLoading = loadScript('firebase-app-compat.js', function () {
+      return Boolean(window.firebase && window.firebase.initializeApp);
+    }).then(function () {
+      return Promise.all([
+        loadScript('firebase-app-check-compat.js', function () { return Boolean(window.firebase && window.firebase.appCheck); }),
+        loadScript('firebase-functions-compat.js', function () { return Boolean(window.firebase && window.firebase.functions); })
+      ]);
+    }).then(function () {
+      if (!window.firebase.apps.length) window.firebase.initializeApp(CONFIG);
+      try { window.firebase.appCheck().activate(RECAPTCHA, true); } catch (e) {}
+      return true;
+    }).catch(function () {
+      functionsLoading = null;
+      return false;
+    });
+    return functionsLoading;
+  }
+
   function emit() {
     listeners.forEach(function (fn) { try { fn(currentUser); } catch (e) {} });
     render();
   }
 
   function watchAuth() {
+    if (authWatching) return;
+    authWatching = true;
     window.firebase.auth().onAuthStateChanged(function (user) {
       // An anonymous session (the chess page opens one) is not a signed-in reader.
       currentUser = user && !user.isAnonymous ? user : null;
@@ -530,6 +594,14 @@
     signOut: signOut,
     setHandle: setHandle,
     askHandle: askHandle,
+    firebaseFunctions: function () {
+      return loadFunctionsSDK().then(function (ok) {
+        if (!ok || !window.firebase || !window.firebase.functions) {
+          throw new Error('Firebase functions are unavailable');
+        }
+        return window.firebase.functions('us-central1');
+      });
+    },
     db: function () { return db; },
     ref: function (path) {
       if (!db || !currentUser) return null;

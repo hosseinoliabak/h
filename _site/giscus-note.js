@@ -14,7 +14,8 @@
   'use strict';
 
   /* ---------------------------------------------------------------------
-     Both fixes below must run at parse time, not on DOMContentLoaded.
+     The initialization fixes below must run at parse time, not on
+     DOMContentLoaded.
      Quarto calls loadGiscus() inline at the end of <body>, which is before
      DOMContentLoaded fires but after this script (injected at the top of
      <body>) has already executed.
@@ -34,17 +35,22 @@
     } catch (e) {}
   }
 
-  /* 2. Exact thread matching.
+  /* 2. Exact thread matching and initial theme.
      By default giscus resolves a thread through the GitHub search API, which
      matches partially, so pages with similar paths can surface each other's
      comments. Strict mode keys on a hash of the term instead. Quarto's giscus
      config is a closed schema with no "strict" option, so the flag is set on
-     the script element on its way into the document. The patch removes itself
-     after the one element it is looking for. */
+     the script element on its way into the document. Quarto also creates its
+     giscus theme inputs after theme-toggle.js runs, so the saved theme URL is
+     applied to that same script element before the iframe loads. The patch
+     removes itself after the one element it is looking for. */
   var appendChild = Node.prototype.appendChild;
   Node.prototype.appendChild = function (node) {
     if (node && node.tagName === 'SCRIPT' && /giscus\.app\/client\.js/.test(node.src || '')) {
       node.dataset.strict = '1';
+      if (window.siteChrome && typeof window.siteChrome.getGiscusThemeUrl === 'function') {
+        node.dataset.theme = window.siteChrome.getGiscusThemeUrl();
+      }
       Node.prototype.appendChild = appendChild;
     }
     return appendChild.call(this, node);

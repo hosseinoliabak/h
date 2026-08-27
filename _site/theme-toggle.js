@@ -1,13 +1,54 @@
 (function() {
-  // Theme cycle: default -> flatly -> warm -> midnight -> default
-  var themes = ['default', 'flatly', 'warm', 'midnight'];
-  var themeClasses = ['theme-flatly', 'theme-warm', 'theme-midnight'];
-  var saved = localStorage.getItem('site-theme') || 'default';
+  // The custom control owns only the light palettes. Quarto owns the separate
+  // Flatly/Darkly switch and its `quarto-light` / `quarto-dark` body classes.
+  // Reader Mode is retired. Clearing its old preference prevents Quarto from
+  // applying a saved reader layout after the project control is removed.
+  try { localStorage.removeItem('quarto-reader-mode'); } catch (e) {}
+
+  var themes = ['default', 'lion', 'red'];
+  var themeClasses = ['theme-lion', 'theme-red'];
+  var legacyDark = false;
+
+  function normalizeTheme(id) {
+    if (id === 'flatly') return 'red';
+    if (id === 'warm') return 'lion';
+    if (id === 'midnight') {
+      legacyDark = true;
+      return 'default';
+    }
+    return themes.indexOf(id) === -1 ? 'default' : id;
+  }
+
+  function readTheme() {
+    var stored = 'default';
+    try { stored = localStorage.getItem('site-theme') || 'default'; } catch (e) {}
+    var normalized = normalizeTheme(stored);
+    if (normalized !== stored) {
+      try { localStorage.setItem('site-theme', normalized); } catch (e) {}
+    }
+    return normalized;
+  }
+
+  function writeTheme(id) {
+    var normalized = normalizeTheme(id);
+    try { localStorage.setItem('site-theme', normalized); } catch (e) {}
+    return normalized;
+  }
+
+  var saved = readTheme();
+
+  function isDarkMode() {
+    return !!(document.body && document.body.classList.contains('quarto-dark'));
+  }
 
   function applyTheme(id) {
+    id = normalizeTheme(id);
     var root = document.documentElement;
     for (var i = 0; i < themeClasses.length; i++) root.classList.remove(themeClasses[i]);
-    if (id !== 'default' && themes.indexOf(id) !== -1) root.classList.add('theme-' + id);
+    if (!isDarkMode() && id !== 'default' && themes.indexOf(id) !== -1) {
+      root.classList.add('theme-' + id);
+    }
+    return id;
   }
 
   // Apply saved theme on load (before paint)
@@ -118,16 +159,15 @@
   }
 
   // Printing always uses the light surface and the Garamond font theme.
-  // The .theme-warm / .theme-midnight rules hardcode colors at a higher
-  // specificity than the accent tokens, so the class itself has to come
-  // off for the duration of the print job, then go back afterwards.
+  // The palette class comes off for the duration of the print job, then the
+  // saved light palette returns afterwards.
   var printRestore = null;
 
   function enterPrint() {
     if (printRestore) return;
     var root = document.documentElement;
     printRestore = {
-      theme: localStorage.getItem('site-theme') || 'default',
+      theme: readTheme(),
       font: localStorage.getItem('site-font') || 'default',
       custom: readCustomFont()
     };
@@ -162,18 +202,12 @@
   // Map theme names to giscus theme URLs
   function getGiscusTheme(theme) {
     var base = 'https://h.oliabak.com';
-    if (theme === 'midnight') return base + '/giscus-theme-midnight.css';
-    if (theme === 'warm') return base + '/giscus-theme-warm.css';
-    if (theme === 'flatly') return base + '/giscus-theme-flatly.css';
+    if (isDarkMode()) return base + '/giscus-theme-dark.css';
+    theme = normalizeTheme(theme);
+    if (theme === 'lion') return base + '/giscus-theme-lion.css';
+    if (theme === 'red') return base + '/giscus-theme-red.css';
     return base + '/giscus-theme.css';
   }
-
-  // Override giscus hidden inputs so it loads with the correct theme
-  // This must run before loadGiscus() reads the value
-  var baseInput = document.getElementById('giscus-base-theme');
-  var altInput = document.getElementById('giscus-alt-theme');
-  if (baseInput) baseInput.value = getGiscusTheme(saved);
-  if (altInput) altInput.value = getGiscusTheme(saved);
 
   // Send theme to giscus iframe (for live toggling)
   function setGiscusTheme(theme) {
@@ -189,7 +223,7 @@
   // Once giscus iframe loads, send it the correct theme immediately
   window.addEventListener('message', function(event) {
     if (event.origin === 'https://giscus.app') {
-      var current = localStorage.getItem('site-theme') || 'default';
+      var current = readTheme();
       setGiscusTheme(current);
     }
   });
@@ -198,7 +232,8 @@
   // can tell how far you are from wrapping back to theme/font 1.
   function makeBadge(text) {
     var badge = document.createElement('span');
-    badge.style.cssText = 'position:absolute;top:-5px;right:-5px;box-sizing:border-box;min-width:16px;height:16px;line-height:13px;border-radius:8px;border:1.5px solid var(--site-accent);background:var(--bs-body-bg,#fff);color:var(--site-accent);font-size:10px;font-weight:700;font-family:sans-serif;text-align:center;pointer-events:none;';
+    badge.className = 'site-display-badge';
+    badge.setAttribute('aria-hidden', 'true');
     badge.textContent = text;
     return badge;
   }
@@ -207,45 +242,91 @@
   // exposed API, so they live at module scope.
   var themeBadge = null;
   var fontBadge = null;
+  var themeButton = null;
+  var darkModeButton = null;
+
+  function syncColorMode() {
+    var current = readTheme();
+    applyTheme(current);
+    setGiscusTheme(current);
+    if (themeButton) {
+      var dark = isDarkMode();
+      themeButton.disabled = dark;
+      themeButton.style.opacity = dark ? '0.55' : '1';
+      themeButton.style.cursor = dark ? 'not-allowed' : 'pointer';
+      themeButton.title = dark
+        ? 'Switch to light mode to change the color palette'
+        : 'Switch light color palette';
+    }
+    if (darkModeButton) {
+      var darkMode = isDarkMode();
+      var darkModeLabel = darkMode ? 'Switch to light mode' : 'Switch to dark mode';
+      darkModeButton.title = darkModeLabel;
+      darkModeButton.setAttribute('aria-label', darkModeLabel);
+      darkModeButton.setAttribute('aria-pressed', darkMode ? 'true' : 'false');
+    }
+  }
 
   // Create toggle button after DOM loads
   document.addEventListener('DOMContentLoaded', function() {
+    // Older rendered pages can retain the retired Quarto control until the
+    // next full render. Remove that stale interface as soon as the DOM exists.
+    var retiredReaderToggles = document.querySelectorAll('.quarto-reader-toggle');
+    for (var ri = 0; ri < retiredReaderToggles.length; ri++) {
+      retiredReaderToggles[ri].remove();
+    }
+
+    var controls = document.createElement('div');
+    controls.id = 'site-display-controls';
+    controls.setAttribute('role', 'group');
+    controls.setAttribute('aria-label', 'Display settings');
+
     var btn = document.createElement('button');
     btn.id = 'theme-toggle';
-    btn.title = 'Switch theme';
-    btn.innerHTML = '🎨';
-    btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;width:42px;height:42px;border-radius:50%;border:2px solid var(--site-accent);background:var(--bs-body-bg,#fff);color:var(--site-accent);font-size:20px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.15);transition:all 0.2s;';
+    btn.type = 'button';
+    btn.className = 'site-display-control site-palette-control';
+    btn.title = 'Switch light color palette';
+    btn.setAttribute('aria-label', 'Switch light color palette');
+    btn.textContent = '🎨';
 
-    btn.addEventListener('mouseenter', function() {
-      btn.style.transform = 'scale(1.1)';
-    });
-    btn.addEventListener('mouseleave', function() {
-      btn.style.transform = 'scale(1)';
-    });
-
-    themeBadge = makeBadge(String(themes.indexOf(localStorage.getItem('site-theme') || 'default') + 1));
+    themeBadge = makeBadge(String(themes.indexOf(readTheme()) + 1));
     btn.appendChild(themeBadge);
 
     btn.addEventListener('click', function() {
-      var current = localStorage.getItem('site-theme') || 'default';
+      var current = readTheme();
       var idx = themes.indexOf(current);
       var next = themes[(idx + 1) % themes.length];
 
       applyTheme(next);
-      localStorage.setItem('site-theme', next);
+      writeTheme(next);
       setGiscusTheme(next);
       themeBadge.textContent = String(themes.indexOf(next) + 1);
       announce('theme');
     });
 
-    document.body.appendChild(btn);
+    themeButton = btn;
 
-    // Font toggle, stacked directly above the color toggle
+    // Quarto changes the body class whenever its native dark-mode control is
+    // used. Suppress the saved light palette in Darkly, then restore it when
+    // the reader returns to light mode. This observes Quarto's documented
+    // public class contract instead of reimplementing its switch.
+    var modeObserver = new MutationObserver(syncColorMode);
+    modeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+    if (legacyDark && !isDarkMode() && typeof window.quartoToggleColorScheme === 'function') {
+      window.quartoToggleColorScheme();
+    }
+    syncColorMode();
+
+    // Font, Quarto dark mode, and the light-palette cycle share one dedicated
+    // rail. The native dark-mode element is moved, not copied or reimplemented.
     var fbtn = document.createElement('button');
     fbtn.id = 'font-toggle';
-    fbtn.innerHTML = 'Aa';
-    fbtn.style.cssText = 'position:fixed;bottom:72px;right:20px;z-index:9999;width:42px;height:42px;border-radius:50%;border:2px solid var(--site-accent);background:var(--bs-body-bg,#fff);color:var(--site-accent);font-size:17px;font-weight:600;line-height:1;font-family:var(--site-font-heading);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.15);transition:all 0.2s;';
+    fbtn.type = 'button';
+    fbtn.className = 'site-display-control site-font-control';
+    fbtn.textContent = 'Aa';
     fbtn.title = fontMeta(savedFont).title;
+    fbtn.setAttribute('aria-label', fontMeta(savedFont).title);
 
     var savedFontIdx = 0;
     for (var fi = 0; fi < fonts.length; fi++) {
@@ -253,13 +334,6 @@
     }
     fontBadge = makeBadge(String(savedFontIdx + 1));
     fbtn.appendChild(fontBadge);
-
-    fbtn.addEventListener('mouseenter', function() {
-      fbtn.style.transform = 'scale(1.1)';
-    });
-    fbtn.addEventListener('mouseleave', function() {
-      fbtn.style.transform = 'scale(1)';
-    });
 
     fbtn.addEventListener('click', function() {
       // Choosing one of the built-in font themes is how a reader gets out
@@ -275,11 +349,33 @@
       applyFont(next.id);
       localStorage.setItem('site-font', next.id);
       fbtn.title = next.title;
+      fbtn.setAttribute('aria-label', next.title);
       fontBadge.textContent = String((idx + 1) % fonts.length + 1);
       announce('font');
     });
 
-    document.body.appendChild(fbtn);
+    controls.appendChild(fbtn);
+
+    var darkToggle = document.querySelector('.quarto-color-scheme-toggle');
+    if (darkToggle) {
+      darkToggle.classList.add('site-display-control', 'site-dark-control');
+      darkToggle.classList.remove('px-1');
+      darkToggle.setAttribute('role', 'button');
+      darkToggle.addEventListener('keydown', function(event) {
+        if (event.key === ' ') {
+          event.preventDefault();
+          darkToggle.click();
+        }
+      });
+      darkModeButton = darkToggle;
+      controls.appendChild(darkToggle);
+    }
+
+    controls.appendChild(btn);
+    var header = document.getElementById('quarto-header');
+    if (header && header.parentNode) header.parentNode.insertBefore(controls, header.nextSibling);
+    else document.body.appendChild(controls);
+    syncColorMode();
   });
 
   // --- Public API --------------------------------------------------------
@@ -290,16 +386,25 @@
     themes: themes,
 
     getTheme: function() {
-      try { return localStorage.getItem('site-theme') || 'default'; } catch (e) { return 'default'; }
+      return readTheme();
+    },
+
+    isDarkMode: isDarkMode,
+
+    // giscus-note.js applies this fixed, first-party URL when Quarto creates
+    // the iframe script. The iframe cannot inherit the page's CSS variables.
+    getGiscusThemeUrl: function() {
+      return getGiscusTheme(readTheme());
     },
 
     // persist false previews a theme on this page only, leaving the saved
     // preference alone so the corner button still restores it.
     setTheme: function(id, persist) {
+      id = normalizeTheme(id);
       applyTheme(id);
       setGiscusTheme(id);
       if (persist) {
-        try { localStorage.setItem('site-theme', id); } catch (e) {}
+        writeTheme(id);
         if (themeBadge) themeBadge.textContent = String(themes.indexOf(id) + 1);
       }
     },
