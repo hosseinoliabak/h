@@ -1,14 +1,15 @@
 /* Publication and traffic dashboard for H's Notes.
  *
  * Publication data is generated from first-publication dates in source front
- * matter. Traffic data contains aggregate counters supplied by the protected
+ * matter. Traffic data contains aggregate counters supplied by the quota-limited
  * site metrics function. Every string is inserted through textContent.
  */
 (function () {
   'use strict';
 
   var DATA_URL = '/about/dashboard-data.json';
-  var MAX_DATA_BYTES = 1024 * 1024;
+  var MAX_DATA_BYTES = 7 * 1024 * 1024;
+  var MAX_METRIC_PAGES = 20000;
   /* Quarto has no native remote-deployment timestamp. This exact public API
    * endpoint supplies the latest commit that changed deployable site output.
    */
@@ -59,8 +60,8 @@
 
   function validatePublicationData(value) {
     if (!value || value.schemaVersion !== 1 || !utcDate(value.generatedOn)
-        || !Number.isSafeInteger(value.metricPageCount) || value.metricPageCount < 1 || value.metricPageCount > 5000
-        || !Array.isArray(value.articles) || value.articles.length > 2000) {
+        || !Number.isSafeInteger(value.metricPageCount) || value.metricPageCount < 1 || value.metricPageCount > MAX_METRIC_PAGES
+        || !Array.isArray(value.articles) || value.articles.length > MAX_METRIC_PAGES) {
       throw new Error('Publication data has an unsupported shape');
     }
     var seen = new Set();
@@ -415,7 +416,7 @@
   function validateTraffic(value) {
     if (!value || value.schemaVersion !== 1 || !Number.isSafeInteger(value.totalViews) || value.totalViews < 0
         || !Number.isSafeInteger(value.last30Days) || value.last30Days < 0
-        || !Number.isSafeInteger(value.measuredPages) || value.measuredPages < 0 || value.measuredPages > 5000
+        || !Number.isSafeInteger(value.measuredPages) || value.measuredPages < 0 || value.measuredPages > MAX_METRIC_PAGES
         || !Array.isArray(value.daily) || value.daily.length > 31
         || !Array.isArray(value.topPages) || value.topPages.length > 20) {
       throw new Error('Traffic data has an unsupported shape');
@@ -484,7 +485,7 @@
 
   function renderTraffic(value, trackedPages) {
     var data = validateTraffic(value);
-    if (!Number.isSafeInteger(trackedPages) || trackedPages < 1 || trackedPages > 5000) {
+    if (!Number.isSafeInteger(trackedPages) || trackedPages < 1 || trackedPages > MAX_METRIC_PAGES) {
       throw new Error('Tracked page count is invalid');
     }
     var status = document.getElementById('traffic-status');

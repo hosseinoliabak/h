@@ -1,8 +1,8 @@
 /* Aggregate page-view collection.
  *
- * A page is counted once per browser tab session. The backend accepts only
- * App Check protected calls, applies network and global quotas, and stores no
- * reader identifier. Local previews and noncanonical hosts never send data.
+ * A page is counted once per browser tab session. Page-view writes use App
+ * Check, and both metric calls apply network and global quotas. No reader
+ * identifier is stored. Local previews and noncanonical hosts never send data.
  */
 (function () {
   'use strict';
@@ -39,11 +39,11 @@
     try { window.sessionStorage.setItem(key, '1'); } catch (error) {}
   }
 
-  function functionsService() {
-    if (!window.siteAuth || typeof window.siteAuth.firebaseFunctions !== 'function') {
+  function functionsService(method) {
+    if (!window.siteAuth || typeof window.siteAuth[method] !== 'function') {
       return Promise.reject(new Error('Firebase runtime is unavailable'));
     }
-    return window.siteAuth.firebaseFunctions();
+    return window.siteAuth[method]();
   }
 
   function record() {
@@ -53,7 +53,7 @@
     var key = SESSION_PREFIX + path;
     if (sessionHas(key)) return;
     markSession(key);
-    functionsService().then(function (functions) {
+    functionsService('firebaseFunctions').then(function (functions) {
       var callable = functions.httpsCallable('recordSitePageView', {
         timeout: 15000,
         limitedUseAppCheckTokens: true
@@ -68,7 +68,7 @@
   function dashboard() {
     if (!production()) return Promise.reject(new Error('Traffic data is available on the published site'));
     if (dashboardRequest) return dashboardRequest;
-    dashboardRequest = functionsService().then(function (functions) {
+    dashboardRequest = functionsService('publicFirebaseFunctions').then(function (functions) {
       var callable = functions.httpsCallable('getSiteMetrics', { timeout: 15000 });
       return callable({});
     }).then(function (result) {

@@ -27,6 +27,7 @@
  *   siteAuth.setHandle(name)       promise, validates and stores the handle
  *   siteAuth.askHandle()           promise, opens the handle chooser
  *   siteAuth.firebaseFunctions()   protected callable-functions service
+ *   siteAuth.publicFirebaseFunctions() public aggregate callable service
  */
 (function () {
   'use strict';
@@ -62,6 +63,7 @@
   var db = null;
   var loading = null;
   var functionsLoading = null;
+  var publicFunctionsLoading = null;
   var scriptLoads = {};
   var authWatching = false;
 
@@ -167,6 +169,26 @@
       return false;
     });
     return functionsLoading;
+  }
+
+  /* Public aggregate reads do not depend on browser attestation. This keeps
+     the publishing dashboard available when the App Check module is blocked. */
+  function loadPublicFunctionsSDK() {
+    if (publicFunctionsLoading) return publicFunctionsLoading;
+    publicFunctionsLoading = loadScript('firebase-app-compat.js', function () {
+      return Boolean(window.firebase && window.firebase.initializeApp);
+    }).then(function () {
+      return loadScript('firebase-functions-compat.js', function () {
+        return Boolean(window.firebase && window.firebase.functions);
+      });
+    }).then(function () {
+      if (!window.firebase.apps.length) window.firebase.initializeApp(CONFIG);
+      return true;
+    }).catch(function () {
+      publicFunctionsLoading = null;
+      return false;
+    });
+    return publicFunctionsLoading;
   }
 
   function emit() {
@@ -601,6 +623,14 @@
         }
         // us-central1 is Firebase Functions' default region. The compat
         // namespace accepts an optional Firebase App here, not a region string.
+        return window.firebase.functions();
+      });
+    },
+    publicFirebaseFunctions: function () {
+      return loadPublicFunctionsSDK().then(function (ok) {
+        if (!ok || !window.firebase || !window.firebase.functions) {
+          throw new Error('Firebase functions are unavailable');
+        }
         return window.firebase.functions();
       });
     },
