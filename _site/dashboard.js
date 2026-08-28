@@ -58,7 +58,9 @@
   }
 
   function validatePublicationData(value) {
-    if (!value || value.schemaVersion !== 1 || !utcDate(value.generatedOn) || !Array.isArray(value.articles) || value.articles.length > 2000) {
+    if (!value || value.schemaVersion !== 1 || !utcDate(value.generatedOn)
+        || !Number.isSafeInteger(value.metricPageCount) || value.metricPageCount < 1 || value.metricPageCount > 5000
+        || !Array.isArray(value.articles) || value.articles.length > 2000) {
       throw new Error('Publication data has an unsupported shape');
     }
     var seen = new Set();
@@ -76,7 +78,7 @@
     articles.sort(function (a, b) {
       return b.date.localeCompare(a.date) || a.title.localeCompare(b.title);
     });
-    return { generatedOn: value.generatedOn, articles: articles };
+    return { generatedOn: value.generatedOn, metricPageCount: value.metricPageCount, articles: articles };
   }
 
   function readBoundedBody(response, maximum) {
@@ -480,16 +482,21 @@
     host.replaceChildren(fragment);
   }
 
-  function renderTraffic(value) {
+  function renderTraffic(value, trackedPages) {
     var data = validateTraffic(value);
+    if (!Number.isSafeInteger(trackedPages) || trackedPages < 1 || trackedPages > 5000) {
+      throw new Error('Tracked page count is invalid');
+    }
     var status = document.getElementById('traffic-status');
     status.textContent = data.totalViews ? 'Live' : 'Collecting';
     status.classList.add('dashboard-status-ready');
     var since = data.collectingSince ? 'Since ' + dateFormat.format(utcDate(data.collectingSince)) : 'Waiting for the first view';
+    var measured = numberFormat.format(data.measuredPages) + ' page' + (data.measuredPages === 1 ? '' : 's')
+      + ' with at least one view';
     document.getElementById('traffic-stats').replaceChildren(
       statCard(numberFormat.format(data.totalViews), 'Counted page views', since),
       statCard(numberFormat.format(data.last30Days), 'Past 30 days', 'Aggregate page opens'),
-      statCard(numberFormat.format(data.measuredPages), 'Pages measured', 'Pages with at least one view')
+      statCard(numberFormat.format(trackedPages), 'Pages tracked', measured)
     );
     renderTrafficTrend(data.daily);
     renderTopPages(data.topPages);
@@ -506,12 +513,14 @@
     document.getElementById('top-pages').replaceChildren();
   }
 
-  function loadTraffic() {
+  function loadTraffic(trackedPages) {
     if (!window.siteMetrics || typeof window.siteMetrics.dashboard !== 'function') {
       renderTrafficUnavailable();
       return;
     }
-    window.siteMetrics.dashboard().then(renderTraffic).catch(renderTrafficUnavailable);
+    window.siteMetrics.dashboard().then(function (value) {
+      renderTraffic(value, trackedPages);
+    }).catch(renderTrafficUnavailable);
   }
 
   function initialize() {
@@ -523,14 +532,15 @@
       renderYearControl(data);
       renderBreakdowns(data);
       renderRecent(data);
+      loadTraffic(data.metricPageCount);
       document.getElementById('dashboard-loading').remove();
       root.classList.add('dashboard-ready');
     }).catch(function () {
       var loading = document.getElementById('dashboard-loading');
       loading.textContent = 'Publication statistics could not be loaded. Please try again after the next site build.';
       loading.classList.add('dashboard-loading-error');
+      renderTrafficUnavailable();
     });
-    loadTraffic();
   }
 
   if (document.readyState === 'loading') {
