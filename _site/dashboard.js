@@ -40,6 +40,49 @@
     return node;
   }
 
+  function validAccountHandle(value) {
+    return typeof value === 'string' && /^[A-Za-z0-9 -]{1,20}$/.test(value) ? value : null;
+  }
+
+  function renderAccountStatus(user) {
+    var badge = document.getElementById('account-status-badge');
+    var message = document.getElementById('account-status-message');
+    if (!badge || !message) return;
+    badge.classList.add('dashboard-status-ready');
+    if (!user) {
+      badge.textContent = 'Signed out';
+      message.textContent = 'You are not signed in. This public dashboard is fully available. Sign in from the navigation bar only if you want your reading position and chess progress to sync across devices.';
+      return;
+    }
+    var handle = window.siteAuth && typeof window.siteAuth.handle === 'function'
+      ? validAccountHandle(window.siteAuth.handle())
+      : null;
+    badge.textContent = 'Signed in';
+    message.textContent = handle
+      ? 'Signed in as ' + handle + '. This public dashboard is fully available, and your reading position and chess progress can sync across devices.'
+      : 'You are signed in. This public dashboard is fully available, and your reading position and chess progress can sync across devices.';
+  }
+
+  function renderAccountStatusUnavailable() {
+    var badge = document.getElementById('account-status-badge');
+    var message = document.getElementById('account-status-message');
+    if (!badge || !message) return;
+    badge.classList.remove('dashboard-status-ready');
+    badge.textContent = 'Unavailable';
+    message.textContent = 'Account status is unavailable. This public dashboard remains fully usable.';
+  }
+
+  function initializeAccountStatus() {
+    if (!window.siteAuth || typeof window.siteAuth.ready !== 'function'
+        || typeof window.siteAuth.onChange !== 'function') {
+      renderAccountStatusUnavailable();
+      return;
+    }
+    window.siteAuth.ready().then(function () {
+      window.siteAuth.onChange(renderAccountStatus);
+    }).catch(renderAccountStatusUnavailable);
+  }
+
   function utcDate(iso) {
     if (typeof iso !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
     var value = new Date(iso + 'T00:00:00Z');
@@ -527,6 +570,7 @@
   function initialize() {
     var root = document.getElementById('publishing-dashboard');
     if (!root) return;
+    initializeAccountStatus();
     loadPublicationData().then(function (data) {
       renderPublicationStats(data);
       loadWebsiteUpdate().then(renderWebsiteUpdate).catch(renderWebsiteUpdateUnavailable);

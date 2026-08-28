@@ -26,6 +26,7 @@
  *   siteAuth.db()                  raw database handle, or null
  *   siteAuth.setHandle(name)       promise, validates and stores the handle
  *   siteAuth.askHandle()           promise, opens the handle chooser
+ *   siteAuth.ready()               resolves after the initial auth state settles
  *   siteAuth.firebaseFunctions()   protected callable-functions service
  *   siteAuth.publicFirebaseFunctions() public aggregate callable service
  */
@@ -66,6 +67,10 @@
   var publicFunctionsLoading = null;
   var scriptLoads = {};
   var authWatching = false;
+  var resolveInitialAuthState = null;
+  var initialAuthState = new Promise(function (resolve) {
+    resolveInitialAuthState = resolve;
+  });
 
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -196,6 +201,23 @@
     render();
   }
 
+  function waitForInitialAuthState() {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var timer = window.setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        reject(new Error('Authentication state timed out'));
+      }, 10000);
+      initialAuthState.then(function (user) {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        resolve(user);
+      });
+    });
+  }
+
   function watchAuth() {
     if (authWatching) return;
     authWatching = true;
@@ -210,6 +232,10 @@
         currentHandle = null;
         handleLoaded = false;
         lsDel(HANDLE_KEY);
+      }
+      if (resolveInitialAuthState) {
+        resolveInitialAuthState(currentUser);
+        resolveInitialAuthState = null;
       }
       emit();
     });
@@ -640,10 +666,15 @@
       return db.ref('users/' + currentUser.uid + (path ? '/' + path : ''));
     },
     /* Pages that want the session without forcing a sign-in prompt. Resolves
-       once the SDK has settled, or immediately when there is nothing to load. */
+       after the first auth callback, or immediately when there is no known
+       returning-reader session to restore. */
     ready: function () {
+      if (currentUser) return Promise.resolve(currentUser);
       if (lsGet(SEEN_KEY) !== '1') return Promise.resolve(null);
-      return loadSDK().then(function () { return currentUser; });
+      return loadSDK().then(function (ok) {
+        if (!ok) throw new Error('Authentication is unavailable');
+        return waitForInitialAuthState();
+      });
     }
   };
 
