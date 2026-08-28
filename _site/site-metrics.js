@@ -19,6 +19,7 @@
     var path = window.location.pathname || '/';
     if (path === '/index.html') return '/';
     if (/\/index\.html$/.test(path)) return path.slice(0, -10) + '/';
+    if (path !== '/' && !path.endsWith('/') && !path.endsWith('.html')) return path + '.html';
     return path;
   }
 
