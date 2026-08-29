@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="How sequence to sequence models read audio, with spectrograms, the attention and CTC approaches to transcription, and a trigger word detector.">
+
+<title>Speech Recognition and Trigger Word Detection – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/sequence-models/attention-model" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-dark-5a1953863e1f72ef3b996ef827f01ca7.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-72f0d0848bd44e30f74044ddea63e70c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../../../site_libs/bootstrap/bootstrap-dark-2c993d82a95f65a68c89c17a41953382.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../../../site_libs/bootstrap/bootstrap-72f0d0848bd44e30f74044ddea63e70c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": true,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": "tree",
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Speech Recognition and Trigger Word Detection – H’s Notes">
+<meta property="og:description" content="How sequence to sequence models read audio, with spectrograms, the attention and CTC approaches to transcription, and a trigger word detector.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/speech-recognition-and-trigger-word-detection_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta property="og:image:alt" content="Two stacked panels sharing a time axis over a two second recording of speech. The upper panel plots the waveform as amplitude against time, showing four bursts of sound separated by quiet. The lower panel plots the spectrogram of the same clip, with frequency on the vertical axis up to 5000 hertz and brighter color where more energy sits. Each burst shows a stack of evenly spaced harmonic stripes in the low frequencies, brighter formant bands above them, and diffuse high frequency energy during the consonants.">
+<meta name="twitter:title" content="Speech Recognition and Trigger Word Detection – H’s Notes">
+<meta name="twitter:description" content="How sequence to sequence models read audio, with spectrograms, the attention and CTC approaches to transcription, and a trigger word detector.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/speech-recognition-and-trigger-word-detection_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:image:alt" content="Two stacked panels sharing a time axis over a two second recording of speech. The upper panel plots the waveform as amplitude against time, showing four bursts of sound separated by quiet. The lower panel plots the spectrogram of the same clip, with frequency on the vertical axis up to 5000 hertz and brighter color where more energy sits. Each burst shows a stack of evenly spaced harmonic stripes in the low frequencies, brighter formant bands above them, and diffuse high frequency energy during the consonants.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://h.oliabak.com/ai/deep-learning/sequence-models/speech-recognition-and-trigger-word-detection">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/kali-linux/">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Classroom</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/randomizer">
+ <span class="dropdown-text">Randomizer</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/dashboard">
+ <span class="dropdown-text">Dashboard</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="Toggle dark mode"><i class="bi"></i></a>
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/sequence-models/speech-recognition-and-trigger-word-detection">Speech Recognition and Trigger Word Detection</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence Models</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/recurrent-neural-networks" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Recurrent Neural Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/rnn-architectures-and-language-models" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RNN Architectures and Language Models</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vanishing Gradients, GRUs, and LSTMs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/bidirectional-and-deep-rnns" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bidirectional and Deep RNNs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-building-your-recurrent-neural-network" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Building Your Recurrent Neural Network Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-character-level-language-model" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Character Level Language Model</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-improvise-a-jazz-solo" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Improvise a Jazz Solo with an LSTM Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/learning-word-embeddings-word2vec-and-glove" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning Word Embeddings with Word2vec and GloVe</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sentiment Classification and Debiasing Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-operations-on-word-vectors" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Operations on Word Vectors</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-emojify" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Emojify</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/sequence-to-sequence-models" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence to Sequence Models</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/beam-search" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam Search</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/bleu-score" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BLEU Score</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/attention-model" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Attention Model</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/speech-recognition-and-trigger-word-detection" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Speech Recognition and Trigger Word Detection</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" class="page-qr">
+  <img id="page-qr-image" class="page-qr-image" width="120" height="120" alt="QR code for this page" hidden="">
+  <div class="page-qr-caption">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var image = document.getElementById('page-qr-image');
+  if (!image || typeof QRCode === 'undefined') return;
+  QRCode.toDataURL(window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err, dataUrl) {
+    if (err) return;
+    image.src = dataUrl;
+    image.hidden = false;
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#speech-recognition-problem" id="toc-speech-recognition-problem" class="nav-link active" data-scroll-target="#speech-recognition-problem">Speech Recognition Problem</a>
+  <ul class="collapse">
+  <li><a href="#from-phonemes-to-end-to-end-learning" id="toc-from-phonemes-to-end-to-end-learning" class="nav-link" data-scroll-target="#from-phonemes-to-end-to-end-learning">From Phonemes to End-to-End Learning</a></li>
+  </ul></li>
+  <li><a href="#attention-model-for-speech-recognition" id="toc-attention-model-for-speech-recognition" class="nav-link" data-scroll-target="#attention-model-for-speech-recognition">Attention Model for Speech Recognition</a></li>
+  <li><a href="#ctc-cost" id="toc-ctc-cost" class="nav-link" data-scroll-target="#ctc-cost">CTC Cost</a></li>
+  <li><a href="#trigger-word-detection" id="toc-trigger-word-detection" class="nav-link" data-scroll-target="#trigger-word-detection">Trigger Word Detection</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../site-metrics.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Speech Recognition and Trigger Word Detection</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">sequence-models</div>
+    <div class="quarto-category">speech-recognition</div>
+    <div class="quarto-category">audio</div>
+    <div class="quarto-category">spectrogram</div>
+    <div class="quarto-category">ctc</div>
+    <div class="quarto-category">attention</div>
+    <div class="quarto-category">trigger-word-detection</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    How sequence to sequence models read audio, with spectrograms, the attention and CTC approaches to transcription, and a trigger word detector.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">Friday, August 28, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~38 min read <span class="rt-info" tabindex="0" aria-describedby="reading-time-method"><span aria-hidden="true">ⓘ</span><span class="rt-tooltip" id="reading-time-method" role="tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~2,800 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p class="difficulty-rating" aria-label="Difficulty 3 out of 5"><span aria-hidden="true"><span class="difficulty-dot is-filled"></span><span class="difficulty-dot is-filled"></span><span class="difficulty-dot is-filled"></span><span class="difficulty-dot"></span><span class="difficulty-dot"></span></span></p></div>';
+    meta.appendChild(diffDiv);
+  }
+});
+</script>
+
+<p>One of the most exciting developments with sequence to sequence models has been the rise of very accurate speech recognition. This page applies those models to audio data.</p>
+<section id="speech-recognition-problem" class="level2">
+<h2 class="anchored" data-anchor-id="speech-recognition-problem">Speech Recognition Problem</h2>
+<p>In speech recognition you are given an audio clip <span class="math inline">\(x\)</span>, and the job is to automatically produce a text transcript <span class="math inline">\(y\)</span>.</p>
+<p>Plot an audio clip and the horizontal axis is time. What a microphone measures is minuscule changes in air pressure, which is also how your ear hears, detecting little changes in air pressure generated by a speaker or a headset. So an audio clip plots air pressure against time. If the clip is someone saying <code>the quick brown fox</code>, then a speech recognition algorithm should take that clip and output that transcript.</p>
+<p>Even the human ear does not process raw waveforms. It has physical structures that measure the intensity of different frequencies. So a common pre-processing step for audio is to take the raw clip and generate a <strong>spectrogram</strong>. That plot has time on the horizontal axis, frequency on the vertical axis, and color intensity showing the amount of energy, meaning how loud the sound is at each frequency at each moment. You may also hear these called filter bank outputs. Passing a spectrogram rather than a raw waveform into the learning algorithm is standard, and the human ear performs a fairly similar computation.</p>
+<div id="2813aa06" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="speech-recognition-and-trigger-word-detection_files/figure-html/cell-2-output-1.svg" class="img-fluid figure-img" alt="Two stacked panels sharing a time axis over a two second recording of speech. The upper panel plots the waveform as amplitude against time, showing four bursts of sound separated by quiet. The lower panel plots the spectrogram of the same clip, with frequency on the vertical axis up to 5000 hertz and brighter color where more energy sits. Each burst shows a stack of evenly spaced harmonic stripes in the low frequencies, brighter formant bands above them, and diffuse high frequency energy during the consonants."></p>
+<figcaption>One recording shown two ways. The waveform gives amplitude, the variation in air pressure, against time, and the four words are visible only as four bursts of loudness. The spectrogram of the same two seconds breaks each moment into frequencies, and the structure of speech appears. The evenly spaced horizontal stripes are the voice’s fundamental frequency and its harmonics, the brighter bands riding on top of them are formants, and the hazy patches reaching above 3000 Hz are the fricatives.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<section id="from-phonemes-to-end-to-end-learning" class="level3">
+<h3 class="anchored" data-anchor-id="from-phonemes-to-end-to-end-learning">From Phonemes to End-to-End Learning</h3>
+<p>Once upon a time, speech recognition systems were built using <strong>phonemes</strong>, hand-engineered basic units of sound. The phrase <code>the quick brown fox</code> would be written out in phonemes as something like <code>de</code>, <code>kwik</code>, <code>braun</code>, and so on. These are simplified, since the official phonemes use more complicated notation, but the idea was that linguists hypothesized that writing audio down in terms of these basic units of sound was the best route to speech recognition.</p>
+<p>With end-to-end deep learning, phoneme representations turn out to be unnecessary. You can build systems that take an audio clip and directly output a transcript, with no hand-engineered representation in between.</p>
+<p>One of the things that made this possible was much larger datasets. An academic dataset for speech recognition might be 300 hours, and in academia 3,000 hours of transcribed audio would be considered a reasonable size, so plenty of research has been published on datasets of several thousand hours. The best commercial systems, though, are now trained on over 10,000 hours and sometimes over 100,000 hours of audio. Moving to much larger transcribed audio datasets, holding both <span class="math inline">\(x\)</span> and <span class="math inline">\(y\)</span>, together with deep learning algorithms, is what has driven a lot of the progress.</p>
+</section>
+</section>
+<section id="attention-model-for-speech-recognition" class="level2">
+<h2 class="anchored" data-anchor-id="attention-model-for-speech-recognition">Attention Model for Speech Recognition</h2>
+<p>So how do you build a speech recognition system? One option is the <a href="../../../ai/deep-learning/sequence-models/attention-model">attention model</a> from earlier this week. Put different time frames of the audio input along the bottom, and have an attention model output the transcript one character at a time.</p>
+<div class="wide-network-hint">
+<p>On a small screen, scroll horizontally to see the full architecture.</p>
+</div>
+<div class="wide-network-figure" role="region" aria-label="Scrollable attention model for speech recognition diagram" tabindex="0">
+<div id="43447024" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="speech-recognition-and-trigger-word-detection_files/figure-html/cell-3-output-1.svg" class="img-fluid figure-img" alt="Along the bottom, audio frames x superscript 1 through x superscript 1000 feed two stacked rows of recurrent cells, one running forward and one running backward. Arrows from those cells converge on a summation node, which feeds a decoder cell s superscript 1 producing the character T. A dotted path carries that character down and around into the base of the next decoder cell s superscript 2, which produces the character h."></p>
+<figcaption>An attention model over audio. A bidirectional recurrent layer reads the audio frames, and the attention weights combine them into one context vector, which the decoder turns into a character. The character just generated is then fed into the base of the next decoder cell, so the decoder runs on its own output. Only the first output step’s context is drawn. The same computation repeats, with different weights, for every later step.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<p>Nothing about the architecture changes. The same <a href="../../../ai/deep-learning/sequence-models/attention-model#context-vectors-and-attention-weights">context vector machinery</a> that let a decoder look back at the right French word now lets it look back at the right stretch of audio, and the output alphabet is characters rather than words.</p>
+</section>
+<section id="ctc-cost" class="level2">
+<h2 class="anchored" data-anchor-id="ctc-cost">CTC Cost</h2>
+<p>Another method that works well for speech recognition is the <strong>CTC cost</strong>, which stands for connectionist temporal classification, due to <a href="https://doi.org/10.1145/1143844.1143891">Graves et al.&nbsp;(2006)</a>.</p>
+<p>The idea starts from a network with an equal number of inputs and outputs, the <a href="../../../ai/deep-learning/sequence-models/rnn-architectures-and-language-models#different-types-of-rnns">many-to-many architecture</a> where <span class="math inline">\(T_x = T_y\)</span>. The diagram below is drawn as a simple unidirectional RNN for clarity, but in practice this would usually be a <a href="../../../ai/deep-learning/sequence-models/bidirectional-and-deep-rnns#bidirectional-rnns">bidirectional</a> LSTM or bidirectional GRU, and usually a <a href="../../../ai/deep-learning/sequence-models/bidirectional-and-deep-rnns#deep-rnns">deeper model</a>.</p>
+<p>The catch is the number of time steps. In speech recognition the number of input time steps is much larger than the number of output time steps. Take 10 seconds of audio with features arriving at 100 hertz, meaning 100 samples per second. That is <span class="math inline">\(100 \times 10 = 1000\)</span> inputs. But the transcript does not have a thousand characters. The phrase <code>the quick brown fox</code>, counting spaces, has only 19.</p>
+<p>So what does the network do with a thousand output slots and 19 characters to place in them? The CTC cost function lets the RNN output something like this, where the underscore is a special <strong>blank</strong> character.</p>
+<pre><code>ttt_h_eee___ ___qqq__</code></pre>
+<p>The basic rule is to <strong>collapse repeated characters not separated by a blank</strong>. Note that the blank character is not the space character. There genuinely is a space between <code>the</code> and <code>quick</code>, so a space has to be output. Collapsing under that rule turns the string above into <code>the q</code>, the beginning of the transcript.</p>
+<div class="wide-network-hint">
+<p>On a small screen, scroll horizontally to see all the time steps.</p>
+</div>
+<div class="wide-network-figure" role="region" aria-label="Scrollable CTC diagram" tabindex="0">
+<div id="974661b2" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="speech-recognition-and-trigger-word-detection_files/figure-html/cell-4-output-1.svg" class="img-fluid figure-img" alt="An unrolled recurrent network with inputs x superscript 1 through x superscript 1000 and one output per step. Below it, the emitted character string t t t blank h blank e e e blank blank blank space blank blank blank q q q blank blank is shown, with an arrow to the collapsed result, the word the followed by a space and the letter q."></p>
+<figcaption>A CTC network emits one character per input frame, then the collapse rule reduces the long output to the actual transcript. Repeats fall together, blanks are dropped, and a repeat separated by a blank survives as two characters.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<p>By inserting blanks and repeating characters, the network can fill all thousand output slots and still represent a 19-character transcript. That is the whole trick. The paper by Graves and colleagues, along with Baidu’s Deep Speech system, used this idea to build effective speech recognition systems.</p>
+<p>Attention models and CTC models are two different options for building these systems. Today, building a production scale speech recognition system is a significant effort and needs a very large dataset. Trigger word detection, covered next, is much easier and can be done with a more reasonable amount of data.</p>
+</section>
+<section id="trigger-word-detection" class="level2">
+<h2 class="anchored" data-anchor-id="trigger-word-detection">Trigger Word Detection</h2>
+<p>With the rise of speech recognition, more and more devices can be woken up with your voice. These are called <strong>trigger word detection</strong> systems.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Device</th>
+<th>Trigger word</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Amazon Echo</td>
+<td>Alexa</td>
+</tr>
+<tr class="even">
+<td>Baidu DuerOS powered devices</td>
+<td>xiaodunihao</td>
+</tr>
+<tr class="odd">
+<td>Apple Siri</td>
+<td>Hey Siri</td>
+</tr>
+<tr class="even">
+<td>Google Home</td>
+<td>Okay Google</td>
+</tr>
+</tbody>
+</table>
+<p>It is thanks to trigger word detection that you can walk into a living room holding an Amazon Echo, say <code>Alexa, what time is it?</code>, and have the device wake up on the word <code>Alexa</code> and answer the query. Build one of these yourself and you could make a computer do something by telling it <code>computer, activate</code>.</p>
+<p>The literature on trigger word detection is still evolving, so there is no wide consensus yet on the best algorithm. What follows is one example of an algorithm you can use.</p>
+<p>Take an audio clip and compute spectrogram features, which generates the features <span class="math inline">\(x^{\langle 1 \rangle}, x^{\langle 2 \rangle}, x^{\langle 3 \rangle}\)</span> and so on that you pass through an RNN. All that remains is to define the target labels <span class="math inline">\(y\)</span>.</p>
+<p>Suppose a point in the audio clip is where someone has just finished saying the trigger word. In the training set, set the target label to 0 for everything before that point, and to 1 right after it. If a little later the trigger word is said again, set the target label to 1 right after that too.</p>
+<div class="wide-network-hint">
+<p>On a small screen, scroll horizontally to inspect the whole clip.</p>
+</div>
+<div class="wide-network-figure" role="region" aria-label="Scrollable trigger word labeling diagram" tabindex="0">
+<div id="5bd7c22a" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="speech-recognition-and-trigger-word-detection_files/figure-html/cell-5-output-1.svg" class="img-fluid figure-img" alt="Three stacked rows sharing a time axis. The top row is a synthetic waveform with two moments marked where the trigger word finishes. The middle row is a target label sequence that is zero everywhere except a single one just after each marked moment. The bottom row is the same sequence except each single one is replaced by a short run of ones."></p>
+<figcaption>Labeling an audio clip for trigger word detection, on a synthesized waveform with two designated trigger endpoints rather than a real recording. The middle row sets a single 1 immediately after each endpoint, and the bottom row is the hack that outputs a short run of 1s instead, to even out the ratio of 1s to 0s.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<p>This labeling scheme works reasonably well. One slight disadvantage is that it creates a very imbalanced training set, with many more 0s than 1s.</p>
+<p>So one other thing you could do, which is a bit of a hack but makes the model easier to train, is to output a few 1s for a fixed period of time rather than at only a single time step, before reverting to 0. That evens out the ratio of 1s to 0s somewhat. It is still a hack, and it is worth being honest that it is one, but it helps.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What You Should Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>A spectrogram, not the raw waveform, is the usual input to a speech model, and the human ear performs a broadly similar decomposition into frequencies.</li>
+<li>End-to-end deep learning removed the need for hand-engineered phonemes, and much larger transcribed datasets are what made that possible.</li>
+<li>Attention and CTC are two workable approaches to transcription, not competitors to be chosen between on principle.</li>
+<li>CTC exists because audio has far more input steps than the transcript has characters. Blanks and repeats let a thousand outputs encode 19 characters.</li>
+<li>The collapse rule joins repeated characters that are not separated by a blank, and the blank character is not the space character.</li>
+<li>Trigger word detection needs no new machinery. It is an RNN over spectrogram features with a 0 or 1 target, and the only real design question is how to label.</li>
+<li>Labeling a single 1 per trigger word gives a badly imbalanced training set, and stretching it to a short run of 1s is a hack that helps.</li>
+</ul>
+</div>
+</div>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<div id="speech-review-q1">
+<p><strong>1. Why is a spectrogram the usual input to a speech model rather than the raw waveform?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="speech-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because it exposes the information the task actually depends on. A waveform is a single amplitude per instant, while a spectrogram splits each moment into how much energy sits at each frequency, which is what distinguishes one sound from another. There is a biological argument alongside the practical one, since the human ear does not process raw waveforms either. It has physical structures that measure the intensity of different frequencies, so the pre-processing step mirrors a computation the ear already performs.</p>
+</div>
+</details>
+<hr>
+<div id="speech-review-q2">
+<p><strong>1. What changed to make hand-engineered phoneme representations unnecessary?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="speech-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>End-to-end deep learning, made workable by much larger datasets. Linguists had hypothesized that breaking language into basic units of sound was the best route to recognition, and systems were built that way. Given enough transcribed audio, a model can learn to map the clip straight to the transcript, with no intermediate representation designed by hand. Academic datasets run to 300 or 3,000 hours, while the best commercial systems train on over 10,000 hours and sometimes over 100,000.</p>
+</div>
+</details>
+<hr>
+<div id="speech-review-q3">
+<p><strong>1. A 10 second clip with features arriving at 100 hertz gives 1000 input time steps, but <code>the quick brown fox</code> is 19 characters. How does CTC reconcile the two?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="speech-review-q3">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>By letting the network fill all 1000 output slots with repeated characters and blanks, then collapsing. The network emits one symbol per input frame, so it produces 1000 of them, but the collapse rule joins repeated characters not separated by a blank and drops the blanks themselves. What survives is the 19-character transcript. The network never has to decide how to compress time, because the number of outputs stays equal to the number of inputs and the rule does the reduction afterwards.</p>
+</div>
+</details>
+<hr>
+<div id="speech-review-q4">
+<p><strong>1. Under the collapse rule, what does the output <code>ttt_h_eee___ ___qqq__</code> become, and why does the space survive?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="speech-review-q4">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>It becomes <code>the q</code>. The three <code>t</code> characters are adjacent with no blank between them, so they collapse to one <code>t</code>. The same happens to the three <code>e</code> characters and the three <code>q</code> characters. Every underscore is a blank and is dropped.</p>
+<p>The space survives because the blank and the space are two different characters. The underscore is a special symbol that exists only to separate repeats and is discarded, while the space is a genuine character in the transcript, since <code>the quick</code> really does have a space in it. Confusing the two would give <code>theq</code>.</p>
+</div>
+</details>
+<hr>
+<div id="speech-review-q5">
+<p><strong>1. Under the CTC model, what does this string collapse to?</strong></p>
+<pre><code>aaa_aaaaaa________rr_dddddddd_______v_aaaaaa_rrrr________kk</code></pre>
+<ol type="a">
+<li><p><code>aaaaaaaaaarrddddddddddvaaaaaarrrrkk</code></p></li>
+<li><p><code>ardvark</code></p></li>
+<li><p><code>aa rd var k</code></p></li>
+<li><p><code>aardvark</code></p></li>
+</ol>
+</div>
+<details class="review-answer">
+<summary aria-describedby="speech-review-q5">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>d.</strong> Work along the string. <code>aaa</code> collapses to one <code>a</code>, then a blank, then <code>aaaaaa</code> collapses to another <code>a</code>. Both survive, because the blank between them stops the two runs from merging, so the result opens with <code>aa</code>. Then blanks, <code>rr</code> to <code>r</code>, a blank, <code>dddddddd</code> to <code>d</code>, blanks, <code>v</code>, a blank, <code>aaaaaa</code> to <code>a</code>, a blank, <code>rrrr</code> to <code>r</code>, blanks, and <code>kk</code> to <code>k</code>. That spells <code>aardvark</code>.</p>
+<p>Option a ignores the collapse rule altogether and keeps long runs of repeated characters, though its run lengths do not match the emitted string exactly either. Option b collapses too hard, merging the two separated runs of <code>a</code> into one and losing the doubled letter that the blank was there to protect. Option c mistakes the blank for a space. Blanks are discarded and print nothing, while a space would be a real character in the transcript.</p>
+</div>
+</details>
+<hr>
+<div id="speech-review-q6">
+<p><strong>1. In trigger word detection, what problem does labeling a single 1 after each trigger word create, and what is the fix?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="speech-review-q6">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>It creates a very imbalanced training set, with a lot more 0s than 1s, since each trigger word contributes a single positive label to a clip made of many time steps.</p>
+<p>The fix is to output a few 1s for a fixed period after the trigger word rather than at a single step, before reverting to 0, which evens out the ratio somewhat. This is a hack rather than a principled correction, and it is worth naming it as one.</p>
+</div>
+</details>
+<hr>
+<div id="speech-review-q7">
+<p><strong>1. What kind of architecture is the trigger word detector, and where do its inputs come from?</strong></p>
+<ol type="a">
+<li><p>An encoder-decoder, taking raw audio and emitting a word</p></li>
+<li><p>A many-to-many RNN over spectrogram features, emitting a 0 or 1 at every step</p></li>
+<li><p>An attention model over characters</p></li>
+<li><p>A many-to-one RNN that reads the whole clip and emits a single label</p></li>
+</ol>
+</div>
+<details class="review-answer">
+<summary aria-describedby="speech-review-q7">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>b.</strong> The clip is turned into spectrogram features <span class="math inline">\(x^{\langle 1 \rangle}, x^{\langle 2 \rangle}, x^{\langle 3 \rangle}\)</span> and so on, which pass through an RNN that emits a label at every time step, so the input and output sequences have the same length. Option d is wrong because a single label for the whole clip could not say <em>when</em> the trigger word occurred, which is the entire point. The remarkable thing about this system is how little new machinery it needs. Everything above is a component already covered, and only the labeling scheme is specific to the task.</p>
+</div>
+</details>
+<hr>
+<div id="speech-review-q8">
+<p><strong>1. In trigger word detection, if the target label for <span class="math inline">\(x^{\langle t \rangle}\)</span> is 1, what does that mean?</strong></p>
+<ol type="a">
+<li><p>Someone has just finished saying the trigger word at time <span class="math inline">\(t\)</span></p></li>
+<li><p>The total time the trigger word detection algorithm has been running is 1</p></li>
+<li><p>Only one word has been stated</p></li>
+<li><p>There is exactly one trigger word</p></li>
+</ol>
+</div>
+<details class="review-answer">
+<summary aria-describedby="speech-review-q8">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>a.</strong> The label is a per-time-step indicator of whether the trigger word has just been said, which is why the target is a sequence as long as the input rather than a single number. Setting it to 1 immediately after the trigger word finishes is what teaches the model <em>when</em> the wake word ended, and it is what lets the same clip carry two positives if the word is said twice.</p>
+<p>The other options all read the 1 as a count of something, whether elapsed time, words spoken, or trigger words in the clip. None of those would be a per-time-step label, and none would tell the device the moment at which to wake up.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li>Graves, A., Fernández, S., Gomez, F., &amp; Schmidhuber, J. (2006). Connectionist temporal classification: Labelling unsegmented sequence data with recurrent neural networks. In <em>Proceedings of the 23rd International Conference on Machine Learning</em> (pp.&nbsp;369-376). ACM Press. <a href="https://doi.org/10.1145/1143844.1143891" class="uri">https://doi.org/10.1145/1143844.1143891</a></li>
+</ul>
+
+
+<div id="section-progress-widget" class="section-progress-widget" hidden="">
+  <p class="section-progress-label">Progress through this section</p>
+  <progress class="section-progress" value="100" max="100" aria-label="100 percent through this section"></progress>
+  <p class="section-progress-detail">100% through this section (1714 of 1714 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.hidden = false; sb.appendChild(w); }
+});
+</script>
+
+</section>
+
+<a onclick="window.scrollTo(0, 0); return false;" role="button" id="quarto-back-to-top"><i class="bi bi-arrow-up"></i> Back to top</a></main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme-dark.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      if (authorPrefersDark) {
+          [baseTheme, altTheme] = [altTheme, baseTheme];
+      }
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/sequence-models/attention-model" class="pagination-link" aria-label="Attention Model">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Attention Model</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+<p>H’s Notes</p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    </div>
+    <div class="nav-footer-right">
+      <ul class="footer-items list-unstyled">
+    <li class="nav-item">
+    <a class="nav-link" href="../../../about">
+<p>About</p>
+</a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="../../../about/dashboard">
+<p>Dashboard</p>
+</a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="../../../about/roadmap">
+<p>Roadmap</p>
+</a>
+  </li>  
+</ul>
+    </div>
+  </div>
+</footer>
+
+
+
+
+</body></html>

@@ -36,7 +36,17 @@
   var SDK = 'https://www.gstatic.com/firebasejs/10.12.0/';
   var SEEN_KEY = 'site-auth-seen';           // "this browser has signed in before"
   var HANDLE_KEY = 'site-auth-handle';       // cached so the navbar can render before the SDK loads
+  var HANDLE_OWNER_KEY = 'site-auth-handle-owner';
   var ASKED_KEY = 'site-auth-asked';         // session-scoped, so "Not now" is respected
+  var CREATED_SYNC_PREFIX = 'site-auth-created-v1:';
+  var LAST_SEEN_SYNC_PREFIX = 'site-auth-last-seen-v1:';
+  var HANDLE_PULL_PREFIX = 'site-auth-handle-pull-v1:';
+  var HANDLE_PULL_ATTEMPT_PREFIX = 'site-auth-handle-pull-attempt-v1:';
+  var CREATED_VERIFY_MS = 30 * 24 * 60 * 60 * 1000;
+  var CREATED_RETRY_MS = 60 * 60 * 1000;
+  var LAST_SEEN_INTERVAL_MS = 6 * 60 * 60 * 1000;
+  var HANDLE_PULL_INTERVAL_MS = 10 * 60 * 1000;
+  var HANDLE_PULL_RETRY_MS = 60 * 1000;
   var RECAPTCHA = '6LdhmdosAAAAAGh4ojYqXCU0JOeVo3X-R1qmMaZq';
 
   var CONFIG = {
@@ -75,6 +85,43 @@
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+  function ssSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} }
+  function ssDel(k) { try { sessionStorage.removeItem(k); } catch (e) {} }
+
+  function clearHandlePullMarkers(uid) {
+    if (!uid) return;
+    ssDel(HANDLE_PULL_PREFIX + uid);
+    ssDel(HANDLE_PULL_ATTEMPT_PREFIX + uid);
+  }
+
+  /* Local activity markers reduce work across tabs. Session markers are also
+     written so a browser that blocks persistent storage still suppresses a
+     refresh loop in the current tab. These markers are an efficiency hint.
+     Database rules remain the integrity boundary. */
+  function activityGet(key) {
+    return lsGet(key) || ssGet(key);
+  }
+
+  function activitySet(key, value) {
+    lsSet(key, value);
+    ssSet(key, value);
+  }
+
+  function recentTimestamp(value, now, interval) {
+    var stamp = Number(value);
+    return Number.isFinite(stamp)
+      && stamp > 0
+      && stamp <= now + 60000
+      && now - stamp < interval;
+  }
+
+  function recentState(value, state, now, interval) {
+    var prefix = state + ':';
+    return typeof value === 'string'
+      && value.indexOf(prefix) === 0
+      && recentTimestamp(value.slice(prefix.length), now, interval);
+  }
 
   function loadScript(file, ready) {
     if (ready()) return Promise.resolve();
@@ -223,8 +270,17 @@
     authWatching = true;
     window.firebase.auth().onAuthStateChanged(function (user) {
       // A legacy anonymous session is not a signed-in reader.
+      var previousUser = currentUser;
       currentUser = user && !user.isAnonymous ? user : null;
+      if (previousUser && (!currentUser || previousUser.uid !== currentUser.uid)) {
+        clearHandlePullMarkers(previousUser.uid);
+      }
       if (currentUser) {
+        if (!previousUser || previousUser.uid !== currentUser.uid) {
+          if (lsGet(HANDLE_OWNER_KEY) !== currentUser.uid) lsDel(HANDLE_KEY);
+          currentHandle = lsGet(HANDLE_KEY) || null;
+          handleLoaded = false;
+        }
         lsSet(SEEN_KEY, '1');
         touch();
         pullHandle();
@@ -232,6 +288,7 @@
         currentHandle = null;
         handleLoaded = false;
         lsDel(HANDLE_KEY);
+        lsDel(HANDLE_OWNER_KEY);
       }
       if (resolveInitialAuthState) {
         resolveInitialAuthState(currentUser);
@@ -247,21 +304,64 @@
      it is the only reason the record needs a timestamp at all. */
   function touch() {
     if (!db || !currentUser) return;
-    var meta = db.ref('users/' + currentUser.uid + '/meta');
-    meta.child('createdAt').transaction(function (cur) {
-      return cur === null ? Date.now() : cur;
-    }).catch(function () {});
-    meta.child('lastSeenAt').set(Date.now()).catch(function () {});
+    var uid = currentUser.uid;
+    var now = Date.now();
+    var meta = db.ref('users/' + uid + '/meta');
+    var serverTimestamp = window.firebase.database.ServerValue.TIMESTAMP;
+    var createdKey = CREATED_SYNC_PREFIX + uid;
+    var createdState = activityGet(createdKey);
+    var createdIsFresh = recentState(createdState, 'ok', now, CREATED_VERIFY_MS);
+    var createdIsPending = recentState(createdState, 'try', now, CREATED_RETRY_MS);
+
+    if (!createdIsFresh && !createdIsPending) {
+      activitySet(createdKey, 'try:' + now);
+      meta.child('createdAt').transaction(function (cur) {
+        return cur === null ? serverTimestamp : cur;
+      }).then(function () {
+        activitySet(createdKey, 'ok:' + Date.now());
+      }).catch(function () {});
+    }
+
+    var lastSeenKey = LAST_SEEN_SYNC_PREFIX + uid;
+    if (!recentTimestamp(activityGet(lastSeenKey), now, LAST_SEEN_INTERVAL_MS)) {
+      /* Mark the attempt before the request. An outage or a second device can
+         make the server reject it, but reloads still remain bounded. */
+      activitySet(lastSeenKey, String(now));
+      meta.child('lastSeenAt').set(serverTimestamp).catch(function () {});
+    }
   }
 
   function pullHandle() {
     if (!db || !currentUser) return;
-    db.ref('users/' + currentUser.uid + '/meta/handle').once('value').then(function (snap) {
+    var uid = currentUser.uid;
+    var now = Date.now();
+    var successKey = HANDLE_PULL_PREFIX + uid;
+    var attemptKey = HANDLE_PULL_ATTEMPT_PREFIX + uid;
+
+    if (recentTimestamp(ssGet(successKey), now, HANDLE_PULL_INTERVAL_MS)) {
+      handleLoaded = true;
+      return;
+    }
+    if (recentTimestamp(ssGet(attemptKey), now, HANDLE_PULL_RETRY_MS)) return;
+
+    ssSet(attemptKey, String(now));
+    db.ref('users/' + uid + '/meta/handle').once('value').then(function (snap) {
+      if (!currentUser || currentUser.uid !== uid) return;
+      ssSet(successKey, String(Date.now()));
+      ssDel(attemptKey);
       currentHandle = snap.val() || null;
       handleLoaded = true;          // now, and only now, is "no handle" a fact
-      if (currentHandle) lsSet(HANDLE_KEY, currentHandle); else lsDel(HANDLE_KEY);
+      if (currentHandle) {
+        lsSet(HANDLE_KEY, currentHandle);
+        lsSet(HANDLE_OWNER_KEY, uid);
+      } else {
+        lsDel(HANDLE_KEY);
+        lsSet(HANDLE_OWNER_KEY, uid);
+      }
       emit();
-    }).catch(function () { emit(); });   // read failed: stay quiet rather than prompt
+    }).catch(function () {
+      if (currentUser && currentUser.uid === uid) emit();
+    });   // read failed: stay quiet rather than prompt
   }
 
   function cleanHandle(s) {
@@ -330,6 +430,9 @@
     }).then(function () {
       currentHandle = clean;
       lsSet(HANDLE_KEY, clean);
+      lsSet(HANDLE_OWNER_KEY, currentUser.uid);
+      ssSet(HANDLE_PULL_PREFIX + currentUser.uid, String(Date.now()));
+      ssDel(HANDLE_PULL_ATTEMPT_PREFIX + currentUser.uid);
       emit();
       return clean;
     });
@@ -376,8 +479,11 @@
   }
 
   function signOut() {
+    var uid = currentUser && currentUser.uid;
     lsDel(SEEN_KEY);
     lsDel(HANDLE_KEY);
+    lsDel(HANDLE_OWNER_KEY);
+    clearHandlePullMarkers(uid);
     if (!window.firebase || !window.firebase.auth) return Promise.resolve();
     return window.firebase.auth().signOut().catch(function () {});
   }

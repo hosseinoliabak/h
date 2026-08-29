@@ -1,4 +1,4 @@
-/* Publication and traffic dashboard for H's Notes.
+/* Publication, connection, and traffic dashboard for H's Notes.
  *
  * Publication data is generated from first-publication dates in source front
  * matter. Traffic data contains aggregate counters supplied by the quota-limited
@@ -10,6 +10,19 @@
   var DATA_URL = '/about/dashboard-data.json';
   var MAX_DATA_BYTES = 7 * 1024 * 1024;
   var MAX_METRIC_PAGES = 20000;
+  var MAX_EDGE_RTT_MS = 60000;
+  var HTTP_VERSIONS = new Set(['HTTP/1.0', 'HTTP/1.1', 'HTTP/2', 'HTTP/3']);
+  var TLS_VERSION_LABELS = new Map([
+    ['TLSv1', 'TLS 1.0'],
+    ['TLSv1.1', 'TLS 1.1'],
+    ['TLSv1.2', 'TLS 1.2'],
+    ['TLSv1.3', 'TLS 1.3']
+  ]);
+  var CACHE_STATUSES = new Set([
+    'HIT', 'MISS', 'EXPIRED', 'STALE', 'BYPASS',
+    'REVALIDATED', 'UPDATING', 'DYNAMIC', 'NONE/UNKNOWN'
+  ]);
+  var edgeConnectionSettled = false;
   /* Quarto has no native remote-deployment timestamp. This exact public API
    * endpoint supplies the latest commit that changed deployable site output.
    */
@@ -93,12 +106,27 @@
     return value.toISOString().slice(0, 10);
   }
 
-  function validInternalPath(value) {
+  function validCleanPagePath(value) {
+    return typeof value === 'string'
+      && value.length <= 320
+      && /^\/(?:[A-Za-z0-9_-]+\/)*(?:[A-Za-z0-9_-]+)?$/.test(value)
+      && !value.includes('//')
+      && !value.includes('..');
+  }
+
+  function validMetricPath(value) {
     return typeof value === 'string'
       && value.length <= 320
       && (value === '/' || /^\/(?:[A-Za-z0-9_-]+\/)*(?:[A-Za-z0-9_-]+\.html)?$/.test(value))
       && !value.includes('//')
       && !value.includes('..');
+  }
+
+  function cleanMetricPath(value) {
+    if (value === '/index.html') return '/';
+    if (value.endsWith('/index.html')) return value.slice(0, -'index.html'.length);
+    if (value.endsWith('.html')) return value.slice(0, -'.html'.length);
+    return value;
   }
 
   function validatePublicationData(value) {
@@ -111,7 +139,7 @@
     var articles = value.articles.map(function (item) {
       if (!item || !utcDate(item.date) || typeof item.title !== 'string'
           || item.title.length < 1 || item.title.length > 240
-          || !validInternalPath(item.href) || !SUBJECTS.has(item.subject)) {
+          || !validCleanPagePath(item.href) || !SUBJECTS.has(item.subject)) {
         throw new Error('Publication data contains an invalid article');
       }
       var identity = item.href + '\n' + item.date;
@@ -153,12 +181,73 @@
     return next();
   }
 
+  function parseEdgeRtt(value) {
+    if (value === null || value === '' || value === '0') return { value: null, invalid: false };
+    if (!/^[1-9][0-9]{0,4}$/.test(value)) return { value: null, invalid: true };
+    var milliseconds = Number(value);
+    if (!Number.isSafeInteger(milliseconds) || milliseconds > MAX_EDGE_RTT_MS) {
+      return { value: null, invalid: true };
+    }
+    return { value: milliseconds, invalid: false };
+  }
+
+  function parseEdgeConnection(headers) {
+    var emptyConnection = {
+      colo: null,
+      rttMs: null,
+      transport: null,
+      httpVersion: null,
+      tlsVersion: null,
+      cacheStatus: null
+    };
+    var connection = Object.assign({}, emptyConnection);
+    if (!headers || typeof headers.get !== 'function') return connection;
+    try {
+      /* Quarto does not expose per-request CDN response metadata. This narrow
+       * parser reads only validated values from the existing data request.
+       */
+      var rayMatch = /^[0-9a-f]{8,64}-([A-Z]{3})$/.exec(headers.get('cf-ray') || '');
+      if (rayMatch) connection.colo = rayMatch[1];
+
+      var tcp = parseEdgeRtt(headers.get('x-edge-rtt-tcp'));
+      var quic = parseEdgeRtt(headers.get('x-edge-rtt-quic'));
+      if (!tcp.invalid && !quic.invalid) {
+        if (tcp.value !== null && quic.value === null) {
+          connection.rttMs = tcp.value;
+          connection.transport = 'TCP';
+        } else if (quic.value !== null && tcp.value === null) {
+          connection.rttMs = quic.value;
+          connection.transport = 'QUIC';
+        }
+      }
+
+      var httpVersion = headers.get('x-edge-http-version');
+      if (HTTP_VERSIONS.has(httpVersion)) connection.httpVersion = httpVersion;
+      var tlsVersion = headers.get('x-edge-tls-version');
+      if (TLS_VERSION_LABELS.has(tlsVersion)) connection.tlsVersion = TLS_VERSION_LABELS.get(tlsVersion);
+      var cacheStatus = headers.get('cf-cache-status');
+      if (CACHE_STATUSES.has(cacheStatus)) connection.cacheStatus = cacheStatus;
+
+      if (connection.transport && connection.httpVersion) {
+        var expectedTransport = connection.httpVersion === 'HTTP/3' ? 'QUIC' : 'TCP';
+        if (connection.transport !== expectedTransport) {
+          connection.rttMs = null;
+          connection.transport = null;
+        }
+      }
+      return connection;
+    } catch (error) {
+      return emptyConnection;
+    }
+  }
+
   function loadPublicationData() {
     var url = new URL(DATA_URL, window.location.href);
     if (url.origin !== window.location.origin) return Promise.reject(new Error('Publication data origin is not allowed'));
     var controller = new AbortController();
     var timer = window.setTimeout(function () { controller.abort(); }, 10000);
     return window.fetch(url.href, {
+      cache: 'no-store',
       credentials: 'omit',
       redirect: 'error',
       referrerPolicy: 'no-referrer',
@@ -169,6 +258,7 @@
       if (type.indexOf('application/json') === -1 && type.indexOf('text/plain') === -1) {
         throw new Error('Publication data type is not supported');
       }
+      renderEdgeConnection(parseEdgeConnection(response.headers));
       return readBoundedBody(response, MAX_DATA_BYTES);
     }).then(function (source) {
       return validatePublicationData(JSON.parse(source));
@@ -254,6 +344,68 @@
     card.appendChild(element('span', 'dashboard-stat-label', label));
     if (note) card.appendChild(element('small', 'dashboard-stat-note', note));
     return card;
+  }
+
+  function renderEdgeConnection(connection) {
+    var status = document.getElementById('edge-connection-status');
+    var host = document.getElementById('edge-connection-stats');
+    if (!status || !host) return;
+    edgeConnectionSettled = true;
+    var hasColo = !!connection.colo;
+    var hasRtt = Number.isSafeInteger(connection.rttMs) && !!connection.transport;
+    var hasTransport = hasRtt;
+    var hasHttp = HTTP_VERSIONS.has(connection.httpVersion);
+    var hasTls = Array.from(TLS_VERSION_LABELS.values()).indexOf(connection.tlsVersion) !== -1;
+    var hasCache = CACHE_STATUSES.has(connection.cacheStatus);
+    var available = [hasColo, hasRtt, hasTransport, hasHttp, hasTls, hasCache].filter(Boolean).length;
+    status.textContent = available === 6 ? 'Live' : (available ? 'Partial' : 'Unavailable');
+    status.classList.toggle('dashboard-status-ready', available === 6);
+    host.replaceChildren(
+      statCard(
+        hasColo ? connection.colo : 'Unavailable',
+        'Cloudflare serving edge',
+        hasColo ? 'Data center code reported for this request' : 'No valid edge code was reported'
+      ),
+      statCard(
+        hasRtt ? numberFormat.format(connection.rttMs) + ' ms' : 'Unavailable',
+        'Edge RTT',
+        hasRtt ? 'Smoothed round trip to the serving edge' : 'No valid round-trip time was reported'
+      ),
+      statCard(
+        hasTransport ? connection.transport : 'Unavailable',
+        'Edge transport',
+        hasTransport ? 'Transport observed for the edge RTT' : 'No unambiguous edge transport was reported'
+      ),
+      statCard(
+        hasHttp ? connection.httpVersion : 'Unavailable',
+        'HTTP protocol',
+        hasHttp ? 'Version used for this data request' : 'No valid HTTP version was reported'
+      ),
+      statCard(
+        hasTls ? connection.tlsVersion : 'Unavailable',
+        'Edge TLS',
+        hasTls ? 'TLS version negotiated with the serving edge' : 'No valid TLS version was reported'
+      ),
+      statCard(
+        hasCache ? connection.cacheStatus : 'Unavailable',
+        'CDN cache decision',
+        hasCache ? 'Cloudflare result for this data request' : 'No recognized cache decision was reported'
+      )
+    );
+  }
+
+  function renderEdgeConnectionUnavailable() {
+    if (edgeConnectionSettled) return;
+    renderEdgeConnection({
+      colo: null,
+      rttMs: null,
+      transport: null,
+      httpVersion: null,
+      tlsVersion: null,
+      cacheStatus: null
+    });
+    var status = document.getElementById('edge-connection-status');
+    if (status && window.location.hostname !== 'h.oliabak.com') status.textContent = 'Production only';
   }
 
   function renderPublicationStats(data) {
@@ -469,9 +621,9 @@
       return { date: item.date, views: item.views };
     });
     var topPages = value.topPages.map(function (item) {
-      if (!item || !validInternalPath(item.path) || typeof item.title !== 'string' || item.title.length < 1 || item.title.length > 180
+      if (!item || !validMetricPath(item.path) || typeof item.title !== 'string' || item.title.length < 1 || item.title.length > 180
           || !Number.isSafeInteger(item.views) || item.views < 1) throw new Error('Traffic page is invalid');
-      return { path: item.path, title: item.title, views: item.views };
+      return { path: cleanMetricPath(item.path), title: item.title, views: item.views };
     });
     return {
       totalViews: value.totalViews,
@@ -584,6 +736,7 @@
       var loading = document.getElementById('dashboard-loading');
       loading.textContent = 'Publication statistics could not be loaded. Please try again after the next site build.';
       loading.classList.add('dashboard-loading-error');
+      renderEdgeConnectionUnavailable();
       renderTrafficUnavailable();
     });
   }
