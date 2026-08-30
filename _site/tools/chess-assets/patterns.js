@@ -236,8 +236,11 @@ const MATES = [
     } },
   { id: 'vukovic-mate', name: 'Vuković’s mate', lichess: 2445,
     blurb: 'A protected rook mates the king on the edge while a knight covers the last escape squares. Fischer used it at age thirteen.',
+    /* Wikipedia gives the king or a pawn as the usual protector, but the pattern
+       is the protected rook plus the knight, whatever does the protecting: the
+       Fischer example itself has the rook held by a bishop. */
     test: (pos, m) => m.c && m.c.type === 'r' && onEdge(m.king) && orthAdjacent(m.c.square, m.king)
-      && (guardedBy(pos, m.c.square, m.side, 'k') || guardedBy(pos, m.c.square, m.side, 'p'))
+      && attackersOf(pos, m.c.square, m.side).length > 0
       && m.around.some(s => !isOwn(pos, s, m.victim) && attacked(pos, s, m.side, 'n')) },
   { id: 'corner-mate', name: 'Corner mate', lichess: 10783,
     blurb: 'A knight mates the king in the corner while a rook seals the next file and the king’s own pawn blocks the last square.',
@@ -1051,18 +1054,25 @@ add({ id: 'long-diagonal-battery', family: 'attack', name: 'Long-diagonal batter
 add({ id: 'queen-knight-attack', family: 'attack', name: 'Queen and knight attack', lichess: null,
   blurb: 'Queen and knight are the deadliest pair near a king, because the knight covers the squares the queen cannot.',
   plan: 'Post the knight on f5, g5, or h5 near the enemy king, keep it protected, and bring the queen to the same side.',
+  /* What makes a knight part of the attack is the squares it takes away, not how
+     close it stands. A knight on f5 is three squares from a king on h8 by any
+     ruler, and it is still the piece that costs the king g7 and h6. */
   achieved: (pos, side) => {
     const vk = kingSq(pos, other(side));
-    return !!vk && pieces(pos, side, 'n').some(n => cheb(n.square, vk) <= 2 && attacked(pos, n.square, side))
+    if (!vk) return false;
+    const zone = [vk, ...neighbors(vk)];
+    return pieces(pos, side, 'n').some(n => zone.some(sq => attackersOf(pos, sq, side, 'n').includes(n.square))
+        && attackersOf(pos, n.square, side).length > 0)
       && neighbors(vk).some(sq => attacked(pos, sq, side, 'q'));
   },
   building: (pos, side) => {
     if (!has(pos, side, 'q') || !has(pos, side, 'n')) return null;
     const vk = kingSq(pos, other(side));
-    const near = pieces(pos, side, 'n').filter(n => cheb(n.square, vk) <= 2);
+    const zone = [vk, ...neighbors(vk)];
+    const near = pieces(pos, side, 'n').filter(n => zone.some(sq => attackersOf(pos, sq, side, 'n').includes(n.square)));
     return [
-      step('A knight stands within two squares of the enemy king', near.length > 0, near.map(n => n.square)),
-      step('That knight is protected', near.some(n => attacked(pos, n.square, side))),
+      step('A knight covers a square next to the enemy king', near.length > 0, near.map(n => n.square)),
+      step('That knight is protected', near.some(n => attackersOf(pos, n.square, side).length > 0)),
       step('The queen attacks a square next to the king', neighbors(vk).some(sq => attacked(pos, sq, side, 'q'))),
     ];
   } });
@@ -1178,12 +1188,18 @@ add({ id: 'open-file-battery', family: 'attack', name: 'Doubled on an open file'
 add({ id: 'f7-strike', family: 'attack', name: 'Strike on f7', lichess: null,
   blurb: 'f7 is the weakest square at the start, guarded only by the king. Bishop plus knight sacrifices there drag the king into the open.',
   plan: 'Bishop on c4, knight to g5 or e5, and if only the king guards f7, take it and follow with checks.',
-  achieved: (pos, side) => (pieceOn(pos, side, 'b', R(side, 'f7')) || pieceOn(pos, side, 'n', R(side, 'f7'))) && kingInCenter(pos, other(side)),
+  /* the strike lands on f7 whether the king castled or not, and after Bxf7+ the
+     king is usually dragged off its square, so the test is that one of our
+     pieces stands on f7 with the king still next to it */
+  achieved: (pos, side) => {
+    const f7 = R(side, 'f7'), vk = kingSq(pos, other(side));
+    return !!vk && (isOwn(pos, f7, side, 'b') || isOwn(pos, f7, side, 'n')) && cheb(f7, vk) <= 2;
+  },
   building: (pos, side) => {
-    if (!kingUncastled(pos, other(side))) return null;
+    if (!kingUncastled(pos, other(side)) && !shortCastled(pos, side)) return null;
     const f7 = R(side, 'f7');
     return [
-      step('The enemy king has not castled', true),
+      step('The enemy king is still near f7', true),
       step('A bishop aims at f7', aims(pos, side, 'b', f7), [f7]),
       step('A knight aims at f7', aims(pos, side, 'n', f7), [f7]),
       step('Only the king defends f7', attackersOf(pos, f7, other(side)).every(sq => (pos.get(sq) || {}).type === 'k')),
@@ -1194,19 +1210,25 @@ add({ id: 'f7-strike', family: 'attack', name: 'Strike on f7', lichess: null,
 add({ id: 'knight-outpost', family: 'positional', name: 'Knight outpost', lichess: null,
   blurb: 'A knight on a square no enemy pawn can ever attack, held there by your own pawn. Kasparov’s octopus on d3.',
   plan: 'Find a square on the fifth or sixth rank that enemy pawns can never reach, protect it with a pawn, and bring the knight there.',
-  achieved: (pos, side) => pieces(pos, side, 'n').some(n => Math.abs(rankOf(n.square) - homeRank(side)) >= 4 && unassailable(pos, n.square, side) && attacked(pos, n.square, side, 'p')),
+  /* An outpost is a square no enemy pawn can ever attack. A pawn holding it is
+     the ideal and makes it permanent, but Kasparov's octopus knight on d3 was
+     held by a bishop, so any defender counts and the pawn is a separate step. */
+  achieved: (pos, side) => pieces(pos, side, 'n').some(n => Math.abs(rankOf(n.square) - homeRank(side)) >= 4
+    && unassailable(pos, n.square, side) && attackersOf(pos, n.square, side).length > 0),
   building: (pos, side) => {
     if (!has(pos, side, 'n')) return null;
     const posts = [];
     for (let f = 0; f < 8; f++) for (const r of [5, 6]) {
       const sq = mkSq(f, relRank(side, r));
-      if (unassailable(pos, sq, side) && attacked(pos, sq, side, 'p') && !isOwn(pos, sq, other(side), 'p')) posts.push(sq);
+      if (unassailable(pos, sq, side) && attacked(pos, sq, side) && !isOwn(pos, sq, other(side), 'p')) posts.push(sq);
     }
     if (!posts.length) return null;
     return [
       step(`An outpost square exists (${posts.join(', ')})`, true, posts),
       step('A knight can reach it', posts.some(sq => canReach(pos, side, 'n', sq))),
       step('A knight sits on it', posts.some(sq => pieceOn(pos, side, 'n', sq))),
+      step('One of your pawns holds the square, which makes it permanent',
+        posts.some(sq => pieceOn(pos, side, 'n', sq) && attacked(pos, sq, side, 'p'))),
     ];
   } });
 add({ id: 'bishop-pair', family: 'positional', name: 'Bishop pair', lichess: null,
@@ -1229,8 +1251,11 @@ add({ id: 'good-vs-bad-bishop', family: 'positional', name: 'Good bishop against
     if (vb.length !== 1 || count(pos, side, 'b') + count(pos, side, 'n') === 0) return false;
     const col = sqColor(vb[0].square);
     const bad = pieces(pos, other(side), 'p').filter(p => sqColor(p.square) === col).length;
-    const mine = pieces(pos, side, 'b');
-    return bad >= 4 && (!mine.length || mine.every(b => sqColor(b.square) !== col));
+    if (bad < 4) return false;
+    /* the comparison is how blocked each bishop is by its OWN pawns, so a
+       bishop of the same color as theirs still counts when ours is the free one */
+    return pieces(pos, side, 'b').every(b =>
+      pieces(pos, side, 'p').filter(p => sqColor(p.square) === sqColor(b.square)).length < bad);
   },
   building: (pos, side) => {
     const vb = pieces(pos, other(side), 'b');
@@ -1240,7 +1265,8 @@ add({ id: 'good-vs-bad-bishop', family: 'positional', name: 'Good bishop against
     return [
       step(`The enemy has one bishop, on ${col} squares`, true),
       step(`Their pawns stand on ${col} squares too (${bad})`, bad >= 4),
-      step('Your own bishop, if any, is on the other color', pieces(pos, side, 'b').every(b => sqColor(b.square) !== col)),
+      step('Your own bishop is freer than theirs', pieces(pos, side, 'b').every(b =>
+        pieces(pos, side, 'p').filter(p => sqColor(p.square) === sqColor(b.square)).length < bad)),
     ];
   } });
 add({ id: 'opposite-colored-bishops-attack', family: 'positional', name: 'Opposite-colored bishops attack', lichess: null,
@@ -1546,16 +1572,30 @@ add({ id: 'fianchetto-shelter', family: 'positional', name: 'Fianchetto shelter'
 add({ id: 'weak-color-complex', family: 'positional', name: 'Weak color complex', lichess: null,
   blurb: 'When a side trades the bishop that guarded one color, every square of that color near its king becomes a hole.',
   plan: 'Trade the enemy bishop of one color, then bring your own bishop and queen to that color around their king.',
-  achieved: (pos, side) => ['light', 'dark'].some(col => vLacksBishopOn(pos, side, col) && pieces(pos, side, 'b').some(b => sqColor(b.square) === col)
-    && neighbors(kingSq(pos, other(side)) || 'e4').filter(sq => sqColor(sq) === col && attacked(pos, sq, side) && !attacked(pos, sq, other(side), 'p')).length >= 2),
+  /* Trading off the bishop that guarded one color is what creates the holes, and
+     the attack that follows is usually run by the queen and the rooks. Keeping
+     your own bishop of that color is a bonus, not a requirement, so it is a step
+     rather than a gate. Karpov vs Korchnoi 1974 is the model, and there both
+     dark-square bishops came off. */
+  achieved: (pos, side) => ['light', 'dark'].some(col => {
+    if (!vLacksBishopOn(pos, side, col)) return false;
+    const king = kingSq(pos, other(side));
+    if (!king) return false;
+    const holes = neighbors(king).filter(sq => sqColor(sq) === col && !attacked(pos, sq, other(side), 'p'));
+    return holes.length >= 2 && holes.filter(sq => attacked(pos, sq, side)).length >= 2;
+  }),
   building: (pos, side) => {
-    const col = ['light', 'dark'].find(c => vLacksBishopOn(pos, side, c) && pieces(pos, side, 'b').some(b => sqColor(b.square) === c));
+    const col = ['light', 'dark'].find(c => vLacksBishopOn(pos, side, c));
     if (!col) return null;
-    const holes = neighbors(kingSq(pos, other(side)) || 'e4').filter(sq => sqColor(sq) === col && !attacked(pos, sq, other(side), 'p'));
+    const king = kingSq(pos, other(side));
+    if (!king) return null;
+    const holes = neighbors(king).filter(sq => sqColor(sq) === col && !attacked(pos, sq, other(side), 'p'));
     return [
-      step(`The enemy has no ${col}-square bishop and you still have yours`, true),
+      step(`The enemy has no ${col}-square bishop left`, true),
       step(`${col === 'light' ? 'Light' : 'Dark'} squares next to their king are not covered by pawns`, holes.length >= 2, holes),
       step('Your pieces attack those squares', holes.filter(sq => attacked(pos, sq, side)).length >= 2),
+      step('You still have your own bishop of that color, which makes it worse for them',
+        pieces(pos, side, 'b').some(b => sqColor(b.square) === col)),
     ];
   } });
 add({ id: 'central-pawn-duo', family: 'positional', name: 'Central pawn duo', lichess: null,

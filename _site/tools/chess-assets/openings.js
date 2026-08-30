@@ -9,39 +9,19 @@
    analysis board. Everything here fails quietly: if the fetch does not land,
    the caller simply gets null and the page carries on. */
 
+import { fetchJson } from './json-fetch.js';
+
 let table = null;          // Map<epd, {eco, name}>
 let loading = null;        // in-flight fetch, so a burst of lookups shares one
-
-/* The file ships with the site and is about 450 KB. The bounds below are not
-   there because the origin is untrusted; they are there so a hung connection
-   or a truncated proxy response cannot leave the board waiting forever or
-   parse something enormous. */
-const OPENINGS_TIMEOUT_MS = 15000;
-const OPENINGS_MAX_BYTES = 2 * 1024 * 1024;
 
 const epdOf = fen => String(fen).split(' ').slice(0, 4).join(' ');
 
 export function loadOpenings(url = './chess-assets/openings.json') {
   if (table) return Promise.resolve(table);
   if (loading) return loading;
-  const abort = typeof AbortController === 'function' ? new AbortController() : null;
-  const timer = abort ? setTimeout(() => abort.abort(), OPENINGS_TIMEOUT_MS) : null;
-  loading = fetch(url, {
-    credentials: 'omit',
-    referrerPolicy: 'no-referrer',
-    signal: abort ? abort.signal : undefined,
-  })
-    .then(r => {
-      if (!r.ok) throw new Error('openings ' + r.status);
-      const announced = Number(r.headers.get('content-length'));
-      if (Number.isFinite(announced) && announced > OPENINGS_MAX_BYTES) throw new Error('openings too large');
-      return r.text();
-    })
-    .then(text => {
-      if (text.length > OPENINGS_MAX_BYTES) throw new Error('openings too large');
-      return JSON.parse(text);
-    })
+  loading = fetchJson(url, { maxBytes: 2 * 1024 * 1024 })
     .then(data => {
+      if (!data) throw new Error('openings did not load');
       const map = new Map();
       const rows = data && Array.isArray(data.entries) ? data.entries : [];
       for (const row of rows) {
@@ -55,8 +35,7 @@ export function loadOpenings(url = './chess-assets/openings.json') {
       table = map;
       return table;
     })
-    .catch(() => { loading = null; return null; })
-    .then(result => { if (timer) clearTimeout(timer); return result; });
+    .catch(() => { loading = null; return null; });
   return loading;
 }
 
