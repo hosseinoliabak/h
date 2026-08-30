@@ -1,0 +1,1687 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Self-attention, multi-head attention, and how encoder and decoder blocks, positional encoding, residual connections, and masking combine into the transformer.">
+
+<title>Transformer Network – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/sequence-models/lab-trigger-word-detection" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-dark-5a1953863e1f72ef3b996ef827f01ca7.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-72f0d0848bd44e30f74044ddea63e70c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../../../site_libs/bootstrap/bootstrap-dark-2c993d82a95f65a68c89c17a41953382.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../../../site_libs/bootstrap/bootstrap-72f0d0848bd44e30f74044ddea63e70c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": true,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": "tree",
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Transformer Network – H’s Notes">
+<meta property="og:description" content="Self-attention, multi-head attention, and how encoder and decoder blocks, positional encoding, residual connections, and masking combine into the transformer.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/transformer-network_files/figure-html/cell-2-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta property="og:image:alt" content="Left panel, five French words feed upward into five recurrent cells chained left to right by orange arrows, each cell emitting an output above it. Right panel, the same five words feed into one wide box labeled self-attention over the whole sentence, and five outputs labeled A one through A five sit above it with no connections between them.">
+<meta name="twitter:title" content="Transformer Network – H’s Notes">
+<meta name="twitter:description" content="Self-attention, multi-head attention, and how encoder and decoder blocks, positional encoding, residual connections, and masking combine into the transformer.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/transformer-network_files/figure-html/cell-2-output-1.svg">
+<meta name="twitter:image:alt" content="Left panel, five French words feed upward into five recurrent cells chained left to right by orange arrows, each cell emitting an output above it. Right panel, the same five words feed into one wide box labeled self-attention over the whole sentence, and five outputs labeled A one through A five sit above it with no connections between them.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://h.oliabak.com/ai/deep-learning/sequence-models/transformer-network">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/kali-linux/">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Classroom</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/randomizer">
+ <span class="dropdown-text">Randomizer</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/dashboard">
+ <span class="dropdown-text">Dashboard</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="Toggle dark mode"><i class="bi"></i></a>
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/sequence-models/transformer-network">Transformer Network</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence Models</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/recurrent-neural-networks" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Recurrent Neural Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/rnn-architectures-and-language-models" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RNN Architectures and Language Models</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vanishing Gradients, GRUs, and LSTMs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/bidirectional-and-deep-rnns" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bidirectional and Deep RNNs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-building-your-recurrent-neural-network" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Building Your Recurrent Neural Network Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-character-level-language-model" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Character Level Language Model</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-improvise-a-jazz-solo" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Improvise a Jazz Solo with an LSTM Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/learning-word-embeddings-word2vec-and-glove" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning Word Embeddings with Word2vec and GloVe</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sentiment Classification and Debiasing Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-operations-on-word-vectors" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Operations on Word Vectors</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-emojify" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Emojify</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/sequence-to-sequence-models" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence to Sequence Models</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/beam-search" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam Search</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/bleu-score" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BLEU Score</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/attention-model" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Attention Model</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/speech-recognition-and-trigger-word-detection" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Speech Recognition and Trigger Word Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-neural-machine-translation" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Neural Machine Translation with Attention</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-trigger-word-detection" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Trigger Word Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/transformer-network" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Transformer Network</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" class="page-qr">
+  <img id="page-qr-image" class="page-qr-image" width="120" height="120" alt="QR code for this page" hidden="">
+  <div class="page-qr-caption">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var image = document.getElementById('page-qr-image');
+  if (!image || typeof QRCode === 'undefined') return;
+  QRCode.toDataURL(window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err, dataUrl) {
+    if (err) return;
+    image.src = dataUrl;
+    image.hidden = false;
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#why-a-new-architecture" id="toc-why-a-new-architecture" class="nav-link active" data-scroll-target="#why-a-new-architecture">Why a New Architecture</a></li>
+  <li><a href="#self-attention" id="toc-self-attention" class="nav-link" data-scroll-target="#self-attention">Self-Attention</a>
+  <ul class="collapse">
+  <li><a href="#query-key-and-value" id="toc-query-key-and-value" class="nav-link" data-scroll-target="#query-key-and-value">Query, Key, and Value</a></li>
+  <li><a href="#computing-alangle-3-rangle" id="toc-computing-alangle-3-rangle" class="nav-link" data-scroll-target="#computing-alangle-3-rangle">Computing <span class="math inline">\(A^{\langle 3 \rangle}\)</span></a></li>
+  <li><a href="#vectorized-form" id="toc-vectorized-form" class="nav-link" data-scroll-target="#vectorized-form">Vectorized Form</a></li>
+  </ul></li>
+  <li><a href="#multi-head-attention" id="toc-multi-head-attention" class="nav-link" data-scroll-target="#multi-head-attention">Multi-Head Attention</a></li>
+  <li><a href="#transformer-architecture" id="toc-transformer-architecture" class="nav-link" data-scroll-target="#transformer-architecture">Transformer Architecture</a>
+  <ul class="collapse">
+  <li><a href="#encoder-block" id="toc-encoder-block" class="nav-link" data-scroll-target="#encoder-block">Encoder Block</a></li>
+  <li><a href="#decoder-block" id="toc-decoder-block" class="nav-link" data-scroll-target="#decoder-block">Decoder Block</a></li>
+  <li><a href="#extra-bells-and-whistles" id="toc-extra-bells-and-whistles" class="nav-link" data-scroll-target="#extra-bells-and-whistles">Extra Bells and Whistles</a></li>
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../site-metrics.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Transformer Network</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">sequence-models</div>
+    <div class="quarto-category">nlp</div>
+    <div class="quarto-category">transformer</div>
+    <div class="quarto-category">self-attention</div>
+    <div class="quarto-category">multi-head-attention</div>
+    <div class="quarto-category">positional-encoding</div>
+    <div class="quarto-category">machine-translation</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Self-attention, multi-head attention, and how encoder and decoder blocks, positional encoding, residual connections, and masking combine into the transformer.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">Sunday, August 30, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~84 min read <span class="rt-info" tabindex="0" aria-describedby="reading-time-method"><span aria-hidden="true">ⓘ</span><span class="rt-tooltip" id="reading-time-method" role="tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~5,400 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p class="difficulty-rating" aria-label="Difficulty 4 out of 5"><span aria-hidden="true"><span class="difficulty-dot is-filled"></span><span class="difficulty-dot is-filled"></span><span class="difficulty-dot is-filled"></span><span class="difficulty-dot is-filled"></span><span class="difficulty-dot"></span></span></p></div>';
+    meta.appendChild(diffDiv);
+  }
+});
+</script>
+
+<p>One of the most exciting developments in deep learning has been the <strong>transformer network</strong>, sometimes just called transformers. It is an architecture that has completely taken the NLP world by storm, and many of the most effective algorithms for NLP today are built on it. It is a relatively complex network, so this page goes through it piece by piece. By the end you should have a good sense of how the whole thing works and be able to apply it to your own problems.</p>
+<section id="why-a-new-architecture" class="level2">
+<h2 class="anchored" data-anchor-id="why-a-new-architecture">Why a New Architecture</h2>
+<p>As the complexity of a sequence task increases, so does the complexity of the model. This course started with the plain RNN and found that it had trouble with <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm#vanishing-gradients-with-rnns">vanishing gradients</a>, which made it hard to capture long-range dependencies in a sequence. The <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm#gated-recurrent-unit">GRU</a> and then the <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm#long-short-term-memory">LSTM</a> resolved many of those problems by using gates to control the flow of information. Each of those units carries a few more computations than the one before, so while the gates improved control over information flow, they also came with increased complexity. From RNN to GRU to LSTM, the models became more complex.</p>
+<p>All three are still <strong>sequential</strong> models. They ingest the input one word, or one token, at a time. Each unit acts like a bottleneck on the flow of information, because to compute the output of the final unit you first have to compute the outputs of every unit that comes before it.</p>
+<p>The transformer architecture lets you run far more of these computations for an entire sequence <strong>in parallel</strong>. It can ingest a whole sentence all at the same time rather than processing it one word at a time from left to right. It was published in a seminal paper, <a href="https://doi.org/10.48550/arXiv.1706.03762">Vaswani et al.&nbsp;(2017)</a>, whose title, “Attention Is All You Need”, gives away the main idea.</p>
+<p>The major innovation is to combine two things you have already met. The first is the attention-based representations from the <a href="../../../ai/deep-learning/sequence-models/attention-model">attention model</a>. The second is a <a href="../../../ai/deep-learning/convolutional-neural-networks/">convolutional network</a> style of processing. An RNN may process one output at a time, so <span class="math inline">\(y^{\langle 0 \rangle}\)</span> feeds into the computation of <span class="math inline">\(y^{\langle 1 \rangle}\)</span>, which is then used to compute <span class="math inline">\(y^{\langle 2 \rangle}\)</span>. That is a very sequential way to handle tokens. Contrast it with a convnet, which takes in a lot of pixels, or here a lot of words, and computes representations for all of them in parallel. What you see in the transformer is a way of computing very rich, very useful representations of words, but with something much more like that CNN-style parallel processing.</p>
+<div id="87a37478" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="transformer-network_files/figure-html/cell-2-output-1.svg" class="img-fluid figure-img" alt="Left panel, five French words feed upward into five recurrent cells chained left to right by orange arrows, each cell emitting an output above it. Right panel, the same five words feed into one wide box labeled self-attention over the whole sentence, and five outputs labeled A one through A five sit above it with no connections between them."></p>
+<figcaption>Two ways to turn five words into five representations. On the left an RNN passes activations from cell to cell, so the fifth output cannot be computed until the four before it are finished. On the right, self-attention reads the whole sentence at once and produces all five representations <span class="math inline">\(A^{\langle 1 \rangle}\)</span> through <span class="math inline">\(A^{\langle 5 \rangle}\)</span> in parallel.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Two key ideas make this work, and the rest of the page takes them in turn.</p>
+<ul>
+<li><strong>Self-attention.</strong> Given a sentence of five words, compute five representations for those five words, written <span class="math inline">\(A^{\langle 1 \rangle}\)</span> through <span class="math inline">\(A^{\langle 5 \rangle}\)</span>. This is an attention-based way of computing representations for all the words in the sentence in parallel.</li>
+<li><strong>Multi-head attention.</strong> This is basically a for-loop over the self-attention process, so you end up with multiple versions of those representations.</li>
+</ul>
+<p>These representations turn out to be very rich, and they can be used for machine translation and other NLP tasks to great effect.</p>
+</section>
+<section id="self-attention" class="level2">
+<h2 class="anchored" data-anchor-id="self-attention">Self-Attention</h2>
+<p>If you get the main idea of this section, you understand the most important core idea behind what makes transformer networks work.</p>
+<p>You have seen how attention is used with sequential networks such as RNNs. To use attention in a style closer to CNNs, you calculate <strong>self-attention</strong>, which creates an attention-based representation for each word in the input sentence. Take the running example <code>Jane visite l'Afrique en septembre</code>. The goal is to compute one attention-based representation per word, so five of them, called <span class="math inline">\(A^{\langle 1 \rangle}\)</span> through <span class="math inline">\(A^{\langle 5 \rangle}\)</span>.</p>
+<p>Use the third word, <code>l'Afrique</code>, as the worked case. The same process then applies to every other word.</p>
+<p>You already know about <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings">word embeddings</a>, and one way to represent <code>l'Afrique</code> would be to just look up its embedding. But depending on context, is this Africa as a site of historical interest, as a holiday destination, or as the second largest continent in the world? Depending on which, you might want to represent it differently, and that is what <span class="math inline">\(A^{\langle 3 \rangle}\)</span> does. It looks at the surrounding words to figure out how Africa is being talked about in this particular sentence and finds the most appropriate representation.</p>
+<p>The actual calculation is not too different from the attention mechanism you saw applied to RNNs, except that the representations for all five words are computed in parallel. When attention was built on top of an RNN, the weights came from a softmax over scores, which was written like this on the <a href="../../../ai/deep-learning/sequence-models/attention-model#computing-the-weights">attention model page</a>.</p>
+<p><span class="math display">\[\alpha^{\langle t, t' \rangle} = \frac{\exp\left(e^{\langle t, t' \rangle}\right)}{\displaystyle\sum_{t''=1}^{T_x} \exp\left(e^{\langle t, t'' \rangle}\right)}\]</span></p>
+<p>With self-attention the equation instead looks like this.</p>
+<p><span class="math display">\[A(q, K, V) = \sum_{i} \frac{\exp\left(q \cdot k^{\langle i \rangle}\right)}{\displaystyle\sum_{j} \exp\left(q \cdot k^{\langle j \rangle}\right)}\, v^{\langle i \rangle}\]</span></p>
+<p>The two have some similarity. The inner term is a softmax, just like before, and you can think of the exponent terms as being akin to attention values. The main difference is that for every word, say <code>l'Afrique</code>, you now have three vectors called the <strong>query</strong>, <strong>key</strong>, and <strong>value</strong>. These are the key inputs to computing the attention value for each word.</p>
+<section id="query-key-and-value" class="level3">
+<h3 class="anchored" data-anchor-id="query-key-and-value">Query, Key, and Value</h3>
+<p>Step through the computations needed to go from the word <code>l'Afrique</code> to its self-attention representation <span class="math inline">\(A^{\langle 3 \rangle}\)</span>.</p>
+<p>First, associate each word with its three vectors. If <span class="math inline">\(x^{\langle 3 \rangle}\)</span> is the word embedding for <code>l'Afrique</code>, the query is computed with a learned matrix, and the key and value likewise.</p>
+<p><span class="math display">\[q^{\langle 3 \rangle} = W^Q x^{\langle 3 \rangle}, \qquad k^{\langle 3 \rangle} = W^K x^{\langle 3 \rangle}, \qquad v^{\langle 3 \rangle} = W^V x^{\langle 3 \rangle}\]</span></p>
+<p>The matrices <span class="math inline">\(W^Q\)</span>, <span class="math inline">\(W^K\)</span>, and <span class="math inline">\(W^V\)</span> are parameters of the learning algorithm. They let you pull a query, a key, and a value out of every word.</p>
+<p>So what are these three vectors supposed to do? They were named using a loose analogy to databases, where you have queries and key-value pairs. If you know that kind of database the analogy may help, and if not, do not worry about it. Here is one intuition behind their intent.</p>
+<ul>
+<li><span class="math inline">\(q^{\langle 3 \rangle}\)</span> is a <strong>question</strong> you get to ask about <code>l'Afrique</code>. It might represent something like “what is happening there?”, since Africa is a destination and that is a natural thing to want to know when computing <span class="math inline">\(A^{\langle 3 \rangle}\)</span>.</li>
+<li>The inner product <span class="math inline">\(q^{\langle 3 \rangle} \cdot k^{\langle 1 \rangle}\)</span>, query 3 with key 1, says how good an answer word 1 is to that question. Then <span class="math inline">\(q^{\langle 3 \rangle} \cdot k^{\langle 2 \rangle}\)</span> says how good an answer <code>visite</code> is to “what is happening in Africa?”, and so on for the other words in the sequence.</li>
+<li>The goal of this operation is to pull up the information most needed to compute a useful representation <span class="math inline">\(A^{\langle 3 \rangle}\)</span>.</li>
+</ul>
+<p>For intuition, suppose <span class="math inline">\(k^{\langle 1 \rangle}\)</span> represents that <code>Jane</code> is a person and <span class="math inline">\(k^{\langle 2 \rangle}\)</span> represents that <code>visite</code> is an action. Then you may find that <span class="math inline">\(q^{\langle 3 \rangle} \cdot k^{\langle 2 \rangle}\)</span> has the largest value, suggesting that <code>visite</code> gives the most relevant context for what is happening in Africa, namely that it is viewed as the destination of a visit.</p>
+</section>
+<section id="computing-alangle-3-rangle" class="level3">
+<h3 class="anchored" data-anchor-id="computing-alangle-3-rangle">Computing <span class="math inline">\(A^{\langle 3 \rangle}\)</span></h3>
+<p>Take the five inner products and compute a softmax over them. That is the softmax in the equation above, and in this example the entry for <code>visite</code> may be the largest. Then multiply each softmax value by the corresponding value vector, <span class="math inline">\(v^{\langle 1 \rangle}\)</span> for word 1, <span class="math inline">\(v^{\langle 2 \rangle}\)</span> for word 2, and so on, and sum everything up. That summation is the <span class="math inline">\(\sum_i\)</span> in the equation, and adding up all the terms gives <span class="math inline">\(A^{\langle 3 \rangle}\)</span>.</p>
+<div class="wide-network-hint">
+<p>On a small screen, scroll horizontally to inspect the whole computation.</p>
+</div>
+<div class="wide-network-figure" role="region" aria-label="Scrollable self-attention diagram" tabindex="0">
+<div id="5b390727" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="transformer-network_files/figure-html/cell-3-output-1.svg" class="img-fluid figure-img" alt="Five columns, one per French word. In each column the word feeds a grey embedding box, which fans out into three small boxes labeled q, k, and v. The query of the third column, l'Afrique, is outlined and connected by blue lines to five score boxes labeled q three dot k one through q three dot k five. Above the scores is a bar chart of softmax weights with the visite bar tallest and colored blue. Orange lines of varying thickness run from the five value boxes up into a pink box labeled A three at the top."></p>
+<figcaption>Computing <span class="math inline">\(A^{\langle 3 \rangle}\)</span>, the self-attention representation of <code>l'Afrique</code>. Every word’s embedding is turned into a query (blue), a key (green), and a value (orange) by the three learned matrices. The query for <code>l'Afrique</code> is dotted with all five keys to give five scores, a softmax turns the scores into weights, and the weights scale the five values, which are summed into <span class="math inline">\(A^{\langle 3 \rangle}\)</span>. The weights are hand-authored to show the pattern, with <code>visite</code> winning, rather than read off a trained model.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<p>Another way to write <span class="math inline">\(A^{\langle 3 \rangle}\)</span> is as <span class="math inline">\(A(q^{\langle 3 \rangle}, K, V)\)</span>, the general formula applied to the third query, but it is often more convenient to just write <span class="math inline">\(A^{\langle 3 \rangle}\)</span>.</p>
+<p>The key advantage of this representation is that <code>l'Afrique</code> is no longer some fixed word embedding. The self-attention mechanism can realize that <code>l'Afrique</code> is the destination of a <code>visite</code>, and so compute a richer, more useful representation for the word.</p>
+</section>
+<section id="vectorized-form" class="level3">
+<h3 class="anchored" data-anchor-id="vectorized-form">Vectorized Form</h3>
+<p><code>l'Afrique</code> has been the running example, but you use the same process for all five words to get similarly rich representations for <code>Jane</code>, <code>visite</code>, <code>l'Afrique</code>, <code>en</code>, and <code>septembre</code>. Putting all five computations together, the notation used in the literature is</p>
+<p><span class="math display">\[\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V\]</span></p>
+<p>where <span class="math inline">\(Q\)</span>, <span class="math inline">\(K\)</span>, and <span class="math inline">\(V\)</span> are matrices holding all the queries, keys, and values. This is just a compressed, vectorized form of the per-word equation above. The <span class="math inline">\(\sqrt{d_k}\)</span> in the denominator only scales the dot product so it does not explode, and you do not need to worry about it. Because of that scaling, another name for this type of attention is <strong>scaled dot-product attention</strong>, which is the form in the original transformer paper.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Recap of Self-Attention
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Associated with each of the five words you end up with a query, a key, and a value.</p>
+<ul>
+<li>The <strong>query</strong> lets you ask a question about that word, such as “what is happening in Africa?”</li>
+<li>The <strong>key</strong> looks at all the other words and, by its similarity to the query, helps you figure out which word gives the most relevant answer to that question. Here <code>visite</code> is what is happening in Africa, since someone is visiting it.</li>
+<li>The <strong>value</strong> lets the representation plug in how <code>visite</code> should be represented inside <span class="math inline">\(A^{\langle 3 \rangle}\)</span>, the representation of Africa.</li>
+</ul>
+<p>The result is a representation of <code>l'Afrique</code> that says “this is Africa, and someone is visiting Africa”. That is much more nuanced and much richer than pulling up the same fixed word embedding for every occurrence of a word, with no way to adapt it to the words on its left and right.</p>
+</div>
+</div>
+</section>
+</section>
+<section id="multi-head-attention" class="level2">
+<h2 class="anchored" data-anchor-id="multi-head-attention">Multi-Head Attention</h2>
+<p>The notation gets a little complicated here, but the thing to keep in mind is that multi-head attention is basically a big for-loop over the self-attention mechanism. Each time you calculate self-attention for a sequence is called a <strong>head</strong>, and “multi-head attention” just means doing what the last section did a number of times.</p>
+<p>Recall that you got the vectors <span class="math inline">\(q\)</span>, <span class="math inline">\(k\)</span>, and <span class="math inline">\(v\)</span> for each input word by multiplying its embedding by <span class="math inline">\(W^Q\)</span>, <span class="math inline">\(W^K\)</span>, and <span class="math inline">\(W^V\)</span>. Multi-head attention takes that same set of query, key, and value vectors as input and calculates multiple self-attentions from them.</p>
+<p>For the first head, multiply the queries, keys, and values by a further set of weight matrices, <span class="math inline">\(W_1^Q\)</span>, <span class="math inline">\(W_1^K\)</span>, and <span class="math inline">\(W_1^V\)</span>. That gives a new query, key, and value for the first word, and you do the same for each of the other words. For intuition, think of <span class="math inline">\(W_1^Q\)</span>, <span class="math inline">\(W_1^K\)</span>, and <span class="math inline">\(W_1^V\)</span> as being learned to help ask and answer the question “what is happening there?” This is more or less the self-attention example of the last section. With this computation, <code>visite</code> gives the best answer to “what is happening?”, so the inner product between the query for <code>l'Afrique</code> and the key for <code>visite</code> is the largest. Running it for <code>Jane</code>, <code>visite</code>, and the rest gives five vectors to represent the five words. That is the first head, and its attention equation is exactly the one you have already seen.</p>
+<p>Now do the computation again with a <strong>second head</strong>, which has its own new matrices <span class="math inline">\(W_2^Q\)</span>, <span class="math inline">\(W_2^K\)</span>, and <span class="math inline">\(W_2^V\)</span>. These let the mechanism ask and answer a second question. If the first question was “what is happening?”, maybe the second is “when is it happening?” You repeat exactly the same computation with this new set of matrices, and this time perhaps the inner product between the <code>septembre</code> key and the <code>l'Afrique</code> query is the highest, so the value for <code>septembre</code> plays a large role in this second part of the representation of <code>l'Afrique</code>.</p>
+<p>A third head, with <span class="math inline">\(W_3^Q\)</span>, <span class="math inline">\(W_3^K\)</span>, and <span class="math inline">\(W_3^V\)</span>, might ask “who has something to do with Africa?” On this third pass the inner product between the <code>Jane</code> key and the <code>l'Afrique</code> query may be the highest, so <code>Jane</code>’s value gets the greatest weight.</p>
+<div id="e962d196" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="transformer-network_files/figure-html/cell-4-output-1.svg" class="img-fluid figure-img" alt="Three rows, each showing the five French words as boxes with l'Afrique highlighted. In the first row a blue arrow curves from l'Afrique to visite, labeled head 1, what is happening there. In the second a red arrow curves from l'Afrique to septembre, labeled head 2, when is it happening. In the third a black arrow curves from l'Afrique to Jane, labeled head 3, who is involved. Each row ends in a pink box holding that head's representation, the three feed a tall concat box, which feeds a box labeled W O and then an output arrow."></p>
+<figcaption>Three heads, three questions, three representations of the same word. Each row is one full self-attention pass with its own matrices <span class="math inline">\(W_i^Q\)</span>, <span class="math inline">\(W_i^K\)</span>, <span class="math inline">\(W_i^V\)</span>, and the arrow marks which key the query for <code>l'Afrique</code> matches most strongly on that pass. The three results are concatenated and multiplied by <span class="math inline">\(W^O\)</span> to give the multi-head output for <code>l'Afrique</code>. Which word wins in each head is hand-authored to match the intuition in the text.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>In the literature the number of heads is written with a lowercase <span class="math inline">\(h\)</span>. Three heads here, or eight in the original paper, means performing the whole self-attention calculation that many times, each with its own matrices. You can think of each head as a different feature, and when you pass these features on to the rest of the network you can compute a very rich representation of the sentence.</p>
+<p><span class="math display">\[\text{head}_i = \text{Attention}\left(W_i^Q Q,\; W_i^K K,\; W_i^V V\right)\]</span></p>
+<p><span class="math display">\[\text{MultiHead}(Q, K, V) = \text{concat}\left(\text{head}_1, \text{head}_2, \ldots, \text{head}_h\right) W^O\]</span></p>
+<p>The output of multi-head attention is the concatenation of all <span class="math inline">\(h\)</span> heads, multiplied by one more matrix <span class="math inline">\(W^O\)</span>.</p>
+<p>One more detail is worth keeping in mind. This description computed the heads as if in a big for-loop, and conceptually it is fine to think of it that way. In practice, though, no head’s value depends on the value of any other head, so you can compute all the heads in parallel instead of sequentially, then concatenate and multiply by <span class="math inline">\(W^O\)</span>. That is multi-head attention.</p>
+<p>From here on, a single box labeled “multi-head attention” stands for this whole computation. It takes the matrices <span class="math inline">\(Q\)</span>, <span class="math inline">\(K\)</span>, and <span class="math inline">\(V\)</span> as input and produces the multi-head output.</p>
+</section>
+<section id="transformer-architecture" class="level2">
+<h2 class="anchored" data-anchor-id="transformer-architecture">Transformer Architecture</h2>
+<p>Self-attention and multi-head attention are the pieces. Now put them together, and walk through translating <code>Jane visite l'Afrique en septembre</code> from French to English.</p>
+<p>Up to now only the embeddings of the words in the sentence have mattered. In many sequence to sequence translation tasks it is also useful to add a start of sentence token <code>&lt;SOS&gt;</code> and an end of sentence token <code>&lt;EOS&gt;</code>, as in the <a href="../../../ai/deep-learning/sequence-models/sequence-to-sequence-models#encoder-decoder-architecture">encoder-decoder models</a> earlier in the course, so both are included here.</p>
+<section id="encoder-block" class="level3">
+<h3 class="anchored" data-anchor-id="encoder-block">Encoder Block</h3>
+<p>The first step is to feed the embeddings into an <strong>encoder block</strong>, which has a multi-head attention layer. This is exactly the computation of the previous section. You feed in the values <span class="math inline">\(Q\)</span>, <span class="math inline">\(K\)</span>, and <span class="math inline">\(V\)</span> computed from the embeddings and the weight matrices <span class="math inline">\(W\)</span>, and the layer produces a matrix that is passed into a <strong>feed-forward neural network</strong>, which helps determine what interesting features there are in the sentence.</p>
+<p>In the transformer paper this encoding block is repeated <span class="math inline">\(N\)</span> times, and a typical value is <span class="math inline">\(N = 6\)</span>. After about six passes through the block, the output of the encoder is fed into a decoder block.</p>
+</section>
+<section id="decoder-block" class="level3">
+<h3 class="anchored" data-anchor-id="decoder-block">Decoder Block</h3>
+<p>The <strong>decoder block</strong>’s job is to output the English translation. Its first output is the start of sentence token, which is known in advance. At every step the decoder takes as input the first few words, meaning whatever has been generated of the translation so far. When you are just getting started, the only thing known is that the translation begins with <code>&lt;SOS&gt;</code>.</p>
+<p>That token is fed into a first multi-head attention block. Since there is only this one token so far, it alone is used to compute the <span class="math inline">\(Q\)</span>, <span class="math inline">\(K\)</span>, and <span class="math inline">\(V\)</span> for this block. The output of this first block is used to generate the <span class="math inline">\(Q\)</span> matrix for a <strong>second</strong> multi-head attention block, while the output of the encoder is used to generate its <span class="math inline">\(K\)</span> and <span class="math inline">\(V\)</span>.</p>
+<p>Why is it structured this way? Here is one piece of intuition. The input at the bottom of the decoder is what has been translated of the sentence so far. It asks a query, something like “what comes after the start of sentence?” It then pulls context from <span class="math inline">\(K\)</span> and <span class="math inline">\(V\)</span>, which come from the French version of the sentence, to decide what the next word in the translation should be.</p>
+<p>To finish the decoder block, the second attention block’s output is fed to a feed-forward neural network. The decoder block is also repeated <span class="math inline">\(N\)</span> times, maybe six, where you take the output and feed it back to the input, through the block again, for say half a dozen passes.</p>
+<p>The job of that neural network is to predict the next word in the sentence. Hopefully it decides that the first word of the English translation is <code>Jane</code>. Then <code>Jane</code> is fed back in as input as well. Now the next query comes from <code>&lt;SOS&gt;</code> and <code>Jane</code>, and it says, in effect, “given Jane, what is the most appropriate next word?” It finds the right keys and values and, hopefully, generates <code>visits</code>. Running the network again generates <code>Africa</code>, which is fed back in, then hopefully <code>in</code>, then <code>September</code>, and with that input the network hopefully generates <code>&lt;EOS&gt;</code>, and you are done.</p>
+<p>These encoder and decoder blocks, and the way they combine to perform a sequence to sequence translation task, are the main ideas behind the transformer architecture. This example translated a sentence into another language, and it shows how attention in neural networks can be combined to allow simultaneous computation.</p>
+</section>
+<section id="extra-bells-and-whistles" class="level3">
+<h3 class="anchored" data-anchor-id="extra-bells-and-whistles">Extra Bells and Whistles</h3>
+<p>Beyond the main ideas, transformers have a few extras that make the network work even better. Here they are in brief, and the diagram after them shows where each one sits.</p>
+<p><strong>Positional encoding.</strong> Look back at the self-attention equations. Nothing in them indicates the position of a word. Is this word the first in the sentence, in the middle, or the last? Position within a sentence can be extremely important to translation, so the position of each element in the input is encoded using a combination of sine and cosine functions.</p>
+<p>Suppose the word embedding is a vector with four values, so its dimension is <span class="math inline">\(d = 4\)</span> and <span class="math inline">\(x^{\langle 1 \rangle}\)</span>, <span class="math inline">\(x^{\langle 2 \rangle}\)</span>, <span class="math inline">\(x^{\langle 3 \rangle}\)</span> are four-dimensional. Create a positional encoding vector of the same dimension, also four-dimensional, and call it <span class="math inline">\(p^{\langle 1 \rangle}\)</span> for the first word <code>Jane</code>. Its entries come from these two equations.</p>
+<p><span class="math display">\[PE_{(pos,\, 2i)} = \sin\left(\frac{pos}{10000^{2i/d}}\right), \qquad PE_{(pos,\, 2i+1)} = \cos\left(\frac{pos}{10000^{2i/d}}\right)\]</span></p>
+<p>Here <span class="math inline">\(pos\)</span> is the numerical position of the word, so <span class="math inline">\(pos = 1\)</span> for <code>Jane</code>, and <span class="math inline">\(i\)</span> indexes the different dimensions of the encoding. The first two entries of the vector correspond to <span class="math inline">\(i = 0\)</span>, one from the sine and one from the cosine, and the next two to <span class="math inline">\(i = 1\)</span>. With <span class="math inline">\(d = 4\)</span>, <span class="math inline">\(i\)</span> runs from 0 to 1. Because of the terms in the denominator, <span class="math inline">\(i = 0\)</span> gives a sinusoid and its matched cosine, 90 degrees out of phase, while <span class="math inline">\(i = 1\)</span> gives a lower-frequency sinusoid and its matched cosine.</p>
+<div id="f596b7a9" class="cell" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="transformer-network_files/figure-html/cell-5-output-1.svg" class="img-fluid figure-img" alt="Four curves plotted against word position from zero to twelve. A solid blue sine and a dashed blue cosine oscillate between minus one and one with a period of about six positions. A solid green sine rises very slowly from zero and a dashed green cosine stays almost flat at one. Vertical dotted lines at position one and position three carry four dots each where they cross the curves."></p>
+<figcaption>The four positional encoding curves for <span class="math inline">\(d = 4\)</span>. The two <span class="math inline">\(i = 0\)</span> curves oscillate once every <span class="math inline">\(2\pi\)</span> positions, and the two <span class="math inline">\(i = 1\)</span> curves are so slow that they barely move across a sentence. A word’s encoding is read off all four curves at its position. The dots at <span class="math inline">\(pos = 1\)</span> give <span class="math inline">\(p^{\langle 1 \rangle}\)</span> for <code>Jane</code>, and the dots at <span class="math inline">\(pos = 3\)</span> give <span class="math inline">\(p^{\langle 3 \rangle}\)</span> for <code>l'Afrique</code>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>For position 1 you read off the values at that position to fill in the four entries of <span class="math inline">\(p^{\langle 1 \rangle}\)</span>, which come out to about <span class="math inline">\((0.84, 0.54, 0.01, 1.00)\)</span>. For a different word at a different position, say the third word <code>l'Afrique</code> at <span class="math inline">\(pos = 3\)</span>, you read off a different set, about <span class="math inline">\((0.14, -0.99, 0.03, 1.00)\)</span>. Notice that the last two entries of the two vectors are nearly the same, because the slow <span class="math inline">\(i = 1\)</span> curves are at roughly the same height at both positions. But taken across all four values, <span class="math inline">\(p^{\langle 3 \rangle}\)</span> is a different vector from <span class="math inline">\(p^{\langle 1 \rangle}\)</span>, and that is the point. The sines and cosines together create a positional encoding vector that is unique for each position.</p>
+<p>The positional encoding <span class="math inline">\(p^{\langle 1 \rangle}\)</span> is added directly to <span class="math inline">\(x^{\langle 1 \rangle}\)</span> at the input, so each word vector is also influenced, or colored, by where in the sentence the word appears. The output of the encoding block therefore contains both contextual semantic embedding and positional encoding information. The output of the embedding layer has shape <span class="math inline">\(d\)</span> by the maximum sequence length the model can take, four by that length in this example, and the outputs of all the following layers have the same shape.</p>
+<p><strong>Residual connections.</strong> In addition to adding the positional encodings to the embeddings, they are also carried through the network with residual connections, similar to the ones in <a href="../../../ai/deep-learning/convolutional-neural-networks/modern-networks#residual-networks">residual networks</a>. Their purpose here is to pass the positional information along through the entire architecture.</p>
+<p><strong>Add &amp; norm.</strong> The transformer also uses a layer called add &amp; norm that is very similar to <a href="../../../ai/deep-learning/improving-deep-neural-networks/batch-normalization">batch norm</a>. For the purposes of this page do not worry about the differences, and think of it as playing a very similar role. It helps speed up learning, and this batch-norm-like layer is repeated throughout the architecture.</p>
+<p><strong>Linear and softmax output.</strong> At the output of the decoder block there is a linear layer and then a <a href="../../../ai/deep-learning/improving-deep-neural-networks/softmax-regression">softmax</a> layer, which predict the next word one word at a time.</p>
+<p><strong>Masked multi-head attention.</strong> If you read the literature on transformers you will also see something called masked multi-head attention. It matters only during training, when you are using a dataset of correct French to English translations to train the transformer. The walkthrough above showed the transformer predicting one word at a time. So how does it train?</p>
+<p>Say the dataset holds the correct pair, <code>Jane visite l'Afrique en septembre</code> and <code>Jane visits Africa in September</code>. When training, you have access to the entire correct English translation, the correct output, as well as the correct input. Because the full correct output is available, you do not have to generate the words one at a time during training. Instead, masking blocks out the last part of the sentence to mimic what the network will need to do at test time, during prediction. In other words, masked multi-head attention repeatedly pretends that the network has perfectly translated the first few words, hides the remaining words, and checks whether, given a perfect first part of the translation, the network can accurately predict the next word in the sequence.</p>
+<div class="wide-network-hint">
+<p>On a small screen, scroll horizontally to inspect the whole model.</p>
+</div>
+<div class="wide-network-figure" role="region" aria-label="Scrollable transformer architecture diagram" tabindex="0">
+<div id="4dfc3fdf" class="cell" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="transformer-network_files/figure-html/cell-6-output-1.svg" class="img-fluid figure-img" alt="A block diagram with an encoder stack on the left and a decoder stack on the right. Both stacks start from an embeddings box at the bottom with a plus circle where positional encoding is added. The encoder stack, framed by a dashed box labeled encoder block times N, holds multi-head attention, add and norm, feed-forward neural network, and add and norm, with grey side lines showing residual connections. The decoder stack, in its own dashed frame, holds masked multi-head attention, add and norm, multi-head attention receiving an arrow labeled K V from the encoder output, add and norm, feed-forward neural network, and add and norm, then linear and softmax boxes above it and the label next word. A dotted line carries the next word back down to the decoder input, labeled the translation generated so far."></p>
+<figcaption>The transformer network, with the bells and whistles in place. Positional encodings are added to the embeddings on both sides. The encoder block, repeated <span class="math inline">\(N\)</span> times, is multi-head attention followed by a feed-forward network, each with an add &amp; norm and a residual connection around it. The decoder block, also repeated <span class="math inline">\(N\)</span> times, starts with masked multi-head attention over the translation so far, then a second attention block whose queries come from the decoder and whose keys and values come from the encoder output, then a feed-forward network. A linear layer and a softmax predict the next word, which is fed back in as the next input.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<p>That is a summary of the transformer architecture. Since “Attention Is All You Need” came out there have been many other iterations of this model, such as BERT, from <a href="https://doi.org/10.48550/arXiv.1810.04805">Devlin et al.&nbsp;(2018)</a>, and DistilBERT, from <a href="https://doi.org/10.48550/arXiv.1910.01108">Sanh et al.&nbsp;(2019)</a>. There was a lot of detail here, but you now have a good sense of all the major building blocks of the transformer network.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What You Should Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>RNNs, GRUs, and LSTMs process a sequence one token at a time, so every unit waits for the one before it. The transformer computes representations for the whole sequence in parallel, combining attention with a CNN-style parallel processing.</li>
+<li>Self-attention gives every word a query, a key, and a value, each produced by a learned matrix from the word’s embedding. The query asks a question, the keys of all the words say how well each one answers it, a softmax over those scores gives weights, and the weighted sum of the values is the word’s new representation.</li>
+<li>The vectorized form is <span class="math inline">\(\text{Attention}(Q, K, V) = \text{softmax}(QK^T / \sqrt{d_k})\, V\)</span>, called scaled dot-product attention. The <span class="math inline">\(\sqrt{d_k}\)</span> only stops the dot products from exploding.</li>
+<li>Multi-head attention runs self-attention <span class="math inline">\(h\)</span> times with different matrices <span class="math inline">\(W_i^Q\)</span>, <span class="math inline">\(W_i^K\)</span>, <span class="math inline">\(W_i^V\)</span>, so each head can ask a different question. The heads are concatenated and multiplied by <span class="math inline">\(W^O\)</span>, and since no head depends on another, they run in parallel.</li>
+<li>The encoder block is multi-head attention followed by a feed-forward network, repeated <span class="math inline">\(N\)</span> times, with <span class="math inline">\(N = 6\)</span> typical. The decoder block attends over the translation generated so far, then attends over the encoder output with its own <span class="math inline">\(Q\)</span> and the encoder’s <span class="math inline">\(K\)</span> and <span class="math inline">\(V\)</span>, then a feed-forward network predicts the next word, which is fed back in.</li>
+<li>Nothing in self-attention knows where a word sits, so a sine and cosine positional encoding is added to each embedding, and residual connections carry that positional information through the whole network. Add &amp; norm layers play a role similar to batch norm, and a linear plus softmax layer produces each next word.</li>
+<li>Masked multi-head attention is a training device. Given a correct translation, it hides the words past a point and asks the network to predict the next one, so the whole sentence can be trained on at once without generating it word by word.</li>
+</ul>
+</div>
+</div>
+</section>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<div id="tf-review-q1">
+<p><strong>1. RNNs, GRUs, and LSTMs all share one limitation that the transformer was designed to remove. What is it, and what does the transformer do instead?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="tf-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>All three are sequential. They ingest the input one token at a time, and each unit is a bottleneck because computing the final unit’s output requires first computing the outputs of every unit before it. Adding gates, as the GRU and LSTM do, improves control over the flow of information but adds complexity and does nothing about the sequential bottleneck.</p>
+<p>The transformer computes representations for the entire sequence in parallel. It ingests the whole sentence at once, using attention-based representations combined with a CNN-style parallel processing rather than a left-to-right chain.</p>
+</div>
+</details>
+<hr>
+<div id="tf-review-q2">
+<p><strong>1. In self-attention, how are the query, key, and value for the word <code>l'Afrique</code> obtained, and what role does each play in computing <span class="math inline">\(A^{\langle 3 \rangle}\)</span>?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="tf-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>All three come from the word embedding <span class="math inline">\(x^{\langle 3 \rangle}\)</span> through learned matrices, <span class="math inline">\(q^{\langle 3 \rangle} = W^Q x^{\langle 3 \rangle}\)</span>, <span class="math inline">\(k^{\langle 3 \rangle} = W^K x^{\langle 3 \rangle}\)</span>, and <span class="math inline">\(v^{\langle 3 \rangle} = W^V x^{\langle 3 \rangle}\)</span>. The matrices <span class="math inline">\(W^Q\)</span>, <span class="math inline">\(W^K\)</span>, <span class="math inline">\(W^V\)</span> are parameters of the model.</p>
+<p>The query is a question asked about <code>l'Afrique</code>, such as “what is happening there?” The key of every word is dotted with that query, and the size of <span class="math inline">\(q^{\langle 3 \rangle} \cdot k^{\langle i \rangle}\)</span> says how good an answer word <span class="math inline">\(i\)</span> is to the question. A softmax over the five scores turns them into weights. The value of each word is what actually gets plugged into the representation, so <span class="math inline">\(A^{\langle 3 \rangle}\)</span> is the weighted sum <span class="math inline">\(\sum_i \alpha_i v^{\langle i \rangle}\)</span>. If <code>visite</code> wins the softmax, its value dominates, and the representation of Africa now carries the fact that someone is visiting it.</p>
+</div>
+</details>
+<hr>
+<div id="tf-review-q3">
+<p><strong>1. Why does the transformer need a positional encoding when an RNN did not?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="tf-review-q3">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>An RNN reads the words in order, so position is built into the computation. Nothing in the self-attention equations indicates the position of a word. The dot products <span class="math inline">\(q \cdot k\)</span> and the weighted sum of values would come out the same whether a word was first, in the middle, or last, yet position within a sentence can be extremely important to translation.</p>
+<p>The fix is to build a vector <span class="math inline">\(p^{\langle t \rangle}\)</span> of the same dimension <span class="math inline">\(d\)</span> as the embedding from sine and cosine functions of the position, with each pair of entries at a different frequency, so that every position gets a unique vector. That vector is added directly to the embedding <span class="math inline">\(x^{\langle t \rangle}\)</span>, and residual connections carry the positional information through the rest of the network.</p>
+</div>
+</details>
+<hr>
+<div id="tf-review-q4">
+<p><strong>1. Which of the following statements about multi-head attention are true? Select all that apply.</strong></p>
+<ol type="a">
+<li><p>Each head uses its own matrices <span class="math inline">\(W_i^Q\)</span>, <span class="math inline">\(W_i^K\)</span>, <span class="math inline">\(W_i^V\)</span>, so different heads can ask different questions about each word.</p></li>
+<li><p>The heads must be computed one after another, because head <span class="math inline">\(i+1\)</span> depends on the output of head <span class="math inline">\(i\)</span>.</p></li>
+<li><p>The output is the concatenation of the <span class="math inline">\(h\)</span> heads multiplied by a matrix <span class="math inline">\(W^O\)</span>.</p></li>
+<li><p>Using <span class="math inline">\(h\)</span> heads means the self-attention computation is performed <span class="math inline">\(h\)</span> times.</p></li>
+</ol>
+</div>
+<details class="review-answer">
+<summary aria-describedby="tf-review-q4">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>a, c, and d.</strong> Multi-head attention is a for-loop over self-attention, so d is right, and each pass has its own set of matrices, which is what lets one head ask “what is happening?” while another asks “when?” and a third asks “who?”, so a is right. The head outputs are concatenated and multiplied by <span class="math inline">\(W^O\)</span>, so c is right.</p>
+<p>Option b is false. No head’s value depends on any other head, which is exactly why they can be computed in parallel instead of sequentially. The for-loop is a way to think about it, not a constraint on the implementation.</p>
+</div>
+</details>
+<hr>
+<div id="tf-review-q5">
+<p><strong>1. In the decoder, the second multi-head attention block receives <span class="math inline">\(Q\)</span>, <span class="math inline">\(K\)</span>, and <span class="math inline">\(V\)</span> from two different places. Where does each come from, and what is the intuition?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="tf-review-q5">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>The <span class="math inline">\(Q\)</span> matrix is generated from the output of the decoder’s first attention block, which attended over the translation generated so far, starting with just <code>&lt;SOS&gt;</code>. The <span class="math inline">\(K\)</span> and <span class="math inline">\(V\)</span> matrices are generated from the output of the encoder, which holds the representation of the French sentence.</p>
+<p>The intuition is that the partial translation asks a query, such as “given <code>&lt;SOS&gt;</code> and <code>Jane</code>, what is the most appropriate next word?”, and the keys and values pull the relevant context out of the French sentence to answer it. The feed-forward network after the block then predicts the next English word, which is fed back in as input for the following step.</p>
+</div>
+</details>
+<hr>
+<div id="tf-review-q6">
+<p><strong>1. True or false. Masked multi-head attention is used both during training and during prediction.</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="tf-review-q6">
+Answer
+</summary>
+<div class="review-answer-body">
+<p><strong>False.</strong> Masking matters only during training. At prediction time the network genuinely generates one word at a time, so there is nothing to hide. During training the whole correct English translation is available, so instead of generating words one at a time the network pretends it has perfectly translated the first few words, hides the remaining ones, and is checked on whether it predicts the next word correctly. Masking is what does the hiding, and it lets the full sentence be trained on at once while still mimicking what the network faces at test time.</p>
+</div>
+</details>
+<hr>
+<div id="tf-review-q7">
+<p><strong>1. The encoder and decoder blocks are each repeated <span class="math inline">\(N\)</span> times. What is a typical value of <span class="math inline">\(N\)</span>, and what happens to the output of the encoder after its last repetition?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="tf-review-q7">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>A typical value is <span class="math inline">\(N = 6\)</span>, so the input goes through the encoder block about six times. After the last pass, the output of the encoder is fed into the decoder, where it is used to generate the <span class="math inline">\(K\)</span> and <span class="math inline">\(V\)</span> matrices of the decoder’s second multi-head attention block. The decoder block is likewise repeated about six times, taking its output and feeding it back to its input, before the linear and softmax layers predict the next word.</p>
+</div>
+</details>
+</section>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li>Devlin, J., Chang, M.-W., Lee, K., &amp; Toutanova, K. (2018). <em>BERT: Pre-training of deep bidirectional transformers for language understanding</em>. arXiv. <a href="https://doi.org/10.48550/arXiv.1810.04805" class="uri">https://doi.org/10.48550/arXiv.1810.04805</a></li>
+<li>Sanh, V., Debut, L., Chaumond, J., &amp; Wolf, T. (2019). <em>DistilBERT, a distilled version of BERT: Smaller, faster, cheaper and lighter</em>. arXiv. <a href="https://doi.org/10.48550/arXiv.1910.01108" class="uri">https://doi.org/10.48550/arXiv.1910.01108</a></li>
+<li>Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., et al.&nbsp;(2017). <em>Attention is all you need</em>. arXiv. <a href="https://doi.org/10.48550/arXiv.1706.03762" class="uri">https://doi.org/10.48550/arXiv.1706.03762</a></li>
+</ul>
+
+
+<div id="section-progress-widget" class="section-progress-widget" hidden="">
+  <p class="section-progress-label">Progress through this section</p>
+  <progress class="section-progress" value="100" max="100" aria-label="100 percent through this section"></progress>
+  <p class="section-progress-detail">100% through this section (2050 of 2050 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.hidden = false; sb.appendChild(w); }
+});
+</script>
+
+</section>
+
+<a onclick="window.scrollTo(0, 0); return false;" role="button" id="quarto-back-to-top"><i class="bi bi-arrow-up"></i> Back to top</a></main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme-dark.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      if (authorPrefersDark) {
+          [baseTheme, altTheme] = [altTheme, baseTheme];
+      }
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/sequence-models/lab-trigger-word-detection" class="pagination-link" aria-label="Trigger Word Detection">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Trigger Word Detection</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+<p>H’s Notes</p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    </div>
+    <div class="nav-footer-right">
+      <ul class="footer-items list-unstyled">
+    <li class="nav-item">
+    <a class="nav-link" href="../../../about">
+<p>About</p>
+</a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="../../../about/dashboard">
+<p>Dashboard</p>
+</a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="../../../about/roadmap">
+<p>Roadmap</p>
+</a>
+  </li>  
+</ul>
+    </div>
+  </div>
+</footer>
+
+
+
+
+</body></html>
