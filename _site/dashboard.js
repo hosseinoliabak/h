@@ -10,17 +10,29 @@
   var DATA_URL = '/about/dashboard-data.json';
   var MAX_DATA_BYTES = 7 * 1024 * 1024;
   var MAX_METRIC_PAGES = 20000;
-  var MAX_EDGE_RTT_MS = 60000;
-  var HTTP_VERSIONS = new Set(['HTTP/1.0', 'HTTP/1.1', 'HTTP/2', 'HTTP/3']);
-  var TLS_VERSION_LABELS = new Map([
-    ['TLSv1', 'TLS 1.0'],
-    ['TLSv1.1', 'TLS 1.1'],
-    ['TLSv1.2', 'TLS 1.2'],
-    ['TLSv1.3', 'TLS 1.3']
+  var MAX_RESPONSE_DURATION_MS = 15000;
+  var NEXT_HOP_PROTOCOL_LABELS = new Map([
+    ['http/0.9', 'HTTP/0.9'],
+    ['http/1.0', 'HTTP/1.0'],
+    ['http/1.1', 'HTTP/1.1'],
+    ['h2', 'HTTP/2'],
+    ['h2c', 'HTTP/2'],
+    ['h3', 'HTTP/3']
   ]);
   var CACHE_STATUSES = new Set([
     'HIT', 'MISS', 'EXPIRED', 'STALE', 'BYPASS',
     'REVALIDATED', 'UPDATING', 'DYNAMIC', 'NONE/UNKNOWN'
+  ]);
+  var CACHE_STATUS_NOTES = new Map([
+    ['HIT', 'Served from the Cloudflare cache'],
+    ['MISS', 'Fetched before a cache entry was available'],
+    ['EXPIRED', 'Expired cache content was refreshed'],
+    ['STALE', 'Stale cache content was served'],
+    ['BYPASS', 'The response bypassed CDN caching'],
+    ['REVALIDATED', 'Cached content was revalidated'],
+    ['UPDATING', 'Cached content was served while refreshing'],
+    ['DYNAMIC', 'This JSON response is not eligible for CDN caching'],
+    ['NONE/UNKNOWN', 'No CDN cache decision was applied']
   ]);
   var edgeConnectionSettled = false;
   /* Quarto has no native remote-deployment timestamp. This exact public API
@@ -35,6 +47,7 @@
     'Machine Learning', 'Mathematics', 'Networking', 'Other'
   ]);
   var numberFormat = new Intl.NumberFormat();
+  var decimalFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
   var dateFormat = new Intl.DateTimeFormat(undefined, {
     year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
   });
@@ -159,7 +172,10 @@
     if (!response.body || !response.body.getReader) {
       return response.arrayBuffer().then(function (buffer) {
         if (buffer.byteLength > maximum) throw new Error('Publication data is too large');
-        return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+        return {
+          text: new TextDecoder('utf-8', { fatal: true }).decode(buffer),
+          bytes: buffer.byteLength
+        };
       });
     }
     var reader = response.body.getReader();
@@ -168,7 +184,7 @@
     var text = '';
     function next() {
       return reader.read().then(function (part) {
-        if (part.done) return text + decoder.decode();
+        if (part.done) return { text: text + decoder.decode(), bytes: total };
         total += part.value.byteLength;
         if (total > maximum) {
           reader.cancel();
@@ -181,63 +197,45 @@
     return next();
   }
 
-  function parseEdgeRtt(value) {
-    if (value === null || value === '' || value === '0') return { value: null, invalid: false };
-    if (!/^[1-9][0-9]{0,4}$/.test(value)) return { value: null, invalid: true };
-    var milliseconds = Number(value);
-    if (!Number.isSafeInteger(milliseconds) || milliseconds > MAX_EDGE_RTT_MS) {
-      return { value: null, invalid: true };
-    }
-    return { value: milliseconds, invalid: false };
-  }
-
-  function parseEdgeConnection(headers) {
-    var emptyConnection = {
-      colo: null,
-      rttMs: null,
-      transport: null,
-      httpVersion: null,
-      tlsVersion: null,
-      cacheStatus: null
-    };
-    var connection = Object.assign({}, emptyConnection);
-    if (!headers || typeof headers.get !== 'function') return connection;
+  function parseDeliveryHeaders(headers) {
+    var delivery = { colo: null, cacheStatus: null };
+    if (!headers || typeof headers.get !== 'function') return delivery;
     try {
       /* Quarto does not expose per-request CDN response metadata. This narrow
        * parser reads only validated values from the existing data request.
        */
       var rayMatch = /^[0-9a-f]{8,64}-([A-Z]{3})$/.exec(headers.get('cf-ray') || '');
-      if (rayMatch) connection.colo = rayMatch[1];
-
-      var tcp = parseEdgeRtt(headers.get('x-edge-rtt-tcp'));
-      var quic = parseEdgeRtt(headers.get('x-edge-rtt-quic'));
-      if (!tcp.invalid && !quic.invalid) {
-        if (tcp.value !== null && quic.value === null) {
-          connection.rttMs = tcp.value;
-          connection.transport = 'TCP';
-        } else if (quic.value !== null && tcp.value === null) {
-          connection.rttMs = quic.value;
-          connection.transport = 'QUIC';
-        }
-      }
-
-      var httpVersion = headers.get('x-edge-http-version');
-      if (HTTP_VERSIONS.has(httpVersion)) connection.httpVersion = httpVersion;
-      var tlsVersion = headers.get('x-edge-tls-version');
-      if (TLS_VERSION_LABELS.has(tlsVersion)) connection.tlsVersion = TLS_VERSION_LABELS.get(tlsVersion);
+      if (rayMatch) delivery.colo = rayMatch[1];
       var cacheStatus = headers.get('cf-cache-status');
-      if (CACHE_STATUSES.has(cacheStatus)) connection.cacheStatus = cacheStatus;
-
-      if (connection.transport && connection.httpVersion) {
-        var expectedTransport = connection.httpVersion === 'HTTP/3' ? 'QUIC' : 'TCP';
-        if (connection.transport !== expectedTransport) {
-          connection.rttMs = null;
-          connection.transport = null;
-        }
-      }
-      return connection;
+      if (CACHE_STATUSES.has(cacheStatus)) delivery.cacheStatus = cacheStatus;
+      return delivery;
     } catch (error) {
-      return emptyConnection;
+      return { colo: null, cacheStatus: null };
+    }
+  }
+
+  function readResourceTiming(url, elapsed) {
+    var durationMs = Number.isFinite(elapsed) && elapsed > 0 && elapsed <= MAX_RESPONSE_DURATION_MS
+      ? elapsed
+      : null;
+    var httpVersion = null;
+    if (!window.performance || typeof window.performance.getEntriesByName !== 'function') {
+      return { durationMs: durationMs, httpVersion: httpVersion };
+    }
+    try {
+      var entries = window.performance.getEntriesByName(url, 'resource');
+      var entry = entries.length ? entries[entries.length - 1] : null;
+      if (!entry) return { durationMs: durationMs, httpVersion: httpVersion };
+      if (Number.isFinite(entry.duration) && entry.duration > 0
+          && entry.duration <= MAX_RESPONSE_DURATION_MS) {
+        durationMs = entry.duration;
+      }
+      if (NEXT_HOP_PROTOCOL_LABELS.has(entry.nextHopProtocol)) {
+        httpVersion = NEXT_HOP_PROTOCOL_LABELS.get(entry.nextHopProtocol);
+      }
+      return { durationMs: durationMs, httpVersion: httpVersion };
+    } catch (error) {
+      return { durationMs: durationMs, httpVersion: httpVersion };
     }
   }
 
@@ -246,6 +244,9 @@
     if (url.origin !== window.location.origin) return Promise.reject(new Error('Publication data origin is not allowed'));
     var controller = new AbortController();
     var timer = window.setTimeout(function () { controller.abort(); }, 10000);
+    var startedAt = window.performance && typeof window.performance.now === 'function'
+      ? window.performance.now()
+      : null;
     return window.fetch(url.href, {
       cache: 'no-store',
       credentials: 'omit',
@@ -258,10 +259,20 @@
       if (type.indexOf('application/json') === -1 && type.indexOf('text/plain') === -1) {
         throw new Error('Publication data type is not supported');
       }
-      renderEdgeConnection(parseEdgeConnection(response.headers));
-      return readBoundedBody(response, MAX_DATA_BYTES);
-    }).then(function (source) {
-      return validatePublicationData(JSON.parse(source));
+      return readBoundedBody(response, MAX_DATA_BYTES).then(function (body) {
+        var data = validatePublicationData(JSON.parse(body.text));
+        var finishedAt = window.performance && typeof window.performance.now === 'function'
+          ? window.performance.now()
+          : null;
+        var elapsed = startedAt !== null && finishedAt !== null ? finishedAt - startedAt : null;
+        var delivery = parseDeliveryHeaders(response.headers);
+        var timing = readResourceTiming(url.href, elapsed);
+        delivery.durationMs = timing.durationMs;
+        delivery.httpVersion = timing.httpVersion;
+        delivery.bodyBytes = body.bytes;
+        renderEdgeConnection(delivery);
+        return data;
+      });
     }).finally(function () {
       window.clearTimeout(timer);
     });
@@ -321,8 +332,8 @@
         throw new Error('Website update data type is not supported');
       }
       return readBoundedBody(response, MAX_UPDATE_BYTES);
-    }).then(function (source) {
-      return validateWebsiteUpdate(JSON.parse(source));
+    }).then(function (body) {
+      return validateWebsiteUpdate(JSON.parse(body.text));
     }).finally(function () {
       window.clearTimeout(timer);
     });
@@ -346,66 +357,82 @@
     return card;
   }
 
+  function formatDuration(milliseconds) {
+    if (milliseconds < 1) return '<1 ms';
+    return numberFormat.format(Math.round(milliseconds)) + ' ms';
+  }
+
+  function formatDataSize(bytes) {
+    if (bytes < 1000) return numberFormat.format(bytes) + ' B';
+    if (bytes < 1000000) return decimalFormat.format(bytes / 1000) + ' KB';
+    return decimalFormat.format(bytes / 1000000) + ' MB';
+  }
+
   function renderEdgeConnection(connection) {
     var status = document.getElementById('edge-connection-status');
     var host = document.getElementById('edge-connection-stats');
     if (!status || !host) return;
     edgeConnectionSettled = true;
     var hasColo = !!connection.colo;
-    var hasRtt = Number.isSafeInteger(connection.rttMs) && !!connection.transport;
-    var hasTransport = hasRtt;
-    var hasHttp = HTTP_VERSIONS.has(connection.httpVersion);
-    var hasTls = Array.from(TLS_VERSION_LABELS.values()).indexOf(connection.tlsVersion) !== -1;
+    var hasDuration = Number.isFinite(connection.durationMs)
+      && connection.durationMs > 0 && connection.durationMs <= MAX_RESPONSE_DURATION_MS;
+    var hasHttp = Array.from(NEXT_HOP_PROTOCOL_LABELS.values()).indexOf(connection.httpVersion) !== -1;
+    var hasBodySize = Number.isSafeInteger(connection.bodyBytes)
+      && connection.bodyBytes >= 0 && connection.bodyBytes <= MAX_DATA_BYTES;
     var hasCache = CACHE_STATUSES.has(connection.cacheStatus);
-    var available = [hasColo, hasRtt, hasTransport, hasHttp, hasTls, hasCache].filter(Boolean).length;
-    status.textContent = available === 6 ? 'Live' : (available ? 'Partial' : 'Unavailable');
-    status.classList.toggle('dashboard-status-ready', available === 6);
-    host.replaceChildren(
-      statCard(
-        hasColo ? connection.colo : 'Unavailable',
-        'Cloudflare serving edge',
-        hasColo ? 'Data center code reported for this request' : 'No valid edge code was reported'
-      ),
-      statCard(
-        hasRtt ? numberFormat.format(connection.rttMs) + ' ms' : 'Unavailable',
-        'Edge RTT',
-        hasRtt ? 'Smoothed round trip to the serving edge' : 'No valid round-trip time was reported'
-      ),
-      statCard(
-        hasTransport ? connection.transport : 'Unavailable',
-        'Edge transport',
-        hasTransport ? 'Transport observed for the edge RTT' : 'No unambiguous edge transport was reported'
-      ),
-      statCard(
-        hasHttp ? connection.httpVersion : 'Unavailable',
-        'HTTP protocol',
-        hasHttp ? 'Version used for this data request' : 'No valid HTTP version was reported'
-      ),
-      statCard(
-        hasTls ? connection.tlsVersion : 'Unavailable',
-        'Edge TLS',
-        hasTls ? 'TLS version negotiated with the serving edge' : 'No valid TLS version was reported'
-      ),
-      statCard(
-        hasCache ? connection.cacheStatus : 'Unavailable',
+    var cards = [];
+    if (hasColo) {
+      cards.push(statCard(
+        connection.colo,
+        'Cloudflare data center',
+        'Code reported for this dashboard request'
+      ));
+    }
+    if (hasDuration) {
+      cards.push(statCard(
+        formatDuration(connection.durationMs),
+        'Data response',
+        'Full publication-data fetch in this browser'
+      ));
+    }
+    if (hasHttp) {
+      cards.push(statCard(
+        connection.httpVersion,
+        'HTTP connection',
+        'Protocol used for the data request'
+      ));
+    }
+    if (hasBodySize) {
+      cards.push(statCard(
+        formatDataSize(connection.bodyBytes),
+        'Data payload',
+        'Publication metadata used by this dashboard'
+      ));
+    }
+    if (hasCache) {
+      cards.push(statCard(
+        connection.cacheStatus,
         'CDN cache decision',
-        hasCache ? 'Cloudflare result for this data request' : 'No recognized cache decision was reported'
-      )
-    );
+        CACHE_STATUS_NOTES.get(connection.cacheStatus)
+      ));
+    }
+    status.textContent = 'Live';
+    status.classList.add('dashboard-status-ready');
+    host.replaceChildren.apply(host, cards);
   }
 
   function renderEdgeConnectionUnavailable() {
     if (edgeConnectionSettled) return;
-    renderEdgeConnection({
-      colo: null,
-      rttMs: null,
-      transport: null,
-      httpVersion: null,
-      tlsVersion: null,
-      cacheStatus: null
-    });
     var status = document.getElementById('edge-connection-status');
-    if (status && window.location.hostname !== 'h.oliabak.com') status.textContent = 'Production only';
+    var host = document.getElementById('edge-connection-stats');
+    edgeConnectionSettled = true;
+    if (status) {
+      status.textContent = 'Not measured';
+      status.classList.remove('dashboard-status-ready');
+    }
+    if (host) {
+      host.replaceChildren(element('p', 'dashboard-empty', 'Connection measurements need a successful dashboard data request.'));
+    }
   }
 
   function renderPublicationStats(data) {

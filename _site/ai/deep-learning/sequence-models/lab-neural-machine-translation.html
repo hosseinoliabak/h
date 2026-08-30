@@ -1,0 +1,2062 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Build an attention model in Keras that translates human-readable dates into the ISO format, then plot what each output character attends to.">
+
+<title>Lab: Neural Machine Translation with Attention – H’s Notes</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../ai/deep-learning/sequence-models/lab-trigger-word-detection" rel="next">
+<link href="../../../ai/deep-learning/sequence-models/speech-recognition-and-trigger-word-detection" rel="prev">
+<link href="../../../media/favicon.ico" rel="icon">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-dark-5a1953863e1f72ef3b996ef827f01ca7.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-bb62276ab45c84d9efd712f51ff97b5a.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-72f0d0848bd44e30f74044ddea63e70c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../../../site_libs/bootstrap/bootstrap-dark-2c993d82a95f65a68c89c17a41953382.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../../../site_libs/bootstrap/bootstrap-72f0d0848bd44e30f74044ddea63e70c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": true,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": "tree",
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../../styles.css">
+<meta property="og:title" content="Lab: Neural Machine Translation with Attention – H’s Notes">
+<meta property="og:description" content="Build an attention model in Keras that translates human-readable dates into the ISO format, then plot what each output character attends to.">
+<meta property="og:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/lab-neural-machine-translation_files/figure-html/cell-7-output-1.svg">
+<meta property="og:site_name" content="H’s Notes">
+<meta property="og:image:alt" content="A left-to-right pipeline. The previous decoder state s of the previous step enters a RepeatVector block that copies it thirty times, then a Concatenate block joins it with the encoder states a. That feeds a dense layer with ten tanh units, then a dense layer with one relu unit producing the energies, then a softmax over the position axis producing the attention weights alpha, then a dot product with the encoder states producing the context vector.">
+<meta name="twitter:title" content="Lab: Neural Machine Translation with Attention – H’s Notes">
+<meta name="twitter:description" content="Build an attention model in Keras that translates human-readable dates into the ISO format, then plot what each output character attends to.">
+<meta name="twitter:image" content="https://h.oliabak.com/ai/deep-learning/sequence-models/lab-neural-machine-translation_files/figure-html/cell-7-output-1.svg">
+<meta name="twitter:image:alt" content="A left-to-right pipeline. The previous decoder state s of the previous step enters a RepeatVector block that copies it thirty times, then a Concatenate block joins it with the encoder states a. That feeds a dense layer with ten tanh units, then a dense layer with one relu unit producing the energies, then a softmax over the position axis producing the attention weights alpha, then a dot product with the encoder states producing the context vector.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://h.oliabak.com/ai/deep-learning/sequence-models/lab-neural-machine-translation">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../../">
+    <span class="navbar-title">H’s Notes</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-networking" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Networking</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-networking">    
+        <li>
+    <a class="dropdown-item" href="../../../networking/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccde-written/">
+ <span class="dropdown-text">CCDE Written</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccie-data-center/">
+ <span class="dropdown-text">CCIE Data Center</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../networking/archive">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-routing/">
+ <span class="dropdown-text">CCNP Routing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../networking/ccnp-switching/">
+ <span class="dropdown-text">CCNP Switching</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-cybersecurity" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Cybersecurity</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-cybersecurity">    
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Archive</li>
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/archive">
+ <span class="dropdown-text">Archive Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../cybersecurity/kali-linux/">
+ <span class="dropdown-text">Kali Linux</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-ai" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">AI</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-ai">    
+        <li>
+    <a class="dropdown-item" href="../../../ai/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Machine Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/">
+ <span class="dropdown-text">Machine Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/supervised-machine-learning/">
+ <span class="dropdown-text">Supervised Machine Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/advanced-learning-algorithms/">
+ <span class="dropdown-text">Advanced Learning Algorithms</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/unsupervised-learning/">
+ <span class="dropdown-text">Unsupervised Learning, Recommenders, Reinforcement Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/machine-learning/federated-learning/">
+ <span class="dropdown-text">Federated Learning</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Deep Learning</li>
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/">
+ <span class="dropdown-text">Deep Learning Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/neural-networks-and-deep-learning/">
+ <span class="dropdown-text">Neural Networks and Deep Learning</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/improving-deep-neural-networks/">
+ <span class="dropdown-text">Improving Deep Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/structuring-machine-learning-projects/">
+ <span class="dropdown-text">Structuring Machine Learning Projects</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/convolutional-neural-networks/">
+ <span class="dropdown-text">Convolutional Neural Networks</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../ai/deep-learning/sequence-models/">
+ <span class="dropdown-text">Sequence Models</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-math" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Math</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-math">    
+        <li>
+    <a class="dropdown-item" href="../../../math/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/linear-algebra/">
+ <span class="dropdown-text">Linear Algebra</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/calculus/">
+ <span class="dropdown-text">Calculus</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/probability/">
+ <span class="dropdown-text">Probability</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../math/statistics/">
+ <span class="dropdown-text">Statistics</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-tools" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Tools</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-tools">    
+        <li>
+    <a class="dropdown-item" href="../../../tools/">
+ <span class="dropdown-text">Overview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Networking</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/client-info">
+ <span class="dropdown-text">Client Info</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/asn-conversion">
+ <span class="dropdown-text">ASN Conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/subnet-calculator">
+ <span class="dropdown-text">Subnet Calculator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/network-toolkit">
+ <span class="dropdown-text">Network Toolkit</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Share and Copy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/pastebin">
+ <span class="dropdown-text">Pastebin</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/qr-code">
+ <span class="dropdown-text">QR Code</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/fancy-text">
+ <span class="dropdown-text">Fancy Text</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/copy-paste-values">
+ <span class="dropdown-text">Copy Paste Values</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Classroom</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/randomizer">
+ <span class="dropdown-text">Randomizer</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Math and Writing</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/function-graphs">
+ <span class="dropdown-text">Function Graphs</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/math-formula">
+ <span class="dropdown-text">Math Formula</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/latex-preview">
+ <span class="dropdown-text">LaTeX Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/markdown-preview">
+ <span class="dropdown-text">Markdown Preview</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Astronomy</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/eclipse-atlas">
+ <span class="dropdown-text">Eclipse Atlas</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/planetarium">
+ <span class="dropdown-text">Planetarium</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Design</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/svg-preview">
+ <span class="dropdown-text">SVG Preview</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/color-pallet">
+ <span class="dropdown-text">Color Pallet</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/typography">
+ <span class="dropdown-text">Typography</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/tshirt-design">
+ <span class="dropdown-text">T-shirt Design</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li class="dropdown-header">Games</li>
+        <li>
+    <a class="dropdown-item" href="../../../tools/chess">
+ <span class="dropdown-text">Chess Coach</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/reassess-your-chess">
+ <span class="dropdown-text">Reassess Your Chess</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../tools/daily-chess">
+ <span class="dropdown-text">Daily Chess Puzzles</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-about" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">About</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-about">    
+        <li>
+    <a class="dropdown-item" href="../../../about">
+ <span class="dropdown-text">About Me</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/dashboard">
+ <span class="dropdown-text">Dashboard</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="../../../about/roadmap">
+ <span class="dropdown-text">Roadmap</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../../about/about-this-website">
+ <span class="dropdown-text">About This Website</span></a>
+  </li>  
+        <li><hr class="dropdown-divider"></li>
+        <li>
+    <a class="dropdown-item" href="https://github.com/sponsors/hosseinoliabak"><i class="bi bi-github" role="img">
+</i> 
+ <span class="dropdown-text">Sponsor ♡</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="Toggle dark mode"><i class="bi"></i></a>
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../ai/deep-learning/sequence-models/lab-neural-machine-translation">Neural Machine Translation with Attention</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence Models</span></a>
+  </div>
+</li>
+        <li class="px-0"><hr class="sidebar-divider hi "></li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/recurrent-neural-networks" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Recurrent Neural Networks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/rnn-architectures-and-language-models" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RNN Architectures and Language Models</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/vanishing-gradients-gru-and-lstm" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vanishing Gradients, GRUs, and LSTMs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/bidirectional-and-deep-rnns" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bidirectional and Deep RNNs</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-building-your-recurrent-neural-network" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Building Your Recurrent Neural Network Step by Step</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-character-level-language-model" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Character Level Language Model</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-improvise-a-jazz-solo" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Improvise a Jazz Solo with an LSTM Network</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/introduction-to-word-embeddings" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction to Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/learning-word-embeddings-word2vec-and-glove" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning Word Embeddings with Word2vec and GloVe</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/sentiment-classification-and-debiasing" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sentiment Classification and Debiasing Word Embeddings</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-operations-on-word-vectors" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Operations on Word Vectors</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-emojify" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Emojify</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/sequence-to-sequence-models" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence to Sequence Models</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/beam-search" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam Search</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/bleu-score" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">BLEU Score</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/attention-model" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Attention Model</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/speech-recognition-and-trigger-word-detection" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Speech Recognition and Trigger Word Detection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-neural-machine-translation" class="sidebar-item-text sidebar-link active"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Neural Machine Translation with Attention</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/deep-learning/sequence-models/lab-trigger-word-detection" class="sidebar-item-text sidebar-link"><i class="bi bi-flask" role="img" aria-label="Lab">
+</i> 
+ <span class="menu-text">Trigger Word Detection</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar"><div class="quarto-margin-header"><div class="margin-header-item">
+<div id="page-qr" class="page-qr">
+  <img id="page-qr-image" class="page-qr-image" width="120" height="120" alt="QR code for this page" hidden="">
+  <div class="page-qr-caption">Scan to open on mobile</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script>
+(function() {
+  var image = document.getElementById('page-qr-image');
+  if (!image || typeof QRCode === 'undefined') return;
+  QRCode.toDataURL(window.location.href, {
+    width: 120,
+    errorCorrectionLevel: 'M',
+    margin: 1
+  }, function(err, dataUrl) {
+    if (err) return;
+    image.src = dataUrl;
+    image.hidden = false;
+  });
+})();
+</script>
+
+</div></div>
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#date-translation-task" id="toc-date-translation-task" class="nav-link active" data-scroll-target="#date-translation-task">Date Translation Task</a></li>
+  <li><a href="#attention-model" id="toc-attention-model" class="nav-link" data-scroll-target="#attention-model">Attention Model</a>
+  <ul class="collapse">
+  <li><a href="#one-step-of-attention" id="toc-one-step-of-attention" class="nav-link" data-scroll-target="#one-step-of-attention">One Step of Attention</a></li>
+  <li><a href="#building-the-full-model" id="toc-building-the-full-model" class="nav-link" data-scroll-target="#building-the-full-model">Building the Full Model</a></li>
+  </ul></li>
+  <li><a href="#compiling-and-training" id="toc-compiling-and-training" class="nav-link" data-scroll-target="#compiling-and-training">Compiling and Training</a></li>
+  <li><a href="#results" id="toc-results" class="nav-link" data-scroll-target="#results">Results</a></li>
+  <li><a href="#visualizing-attention" id="toc-visualizing-attention" class="nav-link" data-scroll-target="#visualizing-attention">Visualizing Attention</a>
+  <ul class="collapse">
+  <li><a href="#review-questions" id="toc-review-questions" class="nav-link" data-scroll-target="#review-questions">Review Questions</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<script src="../../../theme-toggle.js"></script>
+<script src="../../../auth.js"></script>
+<script src="../../../site-metrics.js"></script>
+<script src="../../../giscus-note.js"></script>
+<script src="../../../resume-reading.js"></script>
+<script src="../../../sidebar-active.js"></script>
+<script src="../../../search-scope.js"></script>
+<script src="../../../review-numbering.js"></script>
+<script src="../../../nav-columns.js"></script>
+<script src="../../../activation-colors.js"></script>
+<script src="../../../visit-history.js"></script>
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title"><span class="bi bi-flask lab-title-icon" aria-hidden="true"></span><span class="visually-hidden">Lab:</span> Neural Machine Translation with Attention</h1>
+  <div class="quarto-categories">
+    <div class="quarto-category">deep-learning</div>
+    <div class="quarto-category">sequence-models</div>
+    <div class="quarto-category">nlp</div>
+    <div class="quarto-category">attention</div>
+    <div class="quarto-category">machine-translation</div>
+    <div class="quarto-category">keras</div>
+    <div class="quarto-category">lstm</div>
+    <div class="quarto-category">lab</div>
+  </div>
+  </div>
+
+<div>
+  <div class="description">
+    Build an attention model in Keras that translates human-readable dates into the ISO format, then plot what each output character attends to.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">Saturday, August 29, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector(".quarto-title-meta");
+  if (meta) {
+    var div = document.createElement("div");
+    div.style.order = "3";
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~111 min read <span class="rt-info" tabindex="0" aria-describedby="reading-time-method"><span aria-hidden="true">ⓘ</span><span class="rt-tooltip" id="reading-time-method" role="tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    meta.appendChild(div);
+    var lenDiv = document.createElement("div");
+    lenDiv.style.order = "1";
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~3,800 words</p></div>';
+    meta.appendChild(lenDiv);
+    var diffDiv = document.createElement("div");
+    diffDiv.style.order = "4";
+    diffDiv.innerHTML = '<div class="quarto-title-meta-heading">Difficulty</div><div class="quarto-title-meta-contents"><p class="difficulty-rating" aria-label="Difficulty 4 out of 5"><span aria-hidden="true"><span class="difficulty-dot is-filled"></span><span class="difficulty-dot is-filled"></span><span class="difficulty-dot is-filled"></span><span class="difficulty-dot is-filled"></span><span class="difficulty-dot"></span></span></p></div>';
+    meta.appendChild(diffDiv);
+  }
+});
+</script>
+
+<p>This lab builds a neural machine translation model that converts human-readable dates such as <code>25th of June, 2009</code> into machine-readable ones such as <code>2009-06-25</code>, using the <a href="../../../ai/deep-learning/sequence-models/attention-model">attention model</a> from earlier this week.</p>
+<p>Real language translation needs massive datasets and days of GPU training. Date translation is a smaller task that exercises exactly the same attention machinery, so the model here trains in seconds and still shows you what attention is doing.</p>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Important</span>Eight changes from the original notebook
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The source notebook was written against TensorFlow 2.3 and Keras 2, and this page runs on TensorFlow 2.21 with Keras 3 as installed in the project environment on 2026-08-29. Eight things changed.</p>
+<ol type="1">
+<li><strong>The <code>faker</code> package is gone.</strong> It was used for one call, <code>fake.date_object()</code>, which returns a random date. That is now generated with the standard library, which avoids adding a render-time dependency for a single line. The generated vocabulary is character-for-character identical to the original, 37 human characters and 11 machine characters, which is why the pretrained weights still apply unchanged. The individual dates are not identical, though. This generator draws uniformly from 1970-01-01 to 2025-12-31 from a single seeded stream, while <code>faker</code> used its own generator over its own range, so the sampled dates differ and the one-epoch numbers below are close to but not the same as the notebook’s.</li>
+<li><strong><code>Adam(lr=..., decay=0.01)</code> is rejected by Keras 3.</strong> The argument is now <code>learning_rate</code>, and the legacy <code>decay</code> behavior is reproduced exactly with an <code>InverseTimeDecay</code> schedule, which computes the same <span class="math inline">\(0.005 / (1 + 0.01 \cdot \text{step})\)</span>.</li>
+<li><strong><code>metrics=['accuracy']</code> is rejected on a multi-output model.</strong> Keras 3 requires one metric entry per output, so a model with ten outputs needs <code>['accuracy'] * 10</code>. It also names the resulting history keys differently. Keras 2 produced <code>dense_2_accuracy</code>, <code>dense_2_1_accuracy</code> and so on, embedding the output index in the middle. Keras 3 builds the whole <code>&lt;layer&gt;_accuracy</code> key first and appends the disambiguating counter to the end, so reading the per-position accuracies back takes a sort.</li>
+<li><strong>The custom <code>softmax(x, axis=1)</code> helper is gone.</strong> It was built on legacy <code>keras.backend</code> tensor operations such as <code>K.ndim</code> and <code>K.softmax</code>. Standalone Keras 3 still ships a <code>keras.backend</code> module but no longer exposes those, so the helper cannot be carried over onto the public Keras 3 API. The legacy <code>tf.keras.backend</code> compatibility path does still export them, so the original would keep running there. The built-in <code>Softmax(axis=1)</code> layer does the same job without either.</li>
+<li><strong>The recurrent cell is called positionally.</strong> Keras 3 renamed the call argument, so <code>post_activation_LSTM_cell(context, initial_state=[s, c])</code> replaces the keyword form.</li>
+<li><strong>The attention plot was rebuilt.</strong> The original helper reached into <code>model.layers[2]</code> through <code>model.layers[10]</code> by index, not using every intervening one, which is fragile, and despite its axis label it plotted the pre-softmax <em>energies</em> normalized by row maximum rather than the attention weights themselves. This page builds a sibling model from the same shared layers and plots the real <span class="math inline">\(\alpha^{\langle t, t' \rangle}\)</span>, whose rows sum to 1 as a softmax output should.</li>
+<li><strong>A latent bug in <code>string_to_int</code> is fixed.</strong> The original wrote <code>vocab.get(char, '&lt;unk&gt;')</code>, which would have inserted the literal string <code>&lt;unk&gt;</code> into an otherwise integer list had an unknown character ever appeared, breaking the array that gets one-hot encoded downstream. It never fired, because the vocabulary is built from the same generated data it later encodes. The lookup is now by index and is only performed when needed, which also lets the one function serve both vocabularies, since the machine vocabulary has no <code>&lt;unk&gt;</code> or <code>&lt;pad&gt;</code> entry at all.</li>
+<li><strong>The autograder is stripped.</strong> The unit tests and the <code>All tests passed</code> prints are gone, and the things they silently asserted are printed and explained instead. One thing was kept out of those cells rather than discarded. They also set the random seed, so the seeding is restored next to the layer definitions, which keeps the initial weights and the one-epoch numbers reproducible from render to render.</li>
+</ol>
+<p>Four things were left alone. The architecture, every hyperparameter, the dataset size and formats, and the pretrained weights, which are the course’s own <code>model.h5</code> loaded unchanged.</p>
+</div>
+</div>
+<section id="date-translation-task" class="level2">
+<h2 class="anchored" data-anchor-id="date-translation-task">Date Translation Task</h2>
+<p>The model reads a date written in any of a couple of dozen formats and writes it back in the standardized <code>YYYY-MM-DD</code> form. Training uses 10,000 generated examples.</p>
+<p>Two helpers do the data work. <code>load_dataset</code> generates the pairs and builds the character vocabularies, and <code>preprocess_data</code> turns strings into padded index arrays and then into one-hot arrays.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Dataset helpers
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>These are the notebook’s <code>nmt_utils</code> helpers, with the <code>faker</code> dependency replaced. Read them if you want to see exactly how the dates are built and indexed. Nothing later on the page depends on understanding them line by line.</p>
+<div id="f86dd0be" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> datetime</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> random</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> babel.dates <span class="im">import</span> format_date</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> keras.utils <span class="im">import</span> to_categorical</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="co"># The date formats the generator draws from. `full` is repeated so that the</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="co"># long weekday-bearing form dominates the training set, exactly as it does in</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="co"># the original notebook.</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>FORMATS <span class="op">=</span> [<span class="st">'short'</span>, <span class="st">'medium'</span>, <span class="st">'long'</span>, <span class="st">'full'</span>, <span class="st">'full'</span>, <span class="st">'full'</span>, <span class="st">'full'</span>, <span class="st">'full'</span>,</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>           <span class="st">'full'</span>, <span class="st">'full'</span>, <span class="st">'full'</span>, <span class="st">'full'</span>, <span class="st">'full'</span>, <span class="st">'d MMM YYY'</span>, <span class="st">'d MMMM YYY'</span>,</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>           <span class="st">'dd MMM YYY'</span>, <span class="st">'d MMM, YYY'</span>, <span class="st">'d MMMM, YYY'</span>, <span class="st">'dd, MMM YYY'</span>,</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>           <span class="st">'d MM YY'</span>, <span class="st">'d MMMM YYY'</span>, <span class="st">'MMMM d YYY'</span>, <span class="st">'MMMM d, YYY'</span>, <span class="st">'dd.MM.YY'</span>]</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>START_DATE <span class="op">=</span> datetime.date(<span class="dv">1970</span>, <span class="dv">1</span>, <span class="dv">1</span>)</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>DATE_SPAN <span class="op">=</span> (datetime.date(<span class="dv">2026</span>, <span class="dv">1</span>, <span class="dv">1</span>) <span class="op">-</span> START_DATE).days</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> load_date(rng):</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Return one (human readable, machine readable) date pair."""</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    dt <span class="op">=</span> START_DATE <span class="op">+</span> datetime.timedelta(days<span class="op">=</span>rng.randrange(DATE_SPAN))</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    human <span class="op">=</span> format_date(dt, <span class="bu">format</span><span class="op">=</span>rng.choice(FORMATS), locale<span class="op">=</span><span class="st">'en_US'</span>)</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    human <span class="op">=</span> human.lower().replace(<span class="st">','</span>, <span class="st">''</span>)</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> human, dt.isoformat()</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> load_dataset(m, seed<span class="op">=</span><span class="dv">12345</span>):</span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Generate m pairs and build the two character vocabularies."""</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>    rng <span class="op">=</span> random.Random(seed)</span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>    dataset, human_chars, machine_chars <span class="op">=</span> [], <span class="bu">set</span>(), <span class="bu">set</span>()</span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> _ <span class="kw">in</span> <span class="bu">range</span>(m):</span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>        human, machine <span class="op">=</span> load_date(rng)</span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>        dataset.append((human, machine))</span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>        human_chars.update(human)</span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a>        machine_chars.update(machine)</span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>    human_vocab <span class="op">=</span> <span class="bu">dict</span>(<span class="bu">zip</span>(<span class="bu">sorted</span>(human_chars) <span class="op">+</span> [<span class="st">'&lt;unk&gt;'</span>, <span class="st">'&lt;pad&gt;'</span>],</span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a>                           <span class="bu">range</span>(<span class="bu">len</span>(human_chars) <span class="op">+</span> <span class="dv">2</span>)))</span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a>    inv_machine_vocab <span class="op">=</span> <span class="bu">dict</span>(<span class="bu">enumerate</span>(<span class="bu">sorted</span>(machine_chars)))</span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a>    machine_vocab <span class="op">=</span> {v: k <span class="cf">for</span> k, v <span class="kw">in</span> inv_machine_vocab.items()}</span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> dataset, human_vocab, machine_vocab, inv_machine_vocab</span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> string_to_int(string, length, vocab):</span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Map a string to `length` vocabulary indices, padding or truncating.</span></span>
+<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a><span class="co">    The machine vocabulary has no &lt;unk&gt; or &lt;pad&gt; entries, because ISO dates</span></span>
+<span id="cb1-48"><a href="#cb1-48" aria-hidden="true" tabindex="-1"></a><span class="co">    are always exactly Ty characters drawn from its own alphabet. Both are</span></span>
+<span id="cb1-49"><a href="#cb1-49" aria-hidden="true" tabindex="-1"></a><span class="co">    therefore looked up only when they are actually needed, so this works</span></span>
+<span id="cb1-50"><a href="#cb1-50" aria-hidden="true" tabindex="-1"></a><span class="co">    for either vocabulary.</span></span>
+<span id="cb1-51"><a href="#cb1-51" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb1-52"><a href="#cb1-52" aria-hidden="true" tabindex="-1"></a>    string <span class="op">=</span> string.lower().replace(<span class="st">','</span>, <span class="st">''</span>)[:length]</span>
+<span id="cb1-53"><a href="#cb1-53" aria-hidden="true" tabindex="-1"></a>    rep <span class="op">=</span> [vocab[char] <span class="cf">if</span> char <span class="kw">in</span> vocab <span class="cf">else</span> vocab[<span class="st">'&lt;unk&gt;'</span>] <span class="cf">for</span> char <span class="kw">in</span> string]</span>
+<span id="cb1-54"><a href="#cb1-54" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="bu">len</span>(rep) <span class="op">&lt;</span> length:</span>
+<span id="cb1-55"><a href="#cb1-55" aria-hidden="true" tabindex="-1"></a>        rep <span class="op">+=</span> [vocab[<span class="st">'&lt;pad&gt;'</span>]] <span class="op">*</span> (length <span class="op">-</span> <span class="bu">len</span>(rep))</span>
+<span id="cb1-56"><a href="#cb1-56" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> rep</span>
+<span id="cb1-57"><a href="#cb1-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-58"><a href="#cb1-58" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-59"><a href="#cb1-59" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> int_to_string(ints, inv_vocab):</span>
+<span id="cb1-60"><a href="#cb1-60" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> [inv_vocab[i] <span class="cf">for</span> i <span class="kw">in</span> ints]</span>
+<span id="cb1-61"><a href="#cb1-61" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-62"><a href="#cb1-62" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-63"><a href="#cb1-63" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> preprocess_data(dataset, human_vocab, machine_vocab, Tx, Ty):</span>
+<span id="cb1-64"><a href="#cb1-64" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Index and one-hot encode the whole dataset."""</span></span>
+<span id="cb1-65"><a href="#cb1-65" aria-hidden="true" tabindex="-1"></a>    X_raw, Y_raw <span class="op">=</span> <span class="bu">zip</span>(<span class="op">*</span>dataset)</span>
+<span id="cb1-66"><a href="#cb1-66" aria-hidden="true" tabindex="-1"></a>    X <span class="op">=</span> np.array([string_to_int(x, Tx, human_vocab) <span class="cf">for</span> x <span class="kw">in</span> X_raw])</span>
+<span id="cb1-67"><a href="#cb1-67" aria-hidden="true" tabindex="-1"></a>    Y <span class="op">=</span> np.array([string_to_int(y, Ty, machine_vocab) <span class="cf">for</span> y <span class="kw">in</span> Y_raw])</span>
+<span id="cb1-68"><a href="#cb1-68" aria-hidden="true" tabindex="-1"></a>    Xoh <span class="op">=</span> to_categorical(X, num_classes<span class="op">=</span><span class="bu">len</span>(human_vocab))</span>
+<span id="cb1-69"><a href="#cb1-69" aria-hidden="true" tabindex="-1"></a>    Yoh <span class="op">=</span> to_categorical(Y, num_classes<span class="op">=</span><span class="bu">len</span>(machine_vocab))</span>
+<span id="cb1-70"><a href="#cb1-70" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> X, Y, Xoh, Yoh</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</div>
+</div>
+<p>Generate the dataset and look at the first ten pairs. Each is a human-written date and the ISO date it should become.</p>
+<div id="07b34124" class="cell" data-execution_count="2">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>m <span class="op">=</span> <span class="dv">10000</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>dataset, human_vocab, machine_vocab, inv_machine_vocab <span class="op">=</span> load_dataset(m)</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> human, machine <span class="kw">in</span> dataset[:<span class="dv">10</span>]:</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"</span><span class="sc">{</span>human<span class="sc">:28}</span><span class="ss"> -&gt; </span><span class="sc">{</span>machine<span class="sc">}</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>18.05.07                     -&gt; 2007-05-18
+monday november 30 1970      -&gt; 1970-11-30
+monday january 20 2003       -&gt; 2003-01-20
+31 mar 1994                  -&gt; 1994-03-31
+thursday february 19 2009    -&gt; 2009-02-19
+saturday june 21 2003        -&gt; 2003-06-21
+monday november 3 2008       -&gt; 2008-11-03
+5 june 2020                  -&gt; 2020-06-05
+22 08 85                     -&gt; 1985-08-22
+monday august 19 2019        -&gt; 2019-08-19</code></pre>
+</div>
+</div>
+<p>Notice the variety. Some inputs carry a weekday the output must ignore entirely, some use two-digit years, and some are pure numeric. The model has to learn which characters matter for each output position.</p>
+<p>The two vocabularies are separate. <code>human_vocab</code> maps every character appearing in the inputs to an index, and <code>machine_vocab</code> does the same for outputs, which need only the ten digits and the hyphen.</p>
+<div id="ec761708" class="cell" data-execution_count="3">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"human_vocab size:  "</span>, <span class="bu">len</span>(human_vocab))</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"machine_vocab size:"</span>, <span class="bu">len</span>(machine_vocab))</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"machine characters:"</span>, <span class="st">''</span>.join(<span class="bu">sorted</span>(machine_vocab)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>human_vocab size:   37
+machine_vocab size: 11
+machine characters: -0123456789</code></pre>
+</div>
+</div>
+<p>Now fix the two sequence lengths and preprocess. <span class="math inline">\(T_x = 30\)</span> is the assumed maximum length of an input date, so shorter ones are padded and longer ones truncated. <span class="math inline">\(T_y = 10\)</span> because <code>YYYY-MM-DD</code> is exactly ten characters.</p>
+<div id="09b8d13a" class="cell" data-execution_count="4">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>Tx, Ty <span class="op">=</span> <span class="dv">30</span>, <span class="dv">10</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>X, Y, Xoh, Yoh <span class="op">=</span> preprocess_data(dataset, human_vocab, machine_vocab, Tx, Ty)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"X.shape:  "</span>, X.shape, <span class="st">"  indices, one per input character"</span>)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Y.shape:  "</span>, Y.shape, <span class="st">"  indices, one per output character"</span>)</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Xoh.shape:"</span>, Xoh.shape, <span class="st">"  one-hot over the human vocabulary"</span>)</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Yoh.shape:"</span>, Yoh.shape, <span class="st">"  one-hot over the machine vocabulary"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>X.shape:   (10000, 30)   indices, one per input character
+Y.shape:   (10000, 10)   indices, one per output character
+Xoh.shape: (10000, 30, 37)   one-hot over the human vocabulary
+Yoh.shape: (10000, 10, 11)   one-hot over the machine vocabulary</code></pre>
+</div>
+</div>
+<p>Those four shapes are worth reading carefully, because the last axis of each one-hot array is the vocabulary it indexes into. <code>Xoh</code> is <span class="math inline">\((m, T_x, 37)\)</span> and <code>Yoh</code> is <span class="math inline">\((m, T_y, 11)\)</span>, and the mismatch between 37 and 11 is the whole point. The input alphabet is much larger than the output alphabet.</p>
+<p>Here is a single example at every stage of preprocessing.</p>
+<div id="fed89662" class="cell" data-execution_count="5">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>index <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Source date:"</span>, dataset[index][<span class="dv">0</span>])</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Target date:"</span>, dataset[index][<span class="dv">1</span>])</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>()</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Source as indices:"</span>, X[index])</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Target as indices:"</span>, Y[index])</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>()</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Source one-hot shape:"</span>, Xoh[index].shape)</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Target one-hot shape:"</span>, Yoh[index].shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Source date: 18.05.07
+Target date: 2007-05-18
+
+Source as indices: [ 4 11  1  3  8  1  3 10 36 36 36 36 36 36 36 36 36 36 36 36 36 36 36 36
+ 36 36 36 36 36 36]
+Target as indices: [3 1 1 8 0 1 6 0 2 9]
+
+Source one-hot shape: (30, 37)
+Target one-hot shape: (10, 11)</code></pre>
+</div>
+</div>
+</section>
+<section id="attention-model" class="level2">
+<h2 class="anchored" data-anchor-id="attention-model">Attention Model</h2>
+<p>The model has two separate LSTMs, one on each side of the attention mechanism.</p>
+<p>The <strong>pre-attention</strong> layer is a bidirectional LSTM that runs over the <span class="math inline">\(T_x\)</span> input characters and produces <span class="math inline">\(a^{\langle t' \rangle}\)</span>, the concatenation of its forward and backward hidden states at each position. The <strong>post-attention</strong> LSTM runs over the <span class="math inline">\(T_y\)</span> output positions, producing a hidden state <span class="math inline">\(s^{\langle t \rangle}\)</span> and a cell state <span class="math inline">\(c^{\langle t \rangle}\)</span> at each step, and a dense softmax layer turns each <span class="math inline">\(s^{\langle t \rangle}\)</span> into a predicted character.</p>
+<p>Two details differ from the lecture version and are worth pausing on.</p>
+<p><strong>This uses an LSTM, so there are two states to carry.</strong> The lecture used a basic RNN for the post-attention model, which carries only <span class="math inline">\(s^{\langle t \rangle}\)</span>. An LSTM carries a cell state <span class="math inline">\(c^{\langle t \rangle}\)</span> as well, and both have to be threaded from one step to the next.</p>
+<p><strong>The post-attention LSTM does not see its own previous prediction.</strong> It takes only the context vector and its two previous states, not <span class="math inline">\(y^{\langle t-1 \rangle}\)</span>. That is a deliberate choice for this task. In text generation adjacent characters are strongly correlated, so feeding the previous output back helps. In a <code>YYYY-MM-DD</code> date there is little such dependency, so the model is simpler without it. Note that this makes the lab’s decoder different from the one drawn on the <a href="../../../ai/deep-learning/sequence-models/attention-model">attention model</a> page, where the output does feed forward.</p>
+<section id="one-step-of-attention" class="level3">
+<h3 class="anchored" data-anchor-id="one-step-of-attention">One Step of Attention</h3>
+<p>The attention step takes all <span class="math inline">\(T_x\)</span> encoder states plus the previous decoder state, and returns one context vector. The pipeline below is exactly what the code implements.</p>
+<div class="wide-network-hint">
+<p>On a small screen, scroll horizontally to see the whole pipeline.</p>
+</div>
+<div class="wide-network-figure" role="region" aria-label="Scrollable one step attention pipeline diagram" tabindex="0">
+<div id="e09159ce" class="cell" data-execution_count="6">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-neural-machine-translation_files/figure-html/cell-7-output-1.svg" class="img-fluid figure-img" alt="A left-to-right pipeline. The previous decoder state s of the previous step enters a RepeatVector block that copies it thirty times, then a Concatenate block joins it with the encoder states a. That feeds a dense layer with ten tanh units, then a dense layer with one relu unit producing the energies, then a softmax over the position axis producing the attention weights alpha, then a dot product with the encoder states producing the context vector."></p>
+<figcaption>One step of attention. The previous decoder state is copied to every input position, concatenated with the encoder states, scored by two small dense layers, normalized across positions by a softmax, and used to take a weighted sum of the encoder states.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<p>The layer objects are created once, outside the function, and reused at every one of the <span class="math inline">\(T_y\)</span> steps. That is what makes the weights shared. Creating them inside the function would build a fresh set of weights on each call, which is not the model you want.</p>
+<div id="656a655e" class="cell" data-execution_count="7">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> keras</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> keras.layers <span class="im">import</span> (Bidirectional, Concatenate, Dense, Dot, Input, LSTM,</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>                          RepeatVector, Softmax)</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> keras.models <span class="im">import</span> Model</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="co"># The notebook seeded inside one of the grader cells. That cell is gone, so</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="co"># seed here instead, otherwise the initial weights and every number derived</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="co"># from them would change on each render.</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>keras.utils.set_random_seed(<span class="dv">10</span>)</span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>n_a <span class="op">=</span> <span class="dv">32</span>   <span class="co"># units in the pre-attention bidirectional LSTM</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>n_s <span class="op">=</span> <span class="dv">64</span>   <span class="co"># units in the post-attention LSTM</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>repeator <span class="op">=</span> RepeatVector(Tx)</span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>concatenator <span class="op">=</span> Concatenate(axis<span class="op">=-</span><span class="dv">1</span>)</span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>densor1 <span class="op">=</span> Dense(<span class="dv">10</span>, activation<span class="op">=</span><span class="st">"tanh"</span>)</span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>densor2 <span class="op">=</span> Dense(<span class="dv">1</span>, activation<span class="op">=</span><span class="st">"relu"</span>)</span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a>activator <span class="op">=</span> Softmax(axis<span class="op">=</span><span class="dv">1</span>, name<span class="op">=</span><span class="st">'attention_weights'</span>)</span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a>dotor <span class="op">=</span> Dot(axes<span class="op">=</span><span class="dv">1</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Warning</span>Why the softmax needs <code>axis=1</code>
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>After <code>densor2</code> the energies have shape <span class="math inline">\((m, T_x, 1)\)</span>, and the attention weights must sum to one <strong>across the <span class="math inline">\(T_x\)</span> input positions</strong>. That is axis 1.</p>
+<p>A default softmax normalizes over the last axis, which here has size 1, so every value would come out as exactly 1.0 and the weights would carry no information at all. The model would still train and would still produce numbers, which is what makes this the kind of bug that is easy to miss. The original notebook worked around it with a hand-written softmax function; <code>Softmax(axis=1)</code> is the direct way to say it.</p>
+</div>
+</div>
+<p>Now the attention step itself. It repeats <span class="math inline">\(s^{\langle t-1 \rangle}\)</span> across all <span class="math inline">\(T_x\)</span> positions so it can be concatenated with every encoder state, scores each position with the two dense layers, normalizes those scores into weights, and takes the weighted sum.</p>
+<div id="82377b9f" class="cell" data-execution_count="8">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> one_step_attention(a, s_prev):</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Perform one step of attention.</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="co">    a       -- encoder states from the Bi-LSTM, shape (m, Tx, 2 * n_a)</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="co">    s_prev  -- previous hidden state of the post-attention LSTM, shape (m, n_s)</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a><span class="co">    context -- context vector for this output step, shape (m, 1, 2 * n_a),</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a><span class="co">               which is 64 here only because 2 * n_a happens to equal n_s</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a><span class="co">    alphas  -- the attention weights themselves, shape (m, Tx, 1)</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a><span class="co">    The original returned only the context. Returning the weights as well is</span></span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a><span class="co">    what lets the same function serve the attention plot at the end.</span></span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>    s_prev <span class="op">=</span> repeator(s_prev)                     <span class="co"># (m, Tx, n_s)</span></span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>    concat <span class="op">=</span> concatenator([a, s_prev])            <span class="co"># (m, Tx, 2*n_a + n_s)</span></span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>    e <span class="op">=</span> densor1(concat)                           <span class="co"># (m, Tx, 10)</span></span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>    energies <span class="op">=</span> densor2(e)                         <span class="co"># (m, Tx, 1)</span></span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>    alphas <span class="op">=</span> activator(energies)                  <span class="co"># (m, Tx, 1), sums to 1 over Tx</span></span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>    context <span class="op">=</span> dotor([alphas, a])                  <span class="co"># (m, 1, 2*n_a)</span></span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> context, alphas</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="building-the-full-model" class="level3">
+<h3 class="anchored" data-anchor-id="building-the-full-model">Building the Full Model</h3>
+<p>Two more shared layers, the post-attention LSTM cell and the output softmax.</p>
+<div id="086ddcb1" class="cell" data-execution_count="9">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>pre_attention_LSTM <span class="op">=</span> Bidirectional(LSTM(n_a, return_sequences<span class="op">=</span><span class="va">True</span>))</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>post_activation_LSTM_cell <span class="op">=</span> LSTM(n_s, return_state<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>output_layer <span class="op">=</span> Dense(<span class="bu">len</span>(machine_vocab), activation<span class="op">=</span><span class="st">'softmax'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The model runs the input through the bidirectional LSTM once, then loops <span class="math inline">\(T_y\)</span> times. Each pass computes a context vector, feeds it to the post-attention cell along with the previous two states, and turns the new hidden state into a predicted character.</p>
+<p>The function takes a <code>return_attention</code> flag. With it set, the model outputs the ten attention weight arrays instead of the ten predictions. Because both versions are built from the same shared layer objects, they hold the same weights, which is how the attention gets visualized later without touching layer indices.</p>
+<p>Before wiring it into a model, call the attention step once on dummy inputs. The autograder checked its return type, its shape, and its numerical values against a stored fixture. The type and shape are worth seeing, and so is the invariant the fixture was standing in for.</p>
+<div id="8fa45a5c" class="cell" data-execution_count="10">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>demo_a <span class="op">=</span> np.random.uniform(size<span class="op">=</span>(<span class="dv">10</span>, Tx, <span class="dv">2</span> <span class="op">*</span> n_a)).astype(<span class="st">'float32'</span>)</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>demo_s <span class="op">=</span> np.zeros((<span class="dv">10</span>, n_s), dtype<span class="op">=</span><span class="st">'float32'</span>)</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>demo_context, demo_alphas <span class="op">=</span> one_step_attention(demo_a, demo_s)</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"context type: "</span>, <span class="bu">type</span>(demo_context).<span class="va">__name__</span>)</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"context shape:"</span>, <span class="bu">tuple</span>(demo_context.shape), <span class="st">"= (m, 1, 2 * n_a)"</span>)</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"alphas shape: "</span>, <span class="bu">tuple</span>(demo_alphas.shape), <span class="st">"= (m, Tx, 1)"</span>)</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"alphas sum over Tx:"</span>, <span class="bu">float</span>(np.array(demo_alphas)[<span class="dv">0</span>].<span class="bu">sum</span>()))</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a><span class="co"># the context should be exactly the alpha-weighted sum of the encoder states</span></span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>by_hand <span class="op">=</span> (np.array(demo_alphas) <span class="op">*</span> np.array(demo_a)).<span class="bu">sum</span>(axis<span class="op">=</span><span class="dv">1</span>, keepdims<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"matches the weighted sum computed by hand:"</span>,</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>      np.allclose(np.array(demo_context), by_hand, atol<span class="op">=</span><span class="fl">1e-5</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>context type:  EagerTensor
+context shape: (10, 1, 64) = (m, 1, 2 * n_a)
+alphas shape:  (10, 30, 1) = (m, Tx, 1)
+alphas sum over Tx: 0.9999999403953552
+matches the weighted sum computed by hand: True</code></pre>
+</div>
+</div>
+<p>The context is one vector per example, not one per input position, which is the whole point. The <span class="math inline">\(T_x\)</span> encoder states have been collapsed into a single weighted average. Two invariants are worth keeping from the stripped fixture. The weights sum to 1, which is what says the softmax normalized over the position axis, and the returned context really is <span class="math inline">\(\sum_{t'} \alpha^{\langle t, t' \rangle} a^{\langle t' \rangle}\)</span> rather than something else of the same shape.</p>
+<p>With the attention step verified, wire it into the full model.</p>
+<div id="e51f2785" class="cell" data-execution_count="11">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> modelf(Tx, Ty, n_a, n_s, human_vocab_size, return_attention<span class="op">=</span><span class="va">False</span>):</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Build the attention model. Returns predictions, or attention weights."""</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>    X <span class="op">=</span> Input(shape<span class="op">=</span>(Tx, human_vocab_size))</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>    s0 <span class="op">=</span> Input(shape<span class="op">=</span>(n_s,), name<span class="op">=</span><span class="st">'s0'</span>)</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>    c0 <span class="op">=</span> Input(shape<span class="op">=</span>(n_s,), name<span class="op">=</span><span class="st">'c0'</span>)</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>    s, c <span class="op">=</span> s0, c0</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>    outputs, attention <span class="op">=</span> [], []</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>    a <span class="op">=</span> pre_attention_LSTM(X)</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> t <span class="kw">in</span> <span class="bu">range</span>(Ty):</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>        context, alphas <span class="op">=</span> one_step_attention(a, s)</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>        attention.append(alphas)</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Keras 3 takes the sequence positionally, not as a keyword</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>        _, s, c <span class="op">=</span> post_activation_LSTM_cell(context, initial_state<span class="op">=</span>[s, c])</span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>        outputs.append(output_layer(s))</span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> Model(inputs<span class="op">=</span>[X, s0, c0],</span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>                 outputs<span class="op">=</span>attention <span class="cf">if</span> return_attention <span class="cf">else</span> outputs)</span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> modelf(Tx, Ty, n_a, n_s, <span class="bu">len</span>(human_vocab))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The autograder checked the architecture with a hidden comparison against an expected summary. Here is what it was actually checking, made visible. The parameter count should be 52,960, and the model should have ten outputs, one per output character.</p>
+<div id="f36afb95" class="cell" data-execution_count="12">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"total parameters:"</span>, <span class="ss">f"</span><span class="sc">{</span>model<span class="sc">.</span>count_params()<span class="sc">:,}</span><span class="ss">"</span>)</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"number of outputs:"</span>, <span class="bu">len</span>(model.outputs))</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"output shape of one:"</span>, model.outputs[<span class="dv">0</span>].shape)</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>()</span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> shapes(x):</span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Shape, or list of shapes for a layer with several tensors."""</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="bu">isinstance</span>(x, (<span class="bu">list</span>, <span class="bu">tuple</span>)):</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>        inner <span class="op">=</span> [shapes(t) <span class="cf">for</span> t <span class="kw">in</span> x]</span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> inner[<span class="dv">0</span>] <span class="cf">if</span> <span class="bu">len</span>(inner) <span class="op">==</span> <span class="dv">1</span> <span class="cf">else</span> inner</span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="bu">tuple</span>(x.shape)</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"every layer in build order, with shapes, parameters and activation:"</span>)</span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> layer <span class="kw">in</span> model.layers:</span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>    activation <span class="op">=</span> <span class="bu">getattr</span>(<span class="bu">getattr</span>(layer, <span class="st">'activation'</span>, <span class="va">None</span>), <span class="st">'__name__'</span>, <span class="st">''</span>)</span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>    extra <span class="op">=</span> <span class="ss">f"  repeats=</span><span class="sc">{</span>layer<span class="sc">.</span>n<span class="sc">}</span><span class="ss">"</span> <span class="cf">if</span> <span class="bu">isinstance</span>(layer, RepeatVector) <span class="cf">else</span> <span class="st">''</span></span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"  </span><span class="sc">{</span><span class="bu">type</span>(layer)<span class="sc">.</span><span class="va">__name__</span><span class="sc">:15}</span><span class="ss"> out=</span><span class="sc">{</span><span class="bu">str</span>(shapes(layer.output))<span class="sc">:48}</span><span class="ss">"</span></span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a>          <span class="ss">f"</span><span class="sc">{</span>layer<span class="sc">.</span>count_params()<span class="sc">:&gt;7,}</span><span class="ss">  </span><span class="sc">{</span>activation<span class="sc">}{</span>extra<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="bu">isinstance</span>(layer, LSTM):</span>
+<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(<span class="ss">f"  </span><span class="sc">{</span><span class="st">''</span><span class="sc">:15}</span><span class="ss"> in =</span><span class="sc">{</span>shapes(layer.<span class="bu">input</span>)<span class="sc">}</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>total parameters: 52,960
+number of outputs: 10
+output shape of one: (None, 11)
+
+every layer in build order, with shapes, parameters and activation:
+  InputLayer      out=(None, 30, 37)                                        0  
+  InputLayer      out=(None, 64)                                            0  
+  Bidirectional   out=(None, 30, 64)                                   17,920  
+  RepeatVector    out=(None, 30, 64)                                        0    repeats=30
+  Concatenate     out=(None, 30, 128)                                       0  
+  Dense           out=(None, 30, 10)                                    1,290  tanh
+  Dense           out=(None, 30, 1)                                        11  relu
+  Softmax         out=(None, 30, 1)                                         0  
+  Dot             out=(None, 1, 64)                                         0  
+  InputLayer      out=(None, 64)                                            0  
+  LSTM            out=[(None, 64), (None, 64), (None, 64)]             33,024  tanh
+                  in =[(None, 1, 64), (None, 64), (None, 64)]
+  Dense           out=(None, 11)                                          715  softmax</code></pre>
+</div>
+</div>
+<p>The autograder ran a second check, that consecutive outputs differ across the <span class="math inline">\(T_y\)</span> steps. Run the same probe on the untrained model.</p>
+<div id="8a495ce7" class="cell" data-execution_count="13">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>probe <span class="op">=</span> np.random.rand(<span class="dv">1</span>, Tx, <span class="bu">len</span>(human_vocab))</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>probe_out <span class="op">=</span> np.array(model.predict([probe, np.zeros((<span class="dv">1</span>, n_s)),</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>                                    np.zeros((<span class="dv">1</span>, n_s))], verbose<span class="op">=</span><span class="dv">0</span>))</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>identical <span class="op">=</span> [np.allclose(probe_out[t], probe_out[t <span class="op">+</span> <span class="dv">1</span>]) <span class="cf">for</span> t <span class="kw">in</span> <span class="bu">range</span>(Ty <span class="op">-</span> <span class="dv">1</span>)]</span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"consecutive output distributions identical?"</span>, <span class="bu">any</span>(identical))</span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"largest gap between steps 0 and 1:"</span>,</span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>      <span class="bu">round</span>(<span class="bu">float</span>(np.<span class="bu">abs</span>(probe_out[<span class="dv">0</span>] <span class="op">-</span> probe_out[<span class="dv">1</span>]).<span class="bu">max</span>()), <span class="dv">5</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>consecutive output distributions identical? False
+largest gap between steps 0 and 1: 0.00398</code></pre>
+</div>
+</div>
+<p>Be precise about what this does and does not establish, because the original test’s own message oversold it. It is an indirect predicate on the output distributions rather than a reading of the states themselves. It does catch the blunt failure, a loop that feeds every step the same state, which would make the ten distributions come out the same. It does not catch the subtler mistake of passing <code>s0</code> and <code>c0</code> as the cell’s <code>initial_state</code> while still reassigning <code>s</code>, because the attention step goes on reading the updated <code>s</code> and the outputs still differ. So <code>False</code> here is worth having and is not proof that both running states were threaded correctly.</p>
+<p>That table is what the stripped comparator was checking, layer by layer. Every entry of the notebook’s expected summary is visible in it, including the two the comparator carried beyond a single output shape. The <code>RepeatVector</code> count of 30 is printed as <code>repeats</code>, and the post-attention <code>LSTM</code> shows all three of its output shapes and all three of its input shapes, since it returns a value plus two states and receives a sequence plus two initial states. The one difference from the notebook is the disclosed one, that <code>Activation</code> is now <code>Softmax</code>.</p>
+<p>The parameters live in only four places. The bidirectional LSTM holds most of them, the two small dense layers of the attention scorer hold barely any, the post-attention LSTM holds a third of the total, and the output layer is tiny because the machine vocabulary has only eleven characters.</p>
+</section>
+</section>
+<section id="compiling-and-training" class="level2">
+<h2 class="anchored" data-anchor-id="compiling-and-training">Compiling and Training</h2>
+<p>The optimizer is Adam with a learning rate of 0.005 and the usual <span class="math inline">\(\beta_1 = 0.9\)</span> and <span class="math inline">\(\beta_2 = 0.999\)</span>. The original also set <code>decay=0.01</code>, a Keras 2 argument that shrank the learning rate as <span class="math inline">\(0.005 / (1 + 0.01 \cdot \text{step})\)</span>. Keras 3 removed it, so the same schedule is written explicitly.</p>
+<p>The loss is categorical crossentropy, since each of the ten outputs is a softmax over the eleven machine characters. The metrics list needs one entry per output, which is what <code>['accuracy'] * Ty</code> provides.</p>
+<div id="ea610641" class="cell" data-execution_count="14">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> keras.optimizers <span class="im">import</span> Adam</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> keras.optimizers.schedules <span class="im">import</span> InverseTimeDecay</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="co"># reproduces the legacy decay=0.01 behavior exactly</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>schedule <span class="op">=</span> InverseTimeDecay(<span class="fl">0.005</span>, decay_steps<span class="op">=</span><span class="dv">1</span>, decay_rate<span class="op">=</span><span class="fl">0.01</span>)</span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>opt <span class="op">=</span> Adam(learning_rate<span class="op">=</span>schedule, beta_1<span class="op">=</span><span class="fl">0.9</span>, beta_2<span class="op">=</span><span class="fl">0.999</span>)</span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a>model.<span class="bu">compile</span>(loss<span class="op">=</span><span class="st">'categorical_crossentropy'</span>, optimizer<span class="op">=</span>opt,</span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a>              metrics<span class="op">=</span>[<span class="st">'accuracy'</span>] <span class="op">*</span> Ty)</span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"optimizer:      "</span>, <span class="bu">type</span>(opt).<span class="va">__name__</span>)</span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"initial lr:     "</span>, <span class="bu">round</span>(<span class="bu">float</span>(schedule(<span class="dv">0</span>)), <span class="dv">6</span>))</span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"lr after 100:   "</span>, <span class="bu">round</span>(<span class="bu">float</span>(schedule(<span class="dv">100</span>)), <span class="dv">6</span>))</span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"beta_1, beta_2: "</span>, <span class="bu">float</span>(opt.beta_1), <span class="bu">float</span>(opt.beta_2))</span>
+<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"loss:           "</span>, model.loss)</span>
+<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"metrics entries:"</span>, Ty, <span class="st">"one per output"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>optimizer:       Adam
+initial lr:      0.005
+lr after 100:    0.0025
+beta_1, beta_2:  0.9 0.999
+loss:            categorical_crossentropy
+metrics entries: 10 one per output</code></pre>
+</div>
+</div>
+<p>The model takes three inputs, so training needs the one-hot dates plus zero-filled initial states for the post-attention LSTM. The targets have to be a list of ten arrays rather than one array of shape <span class="math inline">\((m, T_y, 11)\)</span>, because the model has ten separate outputs. Swapping the first two axes of <code>Yoh</code> and turning the result into a list does that.</p>
+<div id="d1936c0d" class="cell" data-execution_count="15">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>s0 <span class="op">=</span> np.zeros((m, n_s))</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>c0 <span class="op">=</span> np.zeros((m, n_s))</span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>outputs <span class="op">=</span> <span class="bu">list</span>(Yoh.swapaxes(<span class="dv">0</span>, <span class="dv">1</span>))</span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"number of target arrays:"</span>, <span class="bu">len</span>(outputs), <span class="st">"one per output position"</span>)</span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"shape of each:          "</span>, outputs[<span class="dv">0</span>].shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>number of target arrays: 10 one per output position
+shape of each:           (10000, 11)</code></pre>
+</div>
+</div>
+<p>Now train for one epoch. This is short on purpose, so you can watch the loss and the per-position accuracies move without waiting.</p>
+<div id="88674ba6" class="cell" data-execution_count="16">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> re</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>history <span class="op">=</span> model.fit([Xoh, s0, c0], outputs, epochs<span class="op">=</span><span class="dv">1</span>, batch_size<span class="op">=</span><span class="dv">100</span>,</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>                    verbose<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Keras 3 names every output metric after the shared output layer, then</span></span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a><span class="co"># appends a counter, so output 0 is "&lt;layer&gt;_accuracy" and the rest are</span></span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a><span class="co"># "&lt;layer&gt;_accuracy_1" through "_9". Sort by that counter to get model order.</span></span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> output_index(key):</span>
+<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a>    match <span class="op">=</span> re.search(<span class="vs">r'accuracy_</span><span class="kw">(</span><span class="dv">\d</span><span class="op">+</span><span class="kw">)</span><span class="dv">$</span><span class="vs">'</span>, key)</span>
+<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="bu">int</span>(match.group(<span class="dv">1</span>)) <span class="cf">if</span> match <span class="cf">else</span> <span class="dv">0</span></span>
+<span id="cb24-12"><a href="#cb24-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-13"><a href="#cb24-13" aria-hidden="true" tabindex="-1"></a>acc_keys <span class="op">=</span> <span class="bu">sorted</span>((k <span class="cf">for</span> k <span class="kw">in</span> history.history <span class="cf">if</span> <span class="st">'accuracy'</span> <span class="kw">in</span> k),</span>
+<span id="cb24-14"><a href="#cb24-14" aria-hidden="true" tabindex="-1"></a>                  key<span class="op">=</span>output_index)</span>
+<span id="cb24-15"><a href="#cb24-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-16"><a href="#cb24-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"total loss after one epoch: </span><span class="sc">{</span>history<span class="sc">.</span>history[<span class="st">'loss'</span>][<span class="op">-</span><span class="dv">1</span>]<span class="sc">:.3f}</span><span class="ss">"</span>)</span>
+<span id="cb24-17"><a href="#cb24-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>()</span>
+<span id="cb24-18"><a href="#cb24-18" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"accuracy at each of the ten output positions:"</span>)</span>
+<span id="cb24-19"><a href="#cb24-19" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i, key <span class="kw">in</span> <span class="bu">enumerate</span>(acc_keys):</span>
+<span id="cb24-20"><a href="#cb24-20" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"  position </span><span class="sc">{</span>i<span class="sc">}</span><span class="ss"> ('</span><span class="sc">{</span><span class="st">'YYYY-MM-DD'</span>[i]<span class="sc">}</span><span class="ss">'): "</span></span>
+<span id="cb24-21"><a href="#cb24-21" aria-hidden="true" tabindex="-1"></a>          <span class="ss">f"</span><span class="sc">{</span>history<span class="sc">.</span>history[key][<span class="op">-</span><span class="dv">1</span>]<span class="sc">:.3f}</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>total loss after one epoch: 16.987
+
+accuracy at each of the ten output positions:
+  position 0 ('Y'): 0.457
+  position 1 ('Y'): 0.589
+  position 2 ('Y'): 0.237
+  position 3 ('Y'): 0.055
+  position 4 ('-'): 0.942
+  position 5 ('M'): 0.358
+  position 6 ('M'): 0.069
+  position 7 ('-'): 0.920
+  position 8 ('D'): 0.264
+  position 9 ('D'): 0.109</code></pre>
+</div>
+</div>
+<p>One epoch is not enough. The two hyphens, at positions 4 and 7, are the clear peaks at around 0.9, which is unsurprising since they are the same character in every single target. Everything that actually varies is still poor, and the positions carrying the second month digit and the last year digit are close to useless. Note that even position 0 sits near chance despite having only two possible values, <code>1</code> or <code>2</code>, since every year in the data falls in 1970 to 2025. The course trained this model for longer and saved the weights, so load those to see what a trained model does.</p>
+<div id="2241bc0c" class="cell" data-execution_count="17">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>WEIGHTS <span class="op">=</span> <span class="st">'../../../media/deep-learning/nmt-attention/model.h5'</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>model.load_weights(WEIGHTS)</span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"loaded pretrained weights"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>loaded pretrained weights</code></pre>
+</div>
+</div>
+</section>
+<section id="results" class="level2">
+<h2 class="anchored" data-anchor-id="results">Results</h2>
+<p>Run the trained model on a set of evaluation dates, including some awkward ones. Note that these are not guaranteed to be held out. The normalized form of <code>March 3 2001</code> does appear in the generated training set, and what the separately pretrained course model saw is not knowable from here. The model has to find the day, month and year wherever they sit, ignore any weekday, and expand two-digit years.</p>
+<div id="ff8b8f14" class="cell" data-execution_count="18">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>EXAMPLES <span class="op">=</span> [<span class="st">'3 May 1979'</span>, <span class="st">'5 April 09'</span>, <span class="st">'21th of August 2016'</span>,</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>            <span class="st">'Tue 10 Jul 2007'</span>, <span class="st">'Saturday May 9 2018'</span>, <span class="st">'March 3 2001'</span>,</span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>            <span class="st">'March 3rd 2001'</span>, <span class="st">'1 March 2001'</span>]</span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a>zero <span class="op">=</span> np.zeros((<span class="dv">1</span>, n_s))</span>
+<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> example <span class="kw">in</span> EXAMPLES:</span>
+<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a>    source <span class="op">=</span> to_categorical(np.array([string_to_int(example, Tx, human_vocab)]),</span>
+<span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a>                            num_classes<span class="op">=</span><span class="bu">len</span>(human_vocab))</span>
+<span id="cb28-9"><a href="#cb28-9" aria-hidden="true" tabindex="-1"></a>    prediction <span class="op">=</span> np.array(model.predict([source, zero, zero], verbose<span class="op">=</span><span class="dv">0</span>))</span>
+<span id="cb28-10"><a href="#cb28-10" aria-hidden="true" tabindex="-1"></a>    chars <span class="op">=</span> int_to_string(np.argmax(prediction, axis<span class="op">=-</span><span class="dv">1</span>).ravel(),</span>
+<span id="cb28-11"><a href="#cb28-11" aria-hidden="true" tabindex="-1"></a>                          inv_machine_vocab)</span>
+<span id="cb28-12"><a href="#cb28-12" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"  </span><span class="sc">{</span>example<span class="sc">:22}</span><span class="ss"> -&gt; </span><span class="sc">{</span><span class="st">''</span><span class="sc">.</span>join(chars)<span class="sc">}</span><span class="ss">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>  3 May 1979             -&gt; 1979-05-33
+  5 April 09             -&gt; 2009-04-05
+  21th of August 2016    -&gt; 2016-08-20
+  Tue 10 Jul 2007        -&gt; 2007-07-10
+  Saturday May 9 2018    -&gt; 2018-05-09
+  March 3 2001           -&gt; 2001-03-03
+  March 3rd 2001         -&gt; 2001-03-03
+  1 March 2001           -&gt; 2001-03-01</code></pre>
+</div>
+</div>
+<p>Most are exactly right, and two are not. <code>3 May 1979</code> comes out as <code>1979-05-33</code>, and <code>21th of August 2016</code> becomes <code>2016-08-20</code>. Both are the original notebook’s own results, reproduced here unchanged.</p>
+<p>The two failures are not the same kind. <code>21th of August 2016</code> is outside the training distribution, since no format in the generator produces an ordinal suffix or the word <code>of</code>. Every individual character is in the vocabulary, so what is unseen is the sequence rather than the alphabet. <code>3 May 1979</code> is different and more interesting, because that input is squarely inside the distribution. The format list includes <code>d MMM YYY</code> and <code>d MMMM YYY</code>, which render exactly this string, and eleven of its fourteen distinct entries produce an unpadded day. The dataset sample printed earlier contains <code>5 june 2020</code>. So this is a plain model error on an input of a kind it did train on, and diagnosing it would mean measuring the accuracy on single-digit-day inputs specifically rather than assuming a cause.</p>
+</section>
+<section id="visualizing-attention" class="level2">
+<h2 class="anchored" data-anchor-id="visualizing-attention">Visualizing Attention</h2>
+<p>The task has a fixed output length, so it could have been done with ten independent softmax units. The reason to prefer attention is that each output character can learn to depend on a small, relevant part of the input, and that dependence can be inspected.</p>
+<p>Build the sibling model that returns attention weights rather than predictions. It shares every layer object with the trained model, so it needs no separate training.</p>
+<div id="491d97b3" class="cell" data-execution_count="19">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>attention_model <span class="op">=</span> modelf(Tx, Ty, n_a, n_s, <span class="bu">len</span>(human_vocab),</span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>                         return_attention<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>text <span class="op">=</span> <span class="st">"Tuesday 09 Oct 1993"</span></span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>source <span class="op">=</span> to_categorical(np.array([string_to_int(text, Tx, human_vocab)]),</span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a>                        num_classes<span class="op">=</span><span class="bu">len</span>(human_vocab))</span>
+<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-8"><a href="#cb30-8" aria-hidden="true" tabindex="-1"></a>alphas <span class="op">=</span> np.array(attention_model.predict([source, zero, zero], verbose<span class="op">=</span><span class="dv">0</span>))</span>
+<span id="cb30-9"><a href="#cb30-9" aria-hidden="true" tabindex="-1"></a>alphas <span class="op">=</span> alphas.reshape(Ty, Tx)</span>
+<span id="cb30-10"><a href="#cb30-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-11"><a href="#cb30-11" aria-hidden="true" tabindex="-1"></a>prediction <span class="op">=</span> np.array(model.predict([source, zero, zero], verbose<span class="op">=</span><span class="dv">0</span>))</span>
+<span id="cb30-12"><a href="#cb30-12" aria-hidden="true" tabindex="-1"></a>predicted <span class="op">=</span> <span class="st">''</span>.join(int_to_string(np.argmax(prediction, axis<span class="op">=-</span><span class="dv">1</span>).ravel(),</span>
+<span id="cb30-13"><a href="#cb30-13" aria-hidden="true" tabindex="-1"></a>                                  inv_machine_vocab))</span>
+<span id="cb30-14"><a href="#cb30-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-15"><a href="#cb30-15" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"input:      "</span>, text)</span>
+<span id="cb30-16"><a href="#cb30-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"prediction: "</span>, predicted)</span>
+<span id="cb30-17"><a href="#cb30-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"alpha shape:"</span>, alphas.shape, <span class="st">"(one row per output character)"</span>)</span>
+<span id="cb30-18"><a href="#cb30-18" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"row sums:   "</span>, np.<span class="bu">round</span>(alphas.<span class="bu">sum</span>(axis<span class="op">=</span><span class="dv">1</span>), <span class="dv">6</span>)[:<span class="dv">5</span>], <span class="st">"..."</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>input:       Tuesday 09 Oct 1993
+prediction:  1993-10-09
+alpha shape: (10, 30) (one row per output character)
+row sums:    [1. 1. 1. 1. 1.] ...</code></pre>
+</div>
+</div>
+<p>Every row sums to 1, which is the check that the softmax is normalizing over the right axis. Now plot the matrix.</p>
+<div id="550071fc" class="cell" data-execution_count="20">
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="lab-neural-machine-translation_files/figure-html/cell-21-output-1.svg" class="img-fluid figure-img" alt="A heatmap with ten rows for the predicted output characters and one column for each of the nineteen characters of the input date, the padded positions being cropped away. Dark cells cluster over the digits of the input. The seven columns covering the word Tuesday are uniformly pale, showing near zero attention."></p>
+<figcaption>What each output character attends to. Each row is one character of the predicted date, each column one character of the input, and darker means more attention. The weekday is almost entirely ignored.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Read the dark cells against the input. The four year digits draw almost all their attention from the <code>93</code> late in the string, the month characters spread theirs over <code>oct</code>, and the two day digits concentrate on <code>09</code>. The seven columns spanning <code>tuesday</code> stay pale all the way down, because no output character needs them. Nothing supervised that. The model was never told which input characters correspond to which output characters, and it worked the alignment out from the translation objective alone.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>What You Should Remember
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li>Attention lets a model map an input of length <span class="math inline">\(T_x\)</span> to an output of a different length <span class="math inline">\(T_y\)</span>, which is what makes date translation work at all.</li>
+<li>Machine translation architectures are not only for human languages. Any sequence to sequence mapping fits.</li>
+<li>Layer objects defined once and reused across the <span class="math inline">\(T_y\)</span> steps are what makes the weights shared. Defining them inside the loop would build <span class="math inline">\(T_y\)</span> separate sets.</li>
+<li>The attention softmax must normalize across input positions. With a trailing axis of size 1, a default softmax silently returns all ones.</li>
+<li>The attention weights are inspectable, and plotting them shows the model learned a sensible alignment without ever being given one.</li>
+</ul>
+</div>
+</div>
+<section id="review-questions" class="level3 unnumbered">
+<h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
+<div id="nmt-lab-review-q1">
+<p><strong>1. Why are <code>repeator</code>, <code>densor1</code>, <code>densor2</code> and the rest defined outside <code>one_step_attention</code> rather than inside it?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="nmt-lab-review-q1">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>So that all <span class="math inline">\(T_y\)</span> attention steps share one set of weights. A Keras layer object owns its weights, and calling the same object repeatedly reuses them. Constructing the layers inside the function would build a fresh object with freshly initialized weights on every call, giving ten independent attention mechanisms instead of one applied ten times. The model would have far more parameters and would have to learn the same scoring function ten separate times.</p>
+</div>
+</details>
+<hr>
+<div id="nmt-lab-review-q2">
+<p><strong>1. The energies have shape <span class="math inline">\((m, T_x, 1)\)</span>. What goes wrong if the softmax normalizes over the last axis instead of axis 1?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="nmt-lab-review-q2">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Every weight becomes exactly 1.0. A softmax over an axis of size 1 has a single value to normalize, and a single value always normalizes to one. The context vector would then be the unweighted sum of all <span class="math inline">\(T_x\)</span> encoder states at every output step, identical for all ten steps, so the attention mechanism would carry no information whatsoever.</p>
+<p>The reason this is worth naming is that nothing crashes. The shapes all still work, the model still trains, and the loss still falls somewhat, since the post-attention LSTM can extract a little from a constant summary. It just quietly is not an attention model any more.</p>
+</div>
+</details>
+<hr>
+<div id="nmt-lab-review-q3">
+<p><strong>1. Why does the post-attention LSTM not take its own previous prediction <span class="math inline">\(y^{\langle t-1 \rangle}\)</span> as an input, when the language models earlier in the course did?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="nmt-lab-review-q3">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>Because the output characters here are nearly independent of each other. In text generation the previous character says a great deal about the next one, so feeding it back is valuable. In a <code>YYYY-MM-DD</code> date, knowing that the previous character was a <code>0</code> tells you very little about the next, since the day, month and year are determined by the input rather than by each other. Dropping the connection makes the model simpler at almost no cost.</p>
+</div>
+</details>
+<hr>
+<div id="nmt-lab-review-q4">
+<p><strong>1. The attention plot shows pale columns over <code>tuesday</code>. What does that tell you, and who told the model to do it?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="nmt-lab-review-q4">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>It tells you the model assigns near-zero attention weight to the weekday characters at every output step, which is correct, since the weekday is redundant given the rest of the date and contributes nothing to <code>YYYY-MM-DD</code>.</p>
+<p>Nobody told it. There is no label anywhere in the training data saying which input characters matter. The only signal is the translation objective, and backpropagation through the attention weights found that ignoring the weekday produced better predictions. The alignment is a learned by-product, which is exactly the property that makes attention weights worth plotting.</p>
+</div>
+</details>
+<hr>
+<div id="nmt-lab-review-q5">
+<p><strong>1. The trained model turns <code>3 May 1979</code> into <code>1979-05-33</code>. What kind of failure is this, and what would you check first?</strong></p>
+</div>
+<details class="review-answer">
+<summary aria-describedby="nmt-lab-review-q5">
+Answer
+</summary>
+<div class="review-answer-body">
+<p>The year and month are right and only the day is wrong, so the model located the right parts of the input and mishandled one of them. The digit <code>3</code> had to become <code>03</code>, and the model emitted <code>33</code> instead, failing to produce the leading zero.</p>
+<p>Resist naming a cause. This input is in distribution, since the generator has formats that render exactly <code>3 may 1979</code>, so the easy story that the model never saw this shape is not available. What to check first is a measurement rather than a hypothesis. Score the model on a held-out slice of single-digit-day inputs and compare it against two-digit-day inputs. If the gap is large the problem is concentrated there and worth attacking, and if it is not then this is one ordinary error among many and the interesting question is what else it gets wrong.</p>
+</div>
+</details>
+
+
+<div id="section-progress-widget" class="section-progress-widget" hidden="">
+  <p class="section-progress-label">Progress through this section</p>
+  <progress class="section-progress" value="92" max="100" aria-label="92 percent through this section"></progress>
+  <p class="section-progress-detail">92% through this section (1826 of 1966 min)</p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var w = document.getElementById("section-progress-widget");
+  var sb = document.getElementById("quarto-sidebar");
+  if (w && sb) { w.hidden = false; sb.appendChild(w); }
+});
+</script>
+
+</section>
+</section>
+
+<a onclick="window.scrollTo(0, 0); return false;" role="button" id="quarto-back-to-top"><i class="bi bi-arrow-up"></i> Back to top</a></main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="https://h.oliabak.com/giscus-theme.css">
+<input type="hidden" id="giscus-alt-theme" value="https://h.oliabak.com/giscus-theme-dark.css">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      if (authorPrefersDark) {
+          [baseTheme, altTheme] = [altTheme, baseTheme];
+      }
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "hosseinoliabak/h";
+    script.dataset.repoId = "R_kgDOR0RoEw";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOR0RoE84C5n1Q";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../ai/deep-learning/sequence-models/speech-recognition-and-trigger-word-detection" class="pagination-link" aria-label="Speech Recognition and Trigger Word Detection">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Speech Recognition and Trigger Word Detection</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../../ai/deep-learning/sequence-models/lab-trigger-word-detection" class="pagination-link" aria-label="Trigger Word Detection">
+        <span class="nav-page-text">Trigger Word Detection</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+<p>H’s Notes</p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    </div>
+    <div class="nav-footer-right">
+      <ul class="footer-items list-unstyled">
+    <li class="nav-item">
+    <a class="nav-link" href="../../../about">
+<p>About</p>
+</a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="../../../about/dashboard">
+<p>Dashboard</p>
+</a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="../../../about/roadmap">
+<p>Roadmap</p>
+</a>
+  </li>  
+</ul>
+    </div>
+  </div>
+</footer>
+
+
+
+
+</body></html>

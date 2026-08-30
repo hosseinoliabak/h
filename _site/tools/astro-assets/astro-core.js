@@ -1372,8 +1372,8 @@
      by the projection's inverse at its corners. At cell size the warp is
      indistinguishable from an exact reprojection.
 
-     The style is deliberately the gray, label-free CARTO basemap: it sits
-     quietly under a monochrome chart, and leaving the labels off means the
+     The style is deliberately a gray, label-free wash. It sits quietly
+     under a monochrome chart, and leaving the labels off means the
      tool's own place names are the only ones on screen. */
   var tileCache = new Map();
   var tileCachePixels = 0;
@@ -1385,6 +1385,10 @@
      about 200 MiB. Revisiting an older area simply asks for its tiles again. */
   var TILE_CACHE_MAX = 200;
   var TILE_CACHE_PIXEL_MAX = 24 * 1024 * 1024;
+  /* Longest edge of an offscreen vector render. Every settled frame reads
+     this canvas back, so it buys detail against readback cost rather than
+     against a download. */
+  var VECTOR_MOSAIC_MAX_PX = 3072;
   var LAT_MAX_MERC = 85.051129;
 
   function estimatedTilePixels(url) {
@@ -1420,36 +1424,48 @@
 
   /* Base map themes. Every source below is free to use and sends
      Access-Control-Allow-Origin, which the canvas needs to draw the tiles
-     without tainting itself. Labels cost nothing extra: they are simply a
-     different variant of the same tile set, so the choice is editorial
-     rather than commercial. Each theme carries the attribution its license
-     requires, and its own deepest useful zoom. */
-  function cartoUrl(variant, hi, z, x, y) {
-    return 'https://' + 'abcd'[(x + y) % 4] + '.basemaps.cartocdn.com/' +
-      variant + '/' + z + '/' + x + '/' + y + (hi ? '@2x' : '') + '.png';
+     without tainting itself. Some themes split names onto an overlay so
+     the labels switch is real; others paint names into the imagery, and
+     the page keeps its own GeoNames off instead. Each theme carries the
+     attribution its license requires, and its own deepest useful zoom.
+
+     Two kinds of theme live here. A raster theme names a tile URL per zoom,
+     column and row, and the mosaic below assembles those pictures. A vector
+     theme names one of the styles vendored beside this file, which
+     vector-basemap.mjs renders offscreen into a canvas of exactly the shape
+     that mosaic would have produced. The warp mesh cannot tell them apart.
+
+     Plain and Streets became vector themes in August 2026, when CARTO began
+     watermarking keyless raster requests and announced that its raster
+     endpoint is being retired. A different raster host would only move the
+     same risk somewhere else. Rendering from vector tiles instead puts the
+     styles in this repository, so light, dark and names-off are decisions
+     made here rather than a vendor's product line, and one URL is all there
+     is to repoint if OpenFreeMap ever stops. */
+  function esriUrl(service, z, x, y) {
+    return 'https://server.arcgisonline.com/ArcGIS/rest/services/' +
+      service + '/MapServer/tile/' + z + '/' + y + '/' + x;
   }
 
   var TILE_THEMES = {
-    // Quiet gray wash, the one that disappears under a monochrome chart
+    /* Quiet gray wash, the one that disappears under a monochrome chart.
+       Positron by day and its dark counterpart under the night palettes. */
     plain: {
       label: 'Plain',
       maxZoom: 19,
-      retina: true,
-      credit: '© OpenStreetMap contributors, © CARTO',
-      tiles: function (dark, labels, hi, z, x, y) {
-        return cartoUrl((dark ? 'dark' : 'light') + (labels ? '_all' : '_nolabels'),
-          hi, z, x, y);
-      }
+      credit: '© OpenStreetMap contributors, © OpenMapTiles, OpenFreeMap',
+      vector: function (dark) { return dark ? 'dark' : 'positron'; }
     },
-    // CARTO Voyager: colored land, blue water, green parks, drawn roads
+    /* Liberty, which colors the land and water, greens the parks and paints
+       the road network. It has no night variant, so it keeps its daytime
+       colors in every mode, as the raster style it replaced did. Names are
+       a layer of the same style rather than separate imagery, so unlike
+       Terrain below it can genuinely turn them off. */
     streets: {
       label: 'Streets',
       maxZoom: 19,
-      retina: true,
-      credit: '© OpenStreetMap contributors, © CARTO',
-      tiles: function (dark, labels, hi, z, x, y) {
-        return cartoUrl('rastertiles/voyager' + (labels ? '' : '_nolabels'), hi, z, x, y);
-      }
+      credit: '© OpenStreetMap contributors, © OpenMapTiles, OpenFreeMap',
+      vector: function () { return 'liberty'; }
     },
     /* OpenTopoMap: contour lines and hill shading. Its labels are painted
        into the imagery, so the labels switch cannot remove them; the page
@@ -1472,12 +1488,10 @@
       maxZoom: 19,
       credit: 'Imagery © Esri, Maxar, Earthstar Geographics',
       tiles: function (dark, labels, hi, z, x, y) {
-        return 'https://server.arcgisonline.com/ArcGIS/rest/services/' +
-          'World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
+        return esriUrl('World_Imagery', z, x, y);
       },
       overlay: function (hi, z, x, y) {
-        return 'https://server.arcgisonline.com/ArcGIS/rest/services/' +
-          'Reference/World_Boundaries_and_Places/MapServer/tile/' + z + '/' + y + '/' + x;
+        return esriUrl('Reference/World_Boundaries_and_Places', z, x, y);
       }
     }
   };
@@ -1509,12 +1523,23 @@
        canvas. */
     var screen = Math.max(1, Math.min(3, opts.screenRatio || ratio));
     var hi = screen >= 1.5 && !!th.retina;
-    var layers = [function (z, x, y) { return th.tiles(dark, labels, hi, z, x, y); }];
-    if (labels && th.overlay) {
-      layers.push(function (z, x, y) { return th.overlay(hi, z, x, y); });
+    /* A vector theme has no tile URLs to build. Its single style name stands
+       in for the whole layer list, and the mosaic hands it to the offscreen
+       renderer instead of walking a grid of images. */
+    var vector = th.vector ? th.vector(dark) : null;
+    var layers = vector ? [] :
+      [function (z, x, y) { return th.tiles(dark, labels, hi, z, x, y); }];
+    if (!vector && labels && th.overlay) {
+      layers.push(function (z, x, y) { return th.overlay(hi, z, x, y, dark); });
     }
     return {
       layers: layers,
+      // Style name for a vector theme, null for a raster one
+      vector: vector,
+      // The renderer needs the names switch itself, not a URL variant of it
+      labels: labels,
+      // Canvas pixels per CSS pixel, which sizes vector type correctly
+      ratio: ratio,
       maxZoom: th.maxZoom,
       credit: th.credit,
       // Canvas pixels one tile covers, so its artwork lands at its own size
@@ -1630,11 +1655,43 @@
   /* opts is {theme, dark, labels}, or the legacy 'light' / 'dark' string. */
   function drawTiles(ctx, proj, onLoad, opts) {
     var spec = tileSpec(opts);
+    /* The renderer owns the canvas a vector theme draws into, so the raster
+       mosaic's backing store is dead weight for as long as one is selected. */
+    if (spec.vector) releaseTileMosaic();
     if (proj.kind === 'mercator') {
+      /* A vector theme has one canvas rather than a grid of images, so the
+         per-tile loop has nothing to walk. Mercator to Mercator is a single
+         affine, which is one drawImage instead of the warp mesh. */
+      if (spec.vector) {
+        var m = tileMosaic(proj, onLoad, spec);
+        return m ? drawMosaicMerc(ctx, proj, m) : false;
+      }
       releaseTileMosaic();
       return drawTilesMerc(ctx, proj, onLoad, spec);
     }
     return drawTilesWarp(ctx, proj, onLoad, spec);
+  }
+
+  /* Blits a mosaic straight onto a Mercator view. The mosaic covers whole
+     tile columns and rows at its own zoom, so its edges land on exact world
+     fractions and the placement is arithmetic rather than a mesh. The wrap
+     copies either side cover a view wide enough to show the seam. */
+  function drawMosaicMerc(ctx, proj, m) {
+    var worldW = proj.worldWidth;
+    var uC = (proj.center[0] + 180) / 360, vC = mercV(proj.center[1]);
+    var cols = m.cw / m.cell, rows = m.ch / m.cell;
+    var dw = cols / m.n * worldW, dh = rows / m.n * worldW;
+    var dy = proj.height / 2 + (m.iy0 / m.n - vC) * worldW;
+    ctx.save();
+    proj.clipPath(ctx);
+    ctx.clip();
+    for (var k = -1; k <= 1; k++) {
+      var dx = proj.width / 2 + (m.ix0 / m.n - uC) * worldW + k * worldW;
+      if (dx > proj.width || dx + dw < 0) continue;
+      ctx.drawImage(m.canvas, 0, 0, m.cw, m.ch, dx, dy, dw, dh);
+    }
+    ctx.restore();
+    return true;
   }
 
   function drawTilesMerc(ctx, proj, onLoad, spec) {
@@ -1779,7 +1836,43 @@
        so inflating a 256 pixel source to 384 or 640 pixels here added memory
        and sampling work without adding detail. Retina sources stay at 512. */
     var cell = spec.sourcePx;
-    var cw = (ix1 - ix0 + 1) * cell, ch = (iy1 - iy0 + 1) * cell;
+    var cols = ix1 - ix0 + 1, rows = iy1 - iy0 + 1;
+
+    /* A vector render has no native resolution to preserve, so its cell is
+       chosen from what the screen can show rather than from what a provider
+       published. Capping the whole canvas keeps the readback after every
+       settled frame affordable, and the mesh cannot resolve more anyway. */
+    if (spec.vector) {
+      cell = Math.max(64, Math.min(512,
+        Math.floor(VECTOR_MOSAIC_MAX_PX / Math.max(cols, rows))));
+    }
+    var cw = cols * cell, ch = rows * cell;
+
+    if (spec.vector) {
+      var vec = global.Astro && global.Astro.vectorBasemap;
+      if (!vec) {
+        /* The renderer is an ES module, deferred by the browser, so a frame
+           drawn early in the page's life can land before it has registered.
+           Parking the caller's callback on the module's ready announcement
+           turns that first empty frame into a retry instead of a permanent
+           fallback to the bundled outlines. If WebGL2 is missing the event
+           never fires and the outlines simply remain, which is the intended
+           degradation. */
+        global.addEventListener('astro-vector-basemap-ready', function () {
+          onLoad();
+        }, { once: true });
+        return null;
+      }
+      return vec.request({
+        key: spec.id + '/' + z + '/' + ix0 + ',' + ix1 + ',' + iy0 + ',' + iy1,
+        style: spec.vector,
+        labels: spec.labels,
+        ratio: spec.ratio,
+        n: n, ix0: ix0, ix1: ix1, iy0: iy0, iy1: iy1,
+        cell: cell, cw: cw, ch: ch,
+        noFetch: spec.noFetch
+      }, onLoad);
+    }
 
     /* Nothing about this frame differs from the last one that built the
        mosaic, so the pixels already on the canvas are the answer. */
