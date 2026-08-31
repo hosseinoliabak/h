@@ -937,11 +937,11 @@ document.addEventListener("DOMContentLoaded", function () {
   if (meta) {
     var div = document.createElement("div");
     div.style.order = "3";
-    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~84 min read <span class="rt-info" tabindex="0" aria-describedby="reading-time-method"><span aria-hidden="true">ⓘ</span><span class="rt-tooltip" id="reading-time-method" role="tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
+    div.innerHTML = '<div class="quarto-title-meta-heading">Reading Time</div><div class="quarto-title-meta-contents"><p>~88 min read <span class="rt-info" tabindex="0" aria-describedby="reading-time-method"><span aria-hidden="true">ⓘ</span><span class="rt-tooltip" id="reading-time-method" role="tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></p></div>';
     meta.appendChild(div);
     var lenDiv = document.createElement("div");
     lenDiv.style.order = "1";
-    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~4,400 words</p></div>';
+    lenDiv.innerHTML = '<div class="quarto-title-meta-heading">Length</div><div class="quarto-title-meta-contents"><p>~4,700 words</p></div>';
     meta.appendChild(lenDiv);
     var diffDiv = document.createElement("div");
     diffDiv.style.order = "4";
@@ -951,6 +951,28 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Important</span>Six changes from the original notebook
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The assignment was written against TensorFlow 2.3 with Keras 2, and this page runs on TensorFlow 2.21 with Keras 3. Six things changed (updated 2026-08-31).</p>
+<ul>
+<li><strong><code>load_model</code> was replaced by <code>TFSMLayer</code>.</strong> The pretrained YOLO model ships as a Keras 2 file that Keras 3 cannot deserialize, so it is wrapped as an inference-only SavedModel layer.</li>
+<li><strong>The full inference walkthrough is display-only.</strong> It needs the large pretrained weights, so it is shown as non-executing code beside its stored outputs rather than run at render time.</li>
+<li><strong><code>scale_boxes</code> is written out inline</strong> rather than imported from the <code>yad2k</code> helper package.</li>
+<li><strong>The default score threshold is 0.3 rather than 0.6</strong>, which shows more of the detector’s behavior on the sample frame.</li>
+<li><strong>Zero-detection handling was added.</strong> The original suppression code called <code>tf.concat</code> on an empty list when score filtering left nothing, which raises; it now returns correctly shaped empty tensors.</li>
+<li><strong>A short section on YOLO26 was added</strong>, which is not in the assignment, to place the 2017 method against current practice.</li>
+</ul>
+<p>The YOLO decoding, filtering and non-max-suppression logic, the anchor boxes and the Drive.ai frames are the assignment’s own.</p>
+</div>
+</div>
 <p><a href="../../../ai/deep-learning/convolutional-neural-networks/bounding-box-predictions-with-yolo">Bounding Box Predictions with YOLO</a> introduced the grid, target volume, and box encoding. <a href="../../../ai/deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes">IoU, Non-max Suppression, and Anchor Boxes</a> showed how duplicate predictions are removed. This lab turns those ideas into the post-processing code around a pretrained YOLOv2 model.</p>
 <p>The model is already trained. Training it needs the 204 MB weight file supplied with the original exercise and far more road images than this page needs. Our work begins after its one forward pass. We will turn a <span class="math inline">\(19 \times 19 \times 5 \times 85\)</span> prediction tensor into labeled boxes on a real road photograph.</p>
 <div class="callout callout-style-default callout-note callout-titled">
@@ -969,7 +991,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <section id="problem-statement" class="level2">
 <h2 class="anchored" data-anchor-id="problem-statement">Problem Statement</h2>
 <p>The setting is a self-driving car. A camera is mounted on the hood, and it photographs the road ahead every few seconds while the car is driven around Silicon Valley. Those photographs are the dataset, and every car in them was labeled by hand, by drawing a rectangle around it. The task is to build the detector that produces those rectangles by itself.</p>
-<p>There are 80 classes to recognize, and the class label of a box can be written two ways. It can be an integer from 1 to 80, or an 80 component vector with a single 1 in the position of the correct class and zeros everywhere else. The lecture notes use the second form, and this lab uses whichever is more convenient at each step. The network predicts the vector, because a network has to output a number per class, while the code that sorts and draws the results carries the integer, because an index is easier to look up in a list of names.</p>
+<p>There are 80 classes to recognize, and the class label of a box can be written two ways. It can be an integer index, which in code runs from 0 to 79 (so <code>car</code> is index 2 in the COCO name list used below), or an 80 component vector with a single 1 in the position of the correct class and zeros everywhere else. The lecture notes use the second form, and this lab uses whichever is more convenient at each step. The network predicts the vector, because a network has to output a number per class, while the code that sorts and draws the results carries the integer, because an index is easier to look up in a list of names.</p>
 <p>Training a detector like this from scratch is not on the table. It needs a large labeled dataset and a great deal of computation, so the weights here are pretrained and the work begins one forward pass later.</p>
 <div class="callout callout-style-default callout-note callout-titled">
 <div class="callout-header d-flex align-content-center">
@@ -997,9 +1019,9 @@ document.addEventListener("DOMContentLoaded", function () {
 </section>
 <section id="road-image-and-box-coordinates" class="level2">
 <h2 class="anchored" data-anchor-id="road-image-and-box-coordinates">Road Image and Box Coordinates</h2>
-<p>The Drive.ai sample is 122 road frames of 1280 by 720 pixels, and this lab works on one of them. A detector returns four numbers marking a rectangle, not a cropped car.</p>
+<p>The Drive.ai sample folder holds 122 files, of which 120 are numbered road frames of 1280 by 720 pixels (the other two are <code>test.jpg</code> and an unrelated <code>giraffe.jpg</code>). This lab works on one of the road frames. A detector returns four numbers marking a rectangle, not a cropped car.</p>
 <p>Two corner orders appear in what follows, and mixing them up is the most common way to get boxes that land in the wrong place. The <code>iou</code> function written below takes <code>(x1, y1, x2, y2)</code>, which is the easier order to reason about on paper. The tensors that reach <code>tf.image.non_max_suppression</code> use <code>(y_min, x_min, y_max, x_max)</code> instead, because that is the order TensorFlow expects, and <code>yolo_boxes_to_corners</code> is the function that swaps them.</p>
-<div id="a64771cc" class="cell" data-execution_count="1">
+<div id="22e5ce35" class="cell" data-execution_count="1">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -1012,7 +1034,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <p><code>x</code> increases rightward and <code>y</code> increases downward because the origin is the top-left pixel. The network receives a 608 by 608 resized copy, then makes one dense set of predictions. It does not scan separate image crops.</p>
 <p>Two files describe what the network is set up to predict, and both are small enough to read. <code>coco_classes.txt</code> holds the 80 class names in the order the network predicts them, so index 2 is <code>car</code>. <code>yolo_anchors.txt</code> holds five pairs of numbers, and that is the entire definition of the five anchor boxes, because <strong>an anchor box is defined only by a width and a height</strong>. It has no position. Position comes from the grid cell that reports it.</p>
 <p>Those five shapes were not invented. They were chosen by looking at the training data and picking height and width ratios that represent the range of objects in it, which is the k-means procedure described at the end of <a href="../../../ai/deep-learning/convolutional-neural-networks/iou-non-max-suppression-and-anchor-boxes#anchor-boxes">Anchor Boxes</a>. Five is enough to cover 80 classes, because many classes share a silhouette.</p>
-<div id="f7bc14af" class="cell" data-execution_count="2">
+<div id="829c4643" class="cell" data-execution_count="2">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -1026,7 +1048,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
 <p><strong>1. Why is the image resized before it enters the network?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon"></i>
 </div>
@@ -1035,7 +1057,7 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <p>The pretrained architecture expects a fixed 608 by 608 input. The final boxes are scaled back to the 1280 by 720 original frame before drawing, so the network can stay fixed while the result lines up with the original photograph.</p>
 </div>
@@ -1046,7 +1068,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <section id="rearranging-and-scoring-candidates" class="level2">
 <h2 class="anchored" data-anchor-id="rearranging-and-scoring-candidates">Rearranging and Scoring Candidates</h2>
 <p>The saved model flattens five anchors and their 85 values into 425 channels. For post-processing, we immediately view them as five separate descriptions again. One description has object confidence, four box values, and 80 class probabilities.</p>
-<div id="2a7402ad" class="cell" data-execution_count="3">
+<div id="93f44078" class="cell" data-execution_count="3">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -1058,7 +1080,7 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <p>Doing that split is the job of <code>yolo_head</code>, the helper supplied with the exercise in <code>yad2k/models/keras_yolo.py</code>. It takes the raw <code>(m, 19, 19, 425)</code> tensor the network emits and returns four separate tensors, because the 85 numbers in one anchor description mean four different things and each needs its own treatment. It also applies the sigmoid and exponential the raw output has not been through yet, and adds each cell’s grid offset, so the box values come back as fractions of the whole image rather than offsets inside a cell.</p>
 <p>The four tensors are <code>box_xy</code> and <code>box_wh</code>, each <code>(19, 19, 5, 2)</code>, holding the midpoint and the size, then <code>box_confidence</code> at <code>(19, 19, 5, 1)</code> and <code>box_class_probs</code> at <code>(19, 19, 5, 80)</code>. The first two combine into the <code>(19, 19, 5, 4)</code> corner boxes the filtering step wants. Broadcasting the confidence against the class probabilities repeats each confidence across its 80 class slots, making one class score per class and candidate.</p>
-<div id="f507e144" class="cell" data-execution_count="4">
+<div id="f62b73cb" class="cell" data-execution_count="4">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tensorflow <span class="im">as</span> tf</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> yolo_filter_boxes(boxes, box_confidence, box_class_probs, threshold<span class="op">=</span><span class="fl">0.6</span>):</span>
@@ -1071,20 +1093,21 @@ document.addEventListener("DOMContentLoaded", function () {
 <span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>confidence <span class="op">=</span> tf.constant([[[[<span class="fl">0.90</span>], [<span class="fl">0.80</span>], [<span class="fl">0.70</span>]]]])</span>
 <span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>boxes <span class="op">=</span> tf.constant([[[[<span class="fl">0.10</span>, <span class="fl">0.15</span>, <span class="fl">0.40</span>, <span class="fl">0.50</span>], [<span class="fl">0.48</span>, <span class="fl">0.52</span>, <span class="fl">0.72</span>, <span class="fl">0.82</span>], [<span class="fl">0.20</span>, <span class="fl">0.25</span>, <span class="fl">0.35</span>, <span class="fl">0.42</span>]]]])</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>class_probs <span class="op">=</span> tf.constant([[[[<span class="fl">0.10</span>, <span class="fl">0.90</span>, <span class="fl">0.05</span>], [<span class="fl">0.90</span>, <span class="fl">0.05</span>, <span class="fl">0.10</span>], [<span class="fl">0.20</span>, <span class="fl">0.50</span>, <span class="fl">0.10</span>]]]])</span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>scores, kept_boxes, classes <span class="op">=</span> yolo_filter_boxes(boxes, confidence, class_probs)</span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'scores:'</span>, scores.numpy())</span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'classes:'</span>, classes.numpy())</span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'kept boxes:'</span>, kept_boxes.numpy())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Each row is a class distribution, so each one sums to 1.</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>class_probs <span class="op">=</span> tf.constant([[[[<span class="fl">0.05</span>, <span class="fl">0.90</span>, <span class="fl">0.05</span>], [<span class="fl">0.85</span>, <span class="fl">0.05</span>, <span class="fl">0.10</span>], [<span class="fl">0.20</span>, <span class="fl">0.50</span>, <span class="fl">0.30</span>]]]])</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>scores, kept_boxes, classes <span class="op">=</span> yolo_filter_boxes(boxes, confidence, class_probs)</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'scores:'</span>, scores.numpy())</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'classes:'</span>, classes.numpy())</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'kept boxes:'</span>, kept_boxes.numpy())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>scores: [0.80999994 0.71999997]
+<pre><code>scores: [0.80999994 0.68      ]
 classes: [1 0]
 kept boxes: [[0.1  0.15 0.4  0.5 ]
  [0.48 0.52 0.72 0.82]]</code></pre>
 </div>
 </div>
 <p>The first candidate scores <span class="math inline">\(0.90 \times 0.90 = 0.81\)</span> for its strongest class. The third reaches only 0.35 and vanishes. The diagram below recreates the original lab’s class-score figure with the multiplication made explicit.</p>
-<div id="ee9d4f20" class="cell" data-execution_count="5">
+<div id="26194f74" class="cell" data-execution_count="5">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -1098,7 +1121,7 @@ kept boxes: [[0.1  0.15 0.4  0.5 ]
 <h3 class="anchored" data-anchor-id="visualizing-what-the-grid-believes">Visualizing What the Grid Believes</h3>
 <p>Neither of the two pictures below is part of the algorithm. Both are ways of looking at an intermediate result, and both are drawn from the model’s own output on this frame, stored in <code>yolo-outputs.npz</code> so the figures can be produced without the 204 MB model.</p>
 <p>The first colors every one of the 361 cells by whichever class wins its best anchor. Reading it teaches something the score alone does not.</p>
-<div id="4a9dd238" class="cell" data-execution_count="6">
+<div id="4271886e" class="cell" data-execution_count="6">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -1110,7 +1133,7 @@ kept boxes: [[0.1  0.15 0.4  0.5 ]
 </div>
 <p>The left panel looks confident everywhere, including over empty tarmac and sky, and that is the honest picture of what the network emits. Every cell names a class because every cell has to produce 80 numbers and one of them is always largest. The right panel fades each cell by its score, and the picture collapses onto the cars. Almost all of the left panel is noise with a score near zero, which is precisely what the threshold is for.</p>
 <p>The second picture plots the boxes themselves.</p>
-<div id="468b4856" class="cell" data-execution_count="7">
+<div id="bb3939b3" class="cell" data-execution_count="7">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -1126,7 +1149,7 @@ kept boxes: [[0.1  0.15 0.4  0.5 ]
 <h3 class="unnumbered anchored" data-anchor-id="review-questions-1">Review Questions</h3>
 <p><strong>1. Why does multiplying <code>(19, 19, 5, 1)</code> by <code>(19, 19, 5, 80)</code> produce <code>(19, 19, 5, 80)</code>?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon"></i>
 </div>
@@ -1135,7 +1158,7 @@ kept boxes: [[0.1  0.15 0.4  0.5 ]
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <p>Broadcasting repeats the final dimension of size 1 across the 80 class slots. Each anchor confidence multiplies all of its class probabilities without an explicit loop.</p>
 </div>
@@ -1148,7 +1171,7 @@ kept boxes: [[0.1  0.15 0.4  0.5 ]
 <p>The preceding page derived IoU geometrically. Here it becomes code, and the geometry is worth stating once in terms of the corners.</p>
 <p>A box is two corners, upper left <span class="math inline">\((x_1, y_1)\)</span> and lower right <span class="math inline">\((x_2, y_2)\)</span>, so its area is <span class="math inline">\((x_2 - x_1)(y_2 - y_1)\)</span>. The intersection of two boxes is itself a box. Its upper left corner is the <strong>larger</strong> of the two upper left corners, taken coordinate by coordinate, because the overlap starts wherever the later box starts. Its lower right corner is the <strong>smaller</strong> of the two lower right corners, because the overlap ends wherever the earlier box ends. So <code>max</code> finds one corner and <code>min</code> finds the other.</p>
 <p>Two cases break that if it is written naively. When the boxes do not overlap at all, the arithmetic produces a negative width or a negative height, which would give a positive area once multiplied by another negative and quietly report overlap where there is none. When the boxes touch along an edge or meet at a single corner, one of the two dimensions comes out exactly zero and the answer should be zero. Clamping both dimensions at zero before multiplying handles both cases with one guard.</p>
-<div id="68a36370" class="cell" data-execution_count="8">
+<div id="e3483394" class="cell" data-execution_count="8">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> iou(box1, box2):</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Return IoU for corner-form boxes ordered as (x1, y1, x2, y2)."""</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    x1a, y1a, x2a, y2a <span class="op">=</span> box1</span>
@@ -1171,7 +1194,7 @@ touching corners: 0.0</code></pre>
 <li>Go back to step 1 with whatever survives.</li>
 </ol>
 <p>The restriction to one class in step 2 is what stops a confident car from deleting the pedestrian standing in front of it. In code that is easiest to arrange by splitting the candidates by class up front, suppressing inside each class independently, and merging the survivors at the end.</p>
-<div id="7412c4b2" class="cell" data-execution_count="9">
+<div id="a5a841dd" class="cell" data-execution_count="9">
 <div class="cell-output cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
@@ -1181,8 +1204,8 @@ touching corners: 0.0</code></pre>
 </div>
 </div>
 </div>
-<p>The implementation below follows the divide-and-conquer shape the exercise recommends. Split the candidates by class, let <code>tf.image.non_max_suppression</code> do the work within each class, then merge the survivors and keep the highest scoring <code>max_boxes</code> of them. <code>tf.where</code> records where each class’s candidates sat in the original arrays, so the indices <code>tf.image.non_max_suppression</code> returns can be mapped back.</p>
-<div id="98fe5a1b" class="cell" data-execution_count="10">
+<p>The implementation below follows the divide-and-conquer shape the exercise recommends. Split the candidates by class, let <code>tf.image.non_max_suppression</code> do the work within each class, then merge the survivors and keep the highest scoring <code>max_boxes</code> of them. That last step is a third filter in its own right, not a consequence of the first two. On the stored <code>yolo-outputs.npz</code> activations, score filtering leaves 21 boxes and class-aware suppression leaves 13, so three more disappear purely because <code>max_boxes</code> is 10. <code>tf.where</code> records where each class’s candidates sat in the original arrays, so the indices <code>tf.image.non_max_suppression</code> returns can be mapped back.</p>
+<div id="8bd46f5d" class="cell" data-execution_count="10">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> yolo_non_max_suppression(scores, boxes, classes, max_boxes<span class="op">=</span><span class="dv">10</span>, iou_threshold<span class="op">=</span><span class="fl">0.5</span>):</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Keep high-scoring boxes while suppressing overlaps within each class."""</span></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    scores, boxes, classes <span class="op">=</span> tf.cast(scores, tf.float32), tf.cast(boxes, tf.float32), tf.cast(classes, tf.int32)</span>
@@ -1192,16 +1215,20 @@ touching corners: 0.0</code></pre>
 <span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>        original <span class="op">=</span> tf.squeeze(tf.where(mask), axis<span class="op">=</span><span class="dv">1</span>)</span>
 <span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>        selected <span class="op">=</span> tf.image.non_max_suppression(tf.boolean_mask(boxes, mask), tf.boolean_mask(scores, mask), max_boxes, iou_threshold<span class="op">=</span>iou_threshold)</span>
 <span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>        kept.append(tf.gather(original, selected))</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    kept <span class="op">=</span> tf.concat(kept, axis<span class="op">=</span><span class="dv">0</span>)</span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    kept <span class="op">=</span> tf.gather(kept, tf.argsort(tf.gather(scores, kept), direction<span class="op">=</span><span class="st">'DESCENDING'</span>)[:max_boxes])</span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> tf.gather(scores, kept), tf.gather(boxes, kept), tf.gather(classes, kept)</span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>scores <span class="op">=</span> tf.constant([<span class="fl">0.91</span>, <span class="fl">0.76</span>, <span class="fl">0.82</span>])</span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>boxes <span class="op">=</span> tf.constant([[<span class="fl">1.00</span>, <span class="fl">1.00</span>, <span class="fl">4.00</span>, <span class="fl">4.00</span>], [<span class="fl">1.20</span>, <span class="fl">1.15</span>, <span class="fl">4.05</span>, <span class="fl">4.10</span>], [<span class="fl">1.20</span>, <span class="fl">1.15</span>, <span class="fl">4.05</span>, <span class="fl">4.10</span>]])</span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>classes <span class="op">=</span> tf.constant([<span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">1</span>])</span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>kept_scores, kept_boxes, kept_classes <span class="op">=</span> yolo_non_max_suppression(scores, boxes, classes)</span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'kept scores:'</span>, kept_scores.numpy())</span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'kept classes:'</span>, kept_classes.numpy())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Score filtering can legitimately leave nothing at all, and tf.concat</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    <span class="co"># rejects an empty list, so return correctly shaped empty tensors instead.</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="kw">not</span> kept:</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> (tf.zeros([<span class="dv">0</span>], tf.float32), tf.zeros([<span class="dv">0</span>, <span class="dv">4</span>], tf.float32), tf.zeros([<span class="dv">0</span>], tf.int32))</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    kept <span class="op">=</span> tf.concat(kept, axis<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    kept <span class="op">=</span> tf.gather(kept, tf.argsort(tf.gather(scores, kept), direction<span class="op">=</span><span class="st">'DESCENDING'</span>)[:max_boxes])</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> tf.gather(scores, kept), tf.gather(boxes, kept), tf.gather(classes, kept)</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>scores <span class="op">=</span> tf.constant([<span class="fl">0.91</span>, <span class="fl">0.76</span>, <span class="fl">0.82</span>])</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>boxes <span class="op">=</span> tf.constant([[<span class="fl">1.00</span>, <span class="fl">1.00</span>, <span class="fl">4.00</span>, <span class="fl">4.00</span>], [<span class="fl">1.20</span>, <span class="fl">1.15</span>, <span class="fl">4.05</span>, <span class="fl">4.10</span>], [<span class="fl">1.20</span>, <span class="fl">1.15</span>, <span class="fl">4.05</span>, <span class="fl">4.10</span>]])</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>classes <span class="op">=</span> tf.constant([<span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">1</span>])</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>kept_scores, kept_boxes, kept_classes <span class="op">=</span> yolo_non_max_suppression(scores, boxes, classes)</span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'kept scores:'</span>, kept_scores.numpy())</span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'kept classes:'</span>, kept_classes.numpy())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>kept scores: [0.91 0.82]
 kept classes: [0 1]</code></pre>
@@ -1210,24 +1237,6 @@ kept classes: [0 1]</code></pre>
 <section id="review-questions-2" class="level3 unnumbered">
 <h3 class="unnumbered anchored" data-anchor-id="review-questions-2">Review Questions</h3>
 <p><strong>1. Why clamp the width and height of an intersection to zero?</strong></p>
-<div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-<span class="screen-reader-only">Tip</span>Answer
-</div>
-<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
-</div>
-<div id="callout-5" class="callout-5-contents callout-collapse collapse">
-<div class="callout-body-container callout-body">
-<p>When boxes do not overlap, the calculated intersection width or height is negative. A negative-sized rectangle is not real, so clamping it to zero gives the correct zero intersection area.</p>
-</div>
-</div>
-</div>
-<hr>
-<p><strong>1. Why is non-max suppression run once per class?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -1240,6 +1249,24 @@ kept classes: [0 1]</code></pre>
 </div>
 <div id="callout-6" class="callout-6-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
+<p>When boxes do not overlap, the calculated intersection width or height is negative. A negative-sized rectangle is not real, so clamping it to zero gives the correct zero intersection area.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Why is non-max suppression run once per class?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <p>Overlap only signals a duplicate when both boxes claim the same kind of object. A person can overlap a car, so processing all classes together could delete a real detection.</p>
 </div>
 </div>
@@ -1249,7 +1276,7 @@ kept classes: [0 1]</code></pre>
 <section id="running-pretrained-yolo" class="level2">
 <h2 class="anchored" data-anchor-id="running-pretrained-yolo">Running Pretrained YOLO</h2>
 <p>The final wrapper converts midpoint and size values into corners, score-filters, scales the 608 by 608 coordinates back to the original image, and suppresses duplicates. This is the source lab’s complete sequence, with grading scaffolding removed.</p>
-<div id="d8173ded" class="cell" data-execution_count="11">
+<div id="b03b47d4" class="cell" data-execution_count="11">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> yolo_boxes_to_corners(box_xy, box_wh):</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    box_mins, box_maxes <span class="op">=</span> box_xy <span class="op">-</span> box_wh <span class="op">/</span> <span class="dv">2</span>, box_xy <span class="op">+</span> box_wh <span class="op">/</span> <span class="dv">2</span></span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> tf.keras.backend.concatenate([box_mins[..., <span class="dv">1</span>:<span class="dv">2</span>], box_mins[..., <span class="dv">0</span>:<span class="dv">1</span>], box_maxes[..., <span class="dv">1</span>:<span class="dv">2</span>], box_maxes[..., <span class="dv">0</span>:<span class="dv">1</span>]])</span>
@@ -1264,7 +1291,7 @@ kept classes: [0 1]</code></pre>
 <p>The source archive includes <code>saved_model.pb</code>, its 204 MB variables file, <code>yolo_anchors.txt</code>, and <code>coco_classes.txt</code>. The full model is intentionally not hosted with this page. It is large and uses a legacy TensorFlow graph. The code below runs from the supplied course archive, while the post-processing above runs in this page.</p>
 <p>Two helpers do the work either side of the network. <code>preprocess_image</code> opens the file, resizes it to 608 by 608, reshapes it into a batch of one, and divides by 255 so the values land between 0 and 1. It hands back two things, a PIL image kept at full size for drawing on later, and the numpy array that goes into the network. At the other end, the step written here as a multiplication is what the original calls <code>scale_boxes</code>, and it maps coordinates expressed as fractions of the input onto pixels of the 720 by 1280 photograph, which is the only reason the rectangles land on the right cars.</p>
 <p>One line of the original notebook no longer works. It loads the model with <code>load_model('model_data/', compile=False)</code>, and Keras 3 refuses that, because <code>model_data/</code> is a TensorFlow SavedModel directory rather than a <code>.keras</code> or <code>.h5</code> file. The replacement is <code>keras.layers.TFSMLayer</code>, which wraps a SavedModel as an inference-only layer. It returns a dictionary keyed by the graph’s output name, which for this model is <code>conv2d_22</code>, so the result has to be unwrapped before <code>yolo_head</code> sees it.</p>
-<div id="a3298102" class="cell" data-execution_count="12">
+<div id="3688e71e" class="cell" data-execution_count="12">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> pathlib <span class="im">import</span> Path</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> keras</span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> yad2k.models.keras_yolo <span class="im">import</span> yolo_head</span>
@@ -1285,7 +1312,7 @@ kept classes: [0 1]</code></pre>
 <span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>image.save(<span class="st">'out/test.jpg'</span>, quality<span class="op">=</span><span class="dv">100</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>That run reports <strong>10 boxes</strong>, and they are worth reading rather than glancing at. Eight are cars, one is the bus at the left edge, and one is a traffic light 11 pixels wide near the top of the frame. Nothing else in a busy street scene survives, which is the whole point of the two filters. Coordinates are pixels in the original 1280 by 720 photograph, not in the 608 by 608 input the network saw.</p>
-<div id="tbl-yolo-detections" class="quarto-float quarto-figure quarto-figure-center anchored" data-tbl-colwidths="[26,16,29,29]" data-tbl-align="left">
+<div id="tbl-yolo-detections" class="quarto-float quarto-figure quarto-figure-center anchored" data-tbl-align="left" data-tbl-colwidths="[26,16,29,29]">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-yolo-detections-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 Table&nbsp;1: The 10 detections the pretrained model returns for this frame
@@ -1383,7 +1410,7 @@ Table&nbsp;1: The 10 detections the pretrained model returns for this frame
 <h3 class="unnumbered anchored" data-anchor-id="review-questions-3">Review Questions</h3>
 <p><strong>1. Why are model boxes scaled before drawing them?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon"></i>
 </div>
@@ -1392,7 +1419,7 @@ Table&nbsp;1: The 10 detections the pretrained model returns for this frame
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <p>The network predicts positions in the resized 608 by 608 input. The photograph has different dimensions, so its boxes must be rescaled before their pixels can line up with the original image.</p>
 </div>
@@ -1403,7 +1430,7 @@ Table&nbsp;1: The 10 detections the pretrained model returns for this frame
 <section id="detecting-across-the-whole-dataset" class="level2">
 <h2 class="anchored" data-anchor-id="detecting-across-the-whole-dataset">Detecting Across the Whole Dataset</h2>
 <p>Wrapping those steps in a function called <code>predict(image_file)</code> is what the original exercise does, and it is worth doing here for the same reason. The interesting part of the pipeline is per image, so the moment it is a function, running it over the whole sample is a loop.</p>
-<div id="1c593372" class="cell" data-execution_count="13">
+<div id="22798679" class="cell" data-execution_count="13">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
 <span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> PIL <span class="im">import</span> Image</span>
 <span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -1423,11 +1450,14 @@ Table&nbsp;1: The 10 detections the pretrained model returns for this frame
 <span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> out_scores, out_boxes, out_classes</span>
 <span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> frame <span class="kw">in</span> <span class="bu">sorted</span>(os.listdir(lab_root <span class="op">/</span> <span class="st">'images'</span>)):</span>
-<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>    predict(frame)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a><span class="co"># The images folder also holds test.jpg and an unrelated giraffe.jpg, so keep</span></span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a><span class="co"># only the numbered road frames that make up the drive.</span></span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>frames <span class="op">=</span> <span class="bu">sorted</span>(f <span class="cf">for</span> f <span class="kw">in</span> os.listdir(lab_root <span class="op">/</span> <span class="st">'images'</span>) <span class="cf">if</span> f[:<span class="dv">4</span>].isdigit())</span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> frame <span class="kw">in</span> frames:</span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>    predict(frame)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>Nothing in <code>predict</code> is new. It is the same preprocess, forward pass, decode, filter and suppress, with the drawing and saving attached. Swapping <code>test.jpg</code> for any other filename in the <code>images</code> folder is the whole of “test it on your own images”.</p>
-<p>Run it over all 122 frames and stitch the results back together in order, and the still picture becomes the thing the detector was actually built for.</p>
+<p>The folder holds 122 files in total, of which 120 are the numbered road frames. The other two are <code>test.jpg</code> and an unrelated <code>giraffe.jpg</code>, which the filter above skips. Run it over those 120 frames and stitch the results back together in order, and the still picture becomes the thing the detector was actually built for.</p>
 <div style="text-align:center;">
 <video controls="" preload="none" width="1054" style="max-width:100%;" poster="../../../media/deep-learning/car-detection-yolo/test-detections.jpg" src="../../../media/deep-learning/car-detection-yolo/predictions.mp4" type="video/mp4"></video>
 </div>
@@ -1443,7 +1473,7 @@ Table&nbsp;1: The 10 detections the pretrained model returns for this frame
 <p>This lab is not really about YOLO. It is about the three operations that turn a dense prediction tensor into a short list of objects, namely score thresholding, IoU, and non-max suppression. YOLO26 is documented as <strong>natively end-to-end</strong>. Its default head produces final detections directly, with no non-max suppression step at all. Port this lab to it and every exercise disappears. <code>yolo_filter_boxes</code>, <code>iou</code>, <code>yolo_non_max_suppression</code> and <code>yolo_eval</code> collapse into <code>model.predict(image)</code>, and the reader learns one API call instead of the ideas underneath it.</p>
 <p>That is a genuine argument for keeping the old model as the teaching vehicle, not nostalgia.</p>
 <p>It is also not an argument that the operations are obsolete, and this is the part worth being precise about. YOLO26 ships a <strong>dual-head architecture</strong>. The one-to-one head is the default and returns at most 300 detections per image with no post-processing. The one-to-many head produces traditional YOLO output, shaped <code>(N, nc + 4, 8400)</code>, which <strong>still requires non-max suppression</strong> and which the documentation notes is typically slightly more accurate. Choosing it is one keyword.</p>
-<div id="6f5acaab" class="cell" data-execution_count="14">
+<div id="82b289a1" class="cell" data-execution_count="14">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Run manually in a separate environment. Do not run this during a site render.</span></span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="co"># uv pip install "ultralytics==8.4.108"</span></span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -1459,7 +1489,7 @@ Table&nbsp;1: The 10 detections the pretrained model returns for this frame
 <section id="what-actually-changed" class="level3">
 <h3 class="anchored" data-anchor-id="what-actually-changed">What Actually Changed</h3>
 <p><a href="#tbl-yolo-versions" class="quarto-xref">Table&nbsp;2</a> is the comparison, restricted to things that can be checked against the paper and the documentation rather than impressions.</p>
-<div id="tbl-yolo-versions" class="quarto-float quarto-figure quarto-figure-center anchored" data-tbl-colwidths="[19,40,41]" data-tbl-align="left">
+<div id="tbl-yolo-versions" class="quarto-float quarto-figure quarto-figure-center anchored" data-tbl-align="left" data-tbl-colwidths="[19,40,41]">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-yolo-versions-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 Table&nbsp;2: What separates the model this lab uses from the current one
@@ -1542,7 +1572,7 @@ Table&nbsp;2: What separates the model this lab uses from the current one
 <section id="running-it" class="level3">
 <h3 class="anchored" data-anchor-id="running-it">Running It</h3>
 <p>The example below does not run when this page renders. Running it manually downloads the public pretrained checkpoint on first use into the local Ultralytics cache, so it needs a network connection. Use a separate environment and pin the reviewed version. The pin below is <code>ultralytics==8.4.108</code>, checked on 2026-08-18 against the package index, where the newest release at that date was 8.4.121. Review Ultralytics licensing before using the model in a product, because its code and models are offered under AGPL-3.0 or an Enterprise license.</p>
-<div id="7b73a86f" class="cell" data-execution_count="15">
+<div id="dea631d6" class="cell" data-execution_count="15">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Run manually in a separate environment. Do not run this during a site render.</span></span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="co"># uv pip install "ultralytics==8.4.108"</span></span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -1564,24 +1594,6 @@ Table&nbsp;2: What separates the model this lab uses from the current one
 <h3 class="unnumbered anchored" data-anchor-id="review-questions-4">Review Questions</h3>
 <p><strong>1. Why does this lab still teach non-max suppression when YOLO26 does not use it by default?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-<span class="screen-reader-only">Tip</span>Answer
-</div>
-<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
-</div>
-<div id="callout-8" class="callout-8-contents callout-collapse collapse">
-<div class="callout-body-container callout-body">
-<p>Because the default is not the only path. YOLO26 keeps a one-to-many head that produces traditional output and still requires non-max suppression, and the documentation notes it is typically slightly more accurate, so it is a reasonable choice when accuracy matters more than latency. Beyond YOLO26, most detectors still produce more candidates than objects. The operation outlived the model that made it famous.</p>
-</div>
-</div>
-</div>
-<hr>
-<p><strong>1. A tutorial written for an older YOLO applies its own non-max suppression to YOLO26 output. What happens?</strong></p>
-<div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon"></i>
@@ -1593,12 +1605,12 @@ Table&nbsp;2: What separates the model this lab uses from the current one
 </div>
 <div id="callout-9" class="callout-9-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>Nothing visible, which is what makes it dangerous. The default head has already removed duplicates, so a second suppression pass finds no pair of boxes overlapping above the threshold and returns what it was given. The code runs, the results look right, and the wasted step hides until someone reads it. Checking what a model does by default, rather than assuming the older convention, is the habit that catches this.</p>
+<p>Because the default is not the only path. YOLO26 keeps a one-to-many head that produces traditional output and still requires non-max suppression, and the documentation notes it is typically slightly more accurate, so it is a reasonable choice when accuracy matters more than latency. Beyond YOLO26, most detectors still produce more candidates than objects. The operation outlived the model that made it famous.</p>
 </div>
 </div>
 </div>
 <hr>
-<p><strong>1. Where would you look first to find out whether a newer model still needs non-max suppression?</strong></p>
+<p><strong>1. A tutorial written for an older YOLO applies its own non-max suppression to YOLO26 output. What happens?</strong></p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -1610,6 +1622,24 @@ Table&nbsp;2: What separates the model this lab uses from the current one
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
 <div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>Nothing visible, which is what makes it dangerous. The default head has already removed duplicates, so a second suppression pass finds no pair of boxes overlapping above the threshold and returns what it was given. The code runs, the results look right, and the wasted step hides until someone reads it. Checking what a model does by default, rather than assuming the older convention, is the habit that catches this.</p>
+</div>
+</div>
+</div>
+<hr>
+<p><strong>1. Where would you look first to find out whether a newer model still needs non-max suppression?</strong></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Answer
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <p>Its own model page in the official documentation, specifically the Key Features section and the description of the detection head, because that is where default behavior is stated. The citation block on the same page gives the paper for the details, and the repository settles anything the documentation leaves ambiguous.</p>
 </div>
@@ -1643,7 +1673,7 @@ Table&nbsp;2: What separates the model this lab uses from the current one
 <div id="section-progress-widget" class="section-progress-widget" hidden="">
   <p class="section-progress-label">Progress through this section</p>
   <progress class="section-progress" value="67" max="100" aria-label="67 percent through this section"></progress>
-  <p class="section-progress-detail">67% through this section (1378 of 2043 min)</p>
+  <p class="section-progress-detail">67% through this section (1394 of 2067 min)</p>
 </div>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
