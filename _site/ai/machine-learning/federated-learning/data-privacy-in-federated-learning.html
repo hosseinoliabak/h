@@ -682,6 +682,12 @@ window.Quarto = {
  <span class="menu-text">Bandwidth in Federated Learning</span></a>
   </div>
 </li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../ai/machine-learning/federated-learning/data-heterogeneity-and-client-drift" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Data Heterogeneity and Client Drift</span></a>
+  </div>
+</li>
     </ul>
     </div>
 </nav>
@@ -710,6 +716,7 @@ window.Quarto = {
   <li><a href="#running-it" id="toc-running-it" class="nav-link" data-scroll-target="#running-it">Running It</a></li>
   <li><a href="#review-questions-2" id="toc-review-questions-2" class="nav-link" data-scroll-target="#review-questions-2">Review Questions</a></li>
   </ul></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
   </ul>
 </nav>
     </div>
@@ -781,7 +788,7 @@ document.addEventListener("DOMContentLoaded", function () {
   var published = readCell(".date");
   var modified = readCell(".date-modified");
 
-  var html = '<span class="quarto-title-meta-item">57 min <span class="rt-info" tabindex="0" aria-describedby="reading-time-method"><span aria-hidden="true">&#9432;</span><span class="rt-tooltip" id="reading-time-method" role="tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level. About 3,000 words.</span></span></span><span class="quarto-title-meta-item">difficulty 3/5</span>';
+  var html = '<span class="quarto-title-meta-item">62 min <span class="rt-info" tabindex="0" aria-describedby="reading-time-method"><span aria-hidden="true">&#9432;</span><span class="rt-tooltip" id="reading-time-method" role="tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level.</span></span></span><span class="quarto-title-meta-item">3,500 words</span><span class="quarto-title-meta-item">difficulty 3/5</span>';
   function esc(t) {
     return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
@@ -811,12 +818,18 @@ document.addEventListener("DOMContentLoaded", function () {
 <li>An <strong>attribute inference attack</strong> aims to infer unseen attributes of the training data.</li>
 <li>A <strong>reconstruction attack</strong> aims to recover specific training data samples.</li>
 </ul>
+<p>A fourth threat is worth separating out, because it inverts the direction of the problem. The three above are attacks on privacy, where an adversary tries to <em>learn</em> something. A <strong>poisoning attack</strong> is an attack on integrity, where a malicious client submits deliberately crafted updates to degrade the global model or plant a backdoor. Federated learning is unusually exposed to it, since the server cannot inspect client data and therefore cannot easily distinguish a client with unusual data from a client that is lying. <a href="../../../ai/machine-learning/federated-learning/data-heterogeneity-and-client-drift#other-challenges">Data heterogeneity</a> makes the defense harder still.</p>
 <p>Reconstruction is not hypothetical. Researchers have shown in a paper how, in one particular setting, a malicious server was able to reconstruct training data samples of a specific client in federated learning. The reconstructed images were not exactly identical to the originals, but their quality was surprisingly close to the original data. Updates leak.</p>
 </section>
 <section id="privacy-enhancing-technologies" class="level3">
 <h3 class="anchored" data-anchor-id="privacy-enhancing-technologies">Privacy Enhancing Technologies</h3>
 <p>Because federated learning alone does not close these gaps, federated systems layer privacy enhancing technologies on top of it. Two of them come up most often. <strong>Differential privacy</strong> bounds and obscures the contribution of any single data point, and it is the technology the rest of this page develops. <strong>Secure aggregation</strong> takes a different route. Clients mask their updates before sending them, the masks cancel out when the updates are summed, and the server ends up with the aggregate without ever being able to read an individual update.</p>
 <p>The two address different weaknesses, which is why they are often deployed together. Secure aggregation hides individual updates from the server, while differential privacy limits what the aggregate itself can reveal.</p>
+<p>Secure aggregation is worth naming properly, because the idea underneath it is older and more general than federated learning. It is an application of <strong>secure multiparty computation</strong>, usually shortened to <strong>SMPC</strong>, which is a branch of cryptography concerned with one question. Can several parties jointly compute a function over their private inputs while none of them learns anything about anyone else’s input beyond what the answer itself reveals?</p>
+<p>For federated learning the function is a sum, and <a href="https://doi.org/10.1145/3133956.3133982">Bonawitz et al.&nbsp;(2017)</a> worked out how to compute it at scale. The core intuition is pairwise masking. Each pair of clients agrees on a shared random value, one of the pair adds it to its update and the other subtracts it, so the masks cancel exactly once everything is summed. Any individual masked update looks like noise, and only the total is recoverable.</p>
+<p>Treat that as the intuition rather than the protocol. Plain pairwise masks cancel only if both members of every pair actually upload, and on mobile devices clients drop out mid-round constantly. The real construction therefore adds a self-mask on top of the pairwise ones and distributes secret shares of both, so that surviving clients can help the server cancel the masks belonging to a dropped participant without ever revealing that participant’s update. A good deal of the engineering goes into that recovery path rather than into the masking.</p>
+<p>Two qualifications matter for what the guarantee is worth. It holds against a server that does not collude with clients beyond an assumed threshold, and it protects individuals only when the aggregate covers enough of them. A round that ends up aggregating a single client reveals that client’s update no matter how well the masks worked, which is one reason a minimum cohort size is part of a serious deployment.</p>
+<p>Even so, the change in the trust model is real. Without secure aggregation you are trusting the server not to inspect individual updates. With it, and within the assumptions above, the server is cryptographically unable to, which is a much better thing to be able to tell a regulator or a participating hospital.</p>
 </section>
 <section id="review-questions" class="level3 unnumbered">
 <h3 class="unnumbered anchored" data-anchor-id="review-questions">Review Questions</h3>
@@ -869,7 +882,7 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 <div id="callout-3" class="callout-3-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<p>Secure aggregation protects the individual update. Clients mask their updates so that only the sum can be recovered, so a curious server never sees what any single client sent. Differential privacy protects against what the result itself reveals, by clipping and adding noise so that the presence or absence of any single data point does not measurably change the model. They cover different weaknesses, so they are often used together.</p>
+<p>Secure aggregation protects the individual update. Clients mask their updates so that only the sum can be recovered, so a curious server cannot read what any single client sent, provided the protocol’s assumptions hold. Those assumptions matter. The server must not collude with more clients than the threshold allows, and the aggregate has to cover enough participants, since a round that ends up summing one client’s update reveals it however well the masking worked. Differential privacy protects against what the result itself reveals, by clipping and adding noise so that the presence or absence of any single data point does not measurably change the model. They cover different weaknesses, so they are often used together.</p>
 </div>
 </div>
 </div>
@@ -1161,7 +1174,7 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 </div>
 <div id="callout-9" class="callout-9-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
-<div id="57e4eb02" class="cell" data-execution_count="1">
+<div id="dadf0bca" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>config InlineBackend.figure_formats <span class="op">=</span> [<span class="st">'svg'</span>]</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Page-only setting: show every worker's log lines</span></span>
@@ -1327,7 +1340,7 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <section id="client-side-with-a-mod" class="level3">
 <h3 class="anchored" data-anchor-id="client-side-with-a-mod">Client Side with a Mod</h3>
 <p>Two imports carry the DP machinery, the client side clipping mod and the server side DP wrapper strategy.</p>
-<div id="65893536" class="cell" data-execution_count="2">
+<div id="fa0e4bf1" class="cell" data-execution_count="2">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> flwr.client.mod <span class="im">import</span> adaptiveclipping_mod</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> flwr.server.strategy <span class="im">import</span> (</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    DifferentialPrivacyClientSideAdaptiveClipping,</span>
@@ -1335,7 +1348,7 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>The data loading uses Flower Datasets exactly as in the tuning lab, this time partitioning MNIST into ten partitions.</p>
-<div id="553af4a1" class="cell" data-execution_count="3">
+<div id="1e424ba2" class="cell" data-execution_count="3">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> load_data(partition_id):</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    fds <span class="op">=</span> FederatedDataset(dataset<span class="op">=</span><span class="st">"ylecun/mnist"</span>, partitioners<span class="op">=</span>{<span class="st">"train"</span>: <span class="dv">10</span>})</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    partition <span class="op">=</span> fds.load_partition(partition_id)</span>
@@ -1349,7 +1362,7 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> trainloader, testloader</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>The <code>FlowerClient</code> and <code>client_fn</code> are the standard ones, with <code>fit</code> training for the helper’s default of one local epoch.</p>
-<div id="2c657d14" class="cell" data-execution_count="4">
+<div id="3f1c8401" class="cell" data-execution_count="4">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> FlowerClient(NumPyClient):</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, net, trainloader, testloader):</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.net <span class="op">=</span> net</span>
@@ -1380,7 +1393,7 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 </div>
 <p>The new piece is how the <code>ClientApp</code> is created. Flower supports <strong>mods</strong>, short for modifiers, which perform operations before and after a task is processed by the <code>ClientApp</code>. There are built-in mods, and custom ones can be defined. Here the built-in <code>adaptiveclipping_mod</code> performs adaptive clipping of the model updates before they are sent back to the server.</p>
 <p>It is worth asking why the clipping belongs here, on the client, when the noise is added later on the server. Clipping is what bounds the sensitivity, and an update can only be bounded where it is produced. Be precise about <em>what</em> is bounded, though. <code>adaptiveclipping_mod</code> clips the whole model update a client returns, so it bounds how much one <strong>client</strong> can move the aggregate. That is client-level (or update-level) privacy. It is not the same as the record-level DP-SGD you may have read about, which clips per-example gradients to bound what a single training row can do. Note also that because the mod runs on the client, the server is trusting client code to apply it. Flower also offers a server-side clipping variant for settings where that trust is not warranted. The noise is a separate job. It is added once to the aggregate rather than once per client, which is exactly what makes this setup central differential privacy, and it is why the accuracy survives better here than it would if every client noised its own update.</p>
-<div id="6c0d653c" class="cell" data-execution_count="5">
+<div id="6bfb6e2e" class="cell" data-execution_count="5">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>client <span class="op">=</span> ClientApp(</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    client_fn,</span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    mods<span class="op">=</span>[adaptiveclipping_mod],  <span class="co"># modifiers</span></span>
@@ -1391,7 +1404,7 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <h3 class="anchored" data-anchor-id="server-side-with-a-wrapper-strategy">Server Side with a Wrapper Strategy</h3>
 <p>On the server side, the federated averaging strategy is created as usual, named <code>fedavg_without_dp</code>, but instead of passing it directly to the <code>ServerApp</code>, it is wrapped in a strategy called <code>DifferentialPrivacyClientSideAdaptiveClipping</code>. The wrapper is a strategy itself. It takes the inner strategy plus two DP specific arguments, the noise multiplier and the number of sampled clients. During each round it receives the model updates, forwards them to the inner strategy for aggregation, and then adds noise to the aggregated model.</p>
 <p>Wrapping is the reason this stays simple in code. The same wrapper composes over federated averaging, FedAdam, or any other strategy, and no DP specific version of each one has to exist. The <em>guarantee</em>, however, is not automatic. The noise is calibrated as the clipping norm divided by the number of sampled clients, which is the right sensitivity for a uniform mean. An inner strategy that weights clients unequally, takes a median, or applies a nonlinear server optimizer has a different sensitivity, and the noise would need recalibrating to keep the same guarantee. It also puts the noise exactly where it belongs in the sequence, after aggregation and before the global model goes back out.</p>
-<div id="e8ae3596" class="cell" data-execution_count="6">
+<div id="ae253c0f" class="cell" data-execution_count="6">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>net <span class="op">=</span> SimpleModel()</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>params <span class="op">=</span> ndarrays_to_parameters(get_weights(net))</span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -1418,14 +1431,14 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>        config<span class="op">=</span>config,</span>
 <span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<div id="cdda4a4e" class="cell" data-execution_count="7">
+<div id="acf51f88" class="cell" data-execution_count="7">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>server <span class="op">=</span> ServerApp(server_fn<span class="op">=</span>server_fn)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </section>
 <section id="running-it" class="level3">
 <h3 class="anchored" data-anchor-id="running-it">Running It</h3>
 <p>The simulation runs with ten clients, and the strategy selects six of them each round, which is what a <code>fraction_fit</code> of 0.6 produces. This is the client selection idea from the <a href="../../../ai/machine-learning/federated-learning/tuning-federated-learning-systems#client-selection">previous page</a> in use, and under DP it carries extra weight. The amount of noise needed depends on how many clients contributed to the aggregate, which is why the wrapper was given <code>num_sampled_clients=6</code> to match. Those two numbers describe the same six clients, so if one is changed the other has to change with it, or the noise no longer matches what it is supposed to be hiding.</p>
-<div id="01c73cb3" class="cell" data-execution_count="8">
+<div id="a220cf9d" class="cell" data-execution_count="8">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>run_simulation(server_app<span class="op">=</span>server,</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>               client_app<span class="op">=</span>client,</span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>               num_supernodes<span class="op">=</span><span class="dv">10</span>,</span>
@@ -1435,89 +1448,61 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <div class="ansi-escaped-output">
 <pre><span class="ansi-bright-green-fg">INFO </span>: Starting Flower ServerApp, config: num_rounds=5, no round_timeout
 
-<span class="ansi-bright-green-fg">INFO </span>: Starting Flower ServerApp, config: num_rounds=5, no round_timeout
-
 <span class="ansi-bright-green-fg">INFO </span>: 
-
-<span class="ansi-bright-green-fg">INFO </span>: 
-
-<span class="ansi-bright-green-fg">INFO </span>: [INIT]
 
 <span class="ansi-bright-green-fg">INFO </span>: [INIT]
 
 <span class="ansi-bright-green-fg">INFO </span>: Using initial global parameters provided by strategy
 
-<span class="ansi-bright-green-fg">INFO </span>: Using initial global parameters provided by strategy
-
-<span class="ansi-bright-green-fg">INFO </span>: Starting evaluation of initial global parameters
-
 <span class="ansi-bright-green-fg">INFO </span>: Starting evaluation of initial global parameters
 
 <span class="ansi-bright-green-fg">INFO </span>: Evaluation returned no results (`None`)
-
-<span class="ansi-bright-green-fg">INFO </span>: Evaluation returned no results (`None`)
-
-<span class="ansi-bright-green-fg">INFO </span>: 
 
 <span class="ansi-bright-green-fg">INFO </span>: 
 
 <span class="ansi-bright-green-fg">INFO </span>: [ROUND 1]
 
-<span class="ansi-bright-green-fg">INFO </span>: [ROUND 1]
-
-<span class="ansi-bright-green-fg">INFO </span>: configure_fit: strategy sampled 6 clients (out of 10)
-
 <span class="ansi-bright-green-fg">INFO </span>: configure_fit: strategy sampled 6 clients (out of 10)
 </pre>
 </div>
 </div>
 <div class="cell-output cell-output-stderr">
 <div class="ansi-escaped-output">
-<pre><span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+<pre><span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
-
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.1000.
-
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.1000.
-
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.1000.
-
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.1000.
-
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.1000.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 </pre>
 </div>
 </div>
@@ -1525,13 +1510,7 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <div class="ansi-escaped-output">
 <pre><span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: received 6 results and 0 failures
 
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: received 6 results and 0 failures
-
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0051 stdev added
-
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0051 stdev added
-
-<span class="ansi-bright-green-fg">INFO </span>: configure_evaluate: strategy sampled 10 clients (out of 10)
+<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0053 stdev added
 
 <span class="ansi-bright-green-fg">INFO </span>: configure_evaluate: strategy sampled 10 clients (out of 10)
 </pre>
@@ -1539,105 +1518,111 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 </div>
 <div class="cell-output cell-output-stderr">
 <div class="ansi-escaped-output">
-<pre><span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.1000.
+<pre><span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.1000.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.1000.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.1000.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.1000.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.1000.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.1000.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 </pre>
 </div>
 </div>
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre><span class="ansi-bright-green-fg">INFO </span>: aggregate_evaluate: received 10 results and 0 failures
-
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_evaluate: received 10 results and 0 failures
-
-<span class="ansi-bright-green-fg">INFO </span>: 
 
 <span class="ansi-bright-green-fg">INFO </span>: 
 
 <span class="ansi-bright-green-fg">INFO </span>: [ROUND 2]
 
-<span class="ansi-bright-green-fg">INFO </span>: [ROUND 2]
-
-<span class="ansi-bright-green-fg">INFO </span>: configure_fit: strategy sampled 6 clients (out of 10)
-
 <span class="ansi-bright-green-fg">INFO </span>: configure_fit: strategy sampled 6 clients (out of 10)
 </pre>
 </div>
 </div>
 <div class="cell-output cell-output-stderr">
 <div class="ansi-escaped-output">
-<pre><span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<pre><span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
-
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
-
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
-
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
-
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
-
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
-
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
-
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 </pre>
 </div>
 </div>
@@ -1645,13 +1630,7 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <div class="ansi-escaped-output">
 <pre><span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: received 6 results and 0 failures
 
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: received 6 results and 0 failures
-
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0046 stdev added
-
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0046 stdev added
-
-<span class="ansi-bright-green-fg">INFO </span>: configure_evaluate: strategy sampled 10 clients (out of 10)
+<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0047 stdev added
 
 <span class="ansi-bright-green-fg">INFO </span>: configure_evaluate: strategy sampled 10 clients (out of 10)
 </pre>
@@ -1659,105 +1638,97 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 </div>
 <div class="cell-output cell-output-stderr">
 <div class="ansi-escaped-output">
-<pre><span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0883.
+<pre><span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0915.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0883.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0915.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0883.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0915.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0883.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0915.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0883.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0915.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0883.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0915.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 </pre>
 </div>
 </div>
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre><span class="ansi-bright-green-fg">INFO </span>: aggregate_evaluate: received 10 results and 0 failures
-
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_evaluate: received 10 results and 0 failures
-
-<span class="ansi-bright-green-fg">INFO </span>: 
 
 <span class="ansi-bright-green-fg">INFO </span>: 
 
 <span class="ansi-bright-green-fg">INFO </span>: [ROUND 3]
 
-<span class="ansi-bright-green-fg">INFO </span>: [ROUND 3]
-
-<span class="ansi-bright-green-fg">INFO </span>: configure_fit: strategy sampled 6 clients (out of 10)
-
 <span class="ansi-bright-green-fg">INFO </span>: configure_fit: strategy sampled 6 clients (out of 10)
 </pre>
 </div>
 </div>
 <div class="cell-output cell-output-stderr">
 <div class="ansi-escaped-output">
-<pre><span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<pre><span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 </pre>
 </div>
 </div>
@@ -1765,13 +1736,7 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <div class="ansi-escaped-output">
 <pre><span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: received 6 results and 0 failures
 
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: received 6 results and 0 failures
-
 <span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0042 stdev added
-
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0042 stdev added
-
-<span class="ansi-bright-green-fg">INFO </span>: configure_evaluate: strategy sampled 10 clients (out of 10)
 
 <span class="ansi-bright-green-fg">INFO </span>: configure_evaluate: strategy sampled 10 clients (out of 10)
 </pre>
@@ -1779,105 +1744,97 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 </div>
 <div class="cell-output cell-output-stderr">
 <div class="ansi-escaped-output">
-<pre><span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0800.
+<pre><span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0819.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0800.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0819.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0800.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0819.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0800.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0819.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0800.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0819.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0800.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0819.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 </pre>
 </div>
 </div>
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre><span class="ansi-bright-green-fg">INFO </span>: aggregate_evaluate: received 10 results and 0 failures
-
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_evaluate: received 10 results and 0 failures
-
-<span class="ansi-bright-green-fg">INFO </span>: 
 
 <span class="ansi-bright-green-fg">INFO </span>: 
 
 <span class="ansi-bright-green-fg">INFO </span>: [ROUND 4]
 
-<span class="ansi-bright-green-fg">INFO </span>: [ROUND 4]
-
-<span class="ansi-bright-green-fg">INFO </span>: configure_fit: strategy sampled 6 clients (out of 10)
-
 <span class="ansi-bright-green-fg">INFO </span>: configure_fit: strategy sampled 6 clients (out of 10)
 </pre>
 </div>
 </div>
 <div class="cell-output cell-output-stderr">
 <div class="ansi-escaped-output">
-<pre><span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<pre><span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 </pre>
 </div>
 </div>
@@ -1885,13 +1842,7 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <div class="ansi-escaped-output">
 <pre><span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: received 6 results and 0 failures
 
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: received 6 results and 0 failures
-
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0038 stdev added
-
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0038 stdev added
-
-<span class="ansi-bright-green-fg">INFO </span>: configure_evaluate: strategy sampled 10 clients (out of 10)
+<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0039 stdev added
 
 <span class="ansi-bright-green-fg">INFO </span>: configure_evaluate: strategy sampled 10 clients (out of 10)
 </pre>
@@ -1899,53 +1850,53 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 </div>
 <div class="cell-output cell-output-stderr">
 <div class="ansi-escaped-output">
-<pre><span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0731.
+<pre><span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0735.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0731.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0735.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0731.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0735.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0731.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0735.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0731.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0735.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0731.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0735.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 </pre>
 </div>
 </div>
@@ -1953,17 +1904,9 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <div class="ansi-escaped-output">
 <pre><span class="ansi-bright-green-fg">INFO </span>: aggregate_evaluate: received 10 results and 0 failures
 
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_evaluate: received 10 results and 0 failures
-
-<span class="ansi-bright-green-fg">INFO </span>: 
-
 <span class="ansi-bright-green-fg">INFO </span>: 
 
 <span class="ansi-bright-green-fg">INFO </span>: [ROUND 5]
-
-<span class="ansi-bright-green-fg">INFO </span>: [ROUND 5]
-
-<span class="ansi-bright-green-fg">INFO </span>: configure_fit: strategy sampled 6 clients (out of 10)
 
 <span class="ansi-bright-green-fg">INFO </span>: configure_fit: strategy sampled 6 clients (out of 10)
 </pre>
@@ -1971,33 +1914,33 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 </div>
 <div class="cell-output cell-output-stderr">
 <div class="ansi-escaped-output">
-<pre><span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<pre><span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 </pre>
 </div>
 </div>
@@ -2005,13 +1948,7 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <div class="ansi-escaped-output">
 <pre><span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: received 6 results and 0 failures
 
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: received 6 results and 0 failures
-
 <span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0035 stdev added
-
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_fit: central DP noise with 0.0035 stdev added
-
-<span class="ansi-bright-green-fg">INFO </span>: configure_evaluate: strategy sampled 10 clients (out of 10)
 
 <span class="ansi-bright-green-fg">INFO </span>: configure_evaluate: strategy sampled 10 clients (out of 10)
 </pre>
@@ -2019,53 +1956,53 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 </div>
 <div class="cell-output cell-output-stderr">
 <div class="ansi-escaped-output">
-<pre><span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0660.
+<pre><span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0669.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0660.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0669.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0660.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0669.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0660.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0669.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0660.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0669.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0660.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> <span class="ansi-bright-green-fg">INFO </span>:      adaptiveclipping_mod: parameters are clipped by value: 0.0669.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60852)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41488)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60853)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41490)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60858)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41494)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60859)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41495)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60856)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60851)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41491)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60857)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41487)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41492)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60855)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41489)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 </pre>
 </div>
 </div>
@@ -2073,45 +2010,23 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 <div class="ansi-escaped-output">
 <pre><span class="ansi-bright-green-fg">INFO </span>: aggregate_evaluate: received 10 results and 0 failures
 
-<span class="ansi-bright-green-fg">INFO </span>: aggregate_evaluate: received 10 results and 0 failures
-
-<span class="ansi-bright-green-fg">INFO </span>: 
-
 <span class="ansi-bright-green-fg">INFO </span>: 
 
 <span class="ansi-bright-green-fg">INFO </span>: [SUMMARY]
 
-<span class="ansi-bright-green-fg">INFO </span>: [SUMMARY]
-
-<span class="ansi-bright-green-fg">INFO </span>: Run finished 5 round(s) in 21.85s
-
-<span class="ansi-bright-green-fg">INFO </span>: Run finished 5 round(s) in 21.85s
+<span class="ansi-bright-green-fg">INFO </span>: Run finished 5 round(s) in 22.27s
 
 <span class="ansi-bright-green-fg">INFO </span>:    History (loss, distributed):
 
-<span class="ansi-bright-green-fg">INFO </span>:    History (loss, distributed):
+<span class="ansi-bright-green-fg">INFO </span>:        round 1: 2.2583573249181113
 
-<span class="ansi-bright-green-fg">INFO </span>:        round 1: 2.263401622136434
+<span class="ansi-bright-green-fg">INFO </span>:        round 2: 2.2019069175720216
 
-<span class="ansi-bright-green-fg">INFO </span>:        round 1: 2.263401622136434
+<span class="ansi-bright-green-fg">INFO </span>:        round 3: 2.145465254465739
 
-<span class="ansi-bright-green-fg">INFO </span>:        round 2: 2.2121574608484904
+<span class="ansi-bright-green-fg">INFO </span>:        round 4: 2.1043224751154583
 
-<span class="ansi-bright-green-fg">INFO </span>:        round 2: 2.2121574608484904
-
-<span class="ansi-bright-green-fg">INFO </span>:        round 3: 2.156154600461324
-
-<span class="ansi-bright-green-fg">INFO </span>:        round 3: 2.156154600461324
-
-<span class="ansi-bright-green-fg">INFO </span>:        round 4: 2.1045488033294677
-
-<span class="ansi-bright-green-fg">INFO </span>:        round 4: 2.1045488033294677
-
-<span class="ansi-bright-green-fg">INFO </span>:        round 5: 2.0543136405944824
-
-<span class="ansi-bright-green-fg">INFO </span>:        round 5: 2.0543136405944824
-
-<span class="ansi-bright-green-fg">INFO </span>: 
+<span class="ansi-bright-green-fg">INFO </span>:        round 5: 2.065950899283091
 
 <span class="ansi-bright-green-fg">INFO </span>: 
 </pre>
@@ -2119,9 +2034,9 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 </div>
 <div class="cell-output cell-output-stderr">
 <div class="ansi-escaped-output">
-<pre><span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
+<pre><span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span> /Users/hossein/Documents/website/.venv/lib/python3.13/site-packages/datasets/utils/_dill.py:385: DeprecationWarning: co_lnotab is deprecated, use co_lines instead.
 
-<span class="ansi-cyan-fg">(ClientAppActor pid=60854)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
+<span class="ansi-cyan-fg">(ClientAppActor pid=41493)</span>   obj.co_lnotab,  # for &lt; python 3.10 [not counted in args]
 </pre>
 </div>
 </div>
@@ -2184,12 +2099,19 @@ Figure&nbsp;2: Differentially private training produces similar models whether A
 </div>
 </div>
 </div>
+</section>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li>Bonawitz, K., Ivanov, V., Kreuter, B., Marcedone, A., McMahan, H. B., Patel, S., et al.&nbsp;(2017). Practical secure aggregation for privacy-preserving machine learning. In <em>Proceedings of the 2017 ACM SIGSAC Conference on Computer and Communications Security</em> (pp.&nbsp;1175-1191). ACM. <a href="https://doi.org/10.1145/3133956.3133982" class="uri">https://doi.org/10.1145/3133956.3133982</a></li>
+</ul>
 
 
 <div id="section-progress-widget" class="section-progress-widget" hidden="">
   <p class="section-progress-label">Progress through this section</p>
-  <progress class="section-progress" value="81" max="100" aria-label="81 percent through this section"></progress>
-  <p class="section-progress-detail">81% through this section (199 of 245 min)</p>
+  <progress class="section-progress" value="56" max="100" aria-label="56 percent through this section"></progress>
+  <p class="section-progress-detail">56% through this section (210 of 374 min)</p>
 </div>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -2199,7 +2121,6 @@ document.addEventListener("DOMContentLoaded", function() {
 });
 </script>
 
-</section>
 </section>
 
 <a onclick="window.scrollTo(0, 0); return false;" role="button" id="quarto-back-to-top"><i class="bi bi-arrow-up"></i> Back to top</a></main> <!-- /main -->

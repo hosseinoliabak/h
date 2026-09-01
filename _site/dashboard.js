@@ -10,14 +10,13 @@
   var DATA_URL = '/about/dashboard-data.json';
   var MAX_DATA_BYTES = 7 * 1024 * 1024;
   var MAX_METRIC_PAGES = 20000;
-  var MAX_METRIC_TIMELINE_DAYS = 1830;
-  var MAX_METRIC_YEAR_BUCKETS = 100;
+  var METRIC_DAY_MS = 24 * 60 * 60 * 1000;
+  var METRIC_FIRST_DAY = '1970-01-01';
+  var MAX_METRIC_TIMELINE_DAYS = Math.floor(Date.now() / METRIC_DAY_MS) + 1;
+  var MAX_METRIC_YEAR_BUCKETS = new Date().getUTCFullYear() - 1970 + 1;
   var MAX_RESPONSE_DURATION_MS = 15000;
-  var TRAFFIC_TIMELINE_LEVELS = [
-    { label: '5 years, yearly totals', unit: 'year', count: 5 },
-    { label: '1 year, monthly totals', unit: 'month', count: 12 },
-    { label: '30 days, daily totals', unit: 'day', count: 30 }
-  ];
+  var MIN_TRAFFIC_TIMELINE_DAYS = 7;
+  var MAX_TRAFFIC_TIMELINE_BUCKETS = 64;
   var NEXT_HOP_PROTOCOL_LABELS = new Map([
     ['http/0.9', 'HTTP/0.9'],
     ['http/1.0', 'HTTP/1.0'],
@@ -136,25 +135,8 @@
     ));
   }
 
-  function addUtcMonths(value, amount) {
-    var day = value.getUTCDate();
-    var target = new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + amount, 1));
-    var lastDay = new Date(Date.UTC(
-      target.getUTCFullYear(), target.getUTCMonth() + 1, 0
-    )).getUTCDate();
-    target.setUTCDate(Math.min(day, lastDay));
-    return target;
-  }
-
-  function addUtcYears(value, amount) {
-    var targetYear = value.getUTCFullYear() + amount;
-    var month = value.getUTCMonth();
-    var lastDay = new Date(Date.UTC(targetYear, month + 1, 0)).getUTCDate();
-    return new Date(Date.UTC(targetYear, month, Math.min(value.getUTCDate(), lastDay)));
-  }
-
-  function endOfUtcMonth(value) {
-    return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 0));
+  function utcDayDistance(first, second) {
+    return Math.round((second.getTime() - first.getTime()) / METRIC_DAY_MS);
   }
 
   function validCleanPagePath(value) {
@@ -497,8 +479,15 @@
     var host = document.getElementById('website-update-stat');
     if (!host) return;
     var value = element('strong', 'dashboard-stat-value dashboard-stat-value-date');
-    var time = element('time', '', updateDayFormat.format(date) + ', ' + updateTimeFormat.format(date));
+    var dayText = updateDayFormat.format(date);
+    var timeText = updateTimeFormat.format(date);
+    var time = element('time', 'dashboard-update-timestamp');
     time.dateTime = date.toISOString();
+    time.setAttribute('aria-label', dayText + ', ' + timeText);
+    time.append(
+      element('span', 'dashboard-update-date', dayText),
+      element('span', 'dashboard-update-time', timeText)
+    );
     value.appendChild(time);
     host.replaceChildren(
       value,
@@ -737,7 +726,7 @@
       ? value.collectingSince
       : null;
     var fallbackTimelineStart = timeline.length ? timeline[0].date : null;
-    if (collectingSince && (!fallbackTimelineStart || collectingSince > fallbackTimelineStart)) {
+    if (collectingSince && (!fallbackTimelineStart || collectingSince < fallbackTimelineStart)) {
       fallbackTimelineStart = collectingSince;
     }
     var timelineStartsOn = hasTimeline
@@ -746,8 +735,16 @@
     var snapshotEndsOn = daily.length
       ? daily[daily.length - 1].date
       : (timeline.length ? timeline[timeline.length - 1].date : isoDate(new Date()));
-    if ((timelineStartsOn && timelineStartsOn > snapshotEndsOn)
-        || timeline.some(function (day) { return day.date > snapshotEndsOn; })
+    var maximumTimelinePoints = timelineStartsOn
+      ? utcDayDistance(utcDate(timelineStartsOn), utcDate(snapshotEndsOn)) + 1
+      : MAX_METRIC_TIMELINE_DAYS;
+    var maximumYearBuckets = Number(snapshotEndsOn.slice(0, 4)) - 1970 + 1;
+    if ((timelineStartsOn && (timelineStartsOn < METRIC_FIRST_DAY || timelineStartsOn > snapshotEndsOn))
+        || timeline.length > maximumTimelinePoints
+        || timeline.some(function (day) {
+          return day.date > snapshotEndsOn || (timelineStartsOn && day.date < timelineStartsOn);
+        })
+        || yearly.length > maximumYearBuckets
         || yearly.some(function (year) { return year.year > snapshotEndsOn.slice(0, 4); })) {
       throw new Error('Traffic timeline dates are inconsistent');
     }
@@ -765,102 +762,68 @@
     };
   }
 
-  function trafficRange(anchor, level) {
-    if (level.unit === 'day') {
-      return { start: addUtcDays(anchor, -(level.count - 1)), end: anchor };
-    }
-    if (level.unit === 'month') {
-      return {
-        start: new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - (level.count - 1), 1)),
-        end: anchor
-      };
-    }
-    return {
-      start: new Date(Date.UTC(anchor.getUTCFullYear() - (level.count - 1), 0, 1)),
-      end: anchor
-    };
+  function clampTrafficStart(state, startOffset, spanDays) {
+    return Math.max(0, Math.min(Math.round(startOffset), state.totalDays - spanDays));
   }
 
-  function minimumTrafficAnchor(startsOn, today, level) {
-    var minimum;
-    if (level.unit === 'day') {
-      minimum = addUtcDays(startsOn, level.count - 1);
-    } else if (level.unit === 'month') {
-      minimum = endOfUtcMonth(addUtcMonths(
-        new Date(Date.UTC(startsOn.getUTCFullYear(), startsOn.getUTCMonth(), 1)),
-        level.count - 1
-      ));
-    } else {
-      minimum = new Date(Date.UTC(startsOn.getUTCFullYear() + level.count - 1, 11, 31));
-    }
-    return minimum > today ? today : minimum;
+  function trafficWindowLabel(state, bucketDays) {
+    var scope = state.spanDays === state.totalDays
+      ? 'All history'
+      : numberFormat.format(state.spanDays) + ' days';
+    var resolution = bucketDays === 1
+      ? 'daily totals'
+      : numberFormat.format(bucketDays) + '-day totals';
+    return scope + ' · ' + resolution;
   }
 
-  function shiftTrafficAnchor(anchor, level, direction) {
-    if (level.unit === 'day') return addUtcDays(anchor, direction * level.count);
-    if (level.unit === 'month') return addUtcMonths(anchor, direction * level.count);
-    return addUtcYears(anchor, direction * level.count);
-  }
-
-  function trafficBuckets(range, level, startsOn, timeline) {
+  function trafficBuckets(state) {
+    var width = state.viewport.clientWidth || 960;
+    var targetCount = Math.max(8, Math.min(
+      MAX_TRAFFIC_TIMELINE_BUCKETS,
+      Math.floor(width / 36)
+    ));
+    var bucketDays = Math.max(1, Math.ceil(state.spanDays / targetCount));
+    var bucketCount = Math.ceil(state.spanDays / bucketDays);
+    var tickEvery = Math.max(1, Math.ceil(bucketCount / 8));
     var buckets = [];
-    var timelineMap = new Map(timeline.map(function (day) { return [day.date, day.views]; }));
-    for (var index = 0; index < level.count; index += 1) {
-      var start;
-      var end;
-      var label;
-      var tick;
-      if (level.unit === 'day') {
-        start = addUtcDays(range.start, index);
-        end = start;
-        label = dateFormat.format(start);
-        tick = index % 5 === 0 || index === level.count - 1
-          ? monthFormat.format(start) + ' ' + start.getUTCDate()
-          : '';
-      } else if (level.unit === 'month') {
-        start = new Date(Date.UTC(range.start.getUTCFullYear(), range.start.getUTCMonth() + index, 1));
-        end = endOfUtcMonth(start);
-        if (end > range.end) end = range.end;
-        label = monthYearFormat.format(start);
-        tick = monthFormat.format(start) + (start.getUTCMonth() === 0 ? ' ' + start.getUTCFullYear() : '');
-      } else {
-        start = new Date(Date.UTC(range.start.getUTCFullYear() + index, 0, 1));
-        end = new Date(Date.UTC(start.getUTCFullYear(), 11, 31));
-        if (end > range.end) end = range.end;
-        label = String(start.getUTCFullYear());
-        tick = label;
-      }
-      var available = end >= startsOn;
-      var views = 0;
-      if (available) {
-        for (var day = start; day <= end; day = addUtcDays(day, 1)) {
-          var date = isoDate(day);
-          if (date >= isoDate(startsOn)) views += timelineMap.get(date) || 0;
-        }
+    for (var index = 0; index < bucketCount; index += 1) {
+      var startOffset = state.startOffset + index * bucketDays;
+      var endOffset = Math.min(
+        state.startOffset + state.spanDays - 1,
+        startOffset + bucketDays - 1
+      );
+      var start = addUtcDays(state.startsOn, startOffset);
+      var end = addUtcDays(state.startsOn, endOffset);
+      var label = startOffset === endOffset
+        ? dateFormat.format(start)
+        : dateFormat.format(start) + ' to ' + dateFormat.format(end);
+      var tick = '';
+      if (index % tickEvery === 0 || index === bucketCount - 1) {
+        if (width < 480 && state.spanDays > 60) tick = "'" + String(start.getUTCFullYear()).slice(-2);
+        else if (state.spanDays > 12 * 365) tick = String(start.getUTCFullYear());
+        else if (state.spanDays > 60) tick = monthFormat.format(start) + ' ' + start.getUTCFullYear();
+        else tick = monthFormat.format(start) + ' ' + start.getUTCDate();
       }
       buckets.push({
-        available: available,
         end: end,
         label: label,
-        partial: available && start < startsOn,
         start: start,
         tick: tick,
-        views: views
+        views: state.prefixViews[endOffset + 1] - state.prefixViews[startOffset]
       });
     }
-    return buckets;
+    return { bucketDays: bucketDays, buckets: buckets };
   }
 
   function resetTrafficTimeline(message) {
+    if (trafficTimelineState && trafficTimelineState.resizeHandler) {
+      window.removeEventListener('resize', trafficTimelineState.resizeHandler);
+    }
     trafficTimelineState = null;
-    var zoom = document.getElementById('traffic-zoom');
-    zoom.disabled = true;
-    zoom.value = '1';
-    zoom.setAttribute('aria-valuetext', TRAFFIC_TIMELINE_LEVELS[1].label);
-    document.getElementById('traffic-zoom-label').textContent = TRAFFIC_TIMELINE_LEVELS[1].label;
-    ['traffic-earlier', 'traffic-later', 'traffic-latest'].forEach(function (id) {
+    ['traffic-zoom-out', 'traffic-zoom-in', 'traffic-all', 'traffic-latest'].forEach(function (id) {
       document.getElementById(id).disabled = true;
     });
+    document.getElementById('traffic-zoom-label').textContent = 'All history';
     document.getElementById('traffic-range').textContent = message;
     document.getElementById('traffic-detail').textContent = '';
     document.getElementById('traffic-trend').replaceChildren();
@@ -875,26 +838,16 @@
       );
       return;
     }
-    var level = TRAFFIC_TIMELINE_LEVELS[state.level];
-    var minimum = minimumTrafficAnchor(state.startsOn, state.today, level);
-    if (state.anchor < minimum) state.anchor = minimum;
-    if (state.anchor > state.today) state.anchor = state.today;
-    var range = trafficRange(state.anchor, level);
-    var buckets = trafficBuckets(range, level, state.startsOn, state.timeline);
+    var result = trafficBuckets(state);
+    var buckets = result.buckets;
     var maximum = Math.max.apply(null, buckets.map(function (bucket) {
-      return bucket.available ? bucket.views : 0;
+      return bucket.views;
     }).concat([1]));
     var total = buckets.reduce(function (sum, bucket) {
-      return sum + (bucket.available ? bucket.views : 0);
+      return sum + bucket.views;
     }, 0);
-    var host = document.getElementById('traffic-trend');
-    var scroll = element('div', 'dashboard-timeline-scroll');
-    scroll.tabIndex = 0;
-    scroll.setAttribute('aria-label', 'Scrollable page-view timeline. Use the arrow keys on a bar to inspect adjacent periods.');
-    var chart = element('div', 'dashboard-timeline-chart');
-    chart.style.setProperty('--dashboard-timeline-columns', String(buckets.length));
-    chart.style.setProperty('--dashboard-timeline-min-width', Math.max(560, buckets.length * 25) + 'px');
     var buttons = [];
+    var fragment = document.createDocumentFragment();
     var detail = document.getElementById('traffic-detail');
 
     function selectBucket(index, moveFocus) {
@@ -905,15 +858,8 @@
         button.classList.toggle('dashboard-timeline-selected', selected);
       });
       var bucket = buckets[index];
-      if (bucket.available) {
-        detail.textContent = bucket.label + '. ' + numberFormat.format(bucket.views) + ' page view'
-          + (bucket.views === 1 ? '' : 's') + (bucket.partial
-            ? '. Collection began during this period, so its total is partial.'
-            : '.');
-      } else {
-        detail.textContent = bucket.label + ' is before traffic collection began on '
-          + dateFormat.format(state.startsOn) + '.';
-      }
+      detail.textContent = bucket.label + '. ' + numberFormat.format(bucket.views) + ' page view'
+        + (bucket.views === 1 ? '' : 's') + '.';
       if (moveFocus) buttons[index].focus();
     }
 
@@ -921,18 +867,15 @@
       var button = element('button', 'dashboard-timeline-bucket');
       button.type = 'button';
       button.setAttribute('aria-pressed', 'false');
-      var sentence = bucket.available
-        ? bucket.label + '. ' + numberFormat.format(bucket.views) + ' page view' + (bucket.views === 1 ? '' : 's')
-          + (bucket.partial ? '. Partial collection period.' : '.')
-        : bucket.label + '. Before traffic collection began.';
+      var sentence = bucket.label + '. ' + numberFormat.format(bucket.views) + ' page view'
+        + (bucket.views === 1 ? '' : 's') + '.';
       button.setAttribute('aria-label', sentence);
       button.title = sentence;
-      if (!bucket.available) button.classList.add('dashboard-timeline-unavailable');
       var plot = element('span', 'dashboard-timeline-bucket-plot');
       var bar = element('span', 'dashboard-timeline-bar');
-      bar.style.setProperty('--dashboard-bar-height', bucket.available
-        ? Math.max(bucket.views ? 7 : 1.5, bucket.views / maximum * 100).toFixed(2) + '%'
-        : '1.5%');
+      bar.style.setProperty('--dashboard-bar-height', bucket.views
+        ? Math.max(7, bucket.views / maximum * 100).toFixed(2) + '%'
+        : '0%');
       plot.appendChild(bar);
       var tick = element('span', 'dashboard-timeline-tick', bucket.tick);
       tick.setAttribute('aria-hidden', 'true');
@@ -949,28 +892,61 @@
         selectBucket(target, true);
       });
       buttons.push(button);
-      chart.appendChild(button);
+      fragment.appendChild(button);
     });
-    scroll.appendChild(chart);
-    var key = element('div', 'dashboard-timeline-key');
-    var recordedKey = element('span', 'dashboard-timeline-key-item');
-    recordedKey.append(element('i', 'dashboard-timeline-key-recorded'), document.createTextNode('Recorded totals'));
-    var unavailableKey = element('span', 'dashboard-timeline-key-item');
-    unavailableKey.append(element('i', 'dashboard-timeline-key-unavailable'), document.createTextNode('Before collection'));
-    key.append(recordedKey, unavailableKey);
-    host.replaceChildren(scroll, key);
+    state.chart.style.setProperty('--dashboard-timeline-columns', String(buckets.length));
+    state.chart.replaceChildren(fragment);
+    selectBucket(buckets.length - 1, false);
 
-    var latestAvailable = buckets.length - 1;
-    while (latestAvailable > 0 && !buckets[latestAvailable].available) latestAvailable -= 1;
-    selectBucket(latestAvailable, false);
-    document.getElementById('traffic-zoom-label').textContent = level.label;
-    document.getElementById('traffic-zoom').setAttribute('aria-valuetext', level.label);
-    document.getElementById('traffic-range').textContent = dateFormat.format(range.start) + ' to '
-      + dateFormat.format(range.end) + '. ' + numberFormat.format(total) + ' recorded page view'
+    var rangeStart = addUtcDays(state.startsOn, state.startOffset);
+    var rangeEnd = addUtcDays(state.startsOn, state.startOffset + state.spanDays - 1);
+    var windowLabel = trafficWindowLabel(state, result.bucketDays);
+    document.getElementById('traffic-zoom-label').textContent = windowLabel;
+    document.getElementById('traffic-range').textContent = dateFormat.format(rangeStart) + ' to '
+      + dateFormat.format(rangeEnd) + '. ' + numberFormat.format(total) + ' recorded page view'
       + (total === 1 ? '' : 's') + ' in this range.';
-    document.getElementById('traffic-earlier').disabled = state.anchor <= minimum;
-    document.getElementById('traffic-later').disabled = state.anchor >= state.today;
-    document.getElementById('traffic-latest').disabled = state.anchor >= state.today;
+    state.viewport.setAttribute('aria-label', 'Interactive page-view timeline showing ' + windowLabel
+      + '. Scroll to zoom, drag to pan, or focus the chart and use the arrow, plus, minus, Home, and End keys.');
+    var minimumSpan = Math.min(MIN_TRAFFIC_TIMELINE_DAYS, state.totalDays);
+    document.getElementById('traffic-zoom-out').disabled = state.spanDays >= state.totalDays;
+    document.getElementById('traffic-zoom-in').disabled = state.spanDays <= minimumSpan;
+    document.getElementById('traffic-all').disabled = state.spanDays === state.totalDays;
+    document.getElementById('traffic-latest').disabled = state.startOffset + state.spanDays >= state.totalDays;
+  }
+
+  function queueTrafficTimelineRender() {
+    var state = trafficTimelineState;
+    if (!state || state.renderFrame !== null) return;
+    state.renderFrame = window.requestAnimationFrame(function () {
+      if (!trafficTimelineState || trafficTimelineState !== state) return;
+      state.renderFrame = null;
+      renderTrafficTimeline();
+    });
+  }
+
+  function zoomTrafficTimeline(scale, focusRatio) {
+    var state = trafficTimelineState;
+    if (!state || !Number.isFinite(scale) || scale <= 0) return false;
+    var minimumSpan = Math.min(MIN_TRAFFIC_TIMELINE_DAYS, state.totalDays);
+    var nextSpan = Math.round(state.spanDays * scale);
+    if (scale < 1 && nextSpan === state.spanDays) nextSpan -= 1;
+    if (scale > 1 && nextSpan === state.spanDays) nextSpan += 1;
+    nextSpan = Math.max(minimumSpan, Math.min(state.totalDays, nextSpan));
+    if (nextSpan === state.spanDays) return false;
+    var ratio = Math.max(0, Math.min(1, focusRatio));
+    var focusOffset = state.startOffset + ratio * (state.spanDays - 1);
+    state.startOffset = clampTrafficStart(state, focusOffset - ratio * (nextSpan - 1), nextSpan);
+    state.spanDays = nextSpan;
+    return true;
+  }
+
+  function panTrafficTimeline(dayDelta) {
+    var state = trafficTimelineState;
+    if (!state || !Number.isFinite(dayDelta)) return false;
+    var nextStart = clampTrafficStart(state, state.startOffset + dayDelta, state.spanDays);
+    if (nextStart === state.startOffset) return false;
+    state.startOffset = nextStart;
+    return true;
   }
 
   function initializeTrafficTimeline(data) {
@@ -983,34 +959,145 @@
     }
     var startsOn = utcDate(data.timelineStartsOn);
     var today = utcDate(data.snapshotEndsOn);
+    var totalDays = utcDayDistance(startsOn, today) + 1;
+    var dailyViews = new Array(totalDays).fill(0);
+    data.timeline.forEach(function (day) {
+      var offset = utcDayDistance(startsOn, utcDate(day.date));
+      if (offset >= 0 && offset < totalDays) dailyViews[offset] = day.views;
+    });
+    var prefixViews = [0];
+    dailyViews.forEach(function (views) {
+      prefixViews.push(prefixViews[prefixViews.length - 1] + views);
+    });
+
+    var host = document.getElementById('traffic-trend');
+    var viewport = element('div', 'dashboard-timeline-scroll');
+    viewport.tabIndex = 0;
+    viewport.setAttribute('aria-describedby', 'traffic-help traffic-range traffic-detail');
+    var chart = element('div', 'dashboard-timeline-chart');
+    viewport.appendChild(chart);
+    var key = element('div', 'dashboard-timeline-key');
+    var recordedKey = element('span', 'dashboard-timeline-key-item');
+    recordedKey.append(element('i', 'dashboard-timeline-key-recorded'), document.createTextNode('Recorded totals'));
+    key.appendChild(recordedKey);
+    host.replaceChildren(viewport, key);
+
     trafficTimelineState = {
-      anchor: today,
-      level: 1,
+      chart: chart,
+      prefixViews: prefixViews,
+      renderFrame: null,
+      spanDays: totalDays,
+      startOffset: 0,
       startsOn: startsOn,
-      timeline: data.timeline,
-      today: today
+      suppressClick: false,
+      today: today,
+      totalDays: totalDays,
+      viewport: viewport
     };
-    var zoom = document.getElementById('traffic-zoom');
-    zoom.disabled = false;
-    zoom.value = '1';
-    zoom.oninput = function () {
-      trafficTimelineState.level = Number(zoom.value);
-      renderTrafficTimeline();
+
+    viewport.addEventListener('wheel', function (event) {
+      var delta = event.deltaY;
+      if (event.deltaMode === 1) delta *= 16;
+      else if (event.deltaMode === 2) delta *= Math.max(1, viewport.clientHeight);
+      var bounds = viewport.getBoundingClientRect();
+      var focusRatio = bounds.width > 0 ? (event.clientX - bounds.left) / bounds.width : 0.5;
+      var scale = Math.exp(Math.max(-600, Math.min(600, delta)) * 0.0015);
+      if (!zoomTrafficTimeline(scale, focusRatio)) return;
+      event.preventDefault();
+      queueTrafficTimelineRender();
+    }, { passive: false });
+
+    viewport.addEventListener('pointerdown', function (event) {
+      var state = trafficTimelineState;
+      if (!state || event.button !== 0 || state.spanDays >= state.totalDays) return;
+      state.drag = {
+        moved: false,
+        pointerId: event.pointerId,
+        startOffset: state.startOffset,
+        startX: event.clientX,
+        width: Math.max(1, viewport.clientWidth)
+      };
+      viewport.setPointerCapture(event.pointerId);
+      viewport.classList.add('dashboard-timeline-dragging');
+    });
+
+    viewport.addEventListener('pointermove', function (event) {
+      var state = trafficTimelineState;
+      if (!state || !state.drag || state.drag.pointerId !== event.pointerId) return;
+      var pixels = event.clientX - state.drag.startX;
+      if (Math.abs(pixels) > 3) state.drag.moved = true;
+      var nextStart = clampTrafficStart(
+        state,
+        state.drag.startOffset - pixels / state.drag.width * state.spanDays,
+        state.spanDays
+      );
+      if (nextStart === state.startOffset) return;
+      state.startOffset = nextStart;
+      queueTrafficTimelineRender();
+    });
+
+    function finishDrag(event) {
+      var state = trafficTimelineState;
+      if (!state || !state.drag || state.drag.pointerId !== event.pointerId) return;
+      state.suppressClick = state.drag.moved;
+      state.drag = null;
+      if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
+      viewport.classList.remove('dashboard-timeline-dragging');
+    }
+    viewport.addEventListener('pointerup', finishDrag);
+    viewport.addEventListener('pointercancel', finishDrag);
+    viewport.addEventListener('lostpointercapture', function () {
+      var state = trafficTimelineState;
+      if (!state || !state.drag) return;
+      state.suppressClick = state.drag.moved;
+      state.drag = null;
+      viewport.classList.remove('dashboard-timeline-dragging');
+    });
+    viewport.addEventListener('click', function (event) {
+      var state = trafficTimelineState;
+      if (!state || !state.suppressClick) return;
+      state.suppressClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+
+    viewport.addEventListener('keydown', function (event) {
+      if (event.target !== viewport) return;
+      var changed = false;
+      var panStep = Math.max(1, Math.round(trafficTimelineState.spanDays * 0.15));
+      if (event.key === 'ArrowLeft') changed = panTrafficTimeline(-panStep);
+      else if (event.key === 'ArrowRight') changed = panTrafficTimeline(panStep);
+      else if (event.key === '+' || event.key === '=') changed = zoomTrafficTimeline(0.5, 0.5);
+      else if (event.key === '-' || event.key === '_') changed = zoomTrafficTimeline(2, 0.5);
+      else if (event.key === 'Home') {
+        trafficTimelineState.startOffset = 0;
+        trafficTimelineState.spanDays = trafficTimelineState.totalDays;
+        changed = true;
+      } else if (event.key === 'End') {
+        trafficTimelineState.startOffset = trafficTimelineState.totalDays - trafficTimelineState.spanDays;
+        changed = true;
+      } else return;
+      event.preventDefault();
+      if (changed) renderTrafficTimeline();
+    });
+
+    document.getElementById('traffic-zoom-out').onclick = function () {
+      if (zoomTrafficTimeline(2, 0.5)) renderTrafficTimeline();
     };
-    document.getElementById('traffic-earlier').onclick = function () {
-      var level = TRAFFIC_TIMELINE_LEVELS[trafficTimelineState.level];
-      trafficTimelineState.anchor = shiftTrafficAnchor(trafficTimelineState.anchor, level, -1);
-      renderTrafficTimeline();
+    document.getElementById('traffic-zoom-in').onclick = function () {
+      if (zoomTrafficTimeline(0.5, 0.5)) renderTrafficTimeline();
     };
-    document.getElementById('traffic-later').onclick = function () {
-      var level = TRAFFIC_TIMELINE_LEVELS[trafficTimelineState.level];
-      trafficTimelineState.anchor = shiftTrafficAnchor(trafficTimelineState.anchor, level, 1);
+    document.getElementById('traffic-all').onclick = function () {
+      trafficTimelineState.startOffset = 0;
+      trafficTimelineState.spanDays = trafficTimelineState.totalDays;
       renderTrafficTimeline();
     };
     document.getElementById('traffic-latest').onclick = function () {
-      trafficTimelineState.anchor = trafficTimelineState.today;
+      trafficTimelineState.startOffset = trafficTimelineState.totalDays - trafficTimelineState.spanDays;
       renderTrafficTimeline();
     };
+    trafficTimelineState.resizeHandler = queueTrafficTimelineRender;
+    window.addEventListener('resize', trafficTimelineState.resizeHandler);
     renderTrafficTimeline();
   }
 
