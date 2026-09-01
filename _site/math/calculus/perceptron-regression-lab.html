@@ -86,9 +86,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-2fbff13f3c01954db7c154d56b89b1ba.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-5d07f2f2a1dffb4a2e46c704181860bb.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
-<link href="../../site_libs/bootstrap/bootstrap-dark-b359a33defd986239048130c5c3f6bd3.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
-<link href="../../site_libs/bootstrap/bootstrap-5d07f2f2a1dffb4a2e46c704181860bb.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<link href="../../site_libs/bootstrap/bootstrap-bfc7e50b5d53134b8e52282d82c17faa.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../../site_libs/bootstrap/bootstrap-dark-1d52ae0033d4c98bea61607d46fff569.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-bfc7e50b5d53134b8e52282d82c17faa.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": true,
@@ -822,7 +822,7 @@ window.Quarto = {
 </nav>
     </div>
 <!-- main -->
-<main class="content page-columns page-full" id="quarto-document-content">
+<main class="content" id="quarto-document-content">
 
 <script src="../../theme-toggle.js"></script>
 <script src="../../auth.js"></script>
@@ -874,21 +874,28 @@ document.addEventListener("DOMContentLoaded", function () {
   var meta = document.querySelector(".quarto-title-meta");
   if (!meta) return;
 
-  // Published only. Modified is dropped, and only two pages in the project
-  // ever set date-modified.
-  var published = "";
-  var dateCell = meta.querySelector(".date");
-  if (dateCell) {
-    var cell = dateCell.closest("div");
+  // Published, and Modified only where a page actually sets date-modified.
+  // Two pages do, about-this-website and roadmap, and both carry it on
+  // purpose because they describe a site that keeps changing.
+  function readCell(sel) {
+    var el = meta.querySelector(sel);
+    if (!el) return "";
+    var cell = el.closest("div");
     var body = cell && cell.querySelector(".quarto-title-meta-contents");
-    published = ((body || dateCell).textContent || "").trim();
+    return ((body || el).textContent || "").trim();
   }
+  var published = readCell(".date");
+  var modified = readCell(".date-modified");
 
   var html = '<span class="quarto-title-meta-item">80 min <span class="rt-info" tabindex="0" aria-describedby="reading-time-method"><span aria-hidden="true">&#9432;</span><span class="rt-tooltip" id="reading-time-method" role="tooltip">Estimated based on 150 words/min reading speed, code complexity, math blocks, and interactive tools. Adjusted by difficulty level. About 1,200 words.</span></span></span><span class="quarto-title-meta-item">difficulty 3/5</span>';
+  function esc(t) {
+    return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
   if (published) {
-    html += '<span class="quarto-title-meta-item">published ' +
-            published.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") +
-            '</span>';
+    html += '<span class="quarto-title-meta-item">published ' + esc(published) + '</span>';
+  }
+  if (modified && modified !== published) {
+    html += '<span class="quarto-title-meta-item">updated ' + esc(modified) + '</span>';
   }
 
   var line = document.createElement("div");
@@ -899,7 +906,7 @@ document.addEventListener("DOMContentLoaded", function () {
 </script>
 
 <p>In this lab, we will put the optimization ideas from calculus (derivatives, gradient descent, loss functions) into practice by implementing a neural network from scratch. We will start with the simplest possible case, a single perceptron doing simple linear regression, and then extend it to multiple inputs. This lab is a companion to the <a href="../../math/calculus/optimization-in-neural-networks">Optimization in Neural Networks</a> theory page.</p>
-<div id="2bda8173" class="cell" data-execution_count="1">
+<div id="54e6405a" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>config InlineBackend.figure_formats <span class="op">=</span> [<span class="st">'svg'</span>]</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
@@ -909,16 +916,16 @@ document.addEventListener("DOMContentLoaded", function () {
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Set a seed so that our results are reproducible.</span></span>
 <span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>np.random.seed(<span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<section id="part-1.-simple-linear-regression-tv-advertising-sales" class="level2 page-columns page-full">
+<section id="part-1.-simple-linear-regression-tv-advertising-sales" class="level2">
 <h2 class="anchored" data-anchor-id="part-1.-simple-linear-regression-tv-advertising-sales">Part 1. Simple Linear Regression (TV Advertising → Sales)</h2>
-<section id="loading-and-exploring-data" class="level3 page-columns page-full">
+<section id="loading-and-exploring-data" class="level3">
 <h3 class="anchored" data-anchor-id="loading-and-exploring-data">Loading and Exploring Data</h3>
 <p>We will use a <a href="https://www.kaggle.com/code/devzohaib/simple-linear-regression/notebook">Kaggle dataset</a> that tracks how much a company spent on TV advertising (in thousands of dollars) and how many units it sold (<a href="../../media/tvmarketing.csv">local copy</a>). Our goal is to predict sales from the TV budget.</p>
-<div id="a6f16cb1" class="cell page-columns page-full" data-execution_count="2">
+<div id="c484268c" class="cell" data-execution_count="2">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>path <span class="op">=</span> <span class="st">"../../media/tvmarketing.csv"</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>adv <span class="op">=</span> pd.read_csv(path)</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>adv.head()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-display column-body-outset" data-execution_count="2">
+<div class="cell-output cell-output-display" data-execution_count="2">
 <div>
 
 
@@ -963,7 +970,7 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 </div>
 <p>A scatter plot reveals that there is a positive relationship between TV spending and sales.</p>
-<div id="2bb6fb2f" class="cell page-columns page-full" data-execution_count="3">
+<div id="ff90fbd4" class="cell" data-execution_count="3">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots()</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>ax.scatter(adv[<span class="st">"TV"</span>], adv[<span class="st">"Sales"</span>], color<span class="op">=</span><span class="st">"#4682B4"</span>, alpha<span class="op">=</span><span class="fl">0.6</span>, edgecolors<span class="op">=</span><span class="st">"none"</span>)</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>ax.set_xlabel(<span class="st">"TV Advertising Budget ($k)"</span>)</span>
@@ -971,23 +978,24 @@ document.addEventListener("DOMContentLoaded", function () {
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>ax.set_title(<span class="st">"TV Advertising vs. Sales"</span>, fontsize<span class="op">=</span><span class="dv">12</span>, color<span class="op">=</span><span class="st">"gray"</span>)</span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>ax.grid(linestyle<span class="op">=</span><span class="st">"--"</span>, alpha<span class="op">=</span><span class="fl">0.4</span>)</span>
 <span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-display page-columns page-full">
-<div class="page-columns page-full">
-<figure class="figure page-columns page-full">
-<p class="page-columns page-full"><img src="perceptron-regression-lab_files/figure-html/cell-4-output-1.svg" class="img-fluid figure-img column-body-outset"></p>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="perceptron-regression-lab_files/figure-html/cell-4-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Sales against TV advertising budget, showing a clear positive relationship</figcaption>
 </figure>
 </div>
 </div>
 </div>
 </section>
-<section id="normalizing-data" class="level3 page-columns page-full">
+<section id="normalizing-data" class="level3">
 <h3 class="anchored" data-anchor-id="normalizing-data">Normalizing Data</h3>
 <p>Neural networks train more efficiently when feature values are on similar scales. We normalize each column by subtracting its mean and dividing by its standard deviation. This is called <strong>z-score normalization</strong> (sometimes called standardization). After normalization, each feature has a mean of 0 and a standard deviation of 1.</p>
-<div id="6dd6a0ce" class="cell" data-execution_count="4">
+<div id="25e27146" class="cell" data-execution_count="4">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>adv_norm <span class="op">=</span> (adv <span class="op">-</span> np.mean(adv)) <span class="op">/</span> np.std(adv)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>Here is the same scatter plot after normalization. Notice that the shape is identical, but the axis values have changed.</p>
-<div id="5c15b523" class="cell page-columns page-full" data-execution_count="5">
+<div id="a9de7534" class="cell" data-execution_count="5">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots()</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>ax.scatter(adv_norm[<span class="st">"TV"</span>], adv_norm[<span class="st">"Sales"</span>], color<span class="op">=</span><span class="st">"#4682B4"</span>, alpha<span class="op">=</span><span class="fl">0.6</span>, edgecolors<span class="op">=</span><span class="st">"none"</span>)</span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>ax.set_xlabel(<span class="st">"TV (normalized)"</span>)</span>
@@ -995,16 +1003,17 @@ document.addEventListener("DOMContentLoaded", function () {
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>ax.set_title(<span class="st">"Normalized TV vs. Sales"</span>, fontsize<span class="op">=</span><span class="dv">12</span>, color<span class="op">=</span><span class="st">"gray"</span>)</span>
 <span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>ax.grid(linestyle<span class="op">=</span><span class="st">"--"</span>, alpha<span class="op">=</span><span class="fl">0.4</span>)</span>
 <span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-display page-columns page-full">
-<div class="page-columns page-full">
-<figure class="figure page-columns page-full">
-<p class="page-columns page-full"><img src="perceptron-regression-lab_files/figure-html/cell-6-output-1.svg" class="img-fluid figure-img column-body-outset"></p>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="perceptron-regression-lab_files/figure-html/cell-6-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Same data after normalization, identical in shape with only the axis values changed</figcaption>
 </figure>
 </div>
 </div>
 </div>
 <p>Reshape the data into row vectors (shape <span class="math inline">\(1 \times m\)</span>) as required by our neural network.</p>
-<div id="0026c592" class="cell" data-execution_count="6">
+<div id="31e21cde" class="cell" data-execution_count="6">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>X_norm <span class="op">=</span> adv_norm[<span class="st">"TV"</span>]</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>Y_norm <span class="op">=</span> adv_norm[<span class="st">"Sales"</span>]</span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -1024,7 +1033,7 @@ We have m = 200 training examples.</code></pre>
 <section id="defining-neural-network-structure" class="level3">
 <h3 class="anchored" data-anchor-id="defining-neural-network-structure">Defining Neural Network Structure</h3>
 <p>We define a helper function that returns the size of the input layer (<span class="math inline">\(n_x\)</span>) and the output layer (<span class="math inline">\(n_y\)</span>) based on the shapes of our data arrays.</p>
-<div id="f603afb5" class="cell" data-execution_count="7">
+<div id="d35517eb" class="cell" data-execution_count="7">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> layer_sizes(X, Y):</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
@@ -1051,7 +1060,7 @@ Size of output layer: n_y = 1</code></pre>
 <section id="initializing-parameters" class="level3">
 <h3 class="anchored" data-anchor-id="initializing-parameters">Initializing Parameters</h3>
 <p>We initialize the weight matrix <span class="math inline">\(W\)</span> with small random values and the bias vector <span class="math inline">\(b\)</span> with zeros. The shapes are determined by the layer sizes.</p>
-<div id="06da5596" class="cell" data-execution_count="8">
+<div id="4d2fc74f" class="cell" data-execution_count="8">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> initialize_parameters(n_x, n_y):</span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Returns:</span></span>
@@ -1078,7 +1087,7 @@ b = [[0.]]</code></pre>
 <h3 class="anchored" data-anchor-id="forward-propagation">Forward Propagation</h3>
 <p>Forward propagation computes the predicted output. For a single perceptron with no activation function, this is simply a linear combination.</p>
 <p><span class="math display">\[Z = WX + b\]</span> <span class="math display">\[\hat{Y} = Z\]</span></p>
-<div id="d1af9ccb" class="cell" data-execution_count="9">
+<div id="d8ab8ad3" class="cell" data-execution_count="9">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> forward_propagation(X, parameters):</span>
 <span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Arguments:</span></span>
@@ -1107,7 +1116,7 @@ b = [[0.]]</code></pre>
 <h3 class="anchored" data-anchor-id="computing-cost-mean-squared-error">Computing Cost (Mean Squared Error)</h3>
 <p>The cost function measures how far our predictions are from the true values. We use the sum of squares cost (also called MSE with a <span class="math inline">\(\frac{1}{2}\)</span> factor for cleaner derivatives).</p>
 <p><span class="math display">\[\mathcal{L}(w, b) = \frac{1}{2m}\sum_{i=1}^{m}(\hat{y}^{(i)} - y^{(i)})^2\]</span></p>
-<div id="fb14b804" class="cell" data-execution_count="10">
+<div id="fbdd61ca" class="cell" data-execution_count="10">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> compute_cost(Y_hat, Y):</span>
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Computes the cost function as a sum of squares.</span></span>
@@ -1134,7 +1143,7 @@ b = [[0.]]</code></pre>
 <p>This is where the calculus from the theory section becomes code. We compute the partial derivatives of the cost function with respect to <span class="math inline">\(W\)</span> and <span class="math inline">\(b\)</span>.</p>
 <p><span class="math display">\[\frac{\partial \mathcal{L}}{\partial W} = \frac{1}{m}(\hat{Y} - Y)X^T\]</span></p>
 <p><span class="math display">\[\frac{\partial \mathcal{L}}{\partial b} = \frac{1}{m}\sum_{i=1}^{m}(\hat{y}^{(i)} - y^{(i)})\]</span></p>
-<div id="d4f53a39" class="cell" data-execution_count="11">
+<div id="34ed5f50" class="cell" data-execution_count="11">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> backward_propagation(Y_hat, X, Y):</span>
 <span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Computes gradients for W and b.</span></span>
@@ -1171,7 +1180,7 @@ db = [[0.75202439]]</code></pre>
 <p><span class="math display">\[W = W - \alpha \frac{\partial \mathcal{L}}{\partial W}\]</span></p>
 <p><span class="math display">\[b = b - \alpha \frac{\partial \mathcal{L}}{\partial b}\]</span></p>
 <p>Here, <span class="math inline">\(\alpha\)</span> is the <strong>learning rate</strong>, which controls the size of each update step.</p>
-<div id="09ee2aec" class="cell" data-execution_count="12">
+<div id="69b9a89f" class="cell" data-execution_count="12">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> update_parameters(parameters, grads, learning_rate<span class="op">=</span><span class="fl">1.2</span>):</span>
 <span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Updates parameters using gradient descent.</span></span>
@@ -1208,7 +1217,7 @@ b updated = [[-0.90242926]]</code></pre>
 <section id="putting-it-all-together" class="level3">
 <h3 class="anchored" data-anchor-id="putting-it-all-together">Putting It All Together</h3>
 <p>The <code>nn_model()</code> function integrates all steps (structure definition, initialization, and the training loop) into a single callable unit.</p>
-<div id="69c291ec" class="cell" data-execution_count="13">
+<div id="50ad5efd" class="cell" data-execution_count="13">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> nn_model(X, Y, num_iterations<span class="op">=</span><span class="dv">10</span>, learning_rate<span class="op">=</span><span class="fl">1.2</span>, print_cost<span class="op">=</span><span class="va">False</span>):</span>
 <span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Builds and trains a single-perceptron neural network.</span></span>
@@ -1249,7 +1258,7 @@ b updated = [[-0.90242926]]</code></pre>
 </section>
 <section id="training-and-observing-cost-decrease" class="level3">
 <h3 class="anchored" data-anchor-id="training-and-observing-cost-decrease">Training and Observing Cost Decrease</h3>
-<div id="9e9ec151" class="cell" data-execution_count="14">
+<div id="eef0cae1" class="cell" data-execution_count="14">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>parameters_simple <span class="op">=</span> nn_model(X_norm, Y_norm, num_iterations<span class="op">=</span><span class="dv">30</span>, learning_rate<span class="op">=</span><span class="fl">1.2</span>, print_cost<span class="op">=</span><span class="va">True</span>)</span>
 <span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"W ="</span>, parameters_simple[<span class="st">"W"</span>])</span>
 <span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"b ="</span>, parameters_simple[<span class="st">"b"</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -1290,10 +1299,10 @@ b = [[5800.0727459]]</code></pre>
 </div>
 <p>Notice how the cost decreases rapidly in the first few iterations and then plateaus. This means the model has <strong>converged</strong>, meaning further iterations will not improve the fit significantly.</p>
 </section>
-<section id="making-predictions-and-plotting" class="level3 page-columns page-full">
+<section id="making-predictions-and-plotting" class="level3">
 <h3 class="anchored" data-anchor-id="making-predictions-and-plotting">Making Predictions and Plotting</h3>
 <p>We build a prediction function that handles normalization and denormalization. This allows us to feed in raw (un-normalized) values and get predictions in the original units.</p>
-<div id="32907134" class="cell" data-execution_count="15">
+<div id="f5859783" class="cell" data-execution_count="15">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> predict(X, Y, parameters, X_pred):</span>
 <span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
 <span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="co">    Makes predictions using the trained model, handling normalization.</span></span>
@@ -1324,7 +1333,7 @@ b = [[5800.0727459]]</code></pre>
 <span id="cb23-28"><a href="#cb23-28" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb23-29"><a href="#cb23-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> Y_pred[<span class="dv">0</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<div id="166d8a91" class="cell" data-execution_count="16">
+<div id="c8daff2c" class="cell" data-execution_count="16">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>X_pred <span class="op">=</span> np.array([<span class="dv">50</span>, <span class="dv">120</span>, <span class="dv">280</span>])</span>
 <span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>Y_pred <span class="op">=</span> predict(adv[<span class="st">"TV"</span>], adv[<span class="st">"Sales"</span>], parameters_simple, X_pred)</span>
 <span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"TV marketing expenses: </span><span class="sc">{</span>X_pred<span class="sc">}</span><span class="ss">"</span>)</span>
@@ -1335,7 +1344,7 @@ Predicted sales: [-16004.26954828  17324.34375303  93504.03129886]</code></pre>
 </div>
 </div>
 <p>Now we can visualize the regression line alongside the original data.</p>
-<div id="d6da51e8" class="cell page-columns page-full" data-execution_count="17">
+<div id="97a9c7ab" class="cell" data-execution_count="17">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots()</span>
 <span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>ax.scatter(adv[<span class="st">"TV"</span>], adv[<span class="st">"Sales"</span>], color<span class="op">=</span><span class="st">"#4682B4"</span>, alpha<span class="op">=</span><span class="fl">0.5</span>, edgecolors<span class="op">=</span><span class="st">"none"</span>, label<span class="op">=</span><span class="st">"Data"</span>)</span>
 <span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -1350,35 +1359,36 @@ Predicted sales: [-16004.26954828  17324.34375303  93504.03129886]</code></pre>
 <span id="cb26-12"><a href="#cb26-12" aria-hidden="true" tabindex="-1"></a>ax.legend()</span>
 <span id="cb26-13"><a href="#cb26-13" aria-hidden="true" tabindex="-1"></a>ax.grid(linestyle<span class="op">=</span><span class="st">"--"</span>, alpha<span class="op">=</span><span class="fl">0.4</span>)</span>
 <span id="cb26-14"><a href="#cb26-14" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-display page-columns page-full">
-<div class="page-columns page-full">
-<figure class="figure page-columns page-full">
-<p class="page-columns page-full"><img src="perceptron-regression-lab_files/figure-html/cell-18-output-1.svg" class="img-fluid figure-img column-body-outset"></p>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="perceptron-regression-lab_files/figure-html/cell-18-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Regression line over the data, with the three new predictions marked on it</figcaption>
 </figure>
 </div>
 </div>
 </div>
 </section>
 </section>
-<section id="part-2.-multiple-linear-regression-house-size-quality-price" class="level2 page-columns page-full">
+<section id="part-2.-multiple-linear-regression-house-size-quality-price" class="level2">
 <h2 class="anchored" data-anchor-id="part-2.-multiple-linear-regression-house-size-quality-price">Part 2. Multiple Linear Regression (House Size + Quality → Price)</h2>
 <p>Now we will extend our single-perceptron model to handle <strong>two</strong> input features. The beauty of our implementation is that we do not need to change the forward propagation, backward propagation, or parameter update code at all. The matrix operations generalize naturally.</p>
-<section id="loading-house-prices-data" class="level3 page-columns page-full">
+<section id="loading-house-prices-data" class="level3">
 <h3 class="anchored" data-anchor-id="loading-house-prices-data">Loading House Prices Data</h3>
 <p>We use the <a href="https://www.kaggle.com/c/house-prices-advanced-regression-techniques">Kaggle House Prices dataset</a> (<a href="../../media/house_prices_train.csv">local copy</a>, 450 KB). From it, we select two features to predict sale price.</p>
 <ul>
 <li><strong>GrLivArea</strong> (above grade living area, in square feet)</li>
 <li><strong>OverallQual</strong> (overall quality rating from 1 to 10)</li>
 </ul>
-<div id="485cc84b" class="cell" data-execution_count="18">
+<div id="dc81042b" class="cell" data-execution_count="18">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>df <span class="op">=</span> pd.read_csv(<span class="st">"../../media/house_prices_train.csv"</span>)</span>
 <span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>X_multi <span class="op">=</span> df[[<span class="st">"GrLivArea"</span>, <span class="st">"OverallQual"</span>]]</span>
 <span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>Y_multi <span class="op">=</span> df[<span class="st">"SalePrice"</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<div id="82b0f7cb" class="cell page-columns page-full" data-execution_count="19">
+<div id="a3b64fb2" class="cell" data-execution_count="19">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>display(X_multi.head())</span>
 <span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>display(Y_multi.head())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-display column-body-outset">
+<div class="cell-output cell-output-display">
 <div>
 
 
@@ -1421,7 +1431,7 @@ Predicted sales: [-16004.26954828  17324.34375303  93504.03129886]</code></pre>
 
 </div>
 </div>
-<div class="cell-output cell-output-display column-body-outset">
+<div class="cell-output cell-output-display">
 <pre><code>0    208500
 1    181500
 2    223500
@@ -1431,7 +1441,7 @@ Name: SalePrice, dtype: int64</code></pre>
 </div>
 </div>
 <p>Before training, it helps to visualize the relationship between each feature and the target variable.</p>
-<div id="b953fed5" class="cell page-columns page-full" data-execution_count="20">
+<div id="a43154b0" class="cell" data-execution_count="20">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>fig, axes <span class="op">=</span> plt.subplots(<span class="dv">1</span>, <span class="dv">2</span>, figsize<span class="op">=</span>(<span class="dv">12</span>, <span class="dv">5</span>))</span>
 <span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>axes[<span class="dv">0</span>].scatter(X_multi[<span class="st">"GrLivArea"</span>], Y_multi, color<span class="op">=</span><span class="st">"#4682B4"</span>, alpha<span class="op">=</span><span class="fl">0.4</span>, edgecolors<span class="op">=</span><span class="st">"none"</span>)</span>
@@ -1448,10 +1458,11 @@ Name: SalePrice, dtype: int64</code></pre>
 <span id="cb30-14"><a href="#cb30-14" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb30-15"><a href="#cb30-15" aria-hidden="true" tabindex="-1"></a>plt.tight_layout()</span>
 <span id="cb30-16"><a href="#cb30-16" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-display page-columns page-full">
-<div class="page-columns page-full">
-<figure class="figure page-columns page-full">
-<p class="page-columns page-full"><img src="perceptron-regression-lab_files/figure-html/cell-21-output-1.svg" class="img-fluid figure-img column-body-outset"></p>
+<div class="cell-output cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="perceptron-regression-lab_files/figure-html/cell-21-output-1.svg" class="img-fluid figure-img"></p>
+<figcaption>Sale price against living area and against the second feature, before the model is trained</figcaption>
 </figure>
 </div>
 </div>
@@ -1461,12 +1472,12 @@ Name: SalePrice, dtype: int64</code></pre>
 <section id="normalizing-data-1" class="level3">
 <h3 class="anchored" data-anchor-id="normalizing-data-1">Normalizing Data</h3>
 <p>Just like before, we normalize each column to have mean 0 and standard deviation 1.</p>
-<div id="313e6a72" class="cell" data-execution_count="21">
+<div id="26f9ef2d" class="cell" data-execution_count="21">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>X_multi_norm <span class="op">=</span> (X_multi <span class="op">-</span> X_multi.mean()) <span class="op">/</span> X_multi.std(ddof<span class="op">=</span><span class="dv">0</span>)</span>
 <span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>Y_multi_norm <span class="op">=</span> (Y_multi <span class="op">-</span> Y_multi.mean()) <span class="op">/</span> Y_multi.std(ddof<span class="op">=</span><span class="dv">0</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>We reshape the data so that <span class="math inline">\(X\)</span> has shape <span class="math inline">\((2, m)\)</span> and <span class="math inline">\(Y\)</span> has shape <span class="math inline">\((1, m)\)</span>.</p>
-<div id="8cbca741" class="cell" data-execution_count="22">
+<div id="4e15db56" class="cell" data-execution_count="22">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>X_multi_norm <span class="op">=</span> np.array(X_multi_norm).T</span>
 <span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>Y_multi_norm <span class="op">=</span> np.array(Y_multi_norm).reshape((<span class="dv">1</span>, <span class="bu">len</span>(Y_multi_norm)))</span>
 <span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -1483,7 +1494,7 @@ We have m = 1460 training examples.</code></pre>
 <section id="training-with-2-input-nodes" class="level3">
 <h3 class="anchored" data-anchor-id="training-with-2-input-nodes">Training with 2 Input Nodes</h3>
 <p>We pass the new data directly to <code>nn_model()</code>. Because the input shape is <span class="math inline">\((2, m)\)</span> instead of <span class="math inline">\((1, m)\)</span>, <code>layer_sizes()</code> will automatically set <span class="math inline">\(n_x = 2\)</span>. Everything else works exactly the same.</p>
-<div id="1056912e" class="cell" data-execution_count="23">
+<div id="b96dc056" class="cell" data-execution_count="23">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>parameters_multi <span class="op">=</span> nn_model(X_multi_norm, Y_multi_norm, num_iterations<span class="op">=</span><span class="dv">100</span>, learning_rate<span class="op">=</span><span class="fl">1.2</span>, print_cost<span class="op">=</span><span class="va">True</span>)</span>
 <span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"W ="</span>, parameters_multi[<span class="st">"W"</span>])</span>
 <span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"b ="</span>, parameters_multi[<span class="st">"b"</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -1596,7 +1607,7 @@ b = [[1.13881507e-16]]</code></pre>
 </section>
 <section id="making-predictions-and-evaluating" class="level3">
 <h3 class="anchored" data-anchor-id="making-predictions-and-evaluating">Making Predictions and Evaluating</h3>
-<div id="619cd021" class="cell" data-execution_count="24">
+<div id="974b2fb9" class="cell" data-execution_count="24">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>X_pred_multi <span class="op">=</span> np.array([[<span class="dv">1710</span>, <span class="dv">7</span>], [<span class="dv">1200</span>, <span class="dv">6</span>], [<span class="dv">2200</span>, <span class="dv">8</span>]]).T</span>
 <span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>Y_pred_multi <span class="op">=</span> predict(X_multi, Y_multi, parameters_multi, X_pred_multi)</span>
 <span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -1616,7 +1627,7 @@ Predicted sale price ($): [221371. 160039. 281587.]</code></pre>
 <div id="section-progress-widget" class="section-progress-widget" hidden="">
   <p class="section-progress-label">Progress through this section</p>
   <progress class="section-progress" value="61" max="100" aria-label="61 percent through this section"></progress>
-  <p class="section-progress-detail">61% through this section (691 of 1117 min)</p>
+  <p class="section-progress-detail">61% through this section (672 of 1098 min)</p>
 </div>
 <script>
 document.addEventListener("DOMContentLoaded", function() {

@@ -10,7 +10,14 @@
   var DATA_URL = '/about/dashboard-data.json';
   var MAX_DATA_BYTES = 7 * 1024 * 1024;
   var MAX_METRIC_PAGES = 20000;
+  var MAX_METRIC_TIMELINE_DAYS = 1830;
+  var MAX_METRIC_YEAR_BUCKETS = 100;
   var MAX_RESPONSE_DURATION_MS = 15000;
+  var TRAFFIC_TIMELINE_LEVELS = [
+    { label: '5 years, yearly totals', unit: 'year', count: 5 },
+    { label: '1 year, monthly totals', unit: 'month', count: 12 },
+    { label: '30 days, daily totals', unit: 'day', count: 30 }
+  ];
   var NEXT_HOP_PROTOCOL_LABELS = new Map([
     ['http/0.9', 'HTTP/0.9'],
     ['http/1.0', 'HTTP/1.0'],
@@ -52,12 +59,16 @@
     year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
   });
   var monthFormat = new Intl.DateTimeFormat(undefined, { month: 'short', timeZone: 'UTC' });
+  var monthYearFormat = new Intl.DateTimeFormat(undefined, {
+    year: 'numeric', month: 'long', timeZone: 'UTC'
+  });
   var updateDayFormat = new Intl.DateTimeFormat(undefined, {
     year: 'numeric', month: 'short', day: 'numeric'
   });
   var updateTimeFormat = new Intl.DateTimeFormat(undefined, {
     hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
   });
+  var trafficTimelineState = null;
 
   function element(tag, className, text) {
     var node = document.createElement(tag);
@@ -117,6 +128,33 @@
 
   function isoDate(value) {
     return value.toISOString().slice(0, 10);
+  }
+
+  function addUtcDays(value, amount) {
+    return new Date(Date.UTC(
+      value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate() + amount
+    ));
+  }
+
+  function addUtcMonths(value, amount) {
+    var day = value.getUTCDate();
+    var target = new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + amount, 1));
+    var lastDay = new Date(Date.UTC(
+      target.getUTCFullYear(), target.getUTCMonth() + 1, 0
+    )).getUTCDate();
+    target.setUTCDate(Math.min(day, lastDay));
+    return target;
+  }
+
+  function addUtcYears(value, amount) {
+    var targetYear = value.getUTCFullYear() + amount;
+    var month = value.getUTCMonth();
+    var lastDay = new Date(Date.UTC(targetYear, month + 1, 0)).getUTCDate();
+    return new Date(Date.UTC(targetYear, month, Math.min(value.getUTCDate(), lastDay)));
+  }
+
+  function endOfUtcMonth(value) {
+    return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 0));
   }
 
   function validCleanPagePath(value) {
@@ -640,50 +678,340 @@
         || !Number.isSafeInteger(value.last30Days) || value.last30Days < 0
         || !Number.isSafeInteger(value.measuredPages) || value.measuredPages < 0 || value.measuredPages > MAX_METRIC_PAGES
         || !Array.isArray(value.daily) || value.daily.length > 31
+        || (value.timeline !== undefined
+          && (!Array.isArray(value.timeline) || value.timeline.length > MAX_METRIC_TIMELINE_DAYS))
+        || (value.timelineStartsOn !== undefined && value.timelineStartsOn !== null
+          && !utcDate(value.timelineStartsOn))
+        || (value.yearly !== undefined
+          && (!Array.isArray(value.yearly) || value.yearly.length > MAX_METRIC_YEAR_BUCKETS))
         || !Array.isArray(value.topPages) || value.topPages.length > 20) {
       throw new Error('Traffic data has an unsupported shape');
     }
-    var daily = value.daily.map(function (item) {
-      if (!item || !utcDate(item.date) || !Number.isSafeInteger(item.views) || item.views < 0) throw new Error('Traffic day is invalid');
-      return { date: item.date, views: item.views };
-    });
+    function validateSeries(source) {
+      var seen = new Set();
+      var series = source.map(function (item) {
+        if (!item || !utcDate(item.date) || seen.has(item.date)
+            || !Number.isSafeInteger(item.views) || item.views < 0) {
+          throw new Error('Traffic day is invalid');
+        }
+        seen.add(item.date);
+        return { date: item.date, views: item.views };
+      });
+      series.sort(function (a, b) { return a.date.localeCompare(b.date); });
+      return series;
+    }
+    var daily = validateSeries(value.daily);
+    var hasTimeline = Array.isArray(value.timeline);
+    var timeline = hasTimeline ? validateSeries(value.timeline) : daily.slice();
+    var hasYearly = Array.isArray(value.yearly);
+    var yearly;
+    if (hasYearly) {
+      var seenYears = new Set();
+      yearly = value.yearly.map(function (item) {
+        if (!item || typeof item.year !== 'string' || !/^\d{4}$/.test(item.year)
+            || Number(item.year) < 1970 || seenYears.has(item.year)
+            || !Number.isSafeInteger(item.views) || item.views < 0) {
+          throw new Error('Traffic year is invalid');
+        }
+        seenYears.add(item.year);
+        return { year: item.year, views: item.views };
+      });
+      yearly.sort(function (a, b) { return a.year.localeCompare(b.year); });
+    } else {
+      var yearlyMap = new Map();
+      timeline.forEach(function (day) {
+        var year = day.date.slice(0, 4);
+        var combined = (yearlyMap.get(year) || 0) + day.views;
+        yearlyMap.set(year, Number.isSafeInteger(combined) ? combined : Number.MAX_SAFE_INTEGER);
+      });
+      yearly = Array.from(yearlyMap, function (entry) {
+        return { year: entry[0], views: entry[1] };
+      }).sort(function (a, b) { return a.year.localeCompare(b.year); });
+    }
     var topPages = value.topPages.map(function (item) {
       if (!item || !validMetricPath(item.path) || typeof item.title !== 'string' || item.title.length < 1 || item.title.length > 180
           || !Number.isSafeInteger(item.views) || item.views < 1) throw new Error('Traffic page is invalid');
       return { path: cleanMetricPath(item.path), title: item.title, views: item.views };
     });
+    var collectingSince = value.collectingSince && utcDate(value.collectingSince)
+      ? value.collectingSince
+      : null;
+    var fallbackTimelineStart = timeline.length ? timeline[0].date : null;
+    if (collectingSince && (!fallbackTimelineStart || collectingSince > fallbackTimelineStart)) {
+      fallbackTimelineStart = collectingSince;
+    }
+    var timelineStartsOn = hasTimeline
+      ? (value.timelineStartsOn || collectingSince || fallbackTimelineStart)
+      : fallbackTimelineStart;
+    var snapshotEndsOn = daily.length
+      ? daily[daily.length - 1].date
+      : (timeline.length ? timeline[timeline.length - 1].date : isoDate(new Date()));
+    if ((timelineStartsOn && timelineStartsOn > snapshotEndsOn)
+        || timeline.some(function (day) { return day.date > snapshotEndsOn; })
+        || yearly.some(function (year) { return year.year > snapshotEndsOn.slice(0, 4); })) {
+      throw new Error('Traffic timeline dates are inconsistent');
+    }
     return {
       totalViews: value.totalViews,
       last30Days: value.last30Days,
       measuredPages: value.measuredPages,
-      collectingSince: value.collectingSince && utcDate(value.collectingSince) ? value.collectingSince : null,
+      collectingSince: collectingSince,
       daily: daily,
+      yearly: yearly,
+      timeline: timeline,
+      timelineStartsOn: timelineStartsOn,
+      snapshotEndsOn: snapshotEndsOn,
       topPages: topPages
     };
   }
 
-  function renderTrafficTrend(days) {
-    var host = document.getElementById('traffic-trend');
-    if (!days.length) {
-      host.replaceChildren(element('p', 'dashboard-empty', 'No traffic has been recorded yet.'));
+  function trafficRange(anchor, level) {
+    if (level.unit === 'day') {
+      return { start: addUtcDays(anchor, -(level.count - 1)), end: anchor };
+    }
+    if (level.unit === 'month') {
+      return {
+        start: new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - (level.count - 1), 1)),
+        end: anchor
+      };
+    }
+    return {
+      start: new Date(Date.UTC(anchor.getUTCFullYear() - (level.count - 1), 0, 1)),
+      end: anchor
+    };
+  }
+
+  function minimumTrafficAnchor(startsOn, today, level) {
+    var minimum;
+    if (level.unit === 'day') {
+      minimum = addUtcDays(startsOn, level.count - 1);
+    } else if (level.unit === 'month') {
+      minimum = endOfUtcMonth(addUtcMonths(
+        new Date(Date.UTC(startsOn.getUTCFullYear(), startsOn.getUTCMonth(), 1)),
+        level.count - 1
+      ));
+    } else {
+      minimum = new Date(Date.UTC(startsOn.getUTCFullYear() + level.count - 1, 11, 31));
+    }
+    return minimum > today ? today : minimum;
+  }
+
+  function shiftTrafficAnchor(anchor, level, direction) {
+    if (level.unit === 'day') return addUtcDays(anchor, direction * level.count);
+    if (level.unit === 'month') return addUtcMonths(anchor, direction * level.count);
+    return addUtcYears(anchor, direction * level.count);
+  }
+
+  function trafficBuckets(range, level, startsOn, timeline) {
+    var buckets = [];
+    var timelineMap = new Map(timeline.map(function (day) { return [day.date, day.views]; }));
+    for (var index = 0; index < level.count; index += 1) {
+      var start;
+      var end;
+      var label;
+      var tick;
+      if (level.unit === 'day') {
+        start = addUtcDays(range.start, index);
+        end = start;
+        label = dateFormat.format(start);
+        tick = index % 5 === 0 || index === level.count - 1
+          ? monthFormat.format(start) + ' ' + start.getUTCDate()
+          : '';
+      } else if (level.unit === 'month') {
+        start = new Date(Date.UTC(range.start.getUTCFullYear(), range.start.getUTCMonth() + index, 1));
+        end = endOfUtcMonth(start);
+        if (end > range.end) end = range.end;
+        label = monthYearFormat.format(start);
+        tick = monthFormat.format(start) + (start.getUTCMonth() === 0 ? ' ' + start.getUTCFullYear() : '');
+      } else {
+        start = new Date(Date.UTC(range.start.getUTCFullYear() + index, 0, 1));
+        end = new Date(Date.UTC(start.getUTCFullYear(), 11, 31));
+        if (end > range.end) end = range.end;
+        label = String(start.getUTCFullYear());
+        tick = label;
+      }
+      var available = end >= startsOn;
+      var views = 0;
+      if (available) {
+        for (var day = start; day <= end; day = addUtcDays(day, 1)) {
+          var date = isoDate(day);
+          if (date >= isoDate(startsOn)) views += timelineMap.get(date) || 0;
+        }
+      }
+      buckets.push({
+        available: available,
+        end: end,
+        label: label,
+        partial: available && start < startsOn,
+        start: start,
+        tick: tick,
+        views: views
+      });
+    }
+    return buckets;
+  }
+
+  function resetTrafficTimeline(message) {
+    trafficTimelineState = null;
+    var zoom = document.getElementById('traffic-zoom');
+    zoom.disabled = true;
+    zoom.value = '1';
+    zoom.setAttribute('aria-valuetext', TRAFFIC_TIMELINE_LEVELS[1].label);
+    document.getElementById('traffic-zoom-label').textContent = TRAFFIC_TIMELINE_LEVELS[1].label;
+    ['traffic-earlier', 'traffic-later', 'traffic-latest'].forEach(function (id) {
+      document.getElementById(id).disabled = true;
+    });
+    document.getElementById('traffic-range').textContent = message;
+    document.getElementById('traffic-detail').textContent = '';
+    document.getElementById('traffic-trend').replaceChildren();
+  }
+
+  function renderTrafficTimeline() {
+    var state = trafficTimelineState;
+    if (!state || !state.startsOn) {
+      resetTrafficTimeline('No traffic history has been recorded yet.');
+      document.getElementById('traffic-trend').replaceChildren(
+        element('p', 'dashboard-empty', 'The timeline will appear after the first counted page view.')
+      );
       return;
     }
-    var maximum = Math.max.apply(null, days.map(function (day) { return day.views; }).concat([1]));
-    var chart = element('div', 'dashboard-spark-chart');
-    days.forEach(function (day, index) {
-      var bar = element('span', 'dashboard-spark-bar');
-      bar.style.setProperty('--dashboard-bar-height', Math.max(day.views ? 5 : 1, day.views / maximum * 100).toFixed(2) + '%');
-      bar.title = dateFormat.format(utcDate(day.date)) + '. ' + numberFormat.format(day.views) + ' page view' + (day.views === 1 ? '' : 's') + '.';
-      bar.setAttribute('aria-label', bar.title);
-      if (index === days.length - 1) bar.classList.add('dashboard-spark-current');
-      chart.appendChild(bar);
+    var level = TRAFFIC_TIMELINE_LEVELS[state.level];
+    var minimum = minimumTrafficAnchor(state.startsOn, state.today, level);
+    if (state.anchor < minimum) state.anchor = minimum;
+    if (state.anchor > state.today) state.anchor = state.today;
+    var range = trafficRange(state.anchor, level);
+    var buckets = trafficBuckets(range, level, state.startsOn, state.timeline);
+    var maximum = Math.max.apply(null, buckets.map(function (bucket) {
+      return bucket.available ? bucket.views : 0;
+    }).concat([1]));
+    var total = buckets.reduce(function (sum, bucket) {
+      return sum + (bucket.available ? bucket.views : 0);
+    }, 0);
+    var host = document.getElementById('traffic-trend');
+    var scroll = element('div', 'dashboard-timeline-scroll');
+    scroll.tabIndex = 0;
+    scroll.setAttribute('aria-label', 'Scrollable page-view timeline. Use the arrow keys on a bar to inspect adjacent periods.');
+    var chart = element('div', 'dashboard-timeline-chart');
+    chart.style.setProperty('--dashboard-timeline-columns', String(buckets.length));
+    chart.style.setProperty('--dashboard-timeline-min-width', Math.max(560, buckets.length * 25) + 'px');
+    var buttons = [];
+    var detail = document.getElementById('traffic-detail');
+
+    function selectBucket(index, moveFocus) {
+      buttons.forEach(function (button, buttonIndex) {
+        var selected = buttonIndex === index;
+        button.tabIndex = selected ? 0 : -1;
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        button.classList.toggle('dashboard-timeline-selected', selected);
+      });
+      var bucket = buckets[index];
+      if (bucket.available) {
+        detail.textContent = bucket.label + '. ' + numberFormat.format(bucket.views) + ' page view'
+          + (bucket.views === 1 ? '' : 's') + (bucket.partial
+            ? '. Collection began during this period, so its total is partial.'
+            : '.');
+      } else {
+        detail.textContent = bucket.label + ' is before traffic collection began on '
+          + dateFormat.format(state.startsOn) + '.';
+      }
+      if (moveFocus) buttons[index].focus();
+    }
+
+    buckets.forEach(function (bucket, index) {
+      var button = element('button', 'dashboard-timeline-bucket');
+      button.type = 'button';
+      button.setAttribute('aria-pressed', 'false');
+      var sentence = bucket.available
+        ? bucket.label + '. ' + numberFormat.format(bucket.views) + ' page view' + (bucket.views === 1 ? '' : 's')
+          + (bucket.partial ? '. Partial collection period.' : '.')
+        : bucket.label + '. Before traffic collection began.';
+      button.setAttribute('aria-label', sentence);
+      button.title = sentence;
+      if (!bucket.available) button.classList.add('dashboard-timeline-unavailable');
+      var plot = element('span', 'dashboard-timeline-bucket-plot');
+      var bar = element('span', 'dashboard-timeline-bar');
+      bar.style.setProperty('--dashboard-bar-height', bucket.available
+        ? Math.max(bucket.views ? 7 : 1.5, bucket.views / maximum * 100).toFixed(2) + '%'
+        : '1.5%');
+      plot.appendChild(bar);
+      var tick = element('span', 'dashboard-timeline-tick', bucket.tick);
+      tick.setAttribute('aria-hidden', 'true');
+      button.append(plot, tick);
+      button.addEventListener('click', function () { selectBucket(index, false); });
+      button.addEventListener('keydown', function (event) {
+        var target = index;
+        if (event.key === 'ArrowLeft') target = Math.max(0, index - 1);
+        else if (event.key === 'ArrowRight') target = Math.min(buttons.length - 1, index + 1);
+        else if (event.key === 'Home') target = 0;
+        else if (event.key === 'End') target = buttons.length - 1;
+        else return;
+        event.preventDefault();
+        selectBucket(target, true);
+      });
+      buttons.push(button);
+      chart.appendChild(button);
     });
-    var axis = element('div', 'dashboard-spark-axis');
-    axis.append(
-      element('span', '', dateFormat.format(utcDate(days[0].date))),
-      element('span', '', dateFormat.format(utcDate(days[days.length - 1].date)))
-    );
-    host.replaceChildren(chart, axis);
+    scroll.appendChild(chart);
+    var key = element('div', 'dashboard-timeline-key');
+    var recordedKey = element('span', 'dashboard-timeline-key-item');
+    recordedKey.append(element('i', 'dashboard-timeline-key-recorded'), document.createTextNode('Recorded totals'));
+    var unavailableKey = element('span', 'dashboard-timeline-key-item');
+    unavailableKey.append(element('i', 'dashboard-timeline-key-unavailable'), document.createTextNode('Before collection'));
+    key.append(recordedKey, unavailableKey);
+    host.replaceChildren(scroll, key);
+
+    var latestAvailable = buckets.length - 1;
+    while (latestAvailable > 0 && !buckets[latestAvailable].available) latestAvailable -= 1;
+    selectBucket(latestAvailable, false);
+    document.getElementById('traffic-zoom-label').textContent = level.label;
+    document.getElementById('traffic-zoom').setAttribute('aria-valuetext', level.label);
+    document.getElementById('traffic-range').textContent = dateFormat.format(range.start) + ' to '
+      + dateFormat.format(range.end) + '. ' + numberFormat.format(total) + ' recorded page view'
+      + (total === 1 ? '' : 's') + ' in this range.';
+    document.getElementById('traffic-earlier').disabled = state.anchor <= minimum;
+    document.getElementById('traffic-later').disabled = state.anchor >= state.today;
+    document.getElementById('traffic-latest').disabled = state.anchor >= state.today;
+  }
+
+  function initializeTrafficTimeline(data) {
+    if (!data.timelineStartsOn) {
+      resetTrafficTimeline('No traffic history has been recorded yet.');
+      document.getElementById('traffic-trend').replaceChildren(
+        element('p', 'dashboard-empty', 'The timeline will appear after the first counted page view.')
+      );
+      return;
+    }
+    var startsOn = utcDate(data.timelineStartsOn);
+    var today = utcDate(data.snapshotEndsOn);
+    trafficTimelineState = {
+      anchor: today,
+      level: 1,
+      startsOn: startsOn,
+      timeline: data.timeline,
+      today: today
+    };
+    var zoom = document.getElementById('traffic-zoom');
+    zoom.disabled = false;
+    zoom.value = '1';
+    zoom.oninput = function () {
+      trafficTimelineState.level = Number(zoom.value);
+      renderTrafficTimeline();
+    };
+    document.getElementById('traffic-earlier').onclick = function () {
+      var level = TRAFFIC_TIMELINE_LEVELS[trafficTimelineState.level];
+      trafficTimelineState.anchor = shiftTrafficAnchor(trafficTimelineState.anchor, level, -1);
+      renderTrafficTimeline();
+    };
+    document.getElementById('traffic-later').onclick = function () {
+      var level = TRAFFIC_TIMELINE_LEVELS[trafficTimelineState.level];
+      trafficTimelineState.anchor = shiftTrafficAnchor(trafficTimelineState.anchor, level, 1);
+      renderTrafficTimeline();
+    };
+    document.getElementById('traffic-latest').onclick = function () {
+      trafficTimelineState.anchor = trafficTimelineState.today;
+      renderTrafficTimeline();
+    };
+    renderTrafficTimeline();
   }
 
   function renderTopPages(pages) {
@@ -705,6 +1033,18 @@
     host.replaceChildren(fragment);
   }
 
+  function renderTrafficYearly(yearly) {
+    if (!yearly.length) {
+      document.getElementById('traffic-yearly').replaceChildren(
+        element('p', 'dashboard-empty', 'The yearly summary will appear after the first counted page view.')
+      );
+      return;
+    }
+    renderBarList('traffic-yearly', yearly.slice().reverse().map(function (item) {
+      return { label: item.year, count: item.views };
+    }));
+  }
+
   function renderTraffic(value, trackedPages) {
     var data = validateTraffic(value);
     if (!Number.isSafeInteger(trackedPages) || trackedPages < 1 || trackedPages > MAX_METRIC_PAGES) {
@@ -718,10 +1058,10 @@
       + ' with at least one view';
     document.getElementById('traffic-stats').replaceChildren(
       statCard(numberFormat.format(data.totalViews), 'Counted page views', since),
-      statCard(numberFormat.format(data.last30Days), 'Past 30 days', 'Aggregate page opens'),
       statCard(numberFormat.format(trackedPages), 'Pages tracked', measured)
     );
-    renderTrafficTrend(data.daily);
+    initializeTrafficTimeline(data);
+    renderTrafficYearly(data.yearly);
     renderTopPages(data.topPages);
   }
 
@@ -732,7 +1072,10 @@
       ? 'Traffic statistics are temporarily unavailable.'
       : 'Live traffic statistics appear on the published site.');
     document.getElementById('traffic-stats').replaceChildren(notice);
-    document.getElementById('traffic-trend').replaceChildren();
+    resetTrafficTimeline('Traffic history is unavailable.');
+    document.getElementById('traffic-yearly').replaceChildren(
+      element('p', 'dashboard-empty', 'Yearly traffic totals are unavailable.')
+    );
     document.getElementById('top-pages').replaceChildren();
   }
 
