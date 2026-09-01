@@ -268,7 +268,10 @@
 
   document.addEventListener('DOMContentLoaded', function() {
     // Older rendered pages can retain retired interface until the next render.
-    document.querySelectorAll('.quarto-reader-toggle, #page-qr, #font-toggle')
+    // #page-qr is NOT in this list on purpose: the retired margin-template QR
+    // is gone from every rendered page, and pastebin now owns a #page-qr block
+    // of its own that must survive.
+    document.querySelectorAll('.quarto-reader-toggle, #font-toggle')
       .forEach(function(el) { el.remove(); });
 
     if (isToolPage()) document.body.classList.add('quarto-app-mode');
