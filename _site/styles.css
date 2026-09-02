@@ -3665,16 +3665,63 @@ body.quarto-dark {
 }
 
 
-/* Quarto already makes both desktop sidebars sticky and scrollable. Its
-   headroom script restores a hidden-navbar sidebar to 100vh, though, so the
-   footer can push the top of a long margin sidebar above the viewport. Keep
-   one shared chrome row available and let Quarto's native overflow handle
-   long TOCs and listing filters inside the remaining height. */
+/* ===========================================================================
+   CHROME ROW
+   On desktop exactly one bar of chrome is on screen at any scroll position.
+   Quarto's headroom script slides the navbar away on a scroll down and back
+   on a scroll up. The footer does the opposite. It is sticky at the bottom of
+   the viewport, parked one chrome row below the edge while the navbar shows,
+   and it slides up into view the moment the navbar slides out (user request,
+   2026-09-02). Sticky keeps the footer in normal flow, so the page keeps its
+   length, nothing jumps, and at the end of the page the footer simply rests
+   in its normal place, which sticky never moves. That covers a page short
+   enough to fit the viewport too, where headroom never fires.
+
+   The hidden state is a sticky offset, not a transform, on purpose. A
+   translateY(100%) counts as scrollable overflow in Chromium, which gave
+   every page a phantom chrome row of scroll below the footer and hid the
+   footer on a page that fits, and WebKit hid it there without the overflow.
+   A sticky offset moves nothing in layout and creates no overflow.
+
+   That gives both sidebars one height in every state. Quarto sets their
+   sticky top to the navbar height while it shows and to zero once it hides,
+   so a box of 100dvh minus one chrome row ends at the viewport bottom under
+   a visible navbar and at the footer's top edge under a hidden one, and at
+   the page end it fits exactly between the two. Before this the cap applied
+   to the margin sidebar only, so with the navbar hidden the left column ran
+   to the viewport bottom while the right one stopped a chrome row short, and
+   scrolling up, which re-pins the navbar, made the two agree again.
+   tools/security-tests/chrome-row.spec.cjs guards the geometry.
+   =========================================================================== */
 @media (min-width: 992px) {
+  body.nav-sidebar.docked #quarto-sidebar.sidebar-navigation,
   #quarto-margin-sidebar.sidebar.margin-sidebar {
     max-height: calc(100dvh - var(--site-chrome-height)) !important;
+  }
+
+  #quarto-margin-sidebar.sidebar.margin-sidebar {
     overscroll-behavior-y: contain;
     scrollbar-gutter: stable;
+  }
+}
+
+@media screen and (min-width: 992px) {
+  :root:not([data-reading="on"]) footer.footer {
+    position: sticky;
+    bottom: calc(-1 * var(--site-chrome-height));
+    /* Above the page grid and both sidebars, below the fixed navbar. */
+    z-index: 1020;
+    transition: bottom 200ms linear;
+  }
+
+  :root:not([data-reading="on"]) #quarto-header.headroom--unpinned ~ footer.footer {
+    bottom: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root:not([data-reading="on"]) footer.footer {
+      transition: none;
+    }
   }
 }
 
