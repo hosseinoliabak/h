@@ -9,7 +9,13 @@
  * the database: the record under users/<uid> holds a self-chosen handle and
  * progress, never the provider's name or email address. The provider's real
  * name is deliberately not read, because it would end up on a public
- * leaderboard.
+ * leaderboard. The email address stays with the sign-in provider, which
+ * needs it to identify the account; it is never copied into the database.
+ *
+ * Handles are unique, ignoring case and treating a space like a dash.
+ * handles/<key> maps the folded name to the owning uid, and the rules refuse
+ * a handle whose key is not held by the writer, so a claim and the handle are
+ * written together in one atomic update and a rename releases the old key.
  *
  * Firebase modules are loaded after the page becomes usable. Identity asks
  * for Authentication and Database only for returning or actively signing-in
@@ -368,10 +374,17 @@
     return String(s || '').replace(/[^A-Za-z0-9 -]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20);
   }
 
+  /* The index key: what the rules compute from a handle, so "Knight Tamer",
+     "knight-tamer", and "KNIGHT TAMER" all contend for the same name. */
+  function handleKey(clean) {
+    return clean.toLowerCase().replace(/ /g, '-');
+  }
+
   /* Saving fails for two very different reasons, and telling them apart is the
      difference between "fix your typing" and "the rules are not published yet". */
   function describeError(e) {
     var s = String((e && (e.code || e.message)) || '').toUpperCase();
+    if (s.indexOf('TAKEN') > -1) return 'That name is taken. Try another.';
     if (s.indexOf('LOCKED') > -1) {
       return 'You have already changed your name recently. The next change unlocks in '
         + (e.days || 90) + ' day' + ((e.days === 1) ? '' : 's') + '.';
@@ -423,10 +436,32 @@
         e.days = st.days;
         throw e;
       }
-      var patch = { handle: clean, handleChangedAt: Date.now() };
-      // Counter is append-only in the rules, so send the next value, never a reset.
-      if (!st.first) patch.handleChanges = (st.changes || 0) + 1;
-      return db.ref('users/' + currentUser.uid + '/meta').update(patch);
+      var uid = currentUser.uid;
+      var key = handleKey(clean);
+      var oldKey = currentHandle ? handleKey(currentHandle) : null;
+      /* Asking first gives a friendly answer; the rules still decide, so a race
+         for the same name ends in a refusal that is reported the same way. */
+      return db.ref('handles/' + key).once('value').then(function (snap) {
+        var owner = snap.val();
+        if (owner && owner !== uid) throw new Error('taken');
+        var base = 'users/' + uid + '/meta/';
+        var patch = {};
+        patch[base + 'handle'] = clean;
+        patch[base + 'handleChangedAt'] = Date.now();
+        // Counter is append-only in the rules, so send the next value, never a reset.
+        if (!st.first) patch[base + 'handleChanges'] = (st.changes || 0) + 1;
+        patch['handles/' + key] = uid;
+        if (oldKey && oldKey !== key) patch['handles/' + oldKey] = null;
+        return db.ref().update(patch).catch(function (e) {
+          var code = String((e && (e.code || e.message)) || '').toUpperCase();
+          if (code.indexOf('PERMISSION') === -1) throw e;
+          // Refused: most likely someone claimed the name between the read and the write.
+          return db.ref('handles/' + key).once('value').then(function (again) {
+            var now = again.val();
+            throw new Error(now && now !== uid ? 'taken' : 'permission denied');
+          });
+        });
+      });
     }).then(function () {
       currentHandle = clean;
       lsSet(HANDLE_KEY, clean);
@@ -500,8 +535,8 @@
       var h = document.createElement('h3');
       h.textContent = 'Choose a display name';
       var p = document.createElement('p');
-      p.textContent = 'This is the only name stored, and the one shown on the chess leaderboard. '
-        + 'Your real name and email address are never saved. Letters, numbers, spaces, and dashes, up to 20 characters.';
+      p.textContent = 'This is the name shown on the chess leaderboard, so it has to be unique. '
+        + 'Your real name is never stored. Letters, numbers, spaces, and dashes, up to 20 characters.';
       // Same rule the leaderboard enforces, so a name that saves here always displays.
 
       var input = document.createElement('input');
@@ -630,7 +665,7 @@
             });
           }
         };
-      }), 'Keeps your reading position and chess progress across devices. No email or personal details are stored.');
+      }), 'Sign-in keeps your reading position and chess progress across devices. The sign-in provider holds your email address to identify your account. It is never shown on this site, never shared, and nothing else about you is stored.');
     };
     host.appendChild(btn);
   }
