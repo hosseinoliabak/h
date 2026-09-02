@@ -9,6 +9,9 @@
  * Without a word of explanation that reads as broken ("I just signed in, why is
  * it asking again?"). One sentence turns it into an understood boundary. Shown
  * only to signed-in readers, since nobody else has a reason to wonder.
+ *
+ * The script also owns where the widget lands in the page grid. See fix 3
+ * below and COMMENTS ROW in styles.css.
  */
 (function () {
   'use strict';
@@ -45,6 +48,29 @@
      applied to that same script element before the iframe loads. The patch
      removes itself after the one element it is looking for. */
   var appendChild = Node.prototype.appendChild;
+
+  /* 3. A grid row of its own.
+     Quarto appends the giscus script to #quarto-content, which is the page's
+     CSS grid, and giscus inserts its container right after the script. That
+     leaves the comments as a direct grid child with no row of their own. The
+     grid's explicit rows end at page-bottom and both sidebars span content-top
+     to page-bottom, so the browser drops the comments into an implicit row
+     after the sidebars end. On a page short enough to fit the viewport the
+     sidebars stop above the comments and the widget sits in a full-width band
+     below the framed body. The script goes into a wrapper instead, and
+     styles.css gives that wrapper the explicit comments row. The wrapper takes
+     the id that the reading-mode and app-mode rules already hide. */
+  function commentsHost(parent) {
+    var host = document.getElementById('quarto-comments');
+    if (host) return host;
+    if (!parent || parent.nodeType !== 1) return parent;
+    host = document.createElement('div');
+    host.id = 'quarto-comments';
+    host.className = 'quarto-comments';
+    appendChild.call(parent, host);
+    return host;
+  }
+
   Node.prototype.appendChild = function (node) {
     if (node && node.tagName === 'SCRIPT' && /giscus\.app\/client\.js/.test(node.src || '')) {
       node.dataset.strict = '1';
@@ -52,6 +78,7 @@
         node.dataset.theme = window.siteChrome.getGiscusThemeUrl();
       }
       Node.prototype.appendChild = appendChild;
+      return appendChild.call(commentsHost(this), node);
     }
     return appendChild.call(this, node);
   };
