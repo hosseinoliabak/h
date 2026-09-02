@@ -17,6 +17,9 @@
  * a handle whose key is not held by the writer, so a claim and the handle are
  * written together in one atomic update and a rename releases the old key.
  *
+ * Pages link this file by a content-hashed URL (tools/version_assets.py), so
+ * a changed script is always fetched under a name the edge has never cached.
+ *
  * Firebase modules are loaded after the page becomes usable. Identity asks
  * for Authentication and Database only for returning or actively signing-in
  * readers. The aggregate page counter asks for the smaller App Check and

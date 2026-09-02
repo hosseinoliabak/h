@@ -592,7 +592,7 @@ ul.task-list li input[type="checkbox"] {
 <main class="content" id="quarto-document-content">
 
 <script src="../theme-toggle.js?v=3505170f"></script>
-<script src="../auth.js?v=c90ca430"></script>
+<script src="../auth.js?v=37e2729f"></script>
 <script src="../site-metrics.js?v=9d1b4053"></script>
 <script src="../giscus-note.js?v=b465dd22"></script>
 <script src="../resume-reading.js?v=c40ebfea"></script>
@@ -880,6 +880,50 @@ h1, h2, h3, h4 { font-family: var(--font-sans); }
   height: 14px;
 }
 
+/* Intro text on the left, the room QR on the right at the top of the page,
+   so a second device can be brought in before reading a word. The QR column
+   is min-content wide, which is the canvas width once drawn, so the caption
+   wraps under the code without repeating PAGE_QR_WIDTH here. Below the
+   app-mode phone breakpoint the QR drops under the text and centers. */
+#page-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+#page-intro-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#page-qr {
+  flex: 0 0 auto;
+  width: min-content;
+  text-align: center;
+}
+
+#page-qr canvas {
+  display: block;
+  margin: 0 auto;
+}
+
+#page-qr-caption {
+  font-size: 12px;
+  color: #888;
+  margin-top: 6px;
+}
+
+@media (max-width: 760px) {
+  #page-intro {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #page-qr {
+    margin: 0 auto 16px;
+  }
+}
+
 #status {
   font-size: 14px;
   color: #666;
@@ -1116,10 +1160,17 @@ h1, h2, h3, h4 { font-family: var(--font-sans); }
 }
 </style>
 
-<p>A private room with a random, hard-to-guess name opens as soon as this page loads, and it works fully whether or not you are signed in. Share the link or the QR code to bring in another device, or another person, and everyone sees the same content in real time. You may also type any room name to open it and read along. Editing a room you did not generate needs you signed in (top right).</p>
-<p style="font-size:0.85em; color:#555;"><strong>Room name rules:</strong> 1–32 characters. Letters (case sensitive), numbers, dashes, and underscores only. No spaces or special characters.</p>
-
-<p><strong>Note:</strong> This pastebin is ephemeral. Once all sessions are closed, the content is automatically erased. Nothing is stored permanently. You can also paste screenshots (Ctrl+V / Cmd+V) to share images, and upload text-based files (up to 7 MB). For privacy, keep the generated room name, or replace it with one that is genuinely hard to guess. Anyone who knows the room name can see and edit the content. This tool is provided as-is with no guarantees. Use at your own risk. Do not share sensitive information such as passwords or personal data.</p>
+<div id="page-intro">
+  <div id="page-intro-text">
+    <p>A private room with a random, hard-to-guess name opens as soon as this page loads, and it works fully whether or not you are signed in. Share the link or the QR code to bring in another device, or another person, and everyone sees the same content in real time. You may also type any room name to open it and read along. Editing a room you did not generate needs you signed in (top right).</p>
+    <p style="font-size:0.85em; color:#555;"><strong>Room name rules:</strong> 1–32 characters. Letters (case sensitive), numbers, dashes, and underscores only. No spaces or special characters.</p>
+    <p><strong>Note:</strong> This pastebin is ephemeral. Once all sessions are closed, the content is automatically erased. Nothing is stored permanently. You can also paste screenshots (Ctrl+V / Cmd+V) to share images, and upload text-based files (up to 7 MB). For privacy, keep the generated room name, or replace it with one that is genuinely hard to guess. Anyone who knows the room name can see and edit the content. This tool is provided as-is with no guarantees. Use at your own risk. Do not share sensitive information such as passwords or personal data.</p>
+  </div>
+  <div id="page-qr">
+    <canvas id="page-qr-canvas"></canvas>
+    <div id="page-qr-caption">Scan to open this room on another device</div>
+  </div>
+</div>
 
 <input type="text" id="room-input" placeholder="Enter room name..." maxlength="32">
 <div id="room-error" style="color:#e74c3c; font-size:12px; margin-top:4px; display:none;"></div>
@@ -1163,10 +1214,6 @@ h1, h2, h3, h4 { font-family: var(--font-sans); }
 
 <div id="status">Enter a room name to connect.</div>
 <div id="limit-warning" style="display:none; color:#dc3545; font-size:14px; margin-top:6px; font-weight:600;">Content limit reached. Unable to save further changes.</div>
-<div id="page-qr" style="margin-top:16px; text-align:center;">
-  <canvas id="page-qr-canvas"></canvas>
-  <div style="font-size:12px; color:#888; margin-top:6px;">Scan to open this room on another device</div>
-</div>
 
 <div id="content-qr" style="display:none; margin-top:16px; text-align:center;">
   <canvas id="content-qr-canvas"></canvas>
@@ -1216,16 +1263,20 @@ h1, h2, h3, h4 { font-family: var(--font-sans); }
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 <script>
-// First paint of the page QR. The room handlers redraw it on every connect
-// and disconnect, but a fresh visit is neither, so seed it here with
-// whatever the address bar holds (base page, or a #room deep link).
-document.addEventListener('DOMContentLoaded', function() {
+// The page QR, drawn at one size from one place. The room handlers redraw it
+// on every connect and disconnect, but a fresh visit is neither, so it is
+// seeded here with whatever the address bar holds (base page, or a #room deep
+// link). 160px scans from across a desk, and the URL is short enough that the
+// symbol stays coarse at that size.
+var PAGE_QR_WIDTH = 160;
+function drawPageQR(url) {
   var c = document.getElementById('page-qr-canvas');
   if (c && typeof QRCode !== 'undefined') {
-    QRCode.toCanvas(c, window.location.origin + window.location.pathname + window.location.hash, {
-      width: 120, errorCorrectionLevel: 'M', margin: 1
-    });
+    QRCode.toCanvas(c, url, { width: PAGE_QR_WIDTH, errorCorrectionLevel: 'M', margin: 1 });
   }
+}
+document.addEventListener('DOMContentLoaded', function() {
+  drawPageQR(window.location.origin + window.location.pathname + window.location.hash);
 });
 </script>
 
@@ -1701,12 +1752,7 @@ document.addEventListener('DOMContentLoaded', function() {
       historyPanel.style.display = 'none';
 
       // Reset page QR to base URL (no room hash)
-      var pageQrCanvas = document.getElementById('page-qr-canvas');
-      if (pageQrCanvas && typeof QRCode !== 'undefined') {
-        QRCode.toCanvas(pageQrCanvas, window.location.origin + window.location.pathname, {
-          width: 120, errorCorrectionLevel: 'M', margin: 1
-        });
-      }
+      drawPageQR(window.location.origin + window.location.pathname);
       return;
     }
 
@@ -1757,12 +1803,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('content-qr').style.display = 'block';
 
     // Update the page QR code to include the room hash
-    var pageQrCanvas = document.getElementById('page-qr-canvas');
-    if (pageQrCanvas && typeof QRCode !== 'undefined') {
-      QRCode.toCanvas(pageQrCanvas, window.location.origin + window.location.pathname + '#' + sanitized, {
-        width: 120, errorCorrectionLevel: 'M', margin: 1
-      });
-    }
+    drawPageQR(window.location.origin + window.location.pathname + '#' + sanitized);
 
     // Watch members to handle cleanup when we detect we are the only one
     membersRef.on('value', function(snapshot) {
@@ -2624,7 +2665,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
       var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp("https:\/\/h\.oliabak\.com");
+        var filterRegex = new RegExp("https:\/\/oliabak\.com");
       var isInternal = (href) => {
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
