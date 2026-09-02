@@ -9,7 +9,7 @@
 (function () {
   'use strict';
 
-  var PRODUCTION_ORIGIN = 'https://h.oliabak.com';
+  var PRODUCTION_ORIGIN = 'https://oliabak.com';
   var SESSION_PREFIX = 'site-metric-viewed:';
   var DASHBOARD_CACHE_KEY = 'site-metric-dashboard:v1';
   var DASHBOARD_CACHE_TTL_MS = 10 * 60 * 1000;

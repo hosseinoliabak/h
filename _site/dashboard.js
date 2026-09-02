@@ -1154,8 +1154,8 @@
 
   function renderTrafficUnavailable() {
     var status = document.getElementById('traffic-status');
-    status.textContent = window.location.hostname === 'h.oliabak.com' ? 'Unavailable' : 'Production only';
-    var notice = element('p', 'dashboard-empty', window.location.hostname === 'h.oliabak.com'
+    status.textContent = window.location.hostname === 'oliabak.com' ? 'Unavailable' : 'Production only';
+    var notice = element('p', 'dashboard-empty', window.location.hostname === 'oliabak.com'
       ? 'Traffic statistics are temporarily unavailable.'
       : 'Live traffic statistics appear on the published site.');
     document.getElementById('traffic-stats').replaceChildren(notice);

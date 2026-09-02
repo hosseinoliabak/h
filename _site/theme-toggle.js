@@ -214,7 +214,7 @@
   // The iframe cannot read the page's custom properties, so it gets a fixed
   // first-party stylesheet URL instead.
   function getGiscusThemeUrl(theme) {
-    var base = 'https://h.oliabak.com';
+    var base = 'https://oliabak.com';
     if (isDarkMode()) return base + '/giscus-theme-dark.css';
     return normalizeTheme(theme || readTheme()) === 'lion'
       ? base + '/giscus-theme-lion.css'
