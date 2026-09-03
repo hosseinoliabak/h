@@ -332,7 +332,10 @@
     }
     var limits = status.limits && Number.isFinite(status.limits.maxLinks) ? status.limits : null;
     if (status.role === 'guest') {
-      setMessage('You can create up to ' + (limits ? limits.maxLinks : 5) + ' short links without an invitation.', 'ok');
+      var guestMax = limits ? limits.maxLinks : 1;
+      setMessage(guestMax === 1
+        ? 'You can create one short link without an invitation.'
+        : 'You can create up to ' + guestMax + ' short links without an invitation.', 'ok');
       ui.account.textContent = who + ' Invited accounts can keep up to 200. '
         + (handle ? 'Ask the site owner to invite this name if you need more.' : 'Set a display name from the menu so the owner can invite your account if you need more.');
     } else if (status.role === 'owner' || status.role === 'member') {

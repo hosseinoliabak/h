@@ -19,9 +19,9 @@
  *                      taken on trust from the browser.
  *
  * Who may create links: every signed-in Google or GitHub account, within a
- * small allowance (a "guest", 5 links). The owner (SHORT_LINK_OWNER_UID) and
- * the accounts the owner has added to the allowlist ("members") get the full
- * allowance. Everyone, signed in or not, can open links.
+ * small allowance (a "guest", one link). The owner and the accounts the owner
+ * has added to the allowlist ("members") get the full allowance. Everyone,
+ * signed in or not, can open links.
  *
  * Storage is one Workers KV namespace bound as SHORT_LINKS:
  *   link:<code>            { url, owner, createdAt }   metadata: same, url truncated
@@ -30,17 +30,25 @@
  *   rate:user:<uid>:<day>  counter, expires after two days
  *   rate:global:<day>      counter, expires after two days
  *
- * Bindings and variables (set in the Pages project, never in this file):
- *   SHORT_LINKS            KV namespace binding (required)
- *   SHORT_LINK_OWNER_UID   Firebase uid of the site owner (required)
- *   SHORT_LINK_ORIGIN      accepted origin for state-changing calls
- *                          (optional, defaults to https://oliabak.com)
+ * Bindings and variables (set in the Pages project):
+ *   SHORT_LINKS                   KV namespace binding (required)
+ *   SHORT_LINK_OWNER_UID          overrides the built-in owner uid (optional)
+ *   SHORT_LINK_ORIGIN             accepted origin for state-changing calls
+ *                                 (optional, defaults to https://oliabak.com)
+ *   SHORT_LINK_SITE_DAILY_LIMIT   new links per day for the whole site
+ *                                 (optional, defaults to 500)
  *
- * Until the binding and the owner uid exist, the redirect path passes every
- * request through untouched and the API reports "not configured".
+ * Until the KV binding exists, the redirect path passes every request
+ * through untouched and the API reports "not configured".
  */
 
 const SITE_ORIGIN_DEFAULT = 'https://oliabak.com';
+/* The site owner is the uid of the owner's Google sign-in (user decision,
+   2026-09-03: the admin panel appears only for that account). A uid is an
+   opaque identifier, not a secret, and the same uid is visible on the site
+   wherever the owner's progress or comments appear. SHORT_LINK_OWNER_UID in
+   the Pages project overrides it should the account ever change. */
+const OWNER_UID_DEFAULT = 'vtmJIi0zTeOD1gqaiwD5psmVHrB3';
 const FIREBASE_PROJECT = 'oliabak-paste';
 const TOKEN_ISSUER = 'https://securetoken.google.com/' + FIREBASE_PROJECT;
 const JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
@@ -60,13 +68,17 @@ const ALIAS_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/;
 const LOOKUP_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const CONTROL_OR_SPACE = /[\u0000-\u0020\u007f]/;
 /* Allowances by role. A guest is any signed-in account the owner has not
-   invited (user decision, 2026-09-02: uninvited readers may keep five). */
+   invited (user decision, 2026-09-03: uninvited readers keep one link; the
+   three creates a day let them correct a mistake without waiting). */
 const LIMITS = {
   owner: { maxLinks: 200, dailyCreates: 50 },
   member: { maxLinks: 200, dailyCreates: 50 },
-  guest: { maxLinks: 5, dailyCreates: 5 }
+  guest: { maxLinks: 1, dailyCreates: 3 }
 };
-const DAILY_CREATES_GLOBAL = 500;
+/* The whole site's new links per day. It exists because the store's daily
+   write allowance is shared, so a burst of strangers must not lock the owner
+   out until midnight. Override with SHORT_LINK_SITE_DAILY_LIMIT. */
+const DAILY_CREATES_GLOBAL_DEFAULT = 500;
 const RATE_TTL_SECONDS = 2 * 24 * 60 * 60;
 const CLOCK_SKEW_SECONDS = 300;
 const JWKS_MAX_AGE_SECONDS = 60 * 60;
@@ -149,9 +161,19 @@ function siteOrigin(env) {
   }
 }
 
+function ownerUid(env) {
+  const configured = env && typeof env.SHORT_LINK_OWNER_UID === 'string' ? env.SHORT_LINK_OWNER_UID.trim() : '';
+  return UID_PATTERN.test(configured) ? configured : OWNER_UID_DEFAULT;
+}
+
+function siteDailyLimit(env) {
+  const raw = env && typeof env.SHORT_LINK_SITE_DAILY_LIMIT === 'string' ? env.SHORT_LINK_SITE_DAILY_LIMIT.trim() : '';
+  const value = Number(raw);
+  return raw && Number.isSafeInteger(value) && value >= 1 ? value : DAILY_CREATES_GLOBAL_DEFAULT;
+}
+
 function isConfigured(env) {
-  return Boolean(env && env.SHORT_LINKS && typeof env.SHORT_LINKS.get === 'function'
-    && typeof env.SHORT_LINK_OWNER_UID === 'string' && UID_PATTERN.test(env.SHORT_LINK_OWNER_UID));
+  return Boolean(env && env.SHORT_LINKS && typeof env.SHORT_LINKS.get === 'function');
 }
 
 function base64UrlToBytes(value) {
@@ -401,7 +423,7 @@ async function readJsonBody(request) {
 }
 
 async function callerRole(env, uid) {
-  if (uid === env.SHORT_LINK_OWNER_UID) return 'owner';
+  if (uid === ownerUid(env)) return 'owner';
   const allowed = await env.SHORT_LINKS.get('allow:' + uid);
   return allowed ? 'member' : 'guest';
 }
@@ -504,7 +526,7 @@ async function handleCreate(request, env, caller, role, origin, now) {
   if (!(await consumeQuota(env, 'rate:user:' + caller.uid + ':' + day, limits.dailyCreates))) {
     throw new ApiError(429, 'daily-limit', 'You have created ' + limits.dailyCreates + ' links today. Try again tomorrow.');
   }
-  if (!(await consumeQuota(env, 'rate:global:' + day, DAILY_CREATES_GLOBAL))) {
+  if (!(await consumeQuota(env, 'rate:global:' + day, siteDailyLimit(env)))) {
     throw new ApiError(429, 'daily-limit', 'The site has reached its daily limit for new links. Try again tomorrow.');
   }
 
@@ -551,7 +573,7 @@ async function handleAccessGrant(request, env, caller, role, now) {
   const body = await readJsonBody(request);
   const uid = typeof body.uid === 'string' ? body.uid.trim() : '';
   if (!UID_PATTERN.test(uid)) throw new ApiError(400, 'invalid-uid', 'Enter a valid account id.');
-  if (uid === env.SHORT_LINK_OWNER_UID) throw new ApiError(400, 'invalid-uid', 'The owner already has access.');
+  if (uid === ownerUid(env)) throw new ApiError(400, 'invalid-uid', 'The owner already has access.');
   const handle = normalizeHandle(body.handle);
   const record = { handle: handle, grantedAt: now, grantedBy: caller.uid };
   await env.SHORT_LINKS.put('allow:' + uid, JSON.stringify(record));
