@@ -80,10 +80,21 @@
     return typeof value === 'string' && /^[A-Za-z0-9 -]{1,20}$/.test(value) ? value : null;
   }
 
+  /* The site owner's Google sign-in. Only a hint for what to show: every
+     administrative action is checked again by the server behind the tool. */
+  var OWNER_UID = 'vtmJIi0zTeOD1gqaiwD5psmVHrB3';
+
+  function renderAdminEntry(user) {
+    var entry = document.getElementById('dashboard-admin');
+    if (!entry) return;
+    entry.hidden = !(user && user.uid === OWNER_UID);
+  }
+
   function renderAccountStatus(user) {
     var badge = document.getElementById('account-status-badge');
     var message = document.getElementById('account-status-message');
     if (!badge || !message) return;
+    renderAdminEntry(user);
     badge.classList.add('dashboard-status-ready');
     if (!user) {
       badge.textContent = 'Signed out';
@@ -103,6 +114,7 @@
     var badge = document.getElementById('account-status-badge');
     var message = document.getElementById('account-status-message');
     if (!badge || !message) return;
+    renderAdminEntry(null);
     badge.classList.remove('dashboard-status-ready');
     badge.textContent = 'Unavailable';
     message.textContent = 'Account status is unavailable. This public dashboard remains fully usable.';

@@ -359,6 +359,12 @@
     if (status.role === 'owner') {
       loadMembers();
       loadAll(false);
+      /* The dashboard links straight to the admin panels, which are hidden
+         until the server confirms the owner, so the fragment scroll has to
+         be repeated once they exist. */
+      if (window.location.hash === '#sl-owner' && typeof ui.owner.scrollIntoView === 'function') {
+        ui.owner.scrollIntoView({ block: 'start' });
+      }
     }
   }
 
