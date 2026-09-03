@@ -106,7 +106,7 @@
   function button(label, onClick, className) {
     var node = document.createElement('button');
     node.type = 'button';
-    node.className = 'sl-button' + (className ? ' ' + className : '');
+    node.className = 'tool-button' + (className ? ' ' + className : '');
     node.textContent = label;
     node.addEventListener('click', onClick);
     return node;
@@ -204,9 +204,9 @@
     var shortUrl = shortUrlFor(link.code);
 
     var head = document.createElement('div');
-    head.className = 'sl-item-head';
+    head.className = 'tool-list-head';
     var short = document.createElement('a');
-    short.className = 'sl-item-short';
+    short.className = 'tool-list-title sl-short';
     short.textContent = displayShort(link.code);
     if (shortUrl) {
       short.href = shortUrl;
@@ -216,18 +216,18 @@
     head.appendChild(short);
 
     var actions = document.createElement('div');
-    actions.className = 'sl-item-actions';
+    actions.className = 'tool-list-actions';
     var copy = button('Copy', function () { copyText(shortUrl || displayShort(link.code), copy); });
     actions.appendChild(copy);
     if (options.canDelete) {
-      var remove = button('Delete', function () { deleteLink(link, li, remove, options); }, 'sl-danger');
+      var remove = button('Delete', function () { deleteLink(link, li, remove, options); }, 'tool-button-danger');
       actions.appendChild(remove);
     }
     head.appendChild(actions);
     li.appendChild(head);
 
     var target = document.createElement('div');
-    target.className = 'sl-item-target';
+    target.className = 'sl-target';
     var targetText = String(link.url || '') + (link.truncated ? ' (address shortened for display)' : '');
     if (isWebUrl(link.url) && !link.truncated) {
       var anchor = document.createElement('a');
@@ -242,7 +242,7 @@
     li.appendChild(target);
 
     var meta = document.createElement('div');
-    meta.className = 'sl-item-meta';
+    meta.className = 'tool-list-meta';
     var parts = [];
     var created = formatDate(link.createdAt);
     if (created) parts.push('Created ' + created);
@@ -268,7 +268,7 @@
     ui.members.replaceChildren();
     if (!members.length) {
       var none = document.createElement('li');
-      none.className = 'sl-item sl-empty';
+      none.className = 'sl-item tool-note';
       none.textContent = 'Nobody else can create links yet.';
       ui.members.appendChild(none);
       return;
@@ -277,19 +277,19 @@
       var li = document.createElement('li');
       li.className = 'sl-item';
       var head = document.createElement('div');
-      head.className = 'sl-item-head';
+      head.className = 'tool-list-head';
       var name = document.createElement('span');
-      name.className = 'sl-item-short';
+      name.className = 'tool-list-title';
       name.textContent = member.handle || 'Unnamed account';
       head.appendChild(name);
       var actions = document.createElement('div');
-      actions.className = 'sl-item-actions';
-      var revoke = button('Remove', function () { revokeAccess(member, li, revoke); }, 'sl-danger');
+      actions.className = 'tool-list-actions';
+      var revoke = button('Remove', function () { revokeAccess(member, li, revoke); }, 'tool-button-danger');
       actions.appendChild(revoke);
       head.appendChild(actions);
       li.appendChild(head);
       var meta = document.createElement('div');
-      meta.className = 'sl-item-meta';
+      meta.className = 'tool-list-meta';
       var granted = formatDate(member.grantedAt);
       meta.textContent = 'Account ' + member.uid + (granted ? ' · allowed ' + granted : '');
       li.appendChild(meta);
@@ -301,7 +301,7 @@
     if (!append) ui.all.replaceChildren();
     if (!links.length && !append) {
       var none = document.createElement('li');
-      none.className = 'sl-item sl-empty';
+      none.className = 'sl-item tool-note';
       none.textContent = 'No links exist yet.';
       ui.all.appendChild(none);
     }
@@ -330,17 +330,23 @@
       show(ui.owner, false);
       return;
     }
-    if (status.role !== 'owner' && status.role !== 'member') {
-      setMessage('Short links are by invitation. Ask the site owner to enable them for your account.', '');
-      ui.account.textContent = who + (handle ? ' Tell the owner this name.' : ' Set a display name from the menu so the owner can find your account.');
+    var limits = status.limits && Number.isFinite(status.limits.maxLinks) ? status.limits : null;
+    if (status.role === 'guest') {
+      setMessage('You can create up to ' + (limits ? limits.maxLinks : 5) + ' short links without an invitation.', 'ok');
+      ui.account.textContent = who + ' Invited accounts can keep up to 200. '
+        + (handle ? 'Ask the site owner to invite this name if you need more.' : 'Set a display name from the menu so the owner can invite your account if you need more.');
+    } else if (status.role === 'owner' || status.role === 'member') {
+      setMessage(status.role === 'owner' ? 'You are the site owner. You can create links and choose who else may keep more than a few.' : 'You can create short links.', 'ok');
+      ui.account.textContent = who;
+    } else {
+      setMessage('Your account cannot create short links.', '');
+      ui.account.textContent = who;
       show(ui.account, true);
       show(ui.create, false);
       show(ui.mine, false);
       show(ui.owner, false);
       return;
     }
-    setMessage(status.role === 'owner' ? 'You are the site owner. You can create links and choose who else may.' : 'You can create short links.', 'ok');
-    ui.account.textContent = who;
     show(ui.account, true);
     ui.aliasPrefix.textContent = siteOrigin().replace(/^https?:\/\//, '') + '/';
     show(ui.create, true);

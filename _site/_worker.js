@@ -18,8 +18,10 @@
  *                      Google's published keys; nothing about the caller is
  *                      taken on trust from the browser.
  *
- * Who may create links: the owner (SHORT_LINK_OWNER_UID) and the accounts the
- * owner has added to the allowlist. Everyone else can only open links.
+ * Who may create links: every signed-in Google or GitHub account, within a
+ * small allowance (a "guest", 5 links). The owner (SHORT_LINK_OWNER_UID) and
+ * the accounts the owner has added to the allowlist ("members") get the full
+ * allowance. Everyone, signed in or not, can open links.
  *
  * Storage is one Workers KV namespace bound as SHORT_LINKS:
  *   link:<code>            { url, owner, createdAt }   metadata: same, url truncated
@@ -57,8 +59,13 @@ const CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 const ALIAS_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/;
 const LOOKUP_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const CONTROL_OR_SPACE = /[\u0000-\u0020\u007f]/;
-const MAX_LINKS_PER_USER = 200;
-const DAILY_CREATES_PER_USER = 50;
+/* Allowances by role. A guest is any signed-in account the owner has not
+   invited (user decision, 2026-09-02: uninvited readers may keep five). */
+const LIMITS = {
+  owner: { maxLinks: 200, dailyCreates: 50 },
+  member: { maxLinks: 200, dailyCreates: 50 },
+  guest: { maxLinks: 5, dailyCreates: 5 }
+};
 const DAILY_CREATES_GLOBAL = 500;
 const RATE_TTL_SECONDS = 2 * 24 * 60 * 60;
 const CLOCK_SKEW_SECONDS = 300;
@@ -396,12 +403,16 @@ async function readJsonBody(request) {
 async function callerRole(env, uid) {
   if (uid === env.SHORT_LINK_OWNER_UID) return 'owner';
   const allowed = await env.SHORT_LINKS.get('allow:' + uid);
-  return allowed ? 'member' : 'none';
+  return allowed ? 'member' : 'guest';
+}
+
+function limitsFor(role) {
+  return LIMITS[role] || LIMITS.guest;
 }
 
 function requireCreator(role) {
-  if (role !== 'owner' && role !== 'member') {
-    throw new ApiError(403, 'not-invited', 'Short links are by invitation. Ask the site owner to enable them for your account.');
+  if (!LIMITS[role]) {
+    throw new ApiError(403, 'not-allowed', 'Your account cannot create short links.');
   }
 }
 
@@ -456,7 +467,7 @@ async function handleStatus(env, caller, role, origin) {
     uid: caller.uid,
     role: role,
     origin: origin,
-    limits: { maxLinks: MAX_LINKS_PER_USER, dailyCreates: DAILY_CREATES_PER_USER },
+    limits: limitsFor(role),
     links: links
   });
 }
@@ -467,9 +478,11 @@ async function handleCreate(request, env, caller, role, origin, now) {
   const url = normalizeTarget(body.url, origin);
   const alias = normalizeAlias(body.alias);
 
+  const limits = limitsFor(role);
   const mine = await listByPrefix(env, 'owner:' + caller.uid + ':');
-  if (mine.cursor || mine.keys.length >= MAX_LINKS_PER_USER) {
-    throw new ApiError(429, 'too-many-links', 'You have reached the limit of ' + MAX_LINKS_PER_USER + ' links. Delete one to make room.');
+  if (mine.cursor || mine.keys.length >= limits.maxLinks) {
+    throw new ApiError(429, 'too-many-links', 'You have reached the limit of ' + limits.maxLinks + ' links'
+      + (role === 'guest' ? ' for an account without an invitation' : '') + '. Delete one to make room.');
   }
 
   let code = alias;
@@ -488,8 +501,8 @@ async function handleCreate(request, env, caller, role, origin, now) {
   }
 
   const day = utcDay(now);
-  if (!(await consumeQuota(env, 'rate:user:' + caller.uid + ':' + day, DAILY_CREATES_PER_USER))) {
-    throw new ApiError(429, 'daily-limit', 'You have created ' + DAILY_CREATES_PER_USER + ' links today. Try again tomorrow.');
+  if (!(await consumeQuota(env, 'rate:user:' + caller.uid + ':' + day, limits.dailyCreates))) {
+    throw new ApiError(429, 'daily-limit', 'You have created ' + limits.dailyCreates + ' links today. Try again tomorrow.');
   }
   if (!(await consumeQuota(env, 'rate:global:' + day, DAILY_CREATES_GLOBAL))) {
     throw new ApiError(429, 'daily-limit', 'The site has reached its daily limit for new links. Try again tomorrow.');
