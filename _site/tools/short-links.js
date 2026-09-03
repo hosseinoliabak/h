@@ -176,7 +176,11 @@
         init.headers['Content-Type'] = 'application/json';
         init.body = JSON.stringify(body);
       }
-      return fetch(API + path, init).then(function (response) {
+      /* Every call gets a URL of its own. The edge cache keys on the URL and
+         has been seen to keep responses despite no-store, so a fixed URL could
+         hand one reader's answer to the next. */
+      var buster = (path.indexOf('?') >= 0 ? '&' : '?') + '_=' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      return fetch(API + path + buster, init).then(function (response) {
         return response.text().then(function (raw) {
           var data = null;
           try { data = raw ? JSON.parse(raw) : null; } catch (error) { data = null; }

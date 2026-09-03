@@ -7,7 +7,7 @@
  *
  * Two jobs:
  *
- *   GET /<code>        look the code up and answer with a 302 to its target.
+ *   GET /<code>        look the code up and answer with a 307 to its target.
  *                      An unknown code is handed back to the static site, which
  *                      serves the normal 404 page. Appending "+" to a short link
  *                      shows the target as plain text instead of redirecting.
@@ -93,9 +93,20 @@ class ApiError extends Error {
 
 /* ------------------------------ small helpers ------------------------------ */
 
-function noStoreHeaders(extra) {
-  const headers = new Headers(extra || {});
+/* Nothing this Worker answers may be cached at the edge. A cached redirect
+   would outlive its deletion, and a cached "not found" for a code would hide
+   a link created a minute later. Cache-Control alone is not enough: a zone
+   cache rule that overrides origin headers was observed caching these
+   responses, so the Cloudflare-specific directives are sent as well. */
+function markUncacheable(headers) {
   headers.set('Cache-Control', 'no-store');
+  headers.set('CDN-Cache-Control', 'no-store');
+  headers.set('Cloudflare-CDN-Cache-Control', 'no-store');
+  return headers;
+}
+
+function noStoreHeaders(extra) {
+  const headers = markUncacheable(new Headers(extra || {}));
   headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('X-Robots-Tag', 'noindex');
   return headers;
@@ -607,30 +618,45 @@ function parseShortPath(pathname) {
   return { code: code, preview: Boolean(match[2]) };
 }
 
+/* The static 404 for a code-shaped path is served through the Worker with the
+   cache directives added, because that exact URL may become a live short link
+   a moment later and a cached 404 would hide it. Every other passthrough is
+   the static site's own business and keeps its own headers. */
+async function uncacheablePassthrough(request, env) {
+  const response = await passthrough(request, env);
+  const headers = markUncacheable(new Headers(response.headers));
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers: headers });
+}
+
 async function handleShortLink(request, env, url) {
   const method = request.method.toUpperCase();
   if (method !== 'GET' && method !== 'HEAD') return passthrough(request, env);
   const short = parseShortPath(url.pathname);
-  if (!short || !isConfigured(env)) return passthrough(request, env);
+  if (!short) return passthrough(request, env);
+  if (!isConfigured(env)) return uncacheablePassthrough(request, env);
   let record = null;
   try {
     record = await env.SHORT_LINKS.get('link:' + short.code, 'json');
   } catch (error) {
     record = null;
   }
-  if (!record || typeof record !== 'object' || typeof record.url !== 'string') return passthrough(request, env);
+  if (!record || typeof record !== 'object' || typeof record.url !== 'string') return uncacheablePassthrough(request, env);
   let target;
   try {
     target = new URL(record.url);
   } catch (error) {
-    return passthrough(request, env);
+    return uncacheablePassthrough(request, env);
   }
-  if (target.protocol !== 'https:' && target.protocol !== 'http:') return passthrough(request, env);
+  if (target.protocol !== 'https:' && target.protocol !== 'http:') return uncacheablePassthrough(request, env);
   if (short.preview) {
     return text(200, url.host + '/' + short.code + ' points to\n' + target.href + '\n');
   }
+  /* 307, not 302. Both are temporary redirects, and browsers and crawlers
+     treat them alike for GET. The difference is that Cloudflare's edge caches
+     302 responses by default and never caches 307, so a deleted link stops
+     working at once instead of living on in the cache. */
   return new Response(null, {
-    status: 302,
+    status: 307,
     headers: noStoreHeaders({ Location: target.href })
   });
 }
