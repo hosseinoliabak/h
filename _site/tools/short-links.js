@@ -336,7 +336,7 @@
       setMessage(guestMax === 1
         ? 'You can create one short link without an invitation.'
         : 'You can create up to ' + guestMax + ' short links without an invitation.', 'ok');
-      ui.account.textContent = who + ' Invited accounts can keep up to 200. '
+      ui.account.textContent = who + ' Invited accounts can keep hundreds. '
         + (handle ? 'Ask the site owner to invite this name if you need more.' : 'Set a display name from the menu so the owner can invite your account if you need more.');
     } else if (status.role === 'owner' || status.role === 'member') {
       setMessage(status.role === 'owner' ? 'You are the site owner. You can create links and choose who else may keep more than a few.' : 'You can create short links.', 'ok');
