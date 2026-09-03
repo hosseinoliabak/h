@@ -177,15 +177,19 @@ async function fetchJwks() {
   const controller = new AbortController();
   const timer = setTimeout(function () { controller.abort(); }, JWKS_TIMEOUT_MS);
   try {
+    /* Only options the Workers runtime implements. It rejects redirect:
+       "error" (and browser-only fields such as credentials), which surfaced
+       as "could not be verified" for every sign-in on 2026-09-02. "manual"
+       plus the status check below gives the same guarantee: a redirect is
+       never followed and is treated as a failure. There are no cookies or
+       referrers on a server-side fetch, so nothing else is needed. */
     const response = await fetch(JWKS_URL, {
       method: 'GET',
-      redirect: 'error',
-      credentials: 'omit',
-      referrerPolicy: 'no-referrer',
+      redirect: 'manual',
       signal: controller.signal,
       headers: { Accept: 'application/json' }
     });
-    if (!response.ok) throw new Error('JWKS status ' + response.status);
+    if (response.status !== 200) throw new Error('JWKS status ' + response.status);
     const announced = Number(response.headers.get('content-length') || 0);
     if (announced > MAX_JWKS_BYTES) throw new Error('JWKS too large');
     const body = await response.text();
@@ -258,6 +262,9 @@ async function verifyIdToken(token, now) {
   try {
     jwk = await signingKey(header.kid, now);
   } catch (error) {
+    /* Only the error class and message reach the log. No token, uid, or
+       request data is written. */
+    console.warn('short-links: signing keys unavailable', error && error.name, error && error.message);
     throw new ApiError(503, 'verification-unavailable', 'Sign-in could not be verified right now. Try again in a minute.');
   }
   if (!jwk) throw new ApiError(401, 'unauthenticated', 'Sign in to continue.');
