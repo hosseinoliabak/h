@@ -609,6 +609,12 @@ async function handleApi(request, env, url, now) {
   if (rest !== '' && rest[0] !== '/') return json(404, { error: 'not-found', message: 'Unknown endpoint.' });
   if (segments.length > 2) return json(404, { error: 'not-found', message: 'Unknown endpoint.' });
 
+  /* Operational check with no sign-in: says only whether the store is bound,
+     so a deploy can be verified from outside without an owner token. */
+  if (segments.length === 1 && segments[0] === 'health' && (method === 'GET' || method === 'HEAD')) {
+    return json(200, { store: isConfigured(env) });
+  }
+
   try {
     requireSameOrigin(request, origin);
     const caller = await verifyIdToken(bearerToken(request), now);
