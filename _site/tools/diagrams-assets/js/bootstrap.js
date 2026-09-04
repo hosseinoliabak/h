@@ -69,8 +69,14 @@ if (window.location.hash != null && window.location.hash.substring(0, 2) == '#P'
 }
 
 // Global variable for desktop
+// The second token is the Electron app's productName. This fork renamed it
+// to Diagrams so the desktop build gets its own profile, and upstream's
+// check only accepts ' draw.io/', which silently demoted the desktop app to
+// a browser build: no native save dialog, no recent save locations, and the
+// browser's Download flow instead. Accept either name.
 var mxIsElectron = navigator.userAgent != null && navigator.userAgent.toLowerCase().indexOf(' electron/') > -1 && 
-                    navigator.userAgent.indexOf(' draw.io/') > -1;
+                    (navigator.userAgent.indexOf(' draw.io/') > -1 ||
+                    navigator.userAgent.indexOf(' Diagrams/') > -1);
 
 // Redirects page if required
 if (urlParams['dev'] != '1')

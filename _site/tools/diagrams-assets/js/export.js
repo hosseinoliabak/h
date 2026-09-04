@@ -2,9 +2,15 @@
  * Copyright (c) 2020-2025, JGraph Holdings Ltd
  * Copyright (c) 2020-2025, draw.io AG
  */
+// The second token is the Electron app's productName. This fork renamed it
+// to Diagrams so the desktop build gets its own profile, and upstream's
+// check only accepts ' draw.io/', which silently demoted the desktop app to
+// a browser build: no native save dialog, no recent save locations, and the
+// browser's Download flow instead. Accept either name.
 var mxIsElectron = navigator.userAgent != null &&
 	navigator.userAgent.toLowerCase().indexOf(' electron/') > -1 && 
-	navigator.userAgent.indexOf(' draw.io/') > -1;
+	(navigator.userAgent.indexOf(' draw.io/') > -1 ||
+	navigator.userAgent.indexOf(' Diagrams/') > -1);
 var GOOGLE_APPS_MAX_AREA = 25000000;
 var GOOGLE_SHEET_MAX_AREA = 1000000; // The maximum number of pixels is 1 million.
 // Maximum number of pages in the print output so that extreme cell

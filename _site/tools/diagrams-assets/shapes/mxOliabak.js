@@ -1897,6 +1897,259 @@
 	};
 
 	// ---------------------------------------------------------------------
+	// Parametric devices
+	// ---------------------------------------------------------------------
+
+	/**
+	 * The classic router, drawn rather than stencilled.
+	 *
+	 * The Cisco stencil is a fixed set of paths, so its top face keeps a fixed
+	 * proportion however the shape is resized: stretch it upwards and the
+	 * cylinder turns into a capsule. This draws the same icon from parameters
+	 * instead, so the top face has the depth handle a cylinder has.
+	 *
+	 * 'size' follows draw.io's own cylinder convention exactly: the ellipse
+	 * radius in pixels, clamped to half the height, with the handle on the
+	 * left edge at y + size. Anyone who has dragged a cylinder already knows
+	 * how this behaves.
+	 *
+	 * The four arrows are the stencil's own polygons, normalised to the lid
+	 * ellipse, so they are the icon everyone recognises and they foreshorten
+	 * with the top face instead of floating over it.
+	 */
+	function mxShapeOliabakRouter(bounds, fill, stroke, strokewidth)
+	{
+		mxShape.call(this);
+		this.bounds = bounds;
+		this.fill = fill;
+		this.stroke = stroke;
+		this.strokewidth = (strokewidth != null) ? strokewidth : 1;
+	};
+
+	mxUtils.extend(mxShapeOliabakRouter, mxShape);
+
+	mxShapeOliabakRouter.prototype.size = 15;
+
+	mxShapeOliabakRouter.prototype.customProperties = [
+		{name: 'size', dispName: 'Top Depth', type: 'float', min: 0, defVal: 15},
+		{name: 'strokeColor2', dispName: 'Marking Color', type: 'color',
+			defVal: '#CC0000'}
+	];
+
+	// The stencil's four arrow polygons, as (u, v) on the lid ellipse where
+	// the ellipse is the unit circle. Regenerated from
+	// stencils/cisco/routers.xml, shape "Router".
+	var ROUTER_ARROWS = [
+		[[-0.2297,-0.3792],[-0.1486,-0.0688],[-0.4596,0.104],[-0.3919,-0.0347],
+			[-0.865,-0.2416],[-0.7434,-0.4827],[-0.284,-0.2757]],
+		[[0.2163,0.3792],[0.1486,0.0688],[0.4324,-0.1029],[0.3919,0.0347],
+			[0.8512,0.2416],[0.7434,0.4485],[0.2702,0.2416]],
+		[[0.0541,-0.552],[0.3647,-0.7589],[0.3785,-0.4485],[0.2974,-0.4827],
+			[0.1486,-0.1381],[-0.0002,-0.2064],[0.1486,-0.5168]],
+		[[-0.0813,0.6896],[-0.3785,0.8282],[-0.3919,0.4485],[-0.2974,0.5178],
+			[-0.1352,0.1381],[0.0136,0.2074],[-0.1624,0.6213]]
+	];
+
+	mxShapeOliabakRouter.prototype.paintVertexShape = function(c, x, y, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return;
+		}
+
+		var size = Math.max(0, Math.min(h * 0.5, parseFloat(
+			mxUtils.getValue(this.style, 'size', this.size))));
+
+		c.translate(x, y);
+
+		if (size <= 0)
+		{
+			c.rect(0, 0, w, h);
+			c.fillAndStroke();
+
+			return;
+		}
+
+		// Body: the lid's front half, down the sides, round the base.
+		c.begin();
+		c.moveTo(0, size);
+		c.arcTo(w * 0.5, size, 0, 0, 1, w * 0.5, 0);
+		c.arcTo(w * 0.5, size, 0, 0, 1, w, size);
+		c.lineTo(w, h - size);
+		c.arcTo(w * 0.5, size, 0, 0, 1, w * 0.5, h);
+		c.arcTo(w * 0.5, size, 0, 0, 1, 0, h - size);
+		c.close();
+		c.fillAndStroke();
+
+		c.setShadow(false);
+
+		// The lid, filled so the arrows sit on a face rather than on the body.
+		c.begin();
+		c.moveTo(0, size);
+		c.arcTo(w * 0.5, size, 0, 0, 1, w * 0.5, 0);
+		c.arcTo(w * 0.5, size, 0, 0, 1, w, size);
+		c.arcTo(w * 0.5, size, 0, 0, 1, w * 0.5, 2 * size);
+		c.arcTo(w * 0.5, size, 0, 0, 1, 0, size);
+		c.close();
+		c.fillAndStroke();
+
+		this.paintMarkings(c, w * 0.5, size, w * 0.5, size);
+	};
+
+	/**
+	 * The arrows, mapped from the unit circle onto the lid ellipse.
+	 */
+	mxShapeOliabakRouter.prototype.paintMarkings = function(c, cx, cy, rx, ry)
+	{
+		// Filled, not stroked. The stencil does the same: these arrows are
+		// only a few pixels thick once foreshortened, and any outline heavy
+		// enough to see swamps the shape it is outlining.
+		c.setFillColor(mxUtils.getValue(this.style, 'strokeColor2', '#CC0000'));
+
+		for (var i = 0; i < ROUTER_ARROWS.length; i++)
+		{
+			var poly = ROUTER_ARROWS[i];
+			c.begin();
+			c.moveTo(cx + poly[0][0] * rx, cy + poly[0][1] * ry);
+
+			for (var k = 1; k < poly.length; k++)
+			{
+				c.lineTo(cx + poly[k][0] * rx, cy + poly[k][1] * ry);
+			}
+
+			c.close();
+			c.fill();
+		}
+	};
+
+	mxCellRenderer.registerShape('mxgraph.oliabak.router', mxShapeOliabakRouter);
+
+	/**
+	 * The classic switch: an isometric box with four arrows on its top face.
+	 *
+	 * Same problem as the router. The stencil's depth is baked into its paths,
+	 * so resizing skews the box. Here 'size' is the isometric depth in pixels
+	 * and it gets a handle, so the box keeps its shape at any width or height.
+	 *
+	 * The arrows are the stencil's own polygons expressed in the top face's
+	 * own two axes, so they shear with the face rather than sliding across it.
+	 */
+	function mxShapeOliabakSwitch(bounds, fill, stroke, strokewidth)
+	{
+		mxShape.call(this);
+		this.bounds = bounds;
+		this.fill = fill;
+		this.stroke = stroke;
+		this.strokewidth = (strokewidth != null) ? strokewidth : 1;
+	};
+
+	mxUtils.extend(mxShapeOliabakSwitch, mxShape);
+
+	mxShapeOliabakSwitch.prototype.size = 16;
+
+	mxShapeOliabakSwitch.prototype.customProperties = [
+		{name: 'size', dispName: 'Depth', type: 'float', min: 0, defVal: 16},
+		{name: 'strokeColor2', dispName: 'Marking Color', type: 'color',
+			defVal: '#CC0000'}
+	];
+
+	// Regenerated from stencils/cisco/switches.xml, "Workgroup Switch", as
+	// (s, t) along the top face's front edge and depth edge.
+	var SWITCH_ARROWS = [
+		[[0.4838,0.2554],[0.4802,0.2126],[0.2354,0.2126],[0.2419,0.1277],
+			[0.1376,0.2126],[0.2255,0.3404],[0.2321,0.2554]],
+		[[0.5242,0.6386],[0.5291,0.5747],[0.2845,0.5747],[0.2823,0.5109],
+			[0.178,0.5958],[0.2746,0.7024],[0.2724,0.6386]],
+		[[0.474,0.3831],[0.4779,0.4253],[0.7296,0.4253],[0.7159,0.5109],
+			[0.8204,0.4253],[0.7394,0.2976],[0.7257,0.3831]],
+		[[0.4514,0.7663],[0.4553,0.8084],[0.7001,0.8084],[0.6933,0.894],
+			[0.8066,0.7874],[0.7099,0.6807],[0.7031,0.7663]]
+	];
+
+	mxShapeOliabakSwitch.prototype.paintVertexShape = function(c, x, y, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return;
+		}
+
+		// Depth cannot eat the whole box, or the front face disappears.
+		var d = Math.max(0, Math.min(Math.min(w, h) * 0.7, parseFloat(
+			mxUtils.getValue(this.style, 'size', this.size))));
+
+		c.translate(x, y);
+
+		if (d <= 0)
+		{
+			c.rect(0, 0, w, h);
+			c.fillAndStroke();
+
+			return;
+		}
+
+		// Front face.
+		c.begin();
+		c.moveTo(0, d);
+		c.lineTo(w - d, d);
+		c.lineTo(w - d, h);
+		c.lineTo(0, h);
+		c.close();
+		c.fillAndStroke();
+
+		// Right face.
+		c.begin();
+		c.moveTo(w - d, d);
+		c.lineTo(w, 0);
+		c.lineTo(w, h - d);
+		c.lineTo(w - d, h);
+		c.close();
+		c.fillAndStroke();
+
+		// Top face, drawn last so the arrows sit on it.
+		c.begin();
+		c.moveTo(0, d);
+		c.lineTo(d, 0);
+		c.lineTo(w, 0);
+		c.lineTo(w - d, d);
+		c.close();
+		c.fillAndStroke();
+
+		c.setShadow(false);
+		this.paintMarkings(c, w, d);
+	};
+
+	mxShapeOliabakSwitch.prototype.paintMarkings = function(c, w, d)
+	{
+		// The top face in its own axes: origin at the front-left corner, one
+		// axis along the front edge, the other back along the depth.
+		var ox = 0, oy = d;
+		var ux = w - d, uy = 0;
+		var vx = d, vy = -d;
+
+		// Filled, not stroked, as the stencil does.
+		c.setFillColor(mxUtils.getValue(this.style, 'strokeColor2', '#CC0000'));
+
+		for (var i = 0; i < SWITCH_ARROWS.length; i++)
+		{
+			var poly = SWITCH_ARROWS[i];
+			c.begin();
+			c.moveTo(ox + poly[0][0] * ux + poly[0][1] * vx,
+				oy + poly[0][0] * uy + poly[0][1] * vy);
+
+			for (var k = 1; k < poly.length; k++)
+			{
+				c.lineTo(ox + poly[k][0] * ux + poly[k][1] * vx,
+					oy + poly[k][0] * uy + poly[k][1] * vy);
+			}
+
+			c.close();
+			c.fill();
+		}
+	};
+
+	mxCellRenderer.registerShape('mxgraph.oliabak.switch', mxShapeOliabakSwitch);
+
+	// ---------------------------------------------------------------------
 	// Handles
 	// ---------------------------------------------------------------------
 
@@ -2091,6 +2344,43 @@
 				state.style['stages'] = Math.max(4, Math.min(24, Math.round(
 					4 + (pt.x - bounds.x) / bounds.width * 20)));
 			})];
+		};
+
+		// Same contract as draw.io's own cylinder: size is the ellipse radius
+		// in pixels and the handle rides the left edge, so the gesture is the
+		// one people already know from cylinder2 and cylinder3.
+		// Depth handle on the top-left corner: drag down to deepen the box.
+		Graph.handleFactory['mxgraph.oliabak.switch'] = function(state)
+		{
+			return [Graph.createHandle(state, ['size'], function(bounds)
+			{
+				var d = Math.max(0, Math.min(Math.min(bounds.width, bounds.height) * 0.7,
+					parseFloat(mxUtils.getValue(this.state.style, 'size',
+					mxShapeOliabakSwitch.prototype.size))));
+
+				return new mxPoint(bounds.x, bounds.y + d);
+			}, function(bounds, pt)
+			{
+				this.state.style['size'] = Math.round(Math.max(0,
+					Math.min(Math.min(bounds.width, bounds.height) * 0.7,
+					pt.y - bounds.y)));
+			}, true)];
+		};
+
+		Graph.handleFactory['mxgraph.oliabak.router'] = function(state)
+		{
+			return [Graph.createHandle(state, ['size'], function(bounds)
+			{
+				var size = Math.max(0, Math.min(bounds.height * 0.5, parseFloat(
+					mxUtils.getValue(this.state.style, 'size',
+					mxShapeOliabakRouter.prototype.size))));
+
+				return new mxPoint(bounds.x, bounds.y + size);
+			}, function(bounds, pt)
+			{
+				this.state.style['size'] = Math.round(Math.max(0,
+					Math.min(bounds.height * 0.5, pt.y - bounds.y)));
+			}, true)];
 		};
 
 		/**
