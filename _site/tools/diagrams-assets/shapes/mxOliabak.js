@@ -2046,9 +2046,14 @@
 	mxUtils.extend(mxShapeOliabakSwitch, mxShape);
 
 	mxShapeOliabakSwitch.prototype.size = 16;
+	mxShapeOliabakSwitch.prototype.depth = 16;
 
+	// An isometric box has two independent offsets, and collapsing them into
+	// one made the top face and the depth impossible to set separately.
+	// 'size' is how tall the top face reads, 'depth' is how far back it goes.
 	mxShapeOliabakSwitch.prototype.customProperties = [
-		{name: 'size', dispName: 'Depth', type: 'float', min: 0, defVal: 16},
+		{name: 'size', dispName: 'Top Height', type: 'float', min: 0, defVal: 16},
+		{name: 'depth', dispName: 'Depth', type: 'float', min: 0, defVal: 16},
 		{name: 'strokeColor2', dispName: 'Marking Color', type: 'color',
 			defVal: '#CC0000'}
 	];
@@ -2073,13 +2078,15 @@
 			return;
 		}
 
-		// Depth cannot eat the whole box, or the front face disappears.
-		var d = Math.max(0, Math.min(Math.min(w, h) * 0.7, parseFloat(
+		// Neither offset may eat the whole box, or a face disappears.
+		var dy = Math.max(0, Math.min(h * 0.9, parseFloat(
 			mxUtils.getValue(this.style, 'size', this.size))));
+		var dx = Math.max(0, Math.min(w * 0.9, parseFloat(
+			mxUtils.getValue(this.style, 'depth', this.depth))));
 
 		c.translate(x, y);
 
-		if (d <= 0)
+		if (dy <= 0 && dx <= 0)
 		{
 			c.rect(0, 0, w, h);
 			c.fillAndStroke();
@@ -2089,42 +2096,44 @@
 
 		// Front face.
 		c.begin();
-		c.moveTo(0, d);
-		c.lineTo(w - d, d);
-		c.lineTo(w - d, h);
+		c.moveTo(0, dy);
+		c.lineTo(w - dx, dy);
+		c.lineTo(w - dx, h);
 		c.lineTo(0, h);
 		c.close();
 		c.fillAndStroke();
 
 		// Right face.
 		c.begin();
-		c.moveTo(w - d, d);
+		c.moveTo(w - dx, dy);
 		c.lineTo(w, 0);
-		c.lineTo(w, h - d);
-		c.lineTo(w - d, h);
+		c.lineTo(w, h - dy);
+		c.lineTo(w - dx, h);
 		c.close();
 		c.fillAndStroke();
 
 		// Top face, drawn last so the arrows sit on it.
 		c.begin();
-		c.moveTo(0, d);
-		c.lineTo(d, 0);
+		c.moveTo(0, dy);
+		c.lineTo(dx, 0);
 		c.lineTo(w, 0);
-		c.lineTo(w - d, d);
+		c.lineTo(w - dx, dy);
 		c.close();
 		c.fillAndStroke();
 
 		c.setShadow(false);
-		this.paintMarkings(c, w, d);
+		this.paintMarkings(c, w, dx, dy);
 	};
 
-	mxShapeOliabakSwitch.prototype.paintMarkings = function(c, w, d)
+	mxShapeOliabakSwitch.prototype.paintMarkings = function(c, w, dx, dy)
 	{
 		// The top face in its own axes: origin at the front-left corner, one
-		// axis along the front edge, the other back along the depth.
-		var ox = 0, oy = d;
-		var ux = w - d, uy = 0;
-		var vx = d, vy = -d;
+		// axis along the front edge, the other back along the depth. Because
+		// the arrows are held in these axes they shear correctly however the
+		// two offsets are set.
+		var ox = 0, oy = dy;
+		var ux = w - dx, uy = 0;
+		var vx = dx, vy = -dy;
 
 		// Filled, not stroked, as the stencil does.
 		c.setFillColor(mxUtils.getValue(this.style, 'strokeColor2', '#CC0000'));
@@ -2349,21 +2358,34 @@
 		// Same contract as draw.io's own cylinder: size is the ellipse radius
 		// in pixels and the handle rides the left edge, so the gesture is the
 		// one people already know from cylinder2 and cylinder3.
-		// Depth handle on the top-left corner: drag down to deepen the box.
+		// Two handles, one per offset. Top face height rides the left edge and
+		// is dragged down, the way the router's and the cylinder's do. Depth
+		// rides the top edge and is dragged sideways, so the two gestures
+		// cannot be confused for one another.
 		Graph.handleFactory['mxgraph.oliabak.switch'] = function(state)
 		{
 			return [Graph.createHandle(state, ['size'], function(bounds)
 			{
-				var d = Math.max(0, Math.min(Math.min(bounds.width, bounds.height) * 0.7,
-					parseFloat(mxUtils.getValue(this.state.style, 'size',
+				var dy = Math.max(0, Math.min(bounds.height * 0.9, parseFloat(
+					mxUtils.getValue(this.state.style, 'size',
 					mxShapeOliabakSwitch.prototype.size))));
 
-				return new mxPoint(bounds.x, bounds.y + d);
+				return new mxPoint(bounds.x, bounds.y + dy);
 			}, function(bounds, pt)
 			{
 				this.state.style['size'] = Math.round(Math.max(0,
-					Math.min(Math.min(bounds.width, bounds.height) * 0.7,
-					pt.y - bounds.y)));
+					Math.min(bounds.height * 0.9, pt.y - bounds.y)));
+			}, true), Graph.createHandle(state, ['depth'], function(bounds)
+			{
+				var dx = Math.max(0, Math.min(bounds.width * 0.9, parseFloat(
+					mxUtils.getValue(this.state.style, 'depth',
+					mxShapeOliabakSwitch.prototype.depth))));
+
+				return new mxPoint(bounds.x + dx, bounds.y);
+			}, function(bounds, pt)
+			{
+				this.state.style['depth'] = Math.round(Math.max(0,
+					Math.min(bounds.width * 0.9, pt.x - bounds.x)));
 			}, true)];
 		};
 
