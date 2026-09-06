@@ -1185,6 +1185,9 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
   height:100%;
   min-height:0;
   margin-top:0;
+  /* the plans handle is positioned against this box rather than given a grid
+     row, so the row template and the height reserve below stay as they were */
+  position:relative;
   /* the show/hide code writes display inline on this element, so the analysis
      stack has to outrank it */
   display:grid !important;
@@ -1196,7 +1199,12 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
   min-height:0;
   margin-top:0;
   display:grid;
-  grid-template-columns:minmax(280px,320px) minmax(420px,1fr) minmax(280px,320px);
+  /* the rails are a fixed size the drag handles rewrite. The lower bound is 0
+     rather than the width itself so a window narrow enough to starve the board
+     shrinks the rails instead of overflowing the row; at 1200px and up there is
+     always room for the defaults, so this renders exactly as the old
+     minmax(280px,320px) pair until someone drags. */
+  grid-template-columns:minmax(0,var(--ana-rail-l,320px)) minmax(420px,1fr) minmax(0,var(--ana-rail-r,320px));
   /* the single row is capped at the space the flex parent hands over. Without
      this the row is content-sized, the three columns grow past the grid box,
      and the plans strip below them ends up painted underneath the overflow. */
@@ -1204,6 +1212,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
   grid-template-areas:'insights board controls';
   gap:12px;
   align-items:stretch;
+  position:relative;
 }
 .analysis-active .board-col {
   grid-area:board;
@@ -1398,6 +1407,66 @@ body.chess-analysis-active #site-display-controls .site-display-control {
 .ana-saved-remove:hover,
 .ana-saved-remove:focus-visible { color:#e74c3c; background:rgba(231,76,60,.08); }
 .ana-saved-status { min-height:16px; margin-top:5px; color:#777; font-size:11px; }
+
+/* ---------- adjustable rails and plans strip (1200px and up) -------------
+   The three-column workspace is the only layout where dragging a border means
+   anything, so the handles are rendered there and nowhere else. Below 1200px
+   the two rails share one tabbed track and the media query underneath replaces
+   the column template outright. None of the three handles is a grid item. Each
+   one is positioned inside the gap the grid already leaves, because giving
+   them tracks of their own would have doubled the gaps and moved the height
+   reserve the board reads out from under it. */
+.ana-split {
+  display:none;
+  position:absolute;
+  padding:0;
+  border:0;
+  background:transparent;
+  touch-action:none;
+  z-index:6;
+}
+.ana-split[hidden] { display:none !important; }
+.ana-split::before {
+  content:'';
+  position:absolute;
+  inset:0;
+  margin:auto;
+  border-radius:3px;
+  background:#bdbdbd;
+  /* a resting hint rather than nothing: a border nobody can see is a border
+     nobody knows how to move. It firms up under the pointer. */
+  opacity:.5;
+  transition:opacity .15s ease, background-color .15s ease, width .15s ease, height .15s ease;
+}
+.ana-split-v { top:0; bottom:0; width:12px; cursor:col-resize; }
+.ana-split-v::before { width:4px; height:46px; }
+.ana-split-h { left:0; right:0; height:10px; cursor:row-resize; }
+.ana-split-h::before { height:4px; width:46px; }
+.ana-split:hover::before { opacity:1; background:#8f8f8f; }
+.ana-split:focus-visible { outline:none; }
+/* the grip is the focus indicator: it fills the whole track and takes the
+   accent, which reads on a 12px strip where an outline would not */
+.ana-split:focus-visible::before,
+.ana-split.ana-split-live::before { opacity:1; background:var(--site-accent); }
+.ana-split-v:focus-visible::before,
+.ana-split-v.ana-split-live::before { height:100%; }
+.ana-split-h:focus-visible::before,
+.ana-split-h.ana-split-live::before { width:100%; }
+/* a drag that leaves the handle must not paint half the workspace blue */
+.chess-wrap.ana-splitting { user-select:none; }
+.chess-wrap.ana-splitting .ana-split-v { cursor:col-resize; }
+.chess-wrap.ana-splitting .ana-split-h { cursor:row-resize; }
+
+@media (min-width:1200px) {
+  .analysis-active .ana-split { display:block; }
+  /* an explicit height rather than a taller cap, so the handle tracks the
+     pointer even when the goals and patterns lists are short */
+  .analysis-active #plansBox.plans-sized {
+    height:var(--ana-plans-user-h);
+    max-height:50vh;
+  }
+  .analysis-active #plansBox.plans-sized.plans-shut { height:auto; }
+}
 
 @media (max-width:1199px) {
   .analysis-active .game-cols {
@@ -1993,7 +2062,12 @@ body.chess-analysis-active #site-display-controls .site-display-control {
         </div>
       </div>
 
+      <div class="ana-split ana-split-v" id="anaSplitLeft" role="separator" aria-orientation="vertical" aria-controls="anaLeftRail" aria-label="Width of the analysis rail" tabindex="0" title="Drag to resize the analysis rail. Double-click to reset it."></div>
+      <div class="ana-split ana-split-v" id="anaSplitRight" role="separator" aria-orientation="vertical" aria-controls="anaBox" aria-label="Width of the position controls" tabindex="0" title="Drag to resize the position controls. Double-click to reset them."></div>
+
     </div>
+
+      <div class="ana-split ana-split-h" id="anaSplitPlans" role="separator" aria-orientation="horizontal" aria-controls="plansBox" aria-label="Height of the plans and patterns strip" tabindex="0" title="Drag to resize the plans strip. Double-click to reset it." hidden=""></div>
 
       <section class="panel-box plans-box" id="plansBox" style="display:none;" aria-labelledby="plansTitle">
         <div class="plans-head">
@@ -2746,6 +2820,218 @@ plansSetShut(plansShutSaved === null
   ? window.matchMedia('(max-width:1199px)').matches
   : plansShutSaved === '1');
 if (typeof ResizeObserver === 'function') new ResizeObserver(anaPlansReserve).observe(plansBoxEl);
+
+/* ------------------ adjustable rails and plans strip ----------------------
+   On a monitor wider than the layout needs, the board is bound by height
+   rather than by width, so the room worth moving belongs to the two rails and
+   to the plans strip. Each handle writes one custom property back into the
+   grid template and stops there. The board, the eval bar, and the height
+   reserve all follow through the observers already set up above.
+
+   Handles are rendered at 1200px and up only. Below that the two rails share
+   one tabbed track and the media query replaces the column template outright.
+   None of the three is a grid item either; each sits in the gap the grid
+   already leaves, so the areas and the reserve arithmetic stay as they were. */
+const gameColsEl = chessWrapEl.querySelector('.game-cols');
+const boardColEl = chessWrapEl.querySelector('.board-col');
+const splitLeftEl = $('anaSplitLeft'), splitRightEl = $('anaSplitRight'), splitPlansEl = $('anaSplitPlans');
+const anaSplitMQ = window.matchMedia('(min-width:1200px)');
+const RAIL_DEFAULT = 320, RAIL_MIN = 240, RAIL_MAX = 640;
+const BOARD_MIN = 420, COL_GAP = 12;      /* both match the grid template above */
+const PLANS_MIN = 110, SPLIT_STEP = 16;
+const RAIL_L_KEY = 'chess-trainer-ana-rail-l';
+const RAIL_R_KEY = 'chess-trainer-ana-rail-r';
+const PLANS_H_KEY = 'chess-trainer-ana-plans-h';
+/* the width each rail is asked for, which is what gets stored. What a rail
+   actually receives can be less on a narrow window, and a squeeze like that
+   must not overwrite the preference behind it. */
+let wantRailL = RAIL_DEFAULT, wantRailR = RAIL_DEFAULT;
+let wantPlansH = 0;                       /* 0 leaves the strip sized by its content */
+
+/* how wide one rail may go once the other rail and the board floor are paid */
+function railCap(other) {
+  const w = gameColsEl.clientWidth;
+  if (!w) return RAIL_MAX;
+  const paid = Math.min(Math.max(other, RAIL_MIN), RAIL_MAX);
+  return Math.max(RAIL_MIN, Math.min(RAIL_MAX, w - paid - BOARD_MIN - COL_GAP * 2));
+}
+function clampRail(v, other) { return Math.round(Math.min(Math.max(v, RAIL_MIN), railCap(other))); }
+
+function plansCap() {
+  const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+  const area = gameArea.offsetHeight || vh;
+  return Math.max(PLANS_MIN, Math.min(Math.round(vh * 0.5), area - 200));
+}
+function clampPlans(v) { return Math.round(Math.min(Math.max(v, PLANS_MIN), plansCap())); }
+
+function railsApply(persist) {
+  const w = gameColsEl.clientWidth;
+  let l = Math.min(Math.max(wantRailL, RAIL_MIN), RAIL_MAX);
+  let r = Math.min(Math.max(wantRailR, RAIL_MIN), RAIL_MAX);
+  const room = w ? w - BOARD_MIN - COL_GAP * 2 : l + r;
+  if (l + r > room) {
+    /* a stored pair that no longer fits. Take the shortfall from both rails in
+       proportion rather than starving whichever one is read first. */
+    const k = Math.max(0, room) / (l + r);
+    l = Math.floor(l * k);
+    r = Math.floor(r * k);
+  }
+  chessWrapEl.style.setProperty('--ana-rail-l', l + 'px');
+  chessWrapEl.style.setProperty('--ana-rail-r', r + 'px');
+  if (persist) { lsSet(RAIL_L_KEY, String(wantRailL)); lsSet(RAIL_R_KEY, String(wantRailR)); }
+  anaSplitSync();
+}
+
+function plansHeightApply(persist) {
+  const sized = wantPlansH > 0;
+  plansBoxEl.classList.toggle('plans-sized', sized);
+  if (sized) chessWrapEl.style.setProperty('--ana-plans-user-h', Math.round(wantPlansH) + 'px');
+  else chessWrapEl.style.removeProperty('--ana-plans-user-h');
+  if (persist) lsSet(PLANS_H_KEY, sized ? String(Math.round(wantPlansH)) : '');
+  anaPlansReserve();
+  anaSplitSync();
+}
+
+function splitAria(el, now, min, max) {
+  el.setAttribute('aria-valuenow', String(Math.round(now)));
+  el.setAttribute('aria-valuemin', String(Math.round(min)));
+  el.setAttribute('aria-valuemax', String(Math.round(max)));
+}
+
+/* Handles are placed from the measured board column rather than from the
+   variables that asked for the widths, so they stay on the real gap even in
+   the moment after a narrow window squeezed a track below its request. */
+function anaSplitSync() {
+  if (!chessWrapEl.classList.contains('analysis-active')) return;
+  const bl = boardColEl.offsetLeft, bw = boardColEl.offsetWidth, cw = gameColsEl.clientWidth;
+  if (bw) {
+    splitLeftEl.style.left = Math.max(0, bl - COL_GAP) + 'px';
+    splitRightEl.style.left = (bl + bw) + 'px';
+    splitAria(splitLeftEl, Math.max(0, bl - COL_GAP), RAIL_MIN, railCap(wantRailR));
+    splitAria(splitRightEl, Math.max(0, cw - bl - bw - COL_GAP), RAIL_MIN, railCap(wantRailL));
+  }
+  const ph = plansBoxEl.offsetHeight;
+  const live = ph > 0 && !plansBoxEl.classList.contains('plans-shut');
+  splitPlansEl.hidden = !live;
+  if (live) {
+    splitPlansEl.style.bottom = ph + 'px';
+    splitAria(splitPlansEl, ph, PLANS_MIN, plansCap());
+  }
+}
+
+/* One pointer handler serves all three. The pending value is written inside a
+   frame callback rather than on every pointermove, because a rail width feeds
+   the board size, the eval bar, and the plans reserve, and repeating that work
+   per event is what makes a drag stutter. */
+let splitDrag = null, splitFrame = 0;
+function splitFlush() {
+  splitFrame = 0;
+  if (!splitDrag) return;
+  if (splitDrag.axis === 'x') railsApply(false);
+  else plansHeightApply(false);
+}
+function splitQueue() { if (!splitFrame) splitFrame = requestAnimationFrame(splitFlush); }
+
+function splitReset(axis, side) {
+  if (axis === 'y') { wantPlansH = 0; plansHeightApply(true); return; }
+  if (side < 0) wantRailR = RAIL_DEFAULT; else wantRailL = RAIL_DEFAULT;
+  railsApply(true);
+}
+
+/* side is +1 where dragging toward the right grows the panel (the left rail
+   and the plans strip) and -1 where it shrinks it (the right rail) */
+function wireSplit(el, axis, side) {
+  el.addEventListener('pointerdown', ev => {
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+    if (!anaSplitMQ.matches) return;
+    ev.preventDefault();
+    el.setPointerCapture(ev.pointerId);
+    el.classList.add('ana-split-live');
+    chessWrapEl.classList.add('ana-splitting');
+    splitDrag = {
+      axis, id: ev.pointerId, x: ev.clientX, y: ev.clientY,
+      railL: wantRailL, railR: wantRailR, plansH: plansBoxEl.offsetHeight
+    };
+  });
+  el.addEventListener('pointermove', ev => {
+    if (!splitDrag || splitDrag.id !== ev.pointerId) return;
+    if (axis === 'x') {
+      const d = (ev.clientX - splitDrag.x) * side;
+      if (side > 0) wantRailL = clampRail(splitDrag.railL + d, wantRailR);
+      else wantRailR = clampRail(splitDrag.railR + d, wantRailL);
+    } else {
+      wantPlansH = clampPlans(splitDrag.plansH + (splitDrag.y - ev.clientY));
+    }
+    splitQueue();
+  });
+  const endDrag = ev => {
+    if (!splitDrag || splitDrag.id !== ev.pointerId) return;
+    const axisWas = splitDrag.axis;
+    splitDrag = null;
+    if (splitFrame) { cancelAnimationFrame(splitFrame); splitFrame = 0; }
+    if (el.hasPointerCapture(ev.pointerId)) el.releasePointerCapture(ev.pointerId);
+    el.classList.remove('ana-split-live');
+    chessWrapEl.classList.remove('ana-splitting');
+    if (axisWas === 'x') railsApply(true); else plansHeightApply(true);
+  };
+  el.addEventListener('pointerup', endDrag);
+  el.addEventListener('pointercancel', endDrag);
+  el.addEventListener('dblclick', () => { if (anaSplitMQ.matches) splitReset(axis, side); });
+  el.addEventListener('keydown', ev => {
+    if (!anaSplitMQ.matches) return;
+    const grow = axis === 'x' ? 'ArrowRight' : 'ArrowUp';
+    const shrink = axis === 'x' ? 'ArrowLeft' : 'ArrowDown';
+    let step = 0, jump = '';
+    if (ev.key === grow) step = 1;
+    else if (ev.key === shrink) step = -1;
+    else if (ev.key === 'Home') jump = 'min';
+    else if (ev.key === 'End') jump = 'max';
+    else if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); splitReset(axis, side); return; }
+    else return;
+    ev.preventDefault();
+    if (axis === 'y') {
+      const now = plansBoxEl.offsetHeight;
+      wantPlansH = jump === 'min' ? PLANS_MIN
+        : jump === 'max' ? plansCap()
+        : clampPlans(now + step * SPLIT_STEP);
+      plansHeightApply(true);
+      return;
+    }
+    if (side > 0) {
+      wantRailL = jump === 'min' ? RAIL_MIN
+        : jump === 'max' ? railCap(wantRailR)
+        : clampRail(wantRailL + step * SPLIT_STEP, wantRailR);
+    } else {
+      wantRailR = jump === 'min' ? RAIL_MIN
+        : jump === 'max' ? railCap(wantRailL)
+        : clampRail(wantRailR + step * SPLIT_STEP, wantRailL);
+    }
+    railsApply(true);
+  });
+}
+wireSplit(splitLeftEl, 'x', 1);
+wireSplit(splitRightEl, 'x', -1);
+wireSplit(splitPlansEl, 'y', 1);
+
+const railLSaved = parseInt(lsGet(RAIL_L_KEY), 10);
+const railRSaved = parseInt(lsGet(RAIL_R_KEY), 10);
+const plansHSaved = parseInt(lsGet(PLANS_H_KEY), 10);
+if (Number.isFinite(railLSaved)) wantRailL = Math.min(Math.max(railLSaved, RAIL_MIN), RAIL_MAX);
+if (Number.isFinite(railRSaved)) wantRailR = Math.min(Math.max(railRSaved, RAIL_MIN), RAIL_MAX);
+if (Number.isFinite(plansHSaved) && plansHSaved > 0) wantPlansH = plansHSaved;
+railsApply(false);
+plansHeightApply(false);
+/* The strip appears, folds, and disappears on its own, and the rails move
+   whenever the window does, so the handles are placed from observed geometry
+   rather than from every call site that could have changed it. */
+if (typeof ResizeObserver === 'function') {
+  const splitWatch = new ResizeObserver(anaSplitSync);
+  splitWatch.observe(gameColsEl);
+  splitWatch.observe(boardColEl);
+  splitWatch.observe(plansBoxEl);
+} else {
+  window.addEventListener('resize', anaSplitSync);
+}
 
 /* The eval bar is the board's sibling, not its child, so it cannot take the
    board's height from CSS and is sized from the rendered board instead. A
@@ -6263,7 +6549,11 @@ function plansRender() {
   const box = $('plansBox');
   if (!box) return;
   if (!plansActive()) { box.style.display = 'none'; planSquares = new Set(); anaPlansReserve(); return; }
-  box.style.display = 'block';
+  /* the stylesheet owns the display mode here. An inline 'block' outranks the
+     flex column the analysis layout gives the strip, which left the head, the
+     body, and the scrolling columns inside it inert and clipped whatever ran
+     past the strip's height instead of letting the columns scroll. */
+  box.style.display = '';
   /* opening line */
   const open = $('plansOpening');
   if (planOpening) {
