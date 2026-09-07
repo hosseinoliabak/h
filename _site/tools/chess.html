@@ -549,6 +549,10 @@ ul.task-list li input[type="checkbox"] {
     <a class="dropdown-item" href="../tools/daily-chess">
  <span class="dropdown-text">Daily Chess Puzzles</span></a>
   </li>  
+        <li>
+    <a class="dropdown-item" href="../tools/chess-tournament">
+ <span class="dropdown-text">Chess Tournament</span></a>
+  </li>  
     </ul>
   </li>
   <li class="nav-item dropdown ">
@@ -1252,6 +1256,9 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
   display:flex;
   flex-direction:column;
   gap:8px;
+  /* the handle between the move list and the forecast is positioned against
+     this box rather than being a flex item of it */
+  position:relative;
   width:auto;
   height:100%;
   min-width:0;
@@ -1459,6 +1466,14 @@ body.chess-analysis-active #site-display-controls .site-display-control {
 
 @media (min-width:1200px) {
   .analysis-active .ana-split { display:block; }
+  /* the rail gap is 8px rather than the 10px under the workspace */
+  .ana-split-rail { height:8px; }
+  /* the move list and the forecast share whatever the panels above them leave.
+     Dragging rewrites the two grow factors, so the split stays proportional as
+     the coach panel comes and goes. Scoped to the width that has the handle;
+     narrower layouts keep the 1 and 1.4 the rail shipped with. */
+  .analysis-active .moves-box { flex:var(--ana-moves-grow, 1) 1 0; }
+  .analysis-active .why-box { flex:var(--ana-why-grow, 1.4) 1 0; }
   /* an explicit height rather than a taller cap, so the handle tracks the
      pointer even when the goals and patterns lists are short */
   .analysis-active #plansBox.plans-sized {
@@ -2039,6 +2054,7 @@ body.chess-analysis-active #site-display-controls .site-display-control {
           <div class="ana-only-section-title" id="anaMovesTitle">Move history</div>
           <table><tbody id="movesBody"></tbody></table>
         </section>
+        <div class="ana-split ana-split-h ana-split-rail" id="anaSplitMoves" role="separator" aria-orientation="horizontal" aria-controls="movesBox" tabindex="0" aria-label="Height of the move history" hidden="" title="Drag to resize the move history. Double-click to reset it."></div>
         <section class="why-box" id="whyBox" style="display:none;" aria-labelledby="whyTitle" tabindex="0">
           <div id="fpPickBox" style="display:none;"></div>
           <div id="fpBatchBox" style="display:none;"></div>
@@ -2834,19 +2850,27 @@ if (typeof ResizeObserver === 'function') new ResizeObserver(anaPlansReserve).ob
    already leaves, so the areas and the reserve arithmetic stay as they were. */
 const gameColsEl = chessWrapEl.querySelector('.game-cols');
 const boardColEl = chessWrapEl.querySelector('.board-col');
-const splitLeftEl = $('anaSplitLeft'), splitRightEl = $('anaSplitRight'), splitPlansEl = $('anaSplitPlans');
+const splitLeftEl = $('anaSplitLeft'), splitRightEl = $('anaSplitRight');
+const splitPlansEl = $('anaSplitPlans'), splitMovesEl = $('anaSplitMoves');
+const whyBoxEl = $('whyBox');
 const anaSplitMQ = window.matchMedia('(min-width:1200px)');
 const RAIL_DEFAULT = 320, RAIL_MIN = 240, RAIL_MAX = 640;
 const BOARD_MIN = 420, COL_GAP = 12;      /* both match the grid template above */
 const PLANS_MIN = 110, SPLIT_STEP = 16;
+const MOVES_MIN = 60, WHY_MIN = 90;
 const RAIL_L_KEY = 'chess-trainer-ana-rail-l';
 const RAIL_R_KEY = 'chess-trainer-ana-rail-r';
 const PLANS_H_KEY = 'chess-trainer-ana-plans-h';
+const MOVES_SHARE_KEY = 'chess-trainer-ana-moves-share';
 /* the width each rail is asked for, which is what gets stored. What a rail
    actually receives can be less on a narrow window, and a squeeze like that
    must not overwrite the preference behind it. */
 let wantRailL = RAIL_DEFAULT, wantRailR = RAIL_DEFAULT;
 let wantPlansH = 0;                       /* 0 leaves the strip sized by its content */
+/* a fraction rather than a height, so the move list keeps its share of the
+   rail as the panels above it appear and disappear. 0 leaves the stylesheet's
+   own 1 and 1.4 in charge, which is what a reset goes back to. */
+let wantMovesShare = 0;
 
 /* how wide one rail may go once the other rail and the board floor are paid */
 function railCap(other) {
@@ -2863,6 +2887,31 @@ function plansCap() {
   return Math.max(PLANS_MIN, Math.min(Math.round(vh * 0.5), area - 200));
 }
 function clampPlans(v) { return Math.round(Math.min(Math.max(v, PLANS_MIN), plansCap())); }
+
+/* the height the move list and the forecast share, measured rather than
+   derived, because what sits above them changes with the position */
+function railFlexTotal() { return movesBox.offsetHeight + whyBoxEl.offsetHeight; }
+function clampMovesPx(px) {
+  const total = railFlexTotal();
+  if (total <= 0) return wantMovesShare;
+  const lo = Math.min(MOVES_MIN, total);
+  const hi = Math.max(lo, total - WHY_MIN);
+  return Math.min(Math.max(px, lo), hi) / total;
+}
+function movesShareApply(persist) {
+  if (wantMovesShare > 0) {
+    const f = Math.min(Math.max(wantMovesShare, 0.05), 0.95);
+    /* scaled up because flex-grow factors summing to less than 1 share only
+       that fraction of the free space, and a rounded pair can land there */
+    chessWrapEl.style.setProperty('--ana-moves-grow', (f * 100).toFixed(2));
+    chessWrapEl.style.setProperty('--ana-why-grow', ((1 - f) * 100).toFixed(2));
+  } else {
+    chessWrapEl.style.removeProperty('--ana-moves-grow');
+    chessWrapEl.style.removeProperty('--ana-why-grow');
+  }
+  if (persist) lsSet(MOVES_SHARE_KEY, wantMovesShare > 0 ? String(wantMovesShare) : '');
+  anaSplitSync();
+}
 
 function railsApply(persist) {
   const w = gameColsEl.clientWidth;
@@ -2917,30 +2966,55 @@ function anaSplitSync() {
     splitPlansEl.style.bottom = ph + 'px';
     splitAria(splitPlansEl, ph, PLANS_MIN, plansCap());
   }
+  /* the rail handle needs both of its panels on screen to mean anything */
+  const mh = movesBox.offsetHeight, wh = whyBoxEl.offsetHeight;
+  splitMovesEl.hidden = !(mh > 0 && wh > 0);
+  if (!splitMovesEl.hidden) {
+    splitMovesEl.style.top = (movesBox.offsetTop + mh) + 'px';
+    splitAria(splitMovesEl, mh, MOVES_MIN, Math.max(MOVES_MIN, mh + wh - WHY_MIN));
+  }
 }
 
-/* One pointer handler serves all three. The pending value is written inside a
-   frame callback rather than on every pointermove, because a rail width feeds
-   the board size, the eval bar, and the plans reserve, and repeating that work
-   per event is what makes a drag stutter. */
+/* One pointer handler serves all four. Each handle is described by the panel
+   it sizes: how to read that panel's current size in pixels, how to write a
+   new one, what its limits are, and what a reset restores. The pending value
+   is written inside a frame callback rather than on every pointermove, because
+   a rail width feeds the board size, the eval bar, and the plans reserve, and
+   repeating that work per event is what makes a drag stutter. */
 let splitDrag = null, splitFrame = 0;
 function splitFlush() {
   splitFrame = 0;
-  if (!splitDrag) return;
-  if (splitDrag.axis === 'x') railsApply(false);
-  else plansHeightApply(false);
+  if (splitDrag) splitDrag.spec.write(splitDrag.want, false);
 }
 function splitQueue() { if (!splitFrame) splitFrame = requestAnimationFrame(splitFlush); }
 
-function splitReset(axis, side) {
-  if (axis === 'y') { wantPlansH = 0; plansHeightApply(true); return; }
-  if (side < 0) wantRailR = RAIL_DEFAULT; else wantRailL = RAIL_DEFAULT;
-  railsApply(true);
-}
+/* side says which way the separator travels to grow the panel it sizes: +1
+   where moving it right or down grows that panel, -1 where it shrinks it */
+const splitSpecs = [
+  { el: splitLeftEl, axis: 'x', side: 1,
+    read: () => wantRailL,
+    write: (px, save) => { wantRailL = clampRail(px, wantRailR); railsApply(save); },
+    min: () => RAIL_MIN, max: () => railCap(wantRailR),
+    reset: (save) => { wantRailL = RAIL_DEFAULT; railsApply(save); } },
+  { el: splitRightEl, axis: 'x', side: -1,
+    read: () => wantRailR,
+    write: (px, save) => { wantRailR = clampRail(px, wantRailL); railsApply(save); },
+    min: () => RAIL_MIN, max: () => railCap(wantRailL),
+    reset: (save) => { wantRailR = RAIL_DEFAULT; railsApply(save); } },
+  { el: splitPlansEl, axis: 'y', side: -1,
+    read: () => plansBoxEl.offsetHeight,
+    write: (px, save) => { wantPlansH = clampPlans(px); plansHeightApply(save); },
+    min: () => PLANS_MIN, max: () => plansCap(),
+    reset: (save) => { wantPlansH = 0; plansHeightApply(save); } },
+  { el: splitMovesEl, axis: 'y', side: 1,
+    read: () => movesBox.offsetHeight,
+    write: (px, save) => { wantMovesShare = clampMovesPx(px); movesShareApply(save); },
+    min: () => MOVES_MIN, max: () => Math.max(MOVES_MIN, railFlexTotal() - WHY_MIN),
+    reset: (save) => { wantMovesShare = 0; movesShareApply(save); } },
+];
 
-/* side is +1 where dragging toward the right grows the panel (the left rail
-   and the plans strip) and -1 where it shrinks it (the right rail) */
-function wireSplit(el, axis, side) {
+for (const spec of splitSpecs) {
+  const el = spec.el;
   el.addEventListener('pointerdown', ev => {
     if (ev.pointerType === 'mouse' && ev.button !== 0) return;
     if (!anaSplitMQ.matches) return;
@@ -2948,79 +3022,58 @@ function wireSplit(el, axis, side) {
     el.setPointerCapture(ev.pointerId);
     el.classList.add('ana-split-live');
     chessWrapEl.classList.add('ana-splitting');
-    splitDrag = {
-      axis, id: ev.pointerId, x: ev.clientX, y: ev.clientY,
-      railL: wantRailL, railR: wantRailR, plansH: plansBoxEl.offsetHeight
-    };
+    const at = spec.read();
+    splitDrag = { spec, id: ev.pointerId, x: ev.clientX, y: ev.clientY, start: at, want: at, moved: false };
   });
   el.addEventListener('pointermove', ev => {
-    if (!splitDrag || splitDrag.id !== ev.pointerId) return;
-    if (axis === 'x') {
-      const d = (ev.clientX - splitDrag.x) * side;
-      if (side > 0) wantRailL = clampRail(splitDrag.railL + d, wantRailR);
-      else wantRailR = clampRail(splitDrag.railR + d, wantRailL);
-    } else {
-      wantPlansH = clampPlans(splitDrag.plansH + (splitDrag.y - ev.clientY));
-    }
+    if (!splitDrag || splitDrag.id !== ev.pointerId || splitDrag.spec !== spec) return;
+    const moved = spec.axis === 'x' ? ev.clientX - splitDrag.x : ev.clientY - splitDrag.y;
+    if (moved !== 0) splitDrag.moved = true;
+    splitDrag.want = splitDrag.start + moved * spec.side;
     splitQueue();
   });
   const endDrag = ev => {
-    if (!splitDrag || splitDrag.id !== ev.pointerId) return;
-    const axisWas = splitDrag.axis;
+    if (!splitDrag || splitDrag.id !== ev.pointerId || splitDrag.spec !== spec) return;
+    const { want, moved } = splitDrag;
     splitDrag = null;
     if (splitFrame) { cancelAnimationFrame(splitFrame); splitFrame = 0; }
     if (el.hasPointerCapture(ev.pointerId)) el.releasePointerCapture(ev.pointerId);
     el.classList.remove('ana-split-live');
     chessWrapEl.classList.remove('ana-splitting');
-    if (axisWas === 'x') railsApply(true); else plansHeightApply(true);
+    /* a press that went nowhere leaves the split alone. Writing anyway would
+       re-derive a share from a rounded height and walk the handle a pixel at a
+       time, which also stole the second click of a double-click to reset. */
+    if (moved) spec.write(want, true);
   };
   el.addEventListener('pointerup', endDrag);
   el.addEventListener('pointercancel', endDrag);
-  el.addEventListener('dblclick', () => { if (anaSplitMQ.matches) splitReset(axis, side); });
+  el.addEventListener('dblclick', () => { if (anaSplitMQ.matches) spec.reset(true); });
   el.addEventListener('keydown', ev => {
     if (!anaSplitMQ.matches) return;
-    const grow = axis === 'x' ? 'ArrowRight' : 'ArrowUp';
-    const shrink = axis === 'x' ? 'ArrowLeft' : 'ArrowDown';
-    let step = 0, jump = '';
-    if (ev.key === grow) step = 1;
-    else if (ev.key === shrink) step = -1;
-    else if (ev.key === 'Home') jump = 'min';
-    else if (ev.key === 'End') jump = 'max';
-    else if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); splitReset(axis, side); return; }
-    else return;
-    ev.preventDefault();
-    if (axis === 'y') {
-      const now = plansBoxEl.offsetHeight;
-      wantPlansH = jump === 'min' ? PLANS_MIN
-        : jump === 'max' ? plansCap()
-        : clampPlans(now + step * SPLIT_STEP);
-      plansHeightApply(true);
-      return;
-    }
-    if (side > 0) {
-      wantRailL = jump === 'min' ? RAIL_MIN
-        : jump === 'max' ? railCap(wantRailR)
-        : clampRail(wantRailL + step * SPLIT_STEP, wantRailR);
-    } else {
-      wantRailR = jump === 'min' ? RAIL_MIN
-        : jump === 'max' ? railCap(wantRailL)
-        : clampRail(wantRailR + step * SPLIT_STEP, wantRailL);
-    }
-    railsApply(true);
+    /* the arrow moves the separator itself, so whether that grows or shrinks
+       the panel depends on which side of the handle the panel sits */
+    const forward = spec.axis === 'x' ? 'ArrowRight' : 'ArrowDown';
+    const back = spec.axis === 'x' ? 'ArrowLeft' : 'ArrowUp';
+    if (ev.key === forward || ev.key === back) {
+      ev.preventDefault();
+      spec.write(spec.read() + (ev.key === forward ? 1 : -1) * spec.side * SPLIT_STEP, true);
+    } else if (ev.key === 'Home') { ev.preventDefault(); spec.write(spec.min(), true); }
+    else if (ev.key === 'End') { ev.preventDefault(); spec.write(spec.max(), true); }
+    else if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); spec.reset(true); }
   });
 }
-wireSplit(splitLeftEl, 'x', 1);
-wireSplit(splitRightEl, 'x', -1);
-wireSplit(splitPlansEl, 'y', 1);
 
 const railLSaved = parseInt(lsGet(RAIL_L_KEY), 10);
 const railRSaved = parseInt(lsGet(RAIL_R_KEY), 10);
 const plansHSaved = parseInt(lsGet(PLANS_H_KEY), 10);
+const movesShareSaved = parseFloat(lsGet(MOVES_SHARE_KEY));
 if (Number.isFinite(railLSaved)) wantRailL = Math.min(Math.max(railLSaved, RAIL_MIN), RAIL_MAX);
 if (Number.isFinite(railRSaved)) wantRailR = Math.min(Math.max(railRSaved, RAIL_MIN), RAIL_MAX);
 if (Number.isFinite(plansHSaved) && plansHSaved > 0) wantPlansH = plansHSaved;
+if (Number.isFinite(movesShareSaved) && movesShareSaved > 0 && movesShareSaved < 1) wantMovesShare = movesShareSaved;
 railsApply(false);
 plansHeightApply(false);
+movesShareApply(false);
 /* The strip appears, folds, and disappears on its own, and the rails move
    whenever the window does, so the handles are placed from observed geometry
    rather than from every call site that could have changed it. */
@@ -3029,6 +3082,8 @@ if (typeof ResizeObserver === 'function') {
   splitWatch.observe(gameColsEl);
   splitWatch.observe(boardColEl);
   splitWatch.observe(plansBoxEl);
+  splitWatch.observe(movesBox);
+  splitWatch.observe(whyBoxEl);
 } else {
   window.addEventListener('resize', anaSplitSync);
 }
