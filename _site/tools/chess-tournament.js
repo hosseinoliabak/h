@@ -63,6 +63,7 @@
     rounds: $('ct-rounds'),
     bye: $('ct-bye'),
     byeSchedule: $('ct-bye-schedule'),
+    byeDefault: $('ct-bye-default'),
     k: $('ct-k'),
     wa: $('ct-wa'),
     defaultBase: $('ct-default-base'),
@@ -852,10 +853,14 @@
       event.tc = ui.tc.value.trim().slice(0, CT.LIMITS.maxTimeControlLength);
       var schedule = readByeSchedule();
       var rounds = parseInt(ui.rounds.value, 10);
-      /* A new round takes the last round's value, so a schedule that ends
-         in zero-point byes keeps ending that way. */
-      if (Number.isInteger(rounds)) {
-        while (schedule.length < rounds) schedule.push(schedule.length ? schedule[schedule.length - 1] : 0.5);
+      var previous = event.settings.plannedRounds;
+      /* When the round count changes, a schedule still at its default
+         follows the default for the new count; one the organizer edited
+         keeps its values and extends with the last one. */
+      if (Number.isInteger(rounds) && rounds !== previous) {
+        var untouched = JSON.stringify(schedule.slice(0, previous)) === JSON.stringify(CT.defaultByeSchedule(previous));
+        if (untouched) schedule = CT.defaultByeSchedule(rounds);
+        else while (schedule.length < rounds) schedule.push(schedule.length ? schedule[schedule.length - 1] : 0);
       }
       CT.applySettings(event, {
         plannedRounds: ui.rounds.value,
@@ -1773,6 +1778,16 @@
 
   ui.settingsForm.addEventListener('submit', function (event) { event.preventDefault(); applySettingsForm(); });
   ui.settingsForm.addEventListener('change', applySettingsForm);
+  ui.byeDefault.addEventListener('click', function () {
+    var event = state.event;
+    if (!event) return;
+    try {
+      CT.applySettings(event, { requestedByePoints: CT.defaultByeSchedule(event.settings.plannedRounds) });
+      commit('Requested byes are back to the default schedule.');
+    } catch (error) {
+      message(errorText(error), 'error');
+    }
+  });
   ui.addSection.addEventListener('click', addSectionFromForm);
   ui.sectionName.addEventListener('keydown', function (event) { if (event.key === 'Enter') { event.preventDefault(); addSectionFromForm(); } });
   ui.saveAccount.addEventListener('click', saveToAccount);
