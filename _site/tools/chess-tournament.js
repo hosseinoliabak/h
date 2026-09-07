@@ -62,7 +62,7 @@
     tc: $('ct-tc'),
     rounds: $('ct-rounds'),
     bye: $('ct-bye'),
-    absent: $('ct-absent'),
+    byeSchedule: $('ct-bye-schedule'),
     k: $('ct-k'),
     wa: $('ct-wa'),
     defaultBase: $('ct-default-base'),
@@ -98,8 +98,12 @@
       crosstable: { tab: $('ct-view-crosstable'), panel: $('ct-crosstable-view') }
     },
     attendance: $('ct-attendance'),
+    attendanceHeading: $('ct-attendance-heading'),
+    attendanceCount: $('ct-attendance-count'),
     absentFilter: $('ct-absent-filter'),
     absentList: $('ct-absent-list'),
+    oddByeRow: $('ct-odd-bye-row'),
+    oddBye: $('ct-odd-bye'),
     pair: $('ct-pair'),
     finish: $('ct-finish'),
     moreRounds: $('ct-more-rounds'),
@@ -795,6 +799,32 @@
 
   /* ------------------------------ settings and sections ------------------------------ */
 
+  function pointsLabel(n) { return n === 1 ? '1' : (n === 0.5 ? '½' : '0'); }
+
+  /* One select per planned round with the points a requested bye scores. */
+  function renderByeSchedule(event) {
+    ui.byeSchedule.replaceChildren();
+    var rounds = Math.max(event.settings.plannedRounds, 1);
+    for (var r = 0; r < rounds; r += 1) {
+      var value = CT.requestedByePoints(event.settings, r);
+      var select = h('select', { className: 'tool-input', dataset: { round: String(r) }, attrs: { 'aria-label': 'Requested bye points in round ' + (r + 1) } });
+      [0.5, 0, 1].forEach(function (n) {
+        var option = h('option', { value: String(n), text: pointsLabel(n) });
+        if (n === value) option.selected = true;
+        select.appendChild(option);
+      });
+      ui.byeSchedule.appendChild(h('label', {}, [h('span', { text: 'R' + (r + 1) }), select]));
+    }
+  }
+
+  function readByeSchedule() {
+    var out = [];
+    ui.byeSchedule.querySelectorAll('select[data-round]').forEach(function (select) {
+      out[parseInt(select.dataset.round, 10)] = parseFloat(select.value);
+    });
+    return out;
+  }
+
   function renderSettings() {
     var event = state.event;
     var locked = CT.eventStatus(event) !== 'setup';
@@ -802,16 +832,15 @@
     if (document.activeElement !== ui.tc) ui.tc.value = event.tc;
     ui.rounds.value = String(event.settings.plannedRounds);
     ui.bye.value = String(event.settings.byePoints);
-    ui.absent.value = String(event.settings.absentPoints);
     ui.k.value = String(event.settings.k);
     ui.wa.value = String(event.settings.whiteAdvantage);
     ui.bye.disabled = locked;
-    ui.absent.disabled = locked;
     ui.k.disabled = locked;
     ui.wa.disabled = locked;
+    renderByeSchedule(event);
     ui.settingsNote.textContent = locked
-      ? 'A section has started, so only the name, the time control, and the number of rounds can still change.'
-      : 'Settings apply to every section and can change until a section starts. The number of rounds can grow at any time.';
+      ? 'A section has started, so only the name, the time control, the number of rounds, and the requested-bye points can still change.'
+      : 'Settings apply to every section and can change until a section starts. The number of rounds and the requested-bye points can change at any time.';
   }
 
   function applySettingsForm() {
@@ -821,10 +850,17 @@
       var name = ui.name.value.trim();
       event.name = name.slice(0, CT.LIMITS.maxTitleLength) || event.name;
       event.tc = ui.tc.value.trim().slice(0, CT.LIMITS.maxTimeControlLength);
+      var schedule = readByeSchedule();
+      var rounds = parseInt(ui.rounds.value, 10);
+      /* A new round takes the last round's value, so a schedule that ends
+         in zero-point byes keeps ending that way. */
+      if (Number.isInteger(rounds)) {
+        while (schedule.length < rounds) schedule.push(schedule.length ? schedule[schedule.length - 1] : 0.5);
+      }
       CT.applySettings(event, {
         plannedRounds: ui.rounds.value,
         byePoints: ui.bye.value,
-        absentPoints: ui.absent.value,
+        requestedByePoints: schedule,
         k: ui.k.value,
         whiteAdvantage: ui.wa.value
       });
@@ -927,7 +963,7 @@
     if (!t.players.length) return;
     var table = h('table', { className: 'ct-table' });
     var head = h('tr', {}, [
-      h('th', { text: '#' }), h('th', { text: 'Name' }), h('th', { text: 'Tag' }), h('th', { text: 'Company' }), h('th', { text: 'FIDE' }),
+      h('th', { text: '#' }), h('th', { text: 'Name' }), h('th', { text: 'Tag' }), h('th', { text: 'Company' }), h('th', { text: 'FIDE' }), h('th', { text: 'Byes' }),
       event.sections.length > 1 ? h('th', { text: 'Section' }) : null, h('th', { text: '' })
     ]);
     table.appendChild(h('thead', {}, [head]));
@@ -939,6 +975,7 @@
       row.appendChild(h('td', { className: 'ct-cell-short' }, [h('input', { className: 'tool-input', type: 'text', maxLength: CT.LIMITS.maxTagLength, value: p.tag, dataset: { field: 'tag' }, attrs: { 'aria-label': 'Tag' } })]));
       row.appendChild(h('td', { className: 'ct-cell-short' }, [h('input', { className: 'tool-input', type: 'text', maxLength: CT.LIMITS.maxBaseLength, value: p.base, dataset: { field: 'base' }, attrs: { 'aria-label': 'Company rating' } })]));
       row.appendChild(h('td', { className: 'ct-cell-short' }, [h('input', { className: 'tool-input', type: 'number', min: CT.LIMITS.minRating, max: CT.LIMITS.maxRating, step: 1, value: Number.isInteger(p.fide) ? String(p.fide) : '', dataset: { field: 'fide' }, attrs: { 'aria-label': 'FIDE rating' } })]));
+      row.appendChild(h('td', { className: 'ct-cell-short' }, [h('input', { className: 'tool-input', type: 'text', maxLength: 80, value: (p.byes || []).join(', '), placeholder: 'e.g. 3, 7', dataset: { field: 'byes' }, attrs: { 'aria-label': 'Rounds the player will miss' } })]));
       if (event.sections.length > 1) {
         var select = h('select', { className: 'tool-input', dataset: { field: 'section' }, attrs: { 'aria-label': 'Section' } });
         event.sections.forEach(function (section, si) {
@@ -1034,23 +1071,39 @@
     return state.round;
   }
 
+  /* The byes ticked for the next round of the current section. Seeded from
+     the byes players asked for in advance the first time a round is shown,
+     then kept as the organizer leaves it until the round is paired. */
+  function byeSelection(t) {
+    var next = t.rounds.length + 1;
+    var entry = state.absent[state.section];
+    if (!entry || entry.round !== next) {
+      entry = { round: next, ids: {}, byeTo: null };
+      CT.requestedFor(t, next, {}).forEach(function (id) { entry.ids[id] = true; });
+      state.absent[state.section] = entry;
+    }
+    return entry;
+  }
+
   function renderAttendance(t) {
     var canPair = t.status === 'running' && (!t.rounds.length || CT.roundComplete(t, t.rounds.length - 1));
     show(ui.attendance, canPair);
     if (!canPair) return;
     var next = t.rounds.length + 1;
     var full = t.rounds.length >= t.plannedRounds;
+    ui.attendanceHeading.textContent = full ? 'Before the next round' : 'Byes for round ' + next;
     ui.pair.disabled = full;
     ui.pair.textContent = full ? 'All ' + t.plannedRounds + ' rounds are paired' : 'Pair round ' + next;
     show(ui.moreRounds, full);
     show(ui.finish, t.rounds.length > 0);
     renderAbsentList(t);
+    renderAttendanceCount(t);
   }
 
   function renderAbsentList(t) {
     var next = t.rounds.length + 1;
     var filter = ui.absentFilter.value.trim().toLowerCase();
-    var absent = state.absent[state.section] || {};
+    var selection = byeSelection(t);
     ui.absentList.replaceChildren();
     var shown = 0;
     t.players.forEach(function (p) {
@@ -1059,27 +1112,65 @@
       if (filter && label.toLowerCase().indexOf(filter) < 0) return;
       shown += 1;
       var box = h('input', { type: 'checkbox', dataset: { id: String(p.id) } });
-      box.checked = Boolean(absent[p.id]);
-      ui.absentList.appendChild(h('li', {}, [h('label', {}, [box, h('span', { text: label })])]));
+      box.checked = Boolean(selection.ids[p.id]);
+      var asked = (p.byes || []).indexOf(next) >= 0;
+      ui.absentList.appendChild(h('li', {}, [h('label', {}, [box, h('span', { text: label + (asked ? ' (asked)' : '') })])]));
     });
     if (!shown) ui.absentList.appendChild(h('li', { className: 'tool-note', text: filter ? 'No player matches.' : 'No active players.' }));
+  }
+
+  /* Says how many will be paired, and when that is odd, offers the choice
+     of who sits out. */
+  function renderAttendanceCount(t) {
+    var next = t.rounds.length + 1;
+    var selection = byeSelection(t);
+    var playing = t.players.filter(function (p) { return p.status === 'active' && p.joined <= next && !selection.ids[p.id]; });
+    var requested = Object.keys(selection.ids).length;
+    var odd = playing.length % 2 === 1;
+    var text = playing.length + (playing.length === 1 ? ' player' : ' players') + ' to pair';
+    if (requested) text += ', ' + requested + ' on a requested bye (' + pointsLabel(CT.requestedByePoints(t, next - 1)) + ' point' + (CT.requestedByePoints(t, next - 1) === 1 ? '' : 's') + ')';
+    if (odd) text += '. The number is odd, so one more sits out with the bye (' + pointsLabel(t.byePoints) + ' point' + (t.byePoints === 1 ? '' : 's') + ').';
+    else text += '.';
+    setStatus(ui.attendanceCount, text, '');
+    show(ui.oddByeRow, odd);
+    if (!odd) { selection.byeTo = null; return; }
+    var state0 = CT.playerState(t);
+    var rank = {};
+    t.players.forEach(function (p) { rank[p.id] = p.rank; });
+    var sorted = playing.slice().sort(function (a, b) { return state0[a.id].score - state0[b.id].score || rank[b.id] - rank[a.id]; });
+    ui.oddBye.replaceChildren(h('option', { value: '', text: 'Automatic: the lowest-placed player who has not had a bye' }));
+    sorted.forEach(function (p) {
+      var option = h('option', { value: String(p.id), text: playerLabel(p) + ' (' + points(state0[p.id].score) + (state0[p.id].hadBye ? ', had a bye' : '') + ')' });
+      if (selection.byeTo === p.id) option.selected = true;
+      ui.oddBye.appendChild(option);
+    });
+    if (selection.byeTo !== null && !playing.some(function (p) { return p.id === selection.byeTo; })) selection.byeTo = null;
   }
 
   function onAbsentChange(event) {
     var box = event.target;
     if (!box || box.type !== 'checkbox' || !box.dataset.id) return;
+    var t = current();
+    var selection = byeSelection(t);
     var id = parseInt(box.dataset.id, 10);
-    if (!state.absent[state.section]) state.absent[state.section] = {};
-    if (box.checked) state.absent[state.section][id] = true;
-    else delete state.absent[state.section][id];
+    if (box.checked) selection.ids[id] = true;
+    else delete selection.ids[id];
+    renderAttendanceCount(t);
+  }
+
+  function onOddByeChange() {
+    var t = current();
+    var selection = byeSelection(t);
+    selection.byeTo = ui.oddBye.value ? parseInt(ui.oddBye.value, 10) : null;
   }
 
   function pairNext() {
     var t = current();
-    var absent = Object.keys(state.absent[state.section] || {}).map(function (id) { return parseInt(id, 10); });
+    var selection = byeSelection(t);
+    var absent = Object.keys(selection.ids).map(function (id) { return parseInt(id, 10); });
     try {
-      var round = CT.pairNextRound(t, absent);
-      state.absent[state.section] = {};
+      var round = CT.pairNextRound(t, { absent: absent, byeTo: selection.byeTo });
+      delete state.absent[state.section];
       state.round = t.rounds.length - 1;
       state.view = 'pairings';
       commit('Round ' + round.n + ' is paired: ' + round.pairings.length + (round.pairings.length === 1 ? ' board' : ' boards') + '.');
@@ -1185,13 +1276,7 @@
     });
     table.appendChild(body);
     ui.pairings.appendChild(table);
-    var notes = [];
-    round.byes.forEach(function (bye) {
-      var p = players[bye[0]];
-      if (!p) return;
-      notes.push(playerLabel(p) + (bye[1] === 'bye' ? ': bye (' + points(t.byePoints) + ')' : ': absent (' + points(t.absentPoints) + ')'));
-    });
-    ui.byes.textContent = notes.length ? 'Not playing: ' + notes.join('; ') + '.' : '';
+    ui.byes.textContent = byesText(t, index, round, players);
     var last = index === t.rounds.length - 1;
     var hasResults = round.pairings.some(function (pair) { return Boolean(pair[2]); });
     var hasOpen = round.pairings.some(function (pair) { return !pair[2]; });
@@ -1253,6 +1338,22 @@
     }
   }
 
+  /* "Sits out with the bye (1): X. Requested byes (½): Y, Z." */
+  function byesText(t, index, round, players) {
+    var sat = [];
+    var asked = [];
+    round.byes.forEach(function (bye) {
+      var p = players[bye[0]];
+      if (!p) return;
+      if (bye[1] === 'bye') sat.push(playerLabel(p));
+      else asked.push(playerLabel(p));
+    });
+    var parts = [];
+    if (sat.length) parts.push('Sits out with the bye (' + points(t.byePoints) + '): ' + sat.join(', ') + '.');
+    if (asked.length) parts.push('Requested byes (' + points(CT.requestedByePoints(t, index)) + '): ' + asked.join(', ') + '.');
+    return parts.join(' ');
+  }
+
   function pairingsText(t, index) {
     var round = t.rounds[index];
     var players = {};
@@ -1263,10 +1364,8 @@
       var b = players[pair[1]];
       lines.push((board + 1) + '. ' + (w ? playerLabel(w) : '?') + ' vs ' + (b ? playerLabel(b) : '?') + (pair[2] ? '  ' + pair[2] : ''));
     });
-    round.byes.forEach(function (bye) {
-      var p = players[bye[0]];
-      if (p) lines.push((bye[1] === 'bye' ? 'Bye: ' : 'Absent: ') + playerLabel(p));
-    });
+    var byes = byesText(t, index, round, players);
+    if (byes) lines.push(byes);
     return lines.join('\n');
   }
 
@@ -1286,12 +1385,7 @@
       body.appendChild(h('tr', {}, [h('td', { text: String(board + 1) }), h('td', { text: w ? playerLabel(w) : '?' }), h('td', { text: b ? playerLabel(b) : '?' }), h('td', { text: pair[2] || '' })]));
     });
     table.appendChild(body);
-    var notes = [];
-    round.byes.forEach(function (bye) {
-      var p = players[bye[0]];
-      if (p) notes.push((bye[1] === 'bye' ? 'Bye: ' : 'Absent: ') + playerLabel(p));
-    });
-    printSheet(state.event.name + ' · ' + t.name + ' · Round ' + round.n, [state.event.tc, notes.join('; ')].filter(Boolean).join(' · '), table);
+    printSheet(state.event.name + ' · ' + t.name + ' · Round ' + round.n, [state.event.tc, byesText(t, index, round, players)].filter(Boolean).join(' · '), table);
   }
 
   function printSheet(title, subtitle, table) {
@@ -1458,7 +1552,7 @@
     var sets = CT.ratings(t);
     var open = state.openHistory[state.section] || {};
     var table = h('table', { className: 'ct-table' });
-    table.appendChild(h('thead', {}, [h('tr', {}, [h('th', { className: 'ct-num', text: 'Rank' }), h('th', { text: 'Player' }), h('th', { text: 'Start' }), h('th', { className: 'ct-num', text: 'Pts' }), h('th', { text: 'Rating' }), h('th', { text: 'Status' }), h('th', { text: '' })])]));
+    table.appendChild(h('thead', {}, [h('tr', {}, [h('th', { className: 'ct-num', text: 'Rank' }), h('th', { text: 'Player' }), h('th', { text: 'Start' }), h('th', { className: 'ct-num', text: 'Pts' }), h('th', { text: 'Rating' }), h('th', { text: 'Byes' }), h('th', { text: 'Status' }), h('th', { text: '' })])]));
     var body = h('tbody');
     rows.sort(function (a, b) { return a.rank - b.rank; });
     rows.forEach(function (row) {
@@ -1469,12 +1563,15 @@
         t.status !== 'finished' ? h('button', { type: 'button', className: 'tool-button' + (withdrawn ? '' : ' tool-button-danger'), text: withdrawn ? 'Reinstate' : 'Withdraw', dataset: { action: withdrawn ? 'reinstate' : 'withdraw', id: String(p.id) } }) : null
       ]);
       actions.style.margin = '0';
+      var byesInput = h('input', { className: 'tool-input', type: 'text', maxLength: 80, value: (p.byes || []).join(', '), placeholder: 'e.g. 3, 7', dataset: { field: 'byes', id: String(p.id) }, attrs: { 'aria-label': 'Rounds ' + p.name + ' will miss' } });
+      byesInput.disabled = t.status === 'finished';
       body.appendChild(h('tr', {}, [
         h('td', { className: 'ct-num ct-dim', text: String(p.rank) }),
         h('td', { className: withdrawn ? 'ct-withdrawn' : '', text: playerLabel(p) }),
         h('td', { className: 'ct-dim', text: startLabel(p) }),
         h('td', { className: 'ct-num', text: points(row.points) }),
         h('td', { text: CT.formatRating(t, p.id, sets.running) }),
+        h('td', { className: 'ct-cell-short' }, [byesInput]),
         h('td', { className: 'ct-dim', text: withdrawn ? 'Withdrawn' : (p.joined > 1 ? 'Joined round ' + p.joined : 'Active') }),
         h('td', {}, [actions])
       ]));
@@ -1488,12 +1585,26 @@
           else text += g.note + (g.points ? ' (' + points(g.points) + ')' : '');
           list.appendChild(h('li', { text: text }));
         });
-        var cell = h('td', { attrs: { colspan: '7' } }, [list]);
+        var cell = h('td', { attrs: { colspan: '8' } }, [list]);
         body.appendChild(h('tr', {}, [cell]));
       }
     });
     table.appendChild(body);
     ui.playersList.appendChild(table);
+  }
+
+  function onPlayersListChange(event) {
+    var input = event.target;
+    if (!input || input.dataset.field !== 'byes' || !input.dataset.id) return;
+    var t = current();
+    try {
+      CT.updatePlayer(t, parseInt(input.dataset.id, 10), { byes: input.value });
+      delete state.absent[state.section];
+      commit('Byes saved.');
+    } catch (error) {
+      message(errorText(error), 'error');
+      renderPlayersList(t);
+    }
   }
 
   function onPlayersListClick(event) {
@@ -1699,6 +1810,8 @@
   });
   ui.absentFilter.addEventListener('input', function () { var t = current(); if (t) renderAbsentList(t); });
   ui.absentList.addEventListener('change', onAbsentChange);
+  ui.oddBye.addEventListener('change', onOddByeChange);
+  ui.playersList.addEventListener('change', onPlayersListChange);
   ui.pair.addEventListener('click', pairNext);
   ui.moreRounds.addEventListener('click', addRound);
   ui.finish.addEventListener('click', finishSection);
