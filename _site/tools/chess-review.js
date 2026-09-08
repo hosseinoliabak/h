@@ -64,6 +64,10 @@ function main() {
   ];
   const DEFAULT_OPPONENT = 2500;
   const NET_SIZE = { 't70-703810': '13 MB', 'maia-1900': '2.4 MB' };
+  /* Sharing. A pack is written once under a random 22-character id, read by
+     any signed-in reader until it expires, and listed in ten slots of the
+     coach's own account, which is what caps how many can be live. */
+  const SHARE = { slots: 10, idLength: 22, lifetimeMs: 90 * 24 * 60 * 60 * 1000, timeoutMs: 15000, slotGapMs: 30000, syncDelayMs: 4000 };
   const MAIA_LOAD_MS = 180000;
   const MAIA_THINK_MS = 30000;
   const withDeadline = (promise, ms) => Promise.race([promise, new Promise((resolve, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
@@ -72,7 +76,7 @@ function main() {
   const ui = {
     message: $('gr-message'), drop: $('gr-drop'), files: $('gr-files'), paste: $('gr-paste'), pasteAdd: $('gr-paste-add'),
     importSite: $('gr-import-site'), importUser: $('gr-import-user'), importCount: $('gr-import-count'), importBtn: $('gr-import'), importStatus: $('gr-import-status'),
-    gamesStatus: $('gr-games-status'), gamesList: $('gr-games-list'), clear: $('gr-clear'), forget: $('gr-forget'),
+    gamesPanel: $('gr-games-panel'), gamesStatus: $('gr-games-status'), gamesList: $('gr-games-list'), clear: $('gr-clear'), forget: $('gr-forget'),
     playerPanel: $('gr-player-panel'), names: $('gr-names'), display: $('gr-display'), rating: $('gr-rating'),
     incLoss: $('gr-inc-loss'), incDraw: $('gr-inc-draw'), incWin: $('gr-inc-win'), playerStatus: $('gr-player-status'),
     reviewPanel: $('gr-review-panel'), quality: $('gr-quality'), estimate: $('gr-estimate'), run: $('gr-run'), stop: $('gr-stop'),
@@ -85,6 +89,10 @@ function main() {
     boardMoves: $('gr-board-moves'), boardActions: $('gr-board-actions'),
     objective: $('gr-board-objective'), drillStatus: $('gr-drill-status'), recap: $('gr-recap'),
     opponent: $('gr-opponent'), opponentNote: $('gr-opponent-note'),
+    share: $('gr-share'), sharePanel: $('gr-share-panel'), shareStatus: $('gr-share-status'),
+    shareLink: $('gr-share-link'), shareCopy: $('gr-share-copy'), shareList: $('gr-share-list'),
+    sharedBanner: $('gr-shared-banner'), sharedBannerText: $('gr-shared-banner-text'),
+    gamesDetail: $('gr-games-detail'), trendSection: $('gr-trend-section'),
     drillsPanel: $('gr-drills-panel'), drillsRefresh: $('gr-drills-refresh'), drillsStatus: $('gr-drills-status'),
     drillList: $('gr-drill-list'), drillSummary: $('gr-drill-summary'),
   };
@@ -97,6 +105,9 @@ function main() {
     /* bumped whenever the loaded games change, so work started on an older
        set of games never lands on a newer one */
     gen: 0,
+    /* set only when this page is showing someone else's shared review */
+    shared: null,
+    shareBusy: false, shareTimer: null,
   };
 
   /* ------------------------------ helpers ------------------------------ */
@@ -705,6 +716,8 @@ function main() {
     state.view = null;
     showGameMoment(state.profile.perGame[0] ? state.profile.perGame[0].index : 0, 0);
     buildDrills();
+    if (ui.share) ui.share.hidden = false;
+    loadMyShares();
   }
 
   function addSnapshot(snap) {
@@ -944,7 +957,8 @@ function main() {
     if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
   }
   function showEvidence(e) {
-    showGameMoment(e.game, e.ply);
+    if (state.shared) showSharedEvidence(e);
+    else showGameMoment(e.game, e.ply);
     ui.boardPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function showWorst(gameIndex) {
@@ -1295,6 +1309,7 @@ function main() {
     const score = Core.scoreDrill(d.kind === 'puzzle' ? v.solution : [], v.cont, { terminal });
     state.drillProgress[d.id] = Core.scheduleDrill(state.drillProgress[d.id], score);
     const kept = persistDrillProgress();
+    queueSharedProgress();
     const sol = d.kind === 'puzzle' ? `${v.solution.filter(Boolean).length} of ${v.solution.length} solution moves. ` : '';
     const avg = v.cont.length ? Math.round(v.cont.reduce((a, b) => a + b, 0) / v.cont.length) : null;
     const later = !kept ? 'This browser refused to keep the result, so it will not be scheduled.' : score >= 70 ? `This one comes back in ${Core.REVIEW_DAYS[state.drillProgress[d.id].step]} days.` : 'It comes back tomorrow.';
@@ -1549,6 +1564,297 @@ function main() {
     ui.boardActions.replaceChildren();
   }
 
+  /* ------------------------------ sharing ------------------------------ */
+
+  function cloud() {
+    const auth = window.siteAuth;
+    const user = auth && typeof auth.user === 'function' ? auth.user() : null;
+    const db = user && typeof auth.db === 'function' ? auth.db() : null;
+    return db && user ? { db, uid: user.uid, auth } : null;
+  }
+  function withTimeout(promise) {
+    return Promise.race([
+      promise,
+      new Promise((resolve, reject) => setTimeout(() => reject(new Error('The database did not answer in time.')), SHARE.timeoutMs)),
+    ]);
+  }
+  /* 22 characters of base64url, which is 132 bits of randomness. */
+  function randomId() {
+    const bytes = new Uint8Array(17);
+    crypto.getRandomValues(bytes);
+    let binary = '';
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '').slice(0, SHARE.idLength);
+  }
+  const shareUrl = id => new URL('?p=' + encodeURIComponent(id), location.href.split('?')[0].split('#')[0]).href;
+
+  function setShareStatus(text) { if (ui.shareStatus) setStatus(ui.shareStatus, text); }
+
+  async function shareCurrent() {
+    if (!state.profile || state.shared || state.shareBusy) return;
+    const c = cloud();
+    if (!c) {
+      setShareStatus('Sign in with GitHub or Google first. The link only works for signed-in readers, and signing in is what lets you revoke it later.');
+      if (ui.sharePanel) ui.sharePanel.hidden = false;
+      return;
+    }
+    state.shareBusy = true;
+    if (ui.share) ui.share.disabled = true;
+    if (ui.sharePanel) ui.sharePanel.hidden = false;
+    setShareStatus('Preparing the pack.');
+    try {
+      const pack = Core.buildPack(state.profile, state.drills);
+      const json = JSON.stringify(pack);
+      if (json.length > Core.PACK_LIMITS.maxChars) throw new Error('This review is too large to share. Review fewer games and try again.');
+      const list = await withTimeout(c.db.ref('users/' + c.uid + '/review-shares').once('value'));
+      const existing = list && typeof list.val === 'function' ? (list.val() || {}) : {};
+      const now = Date.now();
+      let slot = null;
+      for (let i = 0; i < SHARE.slots; i++) if (!existing[String(i)]) { slot = String(i); break; }
+      if (slot === null) {
+        /* every slot is taken, so the oldest one is replaced */
+        const oldest = Object.keys(existing).sort((a, b) => (Number(existing[a].at) || 0) - (Number(existing[b].at) || 0))[0];
+        if (Number(existing[oldest].at) > now - SHARE.slotGapMs) throw new Error('All ten links are in use. Revoke one below, or wait half a minute and try again.');
+        slot = oldest;
+        const oldId = String(existing[oldest].id || '');
+        if (Core.PACK_ID.test(oldId)) await withTimeout(c.db.ref('review-shares/' + oldId).remove()).catch(() => {});
+      }
+      const id = randomId();
+      const title = `${state.profile.player.name}, ${plural(state.profile.games, 'game')}`.slice(0, Core.PACK_LIMITS.maxTitle);
+      const expiresAt = now + SHARE.lifetimeMs;
+      /* the list entry has to land first: the pack's rule checks that the
+         slot already names this id */
+      await withTimeout(c.db.ref('users/' + c.uid + '/review-shares/' + slot).set({ id, title, at: now, expiresAt, drills: state.drills.length }));
+      await withTimeout(c.db.ref('review-shares/' + id).set({ v: 1, owner: c.uid, slot, at: now, expiresAt, title, pack: json }));
+      showShareLink(id, expiresAt);
+      await loadMyShares();
+    } catch (e) {
+      setShareStatus((e && e.message) || 'The link could not be created.');
+    } finally {
+      state.shareBusy = false;
+      if (ui.share) ui.share.disabled = false;
+    }
+  }
+
+  function showShareLink(id, expiresAt) {
+    if (!ui.shareLink) return;
+    const url = shareUrl(id);
+    ui.shareLink.value = url;
+    ui.shareLink.hidden = false;
+    if (ui.shareCopy) ui.shareCopy.hidden = false;
+    let when = '';
+    try { when = new Date(expiresAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) {}
+    setShareStatus(`The link is ready. Anyone signed in can open it until ${when}, practice the positions, and keep their own progress. It cannot be edited, and you can revoke it below.`);
+  }
+
+  async function copyShareLink() {
+    const value = ui.shareLink ? ui.shareLink.value : '';
+    if (!value) return;
+    if (!navigator.clipboard || !window.isSecureContext) { ui.shareLink.select(); setShareStatus('Copy the selected link with your keyboard.'); return; }
+    try { await navigator.clipboard.writeText(value); setShareStatus('Link copied.'); }
+    catch (e) { ui.shareLink.select(); setShareStatus('Copying was blocked. Copy the selected link with your keyboard.'); }
+  }
+
+  async function loadMyShares() {
+    if (!ui.shareList) return;
+    const c = cloud();
+    if (!c) { ui.shareList.replaceChildren(); return; }
+    let value = {};
+    try {
+      const snapshot = await withTimeout(c.db.ref('users/' + c.uid + '/review-shares').once('value'));
+      value = (snapshot && typeof snapshot.val === 'function' ? snapshot.val() : null) || {};
+    } catch (e) { return; }
+    const rows = Object.keys(value).sort().map(slot => {
+      const entry = value[slot] || {};
+      const id = String(entry.id || '');
+      if (!Core.PACK_ID.test(id)) return null;
+      let when = '';
+      try { when = new Date(Number(entry.expiresAt) || 0).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); } catch (e) {}
+      const li = h('li', null, [
+        h('span', { className: 'gr-share-title', text: String(entry.title || 'A review') }),
+        h('span', { className: 'gr-muted', text: `${Number(entry.drills) || 0} positions · until ${when}` }),
+      ]);
+      const copy = h('button', { type: 'button', className: 'tool-button', text: 'Copy link' });
+      copy.addEventListener('click', () => { if (ui.shareLink) { ui.shareLink.value = shareUrl(id); ui.shareLink.hidden = false; } copyShareLink(); });
+      const revoke = h('button', { type: 'button', className: 'tool-button', text: 'Revoke' });
+      revoke.addEventListener('click', () => revokeShare(slot, id, revoke));
+      li.append(copy, revoke);
+      return li;
+    }).filter(Boolean);
+    ui.shareList.replaceChildren(...rows);
+    ui.shareList.hidden = rows.length === 0;
+  }
+
+  async function revokeShare(slot, id, button) {
+    const c = cloud();
+    if (!c) return;
+    button.disabled = true;
+    try {
+      await withTimeout(c.db.ref('review-shares/' + id).remove());
+      await withTimeout(c.db.ref('users/' + c.uid + '/review-shares/' + slot).remove());
+      setShareStatus('That link no longer opens.');
+      if (ui.shareLink && ui.shareLink.value === shareUrl(id)) { ui.shareLink.hidden = true; ui.shareLink.value = ''; if (ui.shareCopy) ui.shareCopy.hidden = true; }
+      await loadMyShares();
+    } catch (e) {
+      button.disabled = false;
+      setShareStatus((e && e.message) || 'The link could not be revoked.');
+    }
+  }
+
+  /* ---------- the learner's side ---------- */
+
+  function sharedIdFromUrl() {
+    let id = '';
+    try { id = new URL(location.href).searchParams.get('p') || ''; } catch (e) { return ''; }
+    return Core.PACK_ID.test(id) ? id : '';
+  }
+
+  async function openSharedPack(id) {
+    hidePanel(ui.gamesPanel); hidePanel(ui.playerPanel); hidePanel(ui.reviewPanel);
+    if (ui.sharedBanner) ui.sharedBanner.hidden = false;
+    const say = text => { if (ui.sharedBannerText) ui.sharedBannerText.textContent = text; };
+    say('Opening a shared review.');
+    const auth = window.siteAuth;
+    if (!auth) { say('This review needs the sign-in service, which did not load. Reload the page.'); return; }
+    let user = null;
+    try { user = await auth.ready(); } catch (e) { user = null; }
+    if (!user) {
+      say('This is a review someone shared with you. Sign in with GitHub or Google to open it; your practice is then kept in your account.');
+      showSharedSignIn();
+      return;
+    }
+    say('Loading the review.');
+    let raw = null;
+    try {
+      const snapshot = await withTimeout(auth.db().ref('review-shares/' + id).once('value'));
+      raw = snapshot && typeof snapshot.val === 'function' ? snapshot.val() : null;
+    } catch (e) {
+      say('That link could not be opened. It may have expired, been revoked, or never existed.');
+      return;
+    }
+    if (!raw || typeof raw !== 'object' || typeof raw.pack !== 'string' || raw.pack.length > Core.PACK_LIMITS.maxChars) {
+      say('That link could not be opened. It may have expired, been revoked, or never existed.');
+      return;
+    }
+    let parsed = null;
+    try { parsed = JSON.parse(raw.pack); } catch (e) { parsed = null; }
+    const pack = Core.validPack(parsed);
+    if (!pack) { say('That review could not be read. Ask for a fresh link.'); return; }
+    state.shared = { id, pack, slot: null };
+    await loadSharedProgress(id);
+    state.profile = Core.profileFromPack(pack);
+    state.reviews = [];
+    state.drills = pack.drills.slice();
+    renderProfile();
+    if (ui.gamesDetail) ui.gamesDetail.hidden = true;
+    if (ui.trendSection) ui.trendSection.hidden = true;
+    if (ui.profilePanel) ui.profilePanel.hidden = false;
+    if (ui.boardPanel) ui.boardPanel.hidden = false;
+    if (ui.drillsPanel) ui.drillsPanel.hidden = false;
+    renderDrills();
+    let when = '';
+    try { when = new Date(Number(raw.at) || 0).toLocaleDateString(undefined, { day: 'numeric', month: 'long' }); } catch (e) {}
+    say(`You are practicing ${pack.player}'s review of ${plural(pack.games, 'game')}, shared on ${when}. The positions are ready; your progress is kept in your account. Nothing here changes the original.`);
+  }
+
+  function showSharedSignIn() {
+    if (!ui.sharedBanner) return;
+    const row = h('div', { className: 'tool-actions' });
+    for (const [provider, label] of [['github', 'Sign in with GitHub'], ['google', 'Sign in with Google']]) {
+      const b = h('button', { type: 'button', className: 'tool-button', text: label });
+      b.addEventListener('click', () => { b.disabled = true; window.siteAuth.signIn(provider).catch(() => { b.disabled = false; }); });
+      row.appendChild(b);
+    }
+    ui.sharedBanner.appendChild(row);
+  }
+  const hidePanel = el => { if (el) el.hidden = true; };
+
+  /* The learner's practice record for one pack, in their own account, so it
+     follows them to another device. Only this pack's drills are stored. */
+  async function loadSharedProgress(id) {
+    const c = cloud();
+    if (!c) return;
+    try {
+      const snapshot = await withTimeout(c.db.ref('users/' + c.uid + '/review-progress').once('value'));
+      const value = (snapshot && typeof snapshot.val === 'function' ? snapshot.val() : null) || {};
+      let free = null, oldest = null;
+      for (let i = 0; i < SHARE.slots; i++) {
+        const slot = String(i), entry = value[slot];
+        if (!entry) { if (free === null) free = slot; continue; }
+        if (String(entry.id || '') === id) {
+          state.shared.slot = slot;
+          let stored = null;
+          try { stored = JSON.parse(String(entry.data || '{}')); } catch (e) { stored = null; }
+          if (stored && typeof stored === 'object') {
+            for (const [key, rec] of Object.entries(stored)) {
+              if (!/^(own:[0-9a-f]{16}:\d{1,3}|puzzle:[A-Za-z0-9]{5})$/.test(key) || !rec || typeof rec !== 'object') continue;
+              const num = x => (Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
+              state.drillProgress[key] = { attempts: num(rec.attempts), best: Math.min(100, num(rec.best)), last: Math.min(100, num(rec.last)), step: Math.min(Core.REVIEW_DAYS.length - 1, num(rec.step)), due: num(rec.due), at: num(rec.at) };
+            }
+          }
+          return;
+        }
+        if (oldest === null || (Number(entry.at) || 0) < (Number(value[oldest].at) || 0)) oldest = slot;
+      }
+      state.shared.slot = free !== null ? free : (oldest || '0');
+    } catch (e) { /* the learner can still practice locally */ }
+  }
+
+  function queueSharedProgress() {
+    if (!state.shared || !cloud()) return;
+    if (state.shareTimer) clearTimeout(state.shareTimer);
+    state.shareTimer = setTimeout(saveSharedProgress, SHARE.syncDelayMs);
+  }
+  async function saveSharedProgress() {
+    state.shareTimer = null;
+    const c = cloud();
+    if (!state.shared || !c || !state.shared.slot) return;
+    const mine = {};
+    for (const d of state.drills) if (state.drillProgress[d.id]) mine[d.id] = state.drillProgress[d.id];
+    const data = JSON.stringify(mine);
+    if (data.length > 50000) return;
+    try {
+      await withTimeout(c.db.ref('users/' + c.uid + '/review-progress/' + state.shared.slot).set({
+        id: state.shared.id, title: String(state.shared.pack.player).slice(0, 80), at: Date.now(), data,
+      }));
+    } catch (e) { /* the local record is still the source of truth */ }
+  }
+
+  /* A moment from a shared review, drawn from the pack rather than from a
+     game this browser reviewed. */
+  function showSharedEvidence(e) {
+    const board = ensureBoard();
+    state.view = { kind: 'evidence' };
+    board.movable(null);
+    board.lock(true);
+    board.orientation(e.color);
+    const arrows = [];
+    try {
+      const c = new Chess(e.fen);
+      const mv = c.move(e.san);
+      if (mv) arrows.push({ from: mv.from, to: mv.to, kind: 'played' });
+    } catch (err) { /* the arrow is a nicety */ }
+    if (e.best && (!arrows.length || e.best.slice(0, 4) !== arrows[0].from + arrows[0].to)) arrows.push({ from: e.best.slice(0, 2), to: e.best.slice(2, 4), kind: 'best' });
+    board.set(e.fen, { arrows });
+    ui.boardTitle.textContent = `Game ${e.game + 1}, move ${e.num}${e.color === 'w' ? '.' : '…'} ${e.san}`;
+    ui.boardNote.textContent = e.note || '';
+    hideObjective();
+    ui.drillStatus.hidden = true;
+    hideRecap();
+    const lines = [];
+    const bestSan = Core.lineSan(e.fen, e.pvBest).slice(0, 6).join(' ');
+    if (bestSan) lines.push(line('Best line', bestSan));
+    if (e.fenAfter && e.pvPunish && e.pvPunish.length) {
+      const punishSan = Core.lineSan(e.fenAfter, e.pvPunish).slice(0, 5).join(' ');
+      if (punishSan) lines.push(line('After the move', punishSan));
+    }
+    ui.boardLines.replaceChildren(...lines);
+    ui.boardMoves.replaceChildren();
+    ui.boardEval.textContent = '';
+    ui.boardActions.replaceChildren();
+    ui.boardPanel.hidden = false;
+  }
+
   /* ------------------------------ wiring ------------------------------ */
 
   ui.drop.addEventListener('click', () => ui.files.click());
@@ -1582,6 +1888,8 @@ function main() {
   ui.prev.addEventListener('click', () => stepMove(-1));
   ui.next.addEventListener('click', () => stepMove(1));
   ui.drillsRefresh.addEventListener('click', buildDrills);
+  if (ui.share) ui.share.addEventListener('click', shareCurrent);
+  if (ui.shareCopy) ui.shareCopy.addEventListener('click', copyShareLink);
   window.addEventListener('pagehide', releaseDownload);
 
   /* a stored value this page cannot read is removed, never allowed to
@@ -1597,8 +1905,21 @@ function main() {
   persistOptions();                      // canonical form of whatever was accepted
   refreshNames();
   renderGames();
-  if (state.games.length) {
+  const sharedId = sharedIdFromUrl();
+  if (sharedId) {
+    openSharedPack(sharedId);
+    startEngine();
+    if (window.siteAuth && typeof window.siteAuth.onChange === 'function') {
+      let seen = !!cloud();
+      window.siteAuth.onChange(user => {
+        if (user && !seen) { seen = true; openSharedPack(sharedId); }
+      });
+    }
+  } else if (state.games.length) {
     message(`${plural(state.games.length, 'game')} restored from your last visit.`, 'ok');
     startEngine();
+  }
+  if (window.siteAuth && typeof window.siteAuth.onChange === 'function' && !sharedId) {
+    window.siteAuth.onChange(() => { if (state.profile) loadMyShares(); });
   }
 }

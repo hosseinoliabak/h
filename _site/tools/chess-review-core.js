@@ -1193,6 +1193,167 @@ export function scoreDrill(solution, continuation, { terminal = false } = {}) {
   return Math.round(solScore + contScore);
 }
 
+/* ====================== sharing a review ====================== */
+
+export const PACK_LIMITS = {
+  maxChars: 200000,       // the database rule's ceiling for one pack
+  maxWeaknesses: 8,
+  maxEvidence: 6,
+  maxDrills: 40,
+  maxTitle: 80,
+  idLength: 22,
+};
+export const PACK_ID = /^[A-Za-z0-9_-]{22}$/;
+
+const cut = (value, n) => (typeof value === 'string' ? value.slice(0, n) : '');
+const isFen = value => {
+  if (typeof value !== 'string' || value.length > 100) return false;
+  try { new Chess(value); return true; } catch (e) { return false; }
+};
+const uciList = (value, n) => (Array.isArray(value)
+  ? value.filter(u => typeof u === 'string' && /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(u)).slice(0, n)
+  : []);
+
+/* Everything a learner needs to practice someone else's review, and nothing
+   else. No PGN, no engine records, no opponent names, no account details. */
+export function buildPack(profile, drills) {
+  return {
+    v: 1,
+    player: cut(profile.player.name, LIMITS.maxNameChars),
+    generated: profile.generated,
+    games: profile.games,
+    results: { win: profile.results.win, draw: profile.results.draw, loss: profile.results.loss },
+    rating: profile.rating.used,
+    acpl: profile.acpl,
+    expected: profile.expected,
+    phases: profile.phases.map(p => [p.id, p.n, p.acpl, Math.round(p.errorsPerGame * 100) / 100]),
+    strengths: profile.strengths.map(x => [cut(x.label, 80), cut(x.detail, 240)]),
+    habits: profile.habits.map(x => [x.id, cut(x.label, 80), cut(x.detail, 240)]),
+    openings: profile.openings.slice(0, 12).map(o => [cut(o.family, 60), o.color, o.games, o.scorePct, o.acpl]),
+    weaknesses: profile.weaknesses.slice(0, PACK_LIMITS.maxWeaknesses).map(w => ({
+      id: w.id, count: w.count, games: w.games, cost: Math.round(w.cost), missed: w.missed, allowed: w.allowed,
+      themes: w.themes.slice(0, 4),
+      evidence: w.evidence.slice(0, PACK_LIMITS.maxEvidence).map(e => ({
+        game: e.game, num: e.num, color: e.color, san: e.san, loss: e.loss, cls: e.cls,
+        fen: e.fen, fenAfter: e.fenAfter, best: e.best || '', punish: e.punish || '',
+        pvBest: (e.pvBest || []).slice(0, 8), pvPunish: (e.pvPunish || []).slice(0, 6),
+        note: cut(e.note, 240), phase: e.phase, missed: e.missed, allowed: e.allowed,
+      })),
+    })),
+    drills: (drills || []).slice(0, PACK_LIMITS.maxDrills).map(d => ({
+      id: d.id, kind: d.kind, category: d.category, theme: d.theme || '', label: cut(d.label, 80),
+      fen: d.fen, color: d.color, line: (d.line || []).slice(0, 10),
+      setup: d.setup || '', setupSan: d.setupSan || '', rating: d.rating || null,
+      note: cut(d.note || '', 240), played: d.played || '', num: d.num || 0, game: d.game || 0,
+      motif: d.motif || '', family: cut(d.family || '', 60),
+    })),
+  };
+}
+
+/* The same pack coming back from the database, where every field is
+   untrusted. Anything that fails its check is dropped rather than repaired,
+   and a pack with no drills and no weaknesses is refused outright. */
+export function validPack(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.v !== 1) return null;
+  const num = (x, lo, hi) => (Number.isFinite(x) && x >= lo && x <= hi ? x : null);
+  const int = (x, lo, hi) => { const n = num(x, lo, hi); return n === null ? null : Math.round(n); };
+  const pair = (x, a, b) => (Array.isArray(x) && x.length >= 2 ? [cut(x[0], a), cut(x[1], b)] : null);
+  if (typeof raw.generated !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw.generated)) return null;
+  const out = {
+    v: 1,
+    player: normalizeName(raw.player) || 'A player',
+    generated: raw.generated,
+    games: int(raw.games, 1, LIMITS.maxGames) || 1,
+    results: { win: int(raw.results && raw.results.win, 0, LIMITS.maxGames) || 0,
+               draw: int(raw.results && raw.results.draw, 0, LIMITS.maxGames) || 0,
+               loss: int(raw.results && raw.results.loss, 0, LIMITS.maxGames) || 0 },
+    rating: int(raw.rating, 100, 3500) || 1500,
+    acpl: int(raw.acpl, 0, 2000),
+    expected: int(raw.expected, 0, 2000) || 0,
+    phases: [], strengths: [], habits: [], openings: [], weaknesses: [], drills: [],
+  };
+  if (Array.isArray(raw.phases)) for (const p of raw.phases.slice(0, 3)) {
+    if (!Array.isArray(p) || !['opening', 'middlegame', 'endgame'].includes(p[0])) continue;
+    out.phases.push([p[0], int(p[1], 0, 100000) || 0, int(p[2], 0, 2000), num(p[3], 0, 100) || 0]);
+  }
+  if (Array.isArray(raw.strengths)) for (const x of raw.strengths.slice(0, 12)) { const v = pair(x, 80, 240); if (v) out.strengths.push(v); }
+  if (Array.isArray(raw.habits)) for (const x of raw.habits.slice(0, 8)) {
+    if (!Array.isArray(x) || !Object.hasOwn(HABITS, x[0])) continue;
+    out.habits.push([x[0], cut(x[1], 80), cut(x[2], 240)]);
+  }
+  if (Array.isArray(raw.openings)) for (const o of raw.openings.slice(0, 12)) {
+    if (!Array.isArray(o) || (o[1] !== 'w' && o[1] !== 'b')) continue;
+    out.openings.push([cut(o[0], 60), o[1], int(o[2], 0, LIMITS.maxGames) || 0, int(o[3], 0, 100) || 0, int(o[4], 0, 2000)]);
+  }
+  if (Array.isArray(raw.weaknesses)) for (const w of raw.weaknesses.slice(0, PACK_LIMITS.maxWeaknesses)) {
+    if (!w || typeof w !== 'object' || !Object.hasOwn(CATEGORIES, w.id)) continue;
+    const evidence = [];
+    if (Array.isArray(w.evidence)) for (const e of w.evidence.slice(0, PACK_LIMITS.maxEvidence)) {
+      if (!e || typeof e !== 'object' || !isFen(e.fen)) continue;
+      evidence.push({
+        game: int(e.game, 0, LIMITS.maxGames) || 0, num: int(e.num, 1, 500) || 1,
+        color: e.color === 'b' ? 'b' : 'w', san: cut(e.san, 12), loss: int(e.loss, 0, MATE) || 0,
+        cls: Object.hasOwn(CLS_LABEL, e.cls) ? e.cls : 'mistake',
+        fen: e.fen, fenAfter: isFen(e.fenAfter) ? e.fenAfter : '',
+        best: uciList([e.best], 1)[0] || '', punish: uciList([e.punish], 1)[0] || '',
+        pvBest: uciList(e.pvBest, 8), pvPunish: uciList(e.pvPunish, 6),
+        note: cut(e.note, 240), phase: ['opening', 'middlegame', 'endgame'].includes(e.phase) ? e.phase : 'middlegame',
+        missed: cut(e.missed, 20), allowed: cut(e.allowed, 20),
+      });
+    }
+    const cat = CATEGORIES[w.id];
+    out.weaknesses.push({
+      id: w.id, label: cat.label, work: cat.work, avoid: cat.avoid, cue: cat.cue,
+      count: int(w.count, 0, 100000) || 0, games: int(w.games, 0, LIMITS.maxGames) || 0,
+      cost: int(w.cost, 0, 1e9) || 0, missed: int(w.missed, 0, 100000) || 0, allowed: int(w.allowed, 0, 100000) || 0,
+      themes: Array.isArray(w.themes) ? w.themes.filter(t => typeof t === 'string' && /^[A-Za-z0-9]{1,40}$/.test(t)).slice(0, 4) : cat.themes,
+      avgCost: 0, evidence,
+    });
+  }
+  for (const w of out.weaknesses) w.avgCost = w.count ? w.cost / w.count : 0;
+  const seen = new Set();
+  if (Array.isArray(raw.drills)) for (const d of raw.drills.slice(0, PACK_LIMITS.maxDrills)) {
+    if (!d || typeof d !== 'object') continue;
+    if (typeof d.id !== 'string' || !/^(own:[0-9a-f]{16}:\d{1,3}|puzzle:[A-Za-z0-9]{5})$/.test(d.id) || seen.has(d.id)) continue;
+    if (!isFen(d.fen) || (d.color !== 'w' && d.color !== 'b')) continue;
+    if (d.kind !== 'own' && d.kind !== 'puzzle') continue;
+    const line = uciList(d.line, 10);
+    if (!line.length) continue;
+    seen.add(d.id);
+    out.drills.push({
+      id: d.id, kind: d.kind, category: Object.hasOwn(CATEGORIES, d.category) ? d.category : 'positional',
+      theme: cut(d.theme, 40), label: cut(d.label, 80), fen: d.fen, color: d.color, line,
+      setup: uciList([d.setup], 1)[0] || '', setupSan: cut(d.setupSan, 12),
+      rating: int(d.rating, 100, 3500), note: cut(d.note, 240), played: cut(d.played, 12),
+      num: int(d.num, 0, 500) || 0, game: int(d.game, 0, LIMITS.maxGames) || 0,
+      motif: cut(d.motif, 20), family: cut(d.family, 60),
+    });
+  }
+  if (!out.drills.length && !out.weaknesses.length) return null;
+  return out;
+}
+
+/* A validated pack, shaped like the profile the page already draws, so the
+   learner sees the same report without a second renderer. */
+export function profileFromPack(pack) {
+  return {
+    v: 1, generated: pack.generated,
+    player: { name: pack.player, aliases: [] },
+    games: pack.games,
+    results: { ...pack.results, unknown: 0 },
+    rating: { given: null, fromTags: null, estimated: null, used: pack.rating },
+    acpl: pack.acpl, expected: pack.expected,
+    phases: pack.phases.map(p => ({ id: p[0], n: p[1], acpl: p[2], expected: pack.expected, errors: 0, errorsPerGame: p[3] })),
+    categories: [],
+    weaknesses: pack.weaknesses,
+    habits: pack.habits.map(h => ({ id: h[0], label: h[1], detail: h[2], count: 0, cost: 0, share: 0, work: HABITS[h[0]].work, avoid: HABITS[h[0]].avoid })),
+    strengths: pack.strengths.map(s => ({ id: 'shared', label: s[0], detail: s[1] })),
+    openings: pack.openings.map(o => ({ family: o[0], slug: familySlug(o[0]), color: o[1], games: o[2], score: 0, scorePct: o[3], acpl: o[4], loss: 0, n: 0, errors: 0, firstErrors: [] })),
+    skills: { punish: { n: 0, hit: 0 }, tactics: { n: 0, hit: 0 }, convert: { n: 0, hit: 0 }, resist: { n: 0, hit: 0 }, clock: { games: 0, errors: 0, moves: 0 } },
+    endings: {}, perGame: [], shared: true,
+  };
+}
+
 /* ====================== snapshots (trend over batches) ====================== */
 
 export function snapshotOf(profile) {
@@ -1304,6 +1465,7 @@ if (typeof window !== 'undefined') {
     playerColor, resultFor, nullMoveFen, MOTIFS, TACTICAL, motifOf, classifyLoss, CLS_LABEL, CLS_MARK, phaseOf,
     gradeGame, describeError, CATEGORIES, HABITS, familySlug, buildProfile, sanOf, lineSan, errorNote,
     similarity, puzzleRecord, selectDrills, REVIEW_DAYS, scheduleDrill, scoreDrill, snapshotOf, validSnapshot, materialOf, LOST_ALREADY, ID_RE, byteLength, validRating,
-    estimateSeconds, formatDuration, formatEval, weaknessSentence, cueQuestion, MOTIFS,
+    estimateSeconds, formatDuration, formatEval, weaknessSentence, cueQuestion, MOTIFS, HABITS,
+    PACK_LIMITS, PACK_ID, buildPack, validPack, profileFromPack,
   });
 }
