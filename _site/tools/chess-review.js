@@ -1016,7 +1016,7 @@ function main() {
     const items = state.drills.map((d, i) => {
       const prog = state.drillProgress[d.id];
       const li = h('li', { className: state.view && state.view.kind === 'drill' && state.view.drill.id === d.id ? 'cur' : '' });
-      const label = h('span', { className: 'gr-drill-label', text: d.kind === 'own' ? `${d.label}: your game ${d.game + 1}, move ${d.num}` : `${d.label}: ${d.theme === 'opening' ? 'an opening position' : 'a position like yours'}` });
+      const label = h('span', { className: 'gr-drill-label', text: d.kind === 'own' ? `Your ${d.played} moment · ${d.label}` : `${d.label} · ${d.theme === 'opening' ? 'an opening position' : 'a position like yours'}` });
       const meta = h('span', { className: 'gr-drill-meta', text: `${colorWord(d.color)} to move${d.rating ? ` · puzzle rating ${d.rating}` : ''}` });
       const score = h('span', { className: 'gr-score' + (prog ? (prog.last >= 70 ? ' pass' : ' fail') : ''), text: prog ? `${prog.last}/100` : '' });
       const btn = h('button', { type: 'button', className: 'tool-button', text: prog ? 'Again' : 'Start' });
@@ -1090,7 +1090,7 @@ function main() {
     board.movable(d.color);
     board.lock(true);
     board.set(chess);
-    ui.boardTitle.textContent = `${d.label}: your game, move ${d.num}. ${colorWord(d.color)} to move.`;
+    ui.boardTitle.textContent = `Your ${d.played} moment: game ${d.game + 1}, move ${d.num}. ${colorWord(d.color)} to move.`;
     setObjective(`You played ${d.played} here. Find something better and hold the position for ${DRILL_MOVES} moves against the engine. Every move is graded against the engine, and 70 of 100 passes, which is an average loss under 0.6 pawns.`);
     ui.boardNote.textContent = '';
     ui.boardLines.replaceChildren();
@@ -1320,13 +1320,39 @@ function main() {
     const cat = Core.CATEGORIES[d.category];
     ui.recap.replaceChildren();
     if (!cat) { ui.recap.hidden = true; return; }
+    /* Ask before telling. Choosing the signal from three is retrieval, which
+       is what makes the pattern come back over the board; reading it is not. */
+    const question = Core.cueQuestion(d.category, d.id);
+    if (!question.length) { revealRecap(v, null); return; }
+    ui.recap.append(h('h4', { text: 'Before the answer: what was the signal in this position?' }));
+    const list = h('div', { className: 'gr-quiz' });
+    const buttons = question.map(opt => {
+      const b = h('button', { type: 'button', className: 'tool-button', text: opt.text });
+      b.addEventListener('click', () => {
+        buttons.forEach((other, i) => {
+          other.disabled = true;
+          if (question[i].correct) other.classList.add('right');
+        });
+        if (!opt.correct) b.classList.add('wrong');
+        revealRecap(v, opt.correct);
+      });
+      list.appendChild(b);
+      return b;
+    });
+    ui.recap.appendChild(list);
+    ui.recap.hidden = false;
+  }
+
+  /* The card itself, once the question has been answered. */
+  async function revealRecap(v, gotIt) {
+    const d = v.drill;
+    const cat = Core.CATEGORIES[d.category];
+    if (!cat) return;
     const motif = d.motif && Core.MOTIFS[d.motif] ? Core.MOTIFS[d.motif].label : '';
     const line = (head, body) => h('p', null, [h('b', { text: head + ' ' }), body]);
-    ui.recap.append(
-      h('h4', { text: `Remember this one${motif ? ': ' + motif : ''}` }),
-      line('What to notice.', cat.cue),
-      line('The habit.', firstSentence(cat.work)),
-    );
+    if (gotIt !== null) ui.recap.appendChild(h('p', { className: gotIt ? 'gr-quiz-verdict right' : 'gr-quiz-verdict wrong', text: gotIt ? 'That is the one.' : 'Not that one. The signal is marked above.' }));
+    const head = h('h4', { text: `Remember this one${motif ? ': ' + motif : ''}` });
+    ui.recap.append(head, line('What to notice.', cat.cue), line('The habit.', firstSentence(cat.work)));
     if (d.kind === 'own') ui.recap.appendChild(line(`Your game ${d.game + 1}, move ${d.num}.`, d.note || ''));
     else ui.recap.appendChild(line('Where this came from.', `A Lichess puzzle rated ${d.rating} on the same theme as your own mistakes.`));
     const rec = state.drillProgress[d.id];
@@ -1336,6 +1362,30 @@ function main() {
       if (when) ui.recap.appendChild(h('p', { className: 'gr-recap-next', text: `You will see this position again on ${when}.` }));
     }
     ui.recap.hidden = false;
+    /* A named pattern is worth more than a category, so the heading takes the
+       real name when the coach page's catalog recognizes one. */
+    const named = await patternName(d);
+    if (named && state.view === v) head.textContent = `Remember this one: ${named}`;
+  }
+
+  /* The name the chess world uses for what happens in this line, from the
+     Chess Coach page's catalog of 88 patterns. Loaded on demand. */
+  async function patternName(d) {
+    if (!d.line || !d.line.length) return '';
+    try {
+      const mod = await import('./chess-assets/patterns.js');
+      const board = new Chess(d.fen);
+      for (const uci of d.line) {
+        const mv = safeMove(board, uci);
+        if (!mv) break;
+        if (board.isCheckmate()) {
+          const id = mod.classifyMate(board, d.color);
+          return id ? (mod.mateName(id) || '') : '';
+        }
+      }
+      const found = mod.patternsAlongLine(d.fen, d.line, d.color);
+      return found.length && found[0].achieved ? found[0].name : '';
+    } catch (e) { return ''; }
   }
   const firstSentence = t => { const i = String(t).indexOf('. '); return i > 0 ? String(t).slice(0, i + 1) : String(t); };
 

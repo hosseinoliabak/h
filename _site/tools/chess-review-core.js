@@ -1148,10 +1148,15 @@ export function selectDrills(profile, pools, openingPools, progress = {}, option
       drills.push({ id: 'puzzle:' + c.p.id, kind: 'puzzle', category: 'opening', label: worst.family + ' as ' + (worst.color === 'w' ? 'White' : 'Black'), theme: 'opening', fen: c.p.start, setup: c.p.setup, setupSan: c.p.setupSan, color: c.p.color, line: c.p.solution, rating: c.p.rating, lichess: c.p.id, family: worst.family });
     }
   }
-  /* interleave categories so two of a kind rarely sit together */
+  /* Block, then interleave. The first few positions all come from the worst
+     weakness, which is how a pattern is learned, and the rest are mixed so
+     recognizing it is the exercise rather than remembering the order. */
   const byCat = new Map();
   for (const d of drills) { if (!byCat.has(d.category)) byCat.set(d.category, []); byCat.get(d.category).push(d); }
   const out = [];
+  const firstCat = profile.weaknesses.length ? profile.weaknesses[0].id : null;
+  const block = byCat.get(firstCat);
+  if (block) for (let i = 0; i < (options.blockSize || 3) && block.length; i++) out.push(block.shift());
   while (out.length < drills.length) for (const list of byCat.values()) if (list.length) out.push(list.shift());
   return out;
 }
@@ -1257,6 +1262,27 @@ export function formatEval(cp) {
   return (cp > 0 ? '+' : '') + (cp / 100).toFixed(1);
 }
 
+/* Three cues for a recall question: the right one for `category` and two from
+   other categories, ordered by a seed so the same drill always asks the same
+   question. Returns [{ text, correct }]. */
+export function cueQuestion(category, seed) {
+  const right = CATEGORIES[category];
+  if (!right || !right.cue) return [];
+  const others = Object.entries(CATEGORIES).filter(([id, c]) => id !== category && c.cue);
+  if (others.length < 2) return [];
+  /* two independent halves of the hash, so neither index is derived from the
+     other and neither can go negative */
+  const digest = hashOf(String(seed || category));
+  const n = parseInt(digest.slice(0, 8), 16), m = parseInt(digest.slice(8, 16), 16);
+  const a = others[n % others.length];
+  const rest = others.filter(o => o[0] !== a[0]);
+  const b = rest[m % rest.length];
+  const picks = [{ text: right.cue, correct: true }, { text: a[1].cue, correct: false }, { text: b[1].cue, correct: false }];
+  /* a fixed rotation, so the right answer is not always first */
+  const at = (n + m) % 3;
+  return picks.slice(at).concat(picks.slice(0, at));
+}
+
 export function weaknessSentence(w, games) {
   const each = (w.avgCost / 100).toFixed(1);
   const directional = ['hanging', 'fork', 'pin', 'skewer', 'discovered', 'double-check', 'trapped', 'back-rank', 'deflection', 'promotion'].includes(w.id);
@@ -1278,6 +1304,6 @@ if (typeof window !== 'undefined') {
     playerColor, resultFor, nullMoveFen, MOTIFS, TACTICAL, motifOf, classifyLoss, CLS_LABEL, CLS_MARK, phaseOf,
     gradeGame, describeError, CATEGORIES, HABITS, familySlug, buildProfile, sanOf, lineSan, errorNote,
     similarity, puzzleRecord, selectDrills, REVIEW_DAYS, scheduleDrill, scoreDrill, snapshotOf, validSnapshot, materialOf, LOST_ALREADY, ID_RE, byteLength, validRating,
-    estimateSeconds, formatDuration, formatEval, weaknessSentence,
+    estimateSeconds, formatDuration, formatEval, weaknessSentence, cueQuestion, MOTIFS,
   });
 }
