@@ -48,9 +48,23 @@ function main() {
   const USERNAME = /^[A-Za-z0-9_-]{2,30}$/;
   const DRILL_MOVES = 5;
   const DRILL_MS = 400;
-  const MAIA_NETS = [1100, 1300, 1400, 1600, 1700, 1900];
-  const MAIA_CAP = 1900;
-  const MAIA_LOAD_MS = 120000;
+  /* Replay opponents, strongest first, with the Chess Coach page's own
+     settings. Maia 1900 reproduces human play at that rating from a 2.4 MB
+     network; 2000 and up are the Lc0 T70 network with policy sharpening and,
+     from 2300, a one-ply value-head lookahead. The user asked for a strong
+     sparring partner (2026-09-08), so the default is the top of the range. */
+  const OPPONENTS = [
+    { elo: 2500, net: 't70-703810', temp: 0.05, topP: 0.5, value: { topK: 8, lambda: 0.35, tau: 0.025 }, note: 'grandmaster' },
+    { elo: 2400, net: 't70-703810', temp: 0.12, topP: 0.6, value: { topK: 8, lambda: 0.45, tau: 0.04 }, note: 'international master' },
+    { elo: 2300, net: 't70-703810', temp: 0.25, topP: 0.7, value: { topK: 5, lambda: 0.6, tau: 0.06 }, note: 'FIDE master' },
+    { elo: 2200, net: 't70-703810', temp: 0.35, topP: 0.75, note: 'candidate master' },
+    { elo: 2100, net: 't70-703810', temp: 0.55, topP: 0.8, note: 'strong club player' },
+    { elo: 2000, net: 't70-703810', temp: 0.8, topP: 0.85, note: 'club expert' },
+    { elo: 1900, net: 'maia-1900', temp: 1, topP: 0.95, note: 'human-like' },
+  ];
+  const DEFAULT_OPPONENT = 2500;
+  const NET_SIZE = { 't70-703810': '13 MB', 'maia-1900': '2.4 MB' };
+  const MAIA_LOAD_MS = 180000;
   const MAIA_THINK_MS = 30000;
   const withDeadline = (promise, ms) => Promise.race([promise, new Promise((resolve, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
 
@@ -69,6 +83,8 @@ function main() {
     boardPanel: $('gr-board-panel'), board: $('gr-board'), flip: $('gr-flip'), prev: $('gr-prev'), next: $('gr-next'),
     boardEval: $('gr-board-eval'), boardTitle: $('gr-board-title'), boardNote: $('gr-board-note'), boardLines: $('gr-board-lines'),
     boardMoves: $('gr-board-moves'), boardActions: $('gr-board-actions'),
+    objective: $('gr-board-objective'), drillStatus: $('gr-drill-status'), recap: $('gr-recap'),
+    opponent: $('gr-opponent'), opponentNote: $('gr-opponent-note'),
     drillsPanel: $('gr-drills-panel'), drillsRefresh: $('gr-drills-refresh'), drillsStatus: $('gr-drills-status'),
     drillList: $('gr-drill-list'), drillSummary: $('gr-drill-summary'),
   };
@@ -278,7 +294,7 @@ function main() {
     message(left.length ? 'Some values could not be removed; this browser refused the change.' : 'Everything this page kept in this browser has been removed.', left.length ? 'error' : 'ok');
   }
   function persistOptions() {
-    lsSet(KEYS.options, JSON.stringify({ quality: ui.quality.value, rating: Core.validRating(ui.rating.value), include: includeFlags() }));
+    lsSet(KEYS.options, JSON.stringify({ quality: ui.quality.value, rating: Core.validRating(ui.rating.value), include: includeFlags(), opponent: parseInt(ui.opponent.value, 10) || DEFAULT_OPPONENT }));
   }
   /* Blank is fine; anything else has to be an integer from 100 to 3500. */
   function ratingInputOk() {
@@ -895,6 +911,9 @@ function main() {
       if (m.error.threat && m.error.threat.best) lines.push(line('The threat before the move', Core.sanOf(Core.nullMoveFen(m.fenBefore) || m.fenBefore, m.error.threat.best)));
     }
     ui.boardLines.replaceChildren(...lines);
+    hideObjective();
+    ui.drillStatus.hidden = true;
+    hideRecap();
     ui.boardEval.textContent = 'Eval ' + Core.formatEval(evalFromWhite(opts.after ? -m.after : m.before, opts.after ? Core.other(m.color) : m.color));
     renderMoveList(review, i);
     const actions = [];
@@ -902,8 +921,8 @@ function main() {
       const b = h('button', { type: 'button', className: 'tool-button', text: 'Practice from here' });
       b.addEventListener('click', () => startOwnDrill({ id: 'own:' + g.id + ':' + m.i, kind: 'own', category: m.error ? m.error.category : 'positional', label: m.error ? Core.CATEGORIES[m.error.category].label : 'Your move', fen: m.fenBefore, color: m.color, line: m.pvBest.slice(0, 8), note: m.error ? Core.errorNote(m) : '', played: m.san, num: m.num, game: gameIndex }));
       actions.push(b);
-      const r = h('button', { type: 'button', className: 'tool-button', text: `Replay against Maia ${maiaRatingFor(review)}` });
-      r.addEventListener('click', () => startReplay(m.fenBefore, m.color, maiaRatingFor(review), `Game ${gameIndex + 1} from move ${m.num}`));
+      const r = h('button', { type: 'button', className: 'tool-button', text: `Play it out (${currentOpponent().elo})` });
+      r.addEventListener('click', () => startReplay(m.fenBefore, m.color, `Game ${gameIndex + 1} from move ${m.num}`));
       actions.push(r);
     }
     ui.boardActions.replaceChildren(...actions);
@@ -946,12 +965,24 @@ function main() {
     if (next < 0 || next >= review.moves.length) return;
     showGameMoment(v.gameIndex, next);
   }
-  function maiaRatingFor(review) {
-    const opp = review.color === 'w' ? review.game.belo : review.game.welo;
-    const target = Math.min(MAIA_CAP, opp || state.profile.rating.used || 1500);
-    let best = MAIA_NETS[0];
-    for (const n of MAIA_NETS) if (n <= target + 50) best = n;
-    return best;
+  function currentOpponent() {
+    const elo = parseInt(ui.opponent.value, 10);
+    return OPPONENTS.find(o => o.elo === elo) || OPPONENTS[0];
+  }
+  function renderOpponents() {
+    ui.opponent.replaceChildren(...OPPONENTS.map(o => {
+      const opt = h('option', { text: `${o.elo}${o.elo === DEFAULT_OPPONENT ? ' (strongest)' : ''} · ${o.note}` });
+      opt.value = String(o.elo);
+      return opt;
+    }));
+    const stored = jsonGet(KEYS.options);
+    const want = stored && OPPONENTS.some(o => o.elo === stored.opponent) ? stored.opponent : DEFAULT_OPPONENT;
+    ui.opponent.value = String(want);
+    opponentNote();
+  }
+  function opponentNote() {
+    const o = currentOpponent();
+    ui.opponentNote.textContent = `Every opponent from 2000 up shares one ${NET_SIZE['t70-703810']} network and 1900 is a ${NET_SIZE['maia-1900']} one, downloaded once from this site when you first play it. This one plays like a ${o.note}.`;
   }
 
   /* ------------------------------ drills ------------------------------ */
@@ -1005,20 +1036,49 @@ function main() {
     const chess = new Chess(d.fen);
     const solutionMoves = Math.ceil(d.line.length / 2);
     /* the solution, then at least one move of live play against the engine */
-    state.view = { kind: 'drill', drill: d, chess, step: 0, tries: 0, solution: [], cont: [], playerMoves: 0, target: solutionMoves + Math.max(1, DRILL_MOVES - solutionMoves), busy: false, beforeScore: null, done: false };
+    const free = Math.max(1, DRILL_MOVES - solutionMoves);
+    state.view = { kind: 'drill', drill: d, chess, step: 0, tries: 0, solution: [], cont: [], playerMoves: 0, target: solutionMoves + free, busy: false, beforeScore: null, done: false };
     board.orientation(d.color);
     board.movable(d.color);
     board.lock(false);
     board.set(chess, { lastMove: d.setup ? { from: d.setup.slice(0, 2), to: d.setup.slice(2, 4) } : null });
     ui.boardTitle.textContent = `${d.label}: ${colorWord(d.color)} to move${d.setupSan ? `, after ${d.setupSan}` : ''}.`;
-    ui.boardNote.textContent = `Find the best move ${solutionMoves > 1 ? `and the ${solutionMoves - 1} that follow` : ''}, then keep playing against the engine for ${state.view.target} moves in all.`;
+    setObjective(`${plural(solutionMoves, 'move')} with one right answer each, then ${plural(free, 'move')} of your own against the engine. The solution is worth 60 points and the free play 40, and 70 passes.`);
+    ui.boardNote.textContent = '';
     ui.boardLines.replaceChildren();
     ui.boardEval.textContent = '';
     ui.boardMoves.replaceChildren();
+    hideRecap();
+    drillStatus(state.view);
     drillActions();
     renderDrills();
     ui.boardPanel.hidden = false;
     ui.boardPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /* The goal, stated without naming the move. */
+  function setObjective(text) {
+    ui.objective.textContent = 'Objective. ' + text;
+    ui.objective.hidden = false;
+  }
+  function hideObjective() { ui.objective.hidden = true; ui.objective.textContent = ''; }
+  function hideRecap() { ui.recap.hidden = true; ui.recap.replaceChildren(); }
+
+  /* Where the player is in the drill, and how it is going so far. Never says
+     anything about the move that is still to be found. */
+  function drillStatus(v) {
+    if (!v || v.kind !== 'drill') { ui.drillStatus.hidden = true; return; }
+    const d = v.drill;
+    const n = Math.min(v.playerMoves + (v.done ? 0 : 1), v.target);
+    const inSolution = d.kind === 'puzzle' && v.step < d.line.length;
+    const bits = [`Move ${n} of ${v.target}`, inSolution ? 'one right answer' : 'your choice'];
+    if (v.solution.length) bits.push(`${v.solution.filter(Boolean).length} of ${v.solution.length} right so far`);
+    if (v.cont.length) {
+      const avg = v.cont.reduce((a, b) => a + b, 0) / v.cont.length;
+      bits.push(`${(Math.min(avg, 1000) / 100).toFixed(1)} pawns lost per move so far`);
+    }
+    ui.drillStatus.textContent = bits.join(' \u00b7 ');
+    ui.drillStatus.hidden = false;
   }
 
   async function startOwnDrill(d) {
@@ -1031,9 +1091,12 @@ function main() {
     board.lock(true);
     board.set(chess);
     ui.boardTitle.textContent = `${d.label}: your game, move ${d.num}. ${colorWord(d.color)} to move.`;
-    ui.boardNote.textContent = `You played ${d.played} here. Find something better and keep it up for ${DRILL_MOVES} moves against the engine.`;
+    setObjective(`You played ${d.played} here. Find something better and hold the position for ${DRILL_MOVES} moves against the engine. Every move is graded against the engine, and 70 of 100 passes, which is an average loss under 0.6 pawns.`);
+    ui.boardNote.textContent = '';
     ui.boardLines.replaceChildren();
     ui.boardMoves.replaceChildren();
+    hideRecap();
+    drillStatus(state.view);
     drillActions();
     renderDrills();
     ui.boardPanel.hidden = false;
@@ -1060,12 +1123,14 @@ function main() {
     const v = state.view;
     const hint = h('button', { type: 'button', className: 'tool-button', text: 'Show the move' });
     hint.addEventListener('click', drillReveal);
+    const restart = h('button', { type: 'button', className: 'tool-button', text: 'Restart' });
+    restart.addEventListener('click', () => startDrill(v.drill));
     const skip = h('button', { type: 'button', className: 'tool-button', text: 'Skip' });
     skip.addEventListener('click', () => finishDrill(true));
-    const actions = [hint, skip];
+    const actions = [hint, restart, skip];
     if (v.drill.kind === 'own') {
-      const r = h('button', { type: 'button', className: 'tool-button', text: `Replay against Maia ${maiaRatingFor(state.reviews[v.drill.game] || { color: v.drill.color, game: {} })}` });
-      r.addEventListener('click', () => startReplay(v.drill.fen, v.drill.color, maiaRatingFor(state.reviews[v.drill.game] || { color: v.drill.color, game: {} }), `Your game ${v.drill.game + 1} from move ${v.drill.num}`));
+      const r = h('button', { type: 'button', className: 'tool-button', text: `Play it out (${currentOpponent().elo})` });
+      r.addEventListener('click', () => startReplay(v.drill.fen, v.drill.color, `Your game ${v.drill.game + 1} from move ${v.drill.num}`));
       actions.push(r);
     }
     ui.boardActions.replaceChildren(...actions);
@@ -1116,6 +1181,7 @@ function main() {
     v.step++;
     state.board.set(v.chess, { lastMove: { from: mv.from, to: mv.to }, marks: [{ sq: mv.to, cls: 'good' }] });
     addMoveText(mv);
+    drillStatus(v);
     if (scripted && v.step < d.line.length) {
       const reply = d.line[v.step];
       v.busy = true;
@@ -1147,7 +1213,8 @@ function main() {
       v.beforeScore = e.score;
       v.busy = false; state.board.lock(false);
       ui.boardEval.textContent = 'Eval ' + Core.formatEval(evalFromWhite(v.beforeScore, v.chess.turn()));
-      ui.boardNote.textContent = 'Now keep playing against the engine.';
+      ui.boardNote.textContent = 'The solution is done. Keep the position from here.';
+      drillStatus(v);
     }
   }
 
@@ -1177,7 +1244,8 @@ function main() {
     v.cont.push(loss);
     const cls = loss < 50 ? 'good' : 'bad';
     state.board.set(v.chess, { lastMove: { from: mv.from, to: mv.to }, marks: [{ sq: mv.to, cls }] });
-    ui.boardNote.textContent = loss < 50 ? 'Good.' : `That cost ${(Math.min(loss, 1000) / 100).toFixed(1)} pawns.`;
+    ui.boardNote.textContent = loss < 50 ? `${mv.san} holds.` : `${mv.san} cost ${(Math.min(loss, 1000) / 100).toFixed(1)} pawns.`;
+    drillStatus(v);
     if (reply.best) {
       await pause(300);
       if (state.view !== v || v.done) return;
@@ -1222,7 +1290,7 @@ function main() {
     v.done = true;
     state.board.lock(true);
     const d = v.drill;
-    if (skipped) { ui.boardNote.textContent = 'Skipped.'; drillActions(); renderDrills(); return; }
+    if (skipped) { ui.boardNote.textContent = 'Skipped.'; hideObjective(); ui.drillStatus.hidden = true; drillActions(); renderDrills(); return; }
     const terminal = d.kind === 'puzzle' && v.step >= d.line.length && v.chess.isGameOver() && !v.cont.length;
     const score = Core.scoreDrill(d.kind === 'puzzle' ? v.solution : [], v.cont, { terminal });
     state.drillProgress[d.id] = Core.scheduleDrill(state.drillProgress[d.id], score);
@@ -1230,7 +1298,10 @@ function main() {
     const sol = d.kind === 'puzzle' ? `${v.solution.filter(Boolean).length} of ${v.solution.length} solution moves. ` : '';
     const avg = v.cont.length ? Math.round(v.cont.reduce((a, b) => a + b, 0) / v.cont.length) : null;
     const later = !kept ? 'This browser refused to keep the result, so it will not be scheduled.' : score >= 70 ? `This one comes back in ${Core.REVIEW_DAYS[state.drillProgress[d.id].step]} days.` : 'It comes back tomorrow.';
-    ui.boardNote.textContent = `Score ${score} of 100. ${sol}${avg !== null ? `Against the engine you lost ${avg} centipawns per move over ${plural(v.cont.length, 'move')}.` : ''} ${later}`;
+    ui.boardNote.textContent = `${score >= 70 ? 'Passed' : 'Not yet'}, ${score} of 100. ${sol}${avg !== null ? `Against the engine you lost ${avg} centipawns per move over ${plural(v.cont.length, 'move')}.` : ''} ${later}`;
+    hideObjective();
+    drillStatus(v);
+    drillRecap(v);
     const next = state.drills[(state.drills.findIndex(x => x.id === d.id) + 1) % Math.max(1, state.drills.length)];
     const actions = [];
     if (next && next.id !== d.id) { const b = h('button', { type: 'button', className: 'tool-button tool-button-primary', text: 'Next position' }); b.addEventListener('click', () => startDrill(next)); actions.push(b); }
@@ -1241,6 +1312,33 @@ function main() {
     renderDrills();
     renderDrillSummary();
   }
+  /* The point of the drill, written so it can be recognized over the board:
+     the pattern, the thing to notice, the habit that answers it, and where
+     this particular position came from. Shown only once the drill is over. */
+  function drillRecap(v) {
+    const d = v.drill;
+    const cat = Core.CATEGORIES[d.category];
+    ui.recap.replaceChildren();
+    if (!cat) { ui.recap.hidden = true; return; }
+    const motif = d.motif && Core.MOTIFS[d.motif] ? Core.MOTIFS[d.motif].label : '';
+    const line = (head, body) => h('p', null, [h('b', { text: head + ' ' }), body]);
+    ui.recap.append(
+      h('h4', { text: `Remember this one${motif ? ': ' + motif : ''}` }),
+      line('What to notice.', cat.cue),
+      line('The habit.', firstSentence(cat.work)),
+    );
+    if (d.kind === 'own') ui.recap.appendChild(line(`Your game ${d.game + 1}, move ${d.num}.`, d.note || ''));
+    else ui.recap.appendChild(line('Where this came from.', `A Lichess puzzle rated ${d.rating} on the same theme as your own mistakes.`));
+    const rec = state.drillProgress[d.id];
+    if (rec && rec.due) {
+      let when = '';
+      try { when = new Date(rec.due).toLocaleDateString(undefined, { day: 'numeric', month: 'long' }); } catch (e) {}
+      if (when) ui.recap.appendChild(h('p', { className: 'gr-recap-next', text: `You will see this position again on ${when}.` }));
+    }
+    ui.recap.hidden = false;
+  }
+  const firstSentence = t => { const i = String(t).indexOf('. '); return i > 0 ? String(t).slice(0, i + 1) : String(t); };
+
   function renderDrillSummary() {
     const byCat = {};
     for (const d of state.drills) {
@@ -1266,39 +1364,82 @@ function main() {
 
   /* ------------------------------ replay against Maia ------------------------------ */
 
-  /* One network per rating, loaded once; the replay keeps the one it asked for. */
-  async function loadMaia(rating) {
-    if (!state.maiaLoads[rating]) {
-      state.maiaLoads[rating] = import('./chess-assets/leela/leela.js').then(mod => new mod.LeelaNet().load(`maia-${rating}.onnx.gz`).then(net => {
+  /* One network per file, loaded once; the replay keeps the one it asked for. */
+  async function loadNet(stem) {
+    if (!state.maiaLoads[stem]) {
+      state.maiaLoads[stem] = import('./chess-assets/leela/leela.js').then(mod => new mod.LeelaNet().load(`${stem}.onnx.gz`).then(net => {
         state.maia.mod = mod;
         return net;
-      })).catch(e => { delete state.maiaLoads[rating]; throw e; });
+      })).catch(e => { delete state.maiaLoads[stem]; throw e; });
     }
-    return state.maiaLoads[rating];
+    return state.maiaLoads[stem];
   }
 
-  async function startReplay(fen, color, rating, title) {
+  /* The opponent's move: the network's policy, sharpened to the strength, with
+     a value-head look at the top candidates for the strongest settings. Same
+     machinery as the Chess Coach page's characters. */
+  async function opponentMove(v) {
+    const cfg = v.opponent, mod = state.maia.mod;
+    const legal = v.chess.moves({ verbose: true });
+    if (!legal.length || !mod) return null;
+    /* nobody at this strength misses mate in one */
+    for (const m of legal) {
+      v.chess.move(m);
+      const mate = v.chess.isCheckmate();
+      v.chess.undo();
+      if (mate) return m.from + m.to + (m.promotion || '');
+    }
+    const fens = v.fens.slice(-8);
+    const { policy } = await withDeadline(v.net.evaluate(fens), MAIA_THINK_MS);
+    const ucis = legal.map(m => m.from + m.to + (m.promotion || ''));
+    const res = mod.chooseMove(policy, ucis, v.chess.turn() === 'b', { temperature: cfg.temp, topP: cfg.topP });
+    if (!res) return null;
+    if (!cfg.value || !res.candidates) return res.uci;
+    const byUci = new Map(legal.map(m => [m.from + m.to + (m.promotion || ''), m]));
+    const top = res.candidates.slice(0, cfg.value.topK).map(c => {
+      v.chess.move(byUci.get(c.uci));
+      const afterFen = v.chess.fen();
+      v.chess.undo();
+      return { uci: c.uci, prob: c.p, afterFen };
+    });
+    const ranked = await withDeadline(mod.valueRerank(v.net, fens, top, cfg.value.lambda), MAIA_THINK_MS);
+    if (!ranked || !ranked.length) return res.uci;
+    const tau = cfg.value.tau || 0.03;
+    let sum = 0;
+    for (const c of ranked) { c.w = Math.exp((c.score - ranked[0].score) / tau); sum += c.w; }
+    let roll = Math.random() * sum;
+    for (const c of ranked) { roll -= c.w; if (roll <= 0) return c.uci; }
+    return ranked[0].uci;
+  }
+
+  async function startReplay(fen, color, title) {
     if (state.run) { message('Wait for the review to finish before a replay.', 'warn'); return; }
+    const opponent = currentOpponent();
     const board = ensureBoard();
     const chess = new Chess(fen);
-    const v = { kind: 'replay', chess, color, rating, busy: true, done: false, losses: [], fens: [fen], beforeScore: null, title };
+    const v = { kind: 'replay', chess, color, opponent, busy: true, done: false, losses: [], fens: [fen], beforeScore: null, title };
     state.view = v;
     board.orientation(color); board.movable(color); board.lock(true);
     board.set(chess);
-    ui.boardTitle.textContent = `${title}: replay against Maia ${rating}.`;
-    ui.boardNote.textContent = 'Loading the Maia network (a few megabytes, once).';
+    ui.boardTitle.textContent = `${title}, against ${opponent.elo}.`;
+    setObjective(`Play the position out against a ${opponent.note} and see whether you can hold it. Every move of yours is graded as you go; nothing here is scored or scheduled.`);
+    ui.drillStatus.hidden = true;
+    hideRecap();
+    ui.boardNote.textContent = `Loading the ${opponent.elo} network (${NET_SIZE[opponent.net]}, once).`;
     ui.boardLines.replaceChildren(); ui.boardMoves.replaceChildren(); ui.boardEval.textContent = '';
     const stop = h('button', { type: 'button', className: 'tool-button', text: 'Stop the replay' });
     stop.addEventListener('click', () => endReplay(v, 'stopped'));
-    ui.boardActions.replaceChildren(stop);
-    try { v.net = await withDeadline(loadMaia(rating), MAIA_LOAD_MS); }
-    catch (e) { if (state.view === v && !v.done) { ui.boardNote.textContent = 'The Maia network did not load. Check the connection and try again.'; v.done = true; } return; }
+    const again = h('button', { type: 'button', className: 'tool-button', text: 'Restart' });
+    again.addEventListener('click', () => startReplay(fen, color, title));
+    ui.boardActions.replaceChildren(stop, again);
+    try { v.net = await withDeadline(loadNet(opponent.net), MAIA_LOAD_MS); }
+    catch (e) { if (state.view === v && !v.done) { ui.boardNote.textContent = 'That network did not load. Check the connection and try again.'; v.done = true; } return; }
     if (state.view !== v || v.done) return;
     const e = await evaluateAt(fen, DRILL_MS, 'drill').catch(() => null);
     if (state.view !== v || v.done) return;
     if (!e) { playTrouble(v); return; }
     v.beforeScore = e.score;
-    ui.boardNote.textContent = `Play it out. Maia ${rating} plays like a human at that rating; every move of yours is graded as you go.`;
+    ui.boardNote.textContent = 'Your move.';
     v.busy = false; board.lock(false);
     if (chess.turn() !== color) await maiaReply(v);
   }
@@ -1327,12 +1468,7 @@ function main() {
     if (state.view !== v || v.done) return;
     v.busy = true; state.board.lock(true);
     let uci = null;
-    try {
-      const { policy } = await withDeadline(v.net.evaluate(v.fens.slice(-8)), MAIA_THINK_MS);
-      const legal = v.chess.moves({ verbose: true }).map(m => m.from + m.to + (m.promotion || ''));
-      const pick = state.maia.mod.chooseMove(policy, legal, v.chess.turn() === 'b', { temperature: 1, topP: 0.95 });
-      uci = pick ? pick.uci : legal[0];
-    } catch (e) { uci = null; }
+    try { uci = await opponentMove(v); } catch (e) { uci = null; }
     if (state.view !== v || v.done) return;
     if (!uci) { endReplay(v, 'error'); return; }
     const mv = safeMove(v.chess, uci);
@@ -1355,9 +1491,9 @@ function main() {
     const c = v.chess;
     let result = 'The replay was stopped.';
     if (why === 'over') {
-      if (c.isCheckmate()) result = c.turn() === v.color ? 'Maia wins by checkmate.' : 'You win by checkmate.';
+      if (c.isCheckmate()) result = c.turn() === v.color ? `${v.opponent.elo} wins by checkmate.` : 'You win by checkmate.';
       else result = 'Drawn.';
-    } else if (why === 'error') result = 'Maia could not choose a move.';
+    } else if (why === 'error') result = 'The opponent could not choose a move.';
     const avg = v.losses.length ? Math.round(v.losses.reduce((a, b) => a + b, 0) / v.losses.length) : null;
     ui.boardNote.textContent = `${result}${avg !== null ? ` You lost ${avg} centipawns per move over ${plural(v.losses.length, 'move')}.` : ''}`;
     ui.boardActions.replaceChildren();
@@ -1388,6 +1524,7 @@ function main() {
   ui.rating.addEventListener('change', () => { persistOptions(); updatePlayer(); });
   for (const el of [ui.incLoss, ui.incDraw, ui.incWin]) el.addEventListener('change', () => { persistOptions(); updatePlayer(); });
   ui.quality.addEventListener('change', () => { persistOptions(); updateEstimate(); });
+  ui.opponent.addEventListener('change', () => { persistOptions(); opponentNote(); if (state.view && state.view.kind === 'drill' && !state.view.done) drillActions(); });
   ui.run.addEventListener('click', runReview);
   ui.stop.addEventListener('click', stopReview);
   ui.saveFile.addEventListener('click', saveReport);
@@ -1406,6 +1543,7 @@ function main() {
   guarded(restoreSnapshots, KEYS.snapshots);
   guarded(restoreDrillProgress, KEYS.drills);
   guarded(restoreGames, KEYS.games);
+  renderOpponents();
   persistOptions();                      // canonical form of whatever was accepted
   refreshNames();
   renderGames();
