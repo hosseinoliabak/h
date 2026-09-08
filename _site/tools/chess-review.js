@@ -90,7 +90,7 @@ function main() {
     objective: $('gr-board-objective'), drillStatus: $('gr-drill-status'), recap: $('gr-recap'),
     opponent: $('gr-opponent'), opponentNote: $('gr-opponent-note'),
     share: $('gr-share'), sharePanel: $('gr-share-panel'), shareStatus: $('gr-share-status'),
-    shareLink: $('gr-share-link'), shareCopy: $('gr-share-copy'), shareList: $('gr-share-list'),
+    shareLink: $('gr-share-link'), shareLinkRow: $('gr-share-link-row'), shareCopy: $('gr-share-copy'), shareList: $('gr-share-list'),
     sharedBanner: $('gr-shared-banner'), sharedBannerText: $('gr-shared-banner-text'),
     gamesDetail: $('gr-games-detail'), trendSection: $('gr-trend-section'),
     drillsPanel: $('gr-drills-panel'), drillsRefresh: $('gr-drills-refresh'), drillsStatus: $('gr-drills-status'),
@@ -1626,7 +1626,9 @@ function main() {
          slot already names this id */
       await withTimeout(c.db.ref('users/' + c.uid + '/review-shares/' + slot).set({ id, title, at: now, expiresAt, drills: state.drills.length }));
       await withTimeout(c.db.ref('review-shares/' + id).set({ v: 1, owner: c.uid, slot, at: now, expiresAt, title, pack: json }));
-      showShareLink(id, expiresAt);
+      const ready = showShareLink(id, expiresAt);
+      setShareStatus(ready);
+      setShareStatus(ready + (await copyShareLink(shareUrl(id))));
       await loadMyShares();
     } catch (e) {
       setShareStatus((e && e.message) || 'The link could not be created.');
@@ -1639,20 +1641,43 @@ function main() {
   function showShareLink(id, expiresAt) {
     if (!ui.shareLink) return;
     const url = shareUrl(id);
-    ui.shareLink.value = url;
-    ui.shareLink.hidden = false;
-    if (ui.shareCopy) ui.shareCopy.hidden = false;
+    ui.shareLink.setAttribute('href', url);
+    ui.shareLink.textContent = url;
+    if (ui.shareLinkRow) ui.shareLinkRow.hidden = false;
     let when = '';
     try { when = new Date(expiresAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) {}
-    setShareStatus(`The link is ready. Anyone signed in can open it until ${when}, practice the positions, and keep their own progress. It cannot be edited, and you can revoke it below.`);
+    return `The link is ready. Anyone signed in can open it until ${when}, practice the positions, and keep their own progress. It cannot be edited, and you can revoke it below.`;
   }
 
-  async function copyShareLink() {
-    const value = ui.shareLink ? ui.shareLink.value : '';
-    if (!value) return;
-    if (!navigator.clipboard || !window.isSecureContext) { ui.shareLink.select(); setShareStatus('Copy the selected link with your keyboard.'); return; }
-    try { await navigator.clipboard.writeText(value); setShareStatus('Link copied.'); }
-    catch (e) { ui.shareLink.select(); setShareStatus('Copying was blocked. Copy the selected link with your keyboard.'); }
+  /* Select the link itself, for the case where the clipboard is unavailable
+     or refused. There is no input to select, so this puts a range over the
+     anchor's own text. */
+  function selectShareLink() {
+    if (!ui.shareLink || !window.getSelection) return false;
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(ui.shareLink);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  /* Returns the sentence to show, so the caller can put it in one status
+     line rather than overwriting itself. */
+  async function copyShareLink(url) {
+    const value = url || (ui.shareLink ? ui.shareLink.getAttribute('href') || '' : '');
+    if (!value) return '';
+    if (!navigator.clipboard || !window.isSecureContext) {
+      return selectShareLink() ? ' It is selected below; copy it with your keyboard.' : ' The link is below.';
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+      return ' It is on your clipboard, ready to paste.';
+    } catch (e) {
+      return selectShareLink() ? ' Copying was blocked, so it is selected below; copy it with your keyboard.' : ' Copying was blocked. The link is below.';
+    }
   }
 
   async function loadMyShares() {
@@ -1670,12 +1695,17 @@ function main() {
       if (!Core.PACK_ID.test(id)) return null;
       let when = '';
       try { when = new Date(Number(entry.expiresAt) || 0).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); } catch (e) {}
+      const open = h('a', { className: 'gr-share-title', text: String(entry.title || 'A review'), target: '_blank', rel: 'noopener noreferrer' });
+      open.setAttribute('href', shareUrl(id));
       const li = h('li', null, [
-        h('span', { className: 'gr-share-title', text: String(entry.title || 'A review') }),
+        open,
         h('span', { className: 'gr-muted', text: `${Number(entry.drills) || 0} positions · until ${when}` }),
       ]);
       const copy = h('button', { type: 'button', className: 'tool-button', text: 'Copy link' });
-      copy.addEventListener('click', () => { if (ui.shareLink) { ui.shareLink.value = shareUrl(id); ui.shareLink.hidden = false; } copyShareLink(); });
+      copy.addEventListener('click', async () => {
+        showShareLink(id, Number(entry.expiresAt) || 0);
+        setShareStatus('That link' + (await copyShareLink(shareUrl(id))));
+      });
       const revoke = h('button', { type: 'button', className: 'tool-button', text: 'Revoke' });
       revoke.addEventListener('click', () => revokeShare(slot, id, revoke));
       li.append(copy, revoke);
@@ -1693,7 +1723,11 @@ function main() {
       await withTimeout(c.db.ref('review-shares/' + id).remove());
       await withTimeout(c.db.ref('users/' + c.uid + '/review-shares/' + slot).remove());
       setShareStatus('That link no longer opens.');
-      if (ui.shareLink && ui.shareLink.value === shareUrl(id)) { ui.shareLink.hidden = true; ui.shareLink.value = ''; if (ui.shareCopy) ui.shareCopy.hidden = true; }
+      if (ui.shareLink && ui.shareLink.getAttribute('href') === shareUrl(id)) {
+        ui.shareLink.removeAttribute('href');
+        ui.shareLink.textContent = '';
+        if (ui.shareLinkRow) ui.shareLinkRow.hidden = true;
+      }
       await loadMyShares();
     } catch (e) {
       button.disabled = false;
@@ -1889,7 +1923,7 @@ function main() {
   ui.next.addEventListener('click', () => stepMove(1));
   ui.drillsRefresh.addEventListener('click', buildDrills);
   if (ui.share) ui.share.addEventListener('click', shareCurrent);
-  if (ui.shareCopy) ui.shareCopy.addEventListener('click', copyShareLink);
+  if (ui.shareCopy) ui.shareCopy.addEventListener('click', async () => { setShareStatus('That link' + (await copyShareLink())); });
   window.addEventListener('pagehide', releaseDownload);
 
   /* a stored value this page cannot read is removed, never allowed to
