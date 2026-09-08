@@ -20,6 +20,7 @@
   'use strict';
 
   var CT = window.ChessTournament;
+  var Charts = window.ChessTournamentCharts;
   var root = document.getElementById('chess-tournament');
   if (!root || !CT) return;
 
@@ -96,8 +97,20 @@
       pairings: { tab: $('ct-view-pairings'), panel: $('ct-pairings-view') },
       standings: { tab: $('ct-view-standings'), panel: $('ct-standings-view') },
       players: { tab: $('ct-view-players'), panel: $('ct-players-view') },
-      crosstable: { tab: $('ct-view-crosstable'), panel: $('ct-crosstable-view') }
+      crosstable: { tab: $('ct-view-crosstable'), panel: $('ct-crosstable-view') },
+      analysis: { tab: $('ct-view-analysis'), panel: $('ct-analysis-view') }
     },
+    summary: $('ct-summary'),
+    chartDistribution: $('ct-chart-distribution'),
+    chartIntervals: $('ct-chart-intervals'),
+    chartColor: $('ct-chart-color'),
+    chartCalibration: $('ct-chart-calibration'),
+    chartProgression: $('ct-chart-progression'),
+    findingDistribution: $('ct-finding-distribution'),
+    findingIntervals: $('ct-finding-intervals'),
+    findingColor: $('ct-finding-color'),
+    findingCalibration: $('ct-finding-calibration'),
+    progressPlayer: $('ct-progress-player'),
     attendance: $('ct-attendance'),
     attendanceHeading: $('ct-attendance-heading'),
     attendanceCount: $('ct-attendance-count'),
@@ -152,6 +165,7 @@
     absent: {},
     openHistory: {},
     busy: false,
+    followPlayer: {},
     cloudTimer: null,
     lastCloudSave: 0,
     fileRequest: 0,
@@ -1652,6 +1666,121 @@
     }
   }
 
+  /* ------------------------------ analysis view ------------------------------ */
+
+  function pct(n, digits) {
+    return (n * 100).toLocaleString(undefined, {
+      minimumFractionDigits: digits === undefined ? 1 : digits,
+      maximumFractionDigits: digits === undefined ? 1 : digits
+    }) + '%';
+  }
+
+  function round0(n) { return Math.round(n).toLocaleString(); }
+
+  /* A p-value is reported the way a paper reports one, not as a bare number
+     with a verdict attached. */
+  function pValueText(p) {
+    if (p < 0.001) return 'less than 0.001';
+    return p.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  }
+
+  function renderAnalysis(t) {
+    if (!Charts) {
+      setStatus(ui.findingDistribution, 'The charts did not load. Reload the page to try again.', 'error');
+      return;
+    }
+    var data = CT.analysis(t);
+    renderSummary(t, data);
+    Charts.scoreDistribution(ui.chartDistribution, data);
+    Charts.ratingIntervals(ui.chartIntervals, data, { axisLabel: data.fitted.known ? 'Rating (FIDE scale)' : 'Rating (scale set by the starting labels)' });
+    Charts.colorBalance(ui.chartColor, data.color);
+    Charts.calibration(ui.chartCalibration, data.calibration);
+    renderProgressionCard(t, data);
+    renderFindings(t, data);
+  }
+
+  function renderSummary(t, data) {
+    var tiles = [
+      { label: 'Rated games', value: round0(data.games.rated), note: data.rounds + (data.rounds === 1 ? ' round played' : ' rounds played') },
+      { label: 'Draws', value: data.games.rated ? pct(data.games.drawRate, 0) : '-', note: data.games.draws + ' of ' + data.games.rated }
+    ];
+    if (data.color) {
+      tiles.push({ label: 'White scored', value: pct(data.color.percent, 1), note: 'expected 50% if colour did not matter' });
+    }
+    if (data.medianSe !== null) {
+      tiles.push({ label: 'Typical replay range', value: '±' + round0(1.96 * data.medianSe), note: 'how far a rating moves on a replay' });
+    }
+    if (data.spreadSd) {
+      tiles.push({ label: 'Rating spread', value: '±' + round0(data.spreadSd), note: 'standard deviation across the field' });
+    }
+    Charts.statTiles(ui.summary, tiles);
+  }
+
+  function renderProgressionCard(t, data) {
+    var current = state.followPlayer[state.section];
+    var options = data.progression.slice(0, 200);
+    ui.progressPlayer.replaceChildren(h('option', { value: '', text: 'Follow one player: nobody' }));
+    options.forEach(function (line) {
+      var option = h('option', { value: String(line.id), text: 'Follow ' + playerLabel(line) });
+      if (line.id === current) option.selected = true;
+      ui.progressPlayer.appendChild(option);
+    });
+    Charts.progression(ui.chartProgression, data, current === undefined ? null : current);
+  }
+
+  /* One plain sentence per figure saying what it shows for this event. */
+  function renderFindings(t, data) {
+    var spread = data.spread;
+    if (spread && data.games.rated) {
+      setStatus(ui.findingDistribution, 'Scores spread with a standard deviation of '
+        + spread.observedSd.toFixed(1) + ' points, against ' + spread.chanceSd.toFixed(1)
+        + ' points from chance alone. A Swiss pairs players who are scoring alike, which pulls those two figures together whatever the field, so read this as the shape of the standings rather than as a measure of strength. The ratings below are what measure that.', '');
+    } else {
+      setStatus(ui.findingDistribution, '', '');
+    }
+
+    setStatus(ui.findingIntervals, '', '');
+    if (data.medianSe !== null) {
+      var margin = Math.round(1.96 * data.medianSe);
+      /* Separating two players uses the standard error of the difference
+         between them, which is the square root of two times one player's,
+         not twice one interval. */
+      var gap = Math.round(1.959964 * Math.SQRT2 * data.medianSe);
+      ui.findingIntervals.textContent = 'Replay this event from the fitted ratings and the middle player\u2019s rating lands within about '
+        + margin + ' points of where it sits now, 95 times in 100'
+        + (data.interval.method === 'replay' ? ' (measured over ' + data.interval.replicates + ' replays)' : ' (from the formula, as the field is too large to replay)')
+        + '. Two ratings closer together than roughly ' + gap
+        + ' points have not been told apart by this event, and the true gap between them is usually smaller than the fitted one. More rounds is what narrows both.';
+    }
+
+    if (data.color && data.color.games >= 10) {
+      var c = data.color;
+      var direction = c.percent >= 0.5 ? 'above' : 'below';
+      var strong = c.p < 0.05
+        ? 'A gap this size would be unlikely if colour made no difference, so this event does show a colour effect.'
+        : 'A gap this size is well within what chance would produce, so this event does not show a colour effect.';
+      setStatus(ui.findingColor, 'White scored ' + pct(c.percent) + ' over ' + c.games + ' games, '
+        + pct(Math.abs(c.percent - 0.5)) + ' ' + direction + ' half'
+        + (c.elo === null ? '' : ', worth about ' + round0(Math.abs(c.elo)) + ' rating points')
+        + '. The 95% interval runs ' + pct(c.low) + ' to ' + pct(c.high)
+        + ' and the two-sided p-value is ' + pValueText(c.p) + '. ' + strong, '');
+    } else {
+      setStatus(ui.findingColor, data.color ? 'Too few games so far to say anything about colour.' : '', '');
+    }
+
+    var buckets = data.calibration.filter(function (b) { return b.games >= 5; });
+    if (buckets.length >= 2) {
+      var worst = buckets.slice().sort(function (a, b) {
+        return Math.abs(b.observed - b.expected) - Math.abs(a.observed - a.expected);
+      })[0];
+      setStatus(ui.findingCalibration, 'The widest gap is in the ' + worst.label + ' band, where the stronger player was predicted '
+        + pct(worst.expected) + ' and scored ' + pct(worst.observed) + ' over ' + worst.games
+        + (worst.games === 1 ? ' game' : ' games') + '. Bands with few games move a lot on one result.', '');
+    } else {
+      setStatus(ui.findingCalibration, '', '');
+    }
+  }
+
   /* ------------------------------ crosstable view ------------------------------ */
 
   function renderCrosstable(t) {
@@ -1715,6 +1844,8 @@
       renderPlayersList(t);
     } else if (state.view === 'crosstable') {
       renderCrosstable(t);
+    } else if (state.view === 'analysis') {
+      renderAnalysis(t);
     }
   }
 
@@ -1826,6 +1957,12 @@
   ui.absentFilter.addEventListener('input', function () { var t = current(); if (t) renderAbsentList(t); });
   ui.absentList.addEventListener('change', onAbsentChange);
   ui.oddBye.addEventListener('change', onOddByeChange);
+  ui.progressPlayer.addEventListener('change', function () {
+    var t = current();
+    if (!t) return;
+    state.followPlayer[state.section] = ui.progressPlayer.value ? parseInt(ui.progressPlayer.value, 10) : null;
+    Charts.progression(ui.chartProgression, CT.analysis(t), state.followPlayer[state.section]);
+  });
   ui.playersList.addEventListener('change', onPlayersListChange);
   ui.pair.addEventListener('click', pairNext);
   ui.moreRounds.addEventListener('click', addRound);
