@@ -2159,6 +2159,84 @@
 	mxCellRenderer.registerShape('mxgraph.oliabak.switch', mxShapeOliabakSwitch);
 
 	// ---------------------------------------------------------------------
+	// Annotations
+	// ---------------------------------------------------------------------
+
+	/**
+	 * A square span bracket: a run with a short return at each end, the mark
+	 * used to say "all of this" above or below a group of things.
+	 *
+	 * draw.io has a curly bracket and a dimension line but nothing square, so
+	 * this is the one annotation here that had to be drawn rather than
+	 * gathered. Built on mxActor the way CurlyBracketShape is, which means the
+	 * stock rounded and arcSize styles round the corners, and direction turns
+	 * it to face any way without a second shape.
+	 *
+	 * The height is the depth of the returns, so resizing sets the tick length
+	 * and no extra parameter is needed. Unfilled: a bracket is a mark, not a
+	 * container, and a fill would hide whatever it is bracketing.
+	 */
+	function mxShapeOliabakBracket()
+	{
+		mxActor.call(this);
+	};
+
+	mxUtils.extend(mxShapeOliabakBracket, mxActor);
+
+	mxShapeOliabakBracket.prototype.redrawPath = function(c, x, y, w, h)
+	{
+		c.setFillColor(null);
+
+		var arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE,
+			mxConstants.LINE_ARCSIZE) / 2;
+
+		this.addPoints(c, [new mxPoint(0, h), new mxPoint(0, 0),
+			new mxPoint(w, 0), new mxPoint(w, h)], this.isRounded, arcSize, false);
+		c.end();
+	};
+
+	mxCellRenderer.registerShape('mxgraph.oliabak.bracket', mxShapeOliabakBracket);
+
+	/**
+	 * The same bracket with a stem out of the middle, for pointing the span at
+	 * a label rather than just sitting over it. 'size' is how far the stem
+	 * reaches, as a share of the height, and it gets a handle.
+	 */
+	function mxShapeOliabakBracketStem()
+	{
+		mxActor.call(this);
+	};
+
+	mxUtils.extend(mxShapeOliabakBracketStem, mxActor);
+
+	mxShapeOliabakBracketStem.prototype.size = 0.4;
+
+	mxShapeOliabakBracketStem.prototype.customProperties = [
+		{name: 'size', dispName: 'Stem', type: 'float', min: 0, max: 1, defVal: 0.4}
+	];
+
+	mxShapeOliabakBracketStem.prototype.redrawPath = function(c, x, y, w, h)
+	{
+		c.setFillColor(null);
+
+		var st = Math.max(0, Math.min(1, parseFloat(
+			mxUtils.getValue(this.style, 'size', this.size)))) * h;
+		var arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE,
+			mxConstants.LINE_ARCSIZE) / 2;
+
+		// The run, then back to the middle and out along the stem, so the
+		// whole mark is one stroke and joins cleanly at the corners.
+		this.addPoints(c, [new mxPoint(0, h), new mxPoint(0, st),
+			new mxPoint(w, st), new mxPoint(w, h)], this.isRounded, arcSize, false);
+		c.moveTo(w / 2, st);
+		c.lineTo(w / 2, 0);
+		c.end();
+	};
+
+	mxCellRenderer.registerShape('mxgraph.oliabak.bracketStem',
+		mxShapeOliabakBracketStem);
+
+	// ---------------------------------------------------------------------
 	// Handles
 	// ---------------------------------------------------------------------
 
@@ -2386,6 +2464,24 @@
 			{
 				this.state.style['depth'] = Math.round(Math.max(0,
 					Math.min(bounds.width * 0.9, pt.x - bounds.x)));
+			}, true)];
+		};
+
+		// Stem length, as a share of the height, on the shape's centre line.
+		Graph.handleFactory['mxgraph.oliabak.bracketStem'] = function(state)
+		{
+			return [Graph.createHandle(state, ['size'], function(bounds)
+			{
+				var st = Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(
+					this.state.style, 'size',
+					mxShapeOliabakBracketStem.prototype.size))));
+
+				return new mxPoint(bounds.x + bounds.width / 2,
+					bounds.y + st * bounds.height);
+			}, function(bounds, pt)
+			{
+				this.state.style['size'] = Math.round(Math.max(0, Math.min(1,
+					(pt.y - bounds.y) / bounds.height)) * 100) / 100;
 			}, true)];
 		};
 
