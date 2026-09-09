@@ -108,6 +108,9 @@ function main() {
     /* set only when this page is showing someone else's shared review */
     shared: null,
     shareBusy: false, shareTimer: null,
+    /* idle guard: when the reader was last seen, the timer watching for the
+       deadline, and the gate a parked run waits on */
+    activeAt: Date.now(), idleTimer: 0, idlePause: null,
   };
 
   /* ------------------------------ helpers ------------------------------ */
@@ -609,8 +612,12 @@ function main() {
     const openings = await loadOpenings().catch(() => null);
     if (state.run !== run || gen !== state.gen) { state.run = null; ui.stop.hidden = true; ui.progress.hidden = true; lockControls(false); updateEstimate(); return; }
     let reviewedNow = 0, failure = null;
+    state.activeAt = Date.now();
+    armIdleWatch();
     try {
       for (const game of games) {
+        if (run.stopped || gen !== state.gen) break;
+        if (state.idlePause) await state.idlePause.wait;
         if (run.stopped || gen !== state.gen) break;
         const color = colorOf.get(game.id);
         if (!usableRecord(game, color, quality)) {
@@ -629,6 +636,9 @@ function main() {
     }
     const stopped = run.stopped;
     state.run = null;
+    clearTimeout(state.idleTimer);
+    state.idleTimer = 0;
+    state.idlePause = null;              /* the loop has left, so nobody is waiting */
     ui.stop.hidden = true;
     ui.progress.hidden = true;
     lockControls(false);
@@ -647,6 +657,8 @@ function main() {
     const evals = [];
     for (let i = 0; i < fens.length; i++) {
       if (run.stopped) return null;
+      if (state.idlePause) await state.idlePause.wait;
+      if (run.stopped) return null;
       evals[i] = await evaluateAt(fens[i], q.fast, 'review');
       if (evals[i].stopped) return null;
       run.positions++;
@@ -654,6 +666,8 @@ function main() {
     }
     const threats = {};
     for (const p of game.plies) {
+      if (run.stopped) return null;
+      if (state.idlePause) await state.idlePause.wait;
       if (run.stopped) return null;
       if (p.color !== color) continue;
       const before = evals[p.i].score, after = -evals[p.i + 1].score;
@@ -686,8 +700,63 @@ function main() {
     if (!state.run) return;
     state.run.stopped = true;
     state.engine.stop('review');
+    noteActivity();                      /* a parked run has to wake to see the stop */
     ui.stop.disabled = true;
     setTimeout(() => { ui.stop.disabled = false; }, 500);
+  }
+
+  /* ------------------------------ idle guard ------------------------------ */
+
+  /* A review runs for as long as the games take and nothing in it watches the
+     clock, so a page left open with a run going would work through the night.
+     Ten minutes of quiet parks the run between engine jobs, and the next
+     pointer move, key, scroll, or return to this tab starts it again. Parking
+     between jobs rather than interrupting one keeps the work already done,
+     since an interrupted search is discarded along with the rest of its game.
+     Nothing else on this page runs on its own. A drill and a replay wait for
+     a move, so neither needs parking. */
+  const IDLE_PAUSE_DEFAULT_MS = 10 * 60 * 1000;
+  /* The browser regressions shorten the wait. A value is read only when it is
+     a number of milliseconds from one second up to the default, so the hook
+     can bring the pause forward and never push it out. */
+  const idleWanted = Number(window.GR_IDLE_PAUSE_MS);
+  const IDLE_PAUSE_MS = Number.isFinite(idleWanted) && idleWanted >= 1000 && idleWanted <= IDLE_PAUSE_DEFAULT_MS
+    ? idleWanted : IDLE_PAUSE_DEFAULT_MS;
+  const IDLE_WAIT_TEXT = IDLE_PAUSE_MS >= 60000
+    ? plural(Math.round(IDLE_PAUSE_MS / 60000), 'minute') : plural(Math.round(IDLE_PAUSE_MS / 1000), 'second');
+  const IDLE_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'];
+
+  /* The timer re-reads the clock instead of being reset on every event, so a
+     moving pointer costs one assignment. A hidden tab throttles timers, which
+     can delay the pause but never skips it, because the deadline is wall
+     clock rather than a count of ticks. */
+  function armIdleWatch() {
+    clearTimeout(state.idleTimer);
+    state.idleTimer = 0;
+    if (!state.run || state.idlePause) return;
+    const left = IDLE_PAUSE_MS - (Date.now() - state.activeAt);
+    if (left <= 0) { pauseForIdle(); return; }
+    state.idleTimer = setTimeout(armIdleWatch, left);
+  }
+
+  function pauseForIdle() {
+    if (!state.run || state.idlePause) return;
+    let release;
+    const wait = new Promise(resolve => { release = resolve; });
+    state.idlePause = { wait, release };
+    ui.progressText.textContent = `Paused after ${IDLE_WAIT_TEXT} of quiet. Move the pointer, press a key, or come back to this tab and the review carries on.`;
+  }
+
+  /* Called by the activity listeners, by a return to this tab, and by
+     stopReview, which has to free a parked run before it can see the stop.
+     Releasing a gate nobody waits on is harmless. */
+  function noteActivity() {
+    state.activeAt = Date.now();
+    const parked = state.idlePause;
+    if (!parked) return;
+    state.idlePause = null;
+    parked.release();
+    if (state.run) { ui.progressText.textContent = 'Continuing the review.'; armIdleWatch(); }
   }
 
   /* ------------------------------ the report ------------------------------ */
@@ -1924,6 +1993,9 @@ function main() {
   ui.drillsRefresh.addEventListener('click', buildDrills);
   if (ui.share) ui.share.addEventListener('click', shareCurrent);
   if (ui.shareCopy) ui.shareCopy.addEventListener('click', async () => { setShareStatus('That link' + (await copyShareLink())); });
+  for (const type of IDLE_EVENTS) document.addEventListener(type, noteActivity, { passive: true });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') noteActivity(); });
+  window.addEventListener('focus', noteActivity);
   window.addEventListener('pagehide', releaseDownload);
 
   /* a stored value this page cannot read is removed, never allowed to
