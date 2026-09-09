@@ -31,7 +31,7 @@ jobs:
           pip install --quiet firebase-admin
 
           python3 <<'PY'
-          import hashlib, json, os, smtplib, time
+          import hashlib, json, os, re, smtplib, time
           from email.message import EmailMessage
 
           import firebase_admin
@@ -111,6 +111,23 @@ jobs:
                   for entry in active.values()
               )
 
+          def delete_review_shares(uid):
+              """Remove the Game Review packs this account published. They sit
+              outside the account subtree under their random ids, listed in
+              the account, and a pack has no expiry, so nothing else would
+              ever remove them once their owner is gone."""
+              try:
+                  entries = db.reference('users/%s/review-shares' % uid).get()
+              except Exception as err:
+                  print('  could not read one account\'s review shares: %s' % type(err).__name__)
+                  return
+              if not isinstance(entries, dict):
+                  return
+              for entry in entries.values():
+                  share_id = entry.get('id') if isinstance(entry, dict) else None
+                  if isinstance(share_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{22}', share_id):
+                      db.reference('review-shares/%s' % share_id).delete()
+
           # No uid is ever printed. chess/lb is world-readable and maps uids to
           # handles, and this repository is public, so a uid in an Actions log
           # would publish "this handle has been idle for two years". The
@@ -146,7 +163,10 @@ jobs:
                   if idle >= DELETE_AFTER:
                       print('DELETE account #%d (idle %d days)' % (seen_n, idle // 86400000))
                       if APPLY:
-                          # Both sides, or the leftovers become orphans.
+                          # Both sides, or the leftovers become orphans. The
+                          # shared packs go first, while the list naming them
+                          # still exists.
+                          delete_review_shares(user.uid)
                           db.reference('users/%s' % user.uid).delete()
                           db.reference('chess/lb/%s' % user.uid).delete()
                           auth.delete_user(user.uid)

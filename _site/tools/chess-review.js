@@ -65,9 +65,15 @@ function main() {
   const DEFAULT_OPPONENT = 2500;
   const NET_SIZE = { 't70-703810': '13 MB', 'maia-1900': '2.4 MB' };
   /* Sharing. A pack is written once under a random 22-character id, read by
-     any signed-in reader until it expires, and listed in ten slots of the
+     any signed-in reader until it is revoked, and listed in ten slots of the
      coach's own account, which is what caps how many can be live. */
-  const SHARE = { slots: 10, idLength: 22, lifetimeMs: 90 * 24 * 60 * 60 * 1000, timeoutMs: 15000, slotGapMs: 30000, syncDelayMs: 4000 };
+  const SHARE = { slots: 10, idLength: 22, timeoutMs: 15000, slotGapMs: 30000, syncDelayMs: 4000 };
+  /* A signed-in reader's own reviews, kept in the account ten at a time so a
+     batch opens on another device, or later, without the game files. A slot
+     holds the pack the share feature builds plus the practice record for that
+     batch's positions, and lives until the reader removes it or the account
+     is removed for inactivity. */
+  const BATCHES = { slots: 10, maxProgressChars: 50000 };
   const MAIA_LOAD_MS = 180000;
   const MAIA_THINK_MS = 30000;
   const withDeadline = (promise, ms) => Promise.race([promise, new Promise((resolve, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
@@ -92,6 +98,8 @@ function main() {
     share: $('gr-share'), sharePanel: $('gr-share-panel'), shareStatus: $('gr-share-status'),
     shareLink: $('gr-share-link'), shareLinkRow: $('gr-share-link-row'), shareCopy: $('gr-share-copy'), shareList: $('gr-share-list'),
     sharedBanner: $('gr-shared-banner'), sharedBannerText: $('gr-shared-banner-text'),
+    batchesPanel: $('gr-batches-panel'), batchesStatus: $('gr-batches-status'), batchesEmpty: $('gr-batches-empty'),
+    batchesList: $('gr-batches-list'), batchNote: $('gr-batch-note'),
     gamesDetail: $('gr-games-detail'), trendSection: $('gr-trend-section'),
     drillsPanel: $('gr-drills-panel'), drillsRefresh: $('gr-drills-refresh'), drillsStatus: $('gr-drills-status'),
     drillList: $('gr-drill-list'), drillSummary: $('gr-drill-summary'),
@@ -107,6 +115,8 @@ function main() {
     gen: 0,
     /* set only when this page is showing someone else's shared review */
     shared: null,
+    /* the account slot the current review is kept in, if any */
+    batch: null, batchTimer: null,
     shareBusy: false, shareTimer: null,
     /* idle guard: when the reader was last seen, the timer watching for the
        deadline, and the gate a parked run waits on */
@@ -298,7 +308,7 @@ function main() {
     state.gen++;
     releaseDownload();
     state.games = []; state.identity = null; state.records = {}; state.reviews = []; state.profile = null;
-    state.drills = []; state.drillProgress = {}; state.snapshots = []; state.view = null;
+    state.drills = []; state.drillProgress = {}; state.snapshots = []; state.view = null; state.batch = null;
     ui.display.value = ''; ui.rating.value = ''; ui.quality.value = 'standard'; ui.paste.value = ''; ui.importUser.value = '';
     ui.incLoss.checked = true; ui.incDraw.checked = true; ui.incWin.checked = true;
     refreshNames();
@@ -383,7 +393,8 @@ function main() {
     if (state.run) stopReview();
     state.gen++;
     releaseDownload();
-    state.games = []; state.reviews = []; state.profile = null; state.drills = []; state.view = null;
+    state.games = []; state.reviews = []; state.profile = null; state.drills = []; state.view = null; state.batch = null;
+    setBatchNote('');
     const ok = persistGames();
     refreshNames();
     renderGames();
@@ -1026,7 +1037,7 @@ function main() {
     if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
   }
   function showEvidence(e) {
-    if (state.shared) showSharedEvidence(e);
+    if (state.shared || (state.profile && state.profile.shared)) showSharedEvidence(e);
     else showGameMoment(e.game, e.ply);
     ui.boardPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -1094,6 +1105,7 @@ function main() {
     if (state.profile !== profile) return;   // a newer report, or none, replaced this one meanwhile
     state.drills = Core.selectDrills(profile, state.pools, state.openingPools, state.drillProgress);
     renderDrills();
+    saveBatch();
   }
   function renderDrills() {
     const items = state.drills.map((d, i) => {
@@ -1379,6 +1391,7 @@ function main() {
     state.drillProgress[d.id] = Core.scheduleDrill(state.drillProgress[d.id], score);
     const kept = persistDrillProgress();
     queueSharedProgress();
+    queueBatchProgress();
     const sol = d.kind === 'puzzle' ? `${v.solution.filter(Boolean).length} of ${v.solution.length} solution moves. ` : '';
     const avg = v.cont.length ? Math.round(v.cont.reduce((a, b) => a + b, 0) / v.cont.length) : null;
     const later = !kept ? 'This browser refused to keep the result, so it will not be scheduled.' : score >= 70 ? `This one comes back in ${Core.REVIEW_DAYS[state.drillProgress[d.id].step]} days.` : 'It comes back tomorrow.';
@@ -1690,12 +1703,11 @@ function main() {
       }
       const id = randomId();
       const title = `${state.profile.player.name}, ${plural(state.profile.games, 'game')}`.slice(0, Core.PACK_LIMITS.maxTitle);
-      const expiresAt = now + SHARE.lifetimeMs;
       /* the list entry has to land first: the pack's rule checks that the
          slot already names this id */
-      await withTimeout(c.db.ref('users/' + c.uid + '/review-shares/' + slot).set({ id, title, at: now, expiresAt, drills: state.drills.length }));
-      await withTimeout(c.db.ref('review-shares/' + id).set({ v: 1, owner: c.uid, slot, at: now, expiresAt, title, pack: json }));
-      const ready = showShareLink(id, expiresAt);
+      await withTimeout(c.db.ref('users/' + c.uid + '/review-shares/' + slot).set({ id, title, at: now, drills: state.drills.length }));
+      await withTimeout(c.db.ref('review-shares/' + id).set({ v: 1, owner: c.uid, slot, at: now, title, pack: json }));
+      const ready = showShareLink(id);
       setShareStatus(ready);
       setShareStatus(ready + (await copyShareLink(shareUrl(id))));
       await loadMyShares();
@@ -1707,15 +1719,13 @@ function main() {
     }
   }
 
-  function showShareLink(id, expiresAt) {
+  function showShareLink(id) {
     if (!ui.shareLink) return;
     const url = shareUrl(id);
     ui.shareLink.setAttribute('href', url);
     ui.shareLink.textContent = url;
     if (ui.shareLinkRow) ui.shareLinkRow.hidden = false;
-    let when = '';
-    try { when = new Date(expiresAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) {}
-    return `The link is ready. Anyone signed in can open it until ${when}, practice the positions, and keep their own progress. It cannot be edited, and you can revoke it below.`;
+    return 'The link is ready. Anyone signed in can open it, practice the positions, and keep their own progress. It cannot be edited, and it works until you revoke it below.';
   }
 
   /* Select the link itself, for the case where the clipboard is unavailable
@@ -1763,16 +1773,16 @@ function main() {
       const id = String(entry.id || '');
       if (!Core.PACK_ID.test(id)) return null;
       let when = '';
-      try { when = new Date(Number(entry.expiresAt) || 0).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); } catch (e) {}
+      try { when = new Date(Number(entry.at) || 0).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); } catch (e) {}
       const open = h('a', { className: 'gr-share-title', text: String(entry.title || 'A review'), target: '_blank', rel: 'noopener noreferrer' });
       open.setAttribute('href', shareUrl(id));
       const li = h('li', null, [
         open,
-        h('span', { className: 'gr-muted', text: `${Number(entry.drills) || 0} positions · until ${when}` }),
+        h('span', { className: 'gr-muted', text: `${Number(entry.drills) || 0} positions · made ${when}` }),
       ]);
       const copy = h('button', { type: 'button', className: 'tool-button', text: 'Copy link' });
       copy.addEventListener('click', async () => {
-        showShareLink(id, Number(entry.expiresAt) || 0);
+        showShareLink(id);
         setShareStatus('That link' + (await copyShareLink(shareUrl(id))));
       });
       const revoke = h('button', { type: 'button', className: 'tool-button', text: 'Revoke' });
@@ -1832,11 +1842,11 @@ function main() {
       const snapshot = await withTimeout(auth.db().ref('review-shares/' + id).once('value'));
       raw = snapshot && typeof snapshot.val === 'function' ? snapshot.val() : null;
     } catch (e) {
-      say('That link could not be opened. It may have expired, been revoked, or never existed.');
+      say('That link could not be opened. It may have been revoked, or it never existed.');
       return;
     }
     if (!raw || typeof raw !== 'object' || typeof raw.pack !== 'string' || raw.pack.length > Core.PACK_LIMITS.maxChars) {
-      say('That link could not be opened. It may have expired, been revoked, or never existed.');
+      say('That link could not be opened. It may have been revoked, or it never existed.');
       return;
     }
     let parsed = null;
@@ -1886,15 +1896,7 @@ function main() {
         if (!entry) { if (free === null) free = slot; continue; }
         if (String(entry.id || '') === id) {
           state.shared.slot = slot;
-          let stored = null;
-          try { stored = JSON.parse(String(entry.data || '{}')); } catch (e) { stored = null; }
-          if (stored && typeof stored === 'object') {
-            for (const [key, rec] of Object.entries(stored)) {
-              if (!/^(own:[0-9a-f]{16}:\d{1,3}|puzzle:[A-Za-z0-9]{5})$/.test(key) || !rec || typeof rec !== 'object') continue;
-              const num = x => (Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
-              state.drillProgress[key] = { attempts: num(rec.attempts), best: Math.min(100, num(rec.best)), last: Math.min(100, num(rec.last)), step: Math.min(Core.REVIEW_DAYS.length - 1, num(rec.step)), due: num(rec.due), at: num(rec.at) };
-            }
-          }
+          Object.assign(state.drillProgress, parseProgress(entry.data));
           return;
         }
         if (oldest === null || (Number(entry.at) || 0) < (Number(value[oldest].at) || 0)) oldest = slot;
@@ -1912,15 +1914,237 @@ function main() {
     state.shareTimer = null;
     const c = cloud();
     if (!state.shared || !c || !state.shared.slot) return;
-    const mine = {};
-    for (const d of state.drills) if (state.drillProgress[d.id]) mine[d.id] = state.drillProgress[d.id];
-    const data = JSON.stringify(mine);
+    const data = JSON.stringify(progressOf(state.drills));
     if (data.length > 50000) return;
     try {
       await withTimeout(c.db.ref('users/' + c.uid + '/review-progress/' + state.shared.slot).set({
         id: state.shared.id, title: String(state.shared.pack.player).slice(0, 80), at: Date.now(), data,
       }));
     } catch (e) { /* the local record is still the source of truth */ }
+  }
+
+  /* ---------- the reader's own saved reviews ---------- */
+
+  /* The set of games reviewed names the batch, the same key the trend uses,
+     so reviewing the same games again lands on the same slot. */
+  const batchIdOf = profile => Core.hashOf(profile.perGame.map(g => g.id).sort().join(','));
+  const DRILL_ID = /^(own:[0-9a-f]{16}:\d{1,3}|puzzle:[A-Za-z0-9]{5})$/;
+
+  function batchSlotFromUrl() {
+    let slot = '';
+    try { slot = new URL(location.href).searchParams.get('b') || ''; } catch (e) { return ''; }
+    return /^[0-9]$/.test(slot) ? slot : '';
+  }
+  const pageUrl = () => location.href.split('?')[0].split('#')[0];
+  const batchUrl = slot => new URL('?b=' + slot, pageUrl()).href;
+
+  function setBatchesStatus(text) { if (ui.batchesStatus) setStatus(ui.batchesStatus, text); }
+  function setBatchNote(text) { if (ui.batchNote) { ui.batchNote.textContent = text || ''; ui.batchNote.hidden = !text; } }
+
+  /* A practice record coming back from the account, checked field by field.
+     Anything that fails its check is dropped. */
+  function parseProgress(text) {
+    let stored = null;
+    try { stored = JSON.parse(String(text || '{}')); } catch (e) { return {}; }
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
+    const num = x => (Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
+    const out = {};
+    for (const [key, rec] of Object.entries(stored)) {
+      if (!DRILL_ID.test(key) || !rec || typeof rec !== 'object') continue;
+      out[key] = { attempts: num(rec.attempts), best: Math.min(100, num(rec.best)), last: Math.min(100, num(rec.last)), step: Math.min(Core.REVIEW_DAYS.length - 1, num(rec.step)), due: num(rec.due), at: num(rec.at) };
+    }
+    return out;
+  }
+  /* Only the positions of the drills given travel with a record. */
+  function progressOf(drills) {
+    const mine = {};
+    for (const d of drills) if (state.drillProgress[d.id]) mine[d.id] = state.drillProgress[d.id];
+    return mine;
+  }
+  /* A stored record wins over the local one only when it is more recent, so
+     practice on another device and practice here both survive. */
+  function mergeProgress(records) {
+    let changed = false;
+    for (const [key, rec] of Object.entries(records)) {
+      const local = state.drillProgress[key];
+      if (local && (local.at || 0) >= rec.at) continue;
+      state.drillProgress[key] = rec;
+      changed = true;
+    }
+    return changed;
+  }
+
+  /* Called once the drills of a fresh review are chosen. Signed out, nothing
+     happens and nothing is said. Signed in, the pack the share feature builds
+     and this batch's practice record go to the account. The same batch found
+     there is replaced in place, its stored practice merged in first so work
+     done on another device is kept. With all ten slots taken, the one
+     practiced longest ago makes room, and the note says which. */
+  async function saveBatch() {
+    const c = cloud();
+    if (!c || !state.profile || state.profile.shared || state.shared) return;
+    const profile = state.profile;
+    const batch = batchIdOf(profile);
+    let json = '';
+    try { json = JSON.stringify(Core.buildPack(profile, state.drills)); } catch (e) { return; }
+    if (json.length > Core.PACK_LIMITS.maxChars) { setBatchNote('This review is too large to keep in your account, so it stays in this browser only.'); return; }
+    let parsed = null;
+    try { parsed = JSON.parse(json); } catch (e) { parsed = null; }
+    if (!Core.validPack(parsed)) { setBatchNote('Nothing here to practice, so this review was not kept in your account.'); return; }
+    try {
+      const snapshot = await withTimeout(c.db.ref('users/' + c.uid + '/review-batches').once('value'));
+      if (state.profile !== profile) return;                 // a newer report replaced this one meanwhile
+      const list = (snapshot && typeof snapshot.val === 'function' ? snapshot.val() : null) || {};
+      const slots = Object.keys(list).filter(k => /^[0-9]$/.test(k) && list[k] && typeof list[k] === 'object');
+      let slot = slots.find(k => String(list[k].batch) === batch) || null;
+      let replaced = null;
+      if (slot !== null && mergeProgress(parseProgress(list[slot].progress))) { persistDrillProgress(); renderDrills(); }
+      if (slot === null) for (let i = 0; i < BATCHES.slots; i++) if (!list[String(i)]) { slot = String(i); break; }
+      if (slot === null) {
+        slot = slots.sort((a, b) => (Number(list[a].playedAt) || 0) - (Number(list[b].playedAt) || 0))[0];
+        replaced = String(list[slot].title || 'a review').slice(0, 80);
+      }
+      const now = Date.now();
+      const title = `${profile.player.name}, ${plural(profile.games, 'game')}`.slice(0, Core.PACK_LIMITS.maxTitle);
+      const progress = JSON.stringify(progressOf(state.drills));
+      await withTimeout(c.db.ref('users/' + c.uid + '/review-batches/' + slot).set({
+        batch, title, games: profile.games, drills: state.drills.length, at: now, playedAt: now, pack: json,
+        progress: progress.length > BATCHES.maxProgressChars ? '{}' : progress,
+      }));
+      if (state.profile !== profile) return;
+      state.batch = { slot, batch, at: now };
+      setBatchNote(replaced
+        ? `Kept in your account as "${title}", in place of "${replaced}", the one practiced longest ago. Your practice here is saved as you go.`
+        : `Kept in your account as "${title}". Your practice here is saved as you go, and the review can be opened later from the list at the top of the page.`);
+      loadMyBatches();
+    } catch (e) {
+      /* the same batch saved under thirty seconds ago (a new set of drills,
+         say) is refused by the database; the earlier version is still there */
+      setBatchNote(state.batch && state.batch.batch === batch
+        ? 'This new set could not be saved to your account just now; the earlier one is still there. Press New set again in a minute.'
+        : 'This review could not be kept in your account just now, so it stays in this browser only. The next review will try again.');
+    }
+  }
+
+  async function loadMyBatches() {
+    if (!ui.batchesPanel || !ui.batchesList) return;
+    const c = cloud();
+    if (!c) { ui.batchesPanel.hidden = true; ui.batchesList.replaceChildren(); return; }
+    let value = {};
+    try {
+      const snapshot = await withTimeout(c.db.ref('users/' + c.uid + '/review-batches').once('value'));
+      value = (snapshot && typeof snapshot.val === 'function' ? snapshot.val() : null) || {};
+    } catch (e) { return; }
+    const slots = Object.keys(value).filter(k => /^[0-9]$/.test(k) && value[k] && typeof value[k] === 'object');
+    slots.sort((a, b) => (Number(value[b].playedAt) || 0) - (Number(value[a].playedAt) || 0));
+    const rows = slots.map(slot => {
+      const entry = value[slot];
+      const total = Math.min(100, Math.max(0, Math.floor(Number(entry.drills) || 0)));
+      const done = Object.keys(parseProgress(entry.progress)).length;
+      let when = '';
+      try { when = new Date(Number(entry.playedAt) || Number(entry.at) || 0).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); } catch (e) {}
+      const open = h('a', { className: 'gr-share-title', text: String(entry.title || 'A review').slice(0, 80), href: batchUrl(slot) });
+      const li = h('li', { dataset: { slot } }, [
+        open,
+        h('span', { className: 'gr-muted', text: `${done} of ${plural(total, 'position')} practiced · ${when}` }),
+      ]);
+      const remove = h('button', { type: 'button', className: 'tool-button', text: 'Remove' });
+      remove.addEventListener('click', () => removeBatch(slot, remove));
+      li.appendChild(remove);
+      return li;
+    });
+    ui.batchesList.replaceChildren(...rows);
+    ui.batchesList.hidden = rows.length === 0;
+    if (ui.batchesEmpty) ui.batchesEmpty.hidden = rows.length > 0;
+    ui.batchesPanel.hidden = false;
+  }
+
+  async function removeBatch(slot, button) {
+    const c = cloud();
+    if (!c) return;
+    button.disabled = true;
+    try {
+      await withTimeout(c.db.ref('users/' + c.uid + '/review-batches/' + slot).remove());
+      if (state.batch && state.batch.slot === slot) { state.batch = null; setBatchNote(''); }
+      setBatchesStatus('Removed from your account. Anything kept in this browser stays.');
+      await loadMyBatches();
+    } catch (e) {
+      button.disabled = false;
+      setBatchesStatus('That review could not be removed. Try again in a moment.');
+    }
+  }
+
+  function queueBatchProgress() {
+    if (!state.batch || !cloud()) return;
+    if (state.batchTimer) clearTimeout(state.batchTimer);
+    state.batchTimer = setTimeout(saveBatchProgress, SHARE.syncDelayMs);
+  }
+  /* Only the practice record and its time move; the pack stays as written,
+     which is what the database rule checks. */
+  async function saveBatchProgress() {
+    state.batchTimer = null;
+    const c = cloud();
+    if (!state.batch || !c) return;
+    const progress = JSON.stringify(progressOf(state.drills));
+    if (progress.length > BATCHES.maxProgressChars) return;
+    try {
+      await withTimeout(c.db.ref('users/' + c.uid + '/review-batches/' + state.batch.slot).update({ progress, playedAt: Date.now() }));
+    } catch (e) { /* the local record is still the source of truth */ }
+  }
+
+  /* ?b=<slot> opens one of the reader's own saved reviews the way ?p=<id>
+     opens a shared one: no game files, the pack drawn from the account, and
+     practice saved back to the same slot. */
+  async function openSavedBatch(slot) {
+    hidePanel(ui.gamesPanel); hidePanel(ui.playerPanel); hidePanel(ui.reviewPanel);
+    if (ui.sharedBanner) ui.sharedBanner.hidden = false;
+    const say = text => { if (ui.sharedBannerText) ui.sharedBannerText.textContent = text; };
+    say('Opening one of your saved reviews.');
+    const auth = window.siteAuth;
+    if (!auth) { say('This review needs the sign-in service, which did not load. Reload the page.'); return; }
+    let user = null;
+    try { user = await auth.ready(); } catch (e) { user = null; }
+    if (!user) {
+      say('This is one of your saved reviews. Sign in with GitHub or Google to open it.');
+      showSharedSignIn();
+      return;
+    }
+    say('Loading the review.');
+    let raw = null;
+    try {
+      const snapshot = await withTimeout(auth.db().ref('users/' + user.uid + '/review-batches/' + slot).once('value'));
+      raw = snapshot && typeof snapshot.val === 'function' ? snapshot.val() : null;
+    } catch (e) { say('That review could not be opened. Try again in a moment.'); backLink(); return; }
+    if (!raw || typeof raw !== 'object' || typeof raw.pack !== 'string' || raw.pack.length > Core.PACK_LIMITS.maxChars || !Core.ID_RE.test(String(raw.batch || ''))) {
+      say('There is no saved review in that place. It may have been removed.');
+      backLink();
+      return;
+    }
+    let parsed = null;
+    try { parsed = JSON.parse(raw.pack); } catch (e) { parsed = null; }
+    const pack = Core.validPack(parsed);
+    if (!pack) { say('That saved review could not be read.'); backLink(); return; }
+    state.batch = { slot, batch: String(raw.batch), at: Number(raw.at) || 0 };
+    if (mergeProgress(parseProgress(raw.progress))) persistDrillProgress();
+    state.profile = Core.profileFromPack(pack);
+    state.reviews = [];
+    state.drills = pack.drills.slice();
+    renderProfile();
+    if (ui.gamesDetail) ui.gamesDetail.hidden = true;
+    if (ui.trendSection) ui.trendSection.hidden = true;
+    if (ui.profilePanel) ui.profilePanel.hidden = false;
+    if (ui.boardPanel) ui.boardPanel.hidden = false;
+    if (ui.drillsPanel) ui.drillsPanel.hidden = false;
+    renderDrills();
+    let when = '';
+    try { when = new Date(Number(raw.at) || 0).toLocaleDateString(undefined, { day: 'numeric', month: 'long' }); } catch (e) {}
+    say(`Your review of ${plural(pack.games, 'game')}, kept in your account on ${when}. Practice here and your progress is saved as you go. The game files are not part of it, so whole games are not shown.`);
+    backLink();
+  }
+  function backLink() {
+    if (!ui.sharedBanner || ui.sharedBanner.querySelector('.gr-back')) return;
+    const back = h('a', { className: 'tool-button gr-back', text: 'Back to your games', href: pageUrl() });
+    ui.sharedBanner.appendChild(h('div', { className: 'tool-actions' }, [back]));
   }
 
   /* A moment from a shared review, drawn from the pack rather than from a
@@ -2012,6 +2236,7 @@ function main() {
   refreshNames();
   renderGames();
   const sharedId = sharedIdFromUrl();
+  const batchSlot = sharedId ? '' : batchSlotFromUrl();
   if (sharedId) {
     openSharedPack(sharedId);
     startEngine();
@@ -2021,11 +2246,20 @@ function main() {
         if (user && !seen) { seen = true; openSharedPack(sharedId); }
       });
     }
+  } else if (batchSlot) {
+    openSavedBatch(batchSlot);
+    startEngine();
+    if (window.siteAuth && typeof window.siteAuth.onChange === 'function') {
+      let seen = !!cloud();
+      window.siteAuth.onChange(user => {
+        if (user && !seen) { seen = true; openSavedBatch(batchSlot); }
+      });
+    }
   } else if (state.games.length) {
     message(`${plural(state.games.length, 'game')} restored from your last visit.`, 'ok');
     startEngine();
   }
   if (window.siteAuth && typeof window.siteAuth.onChange === 'function' && !sharedId) {
-    window.siteAuth.onChange(() => { if (state.profile) loadMyShares(); });
+    window.siteAuth.onChange(() => { if (state.profile) loadMyShares(); loadMyBatches(); });
   }
 }
