@@ -1,10 +1,11 @@
 (function() {
   // Site chrome.
   //
-  // Two light palettes the reader picks between, plus Quarto's native dark
-  // mode. Quarto owns the light/dark switch and its `quarto-light` and
+  // Lion and Sun is the light palette, alongside Quarto's native dark mode.
+  // Quarto owns the light/dark switch and its `quarto-light` and
   // `quarto-dark` body classes; this file relocates that native control into
-  // the display rail rather than reimplementing it.
+  // the display rail rather than reimplementing it. With one palette left
+  // there is nothing to cycle, so the reader has a single control.
   //
   // Retired settings are cleared on load so a returning reader is not left
   // holding a preference that no longer has any code behind it.
@@ -19,52 +20,41 @@
   var CUSTOM_KEY = 'site-font-custom';
 
   var root = document.documentElement;
-  var themes = ['default', 'lion'];
-  var themeClasses = ['theme-lion'];
+  var THEME = 'lion';
+  var themes = [THEME];
   var legacyDark = false;
 
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
 
-  // Canadian Red is retired. A reader holding it, or one of the older ids,
-  // lands on the default palette instead of on nothing.
-  function normalizeTheme(id) {
-    if (id === 'warm') return 'lion';
-    if (id === 'red' || id === 'flatly') return 'default';
-    if (id === 'midnight') { legacyDark = true; return 'default'; }
-    return themes.indexOf(id) === -1 ? 'default' : id;
-  }
+  // The palette choice is retired along with the deep navy and Canadian Red
+  // palettes. Every saved id resolves to Lion and Sun, so the preference is
+  // read once and then cleared rather than migrated. The one stored value that
+  // still carries information is `midnight`, which asked for a dark surface
+  // rather than for a light palette, and is honored below.
+  function readTheme() { return THEME; }
 
-  function readTheme() {
-    var stored = lsGet(THEME_KEY) || 'default';
-    var normalized = normalizeTheme(stored);
-    if (normalized !== stored) lsSet(THEME_KEY, normalized);
-    return normalized;
-  }
-
-  function writeTheme(id) {
-    var normalized = normalizeTheme(id);
-    lsSet(THEME_KEY, normalized);
-    return normalized;
-  }
+  (function retireStoredTheme() {
+    var stored = lsGet(THEME_KEY);
+    if (stored === null) return;
+    if (stored === 'midnight') legacyDark = true;
+    lsDel(THEME_KEY);
+  })();
 
   function isDarkMode() {
     return !!(document.body && document.body.classList.contains('quarto-dark'));
   }
 
-  function applyTheme(id) {
-    id = normalizeTheme(id);
-    for (var i = 0; i < themeClasses.length; i++) root.classList.remove(themeClasses[i]);
-    // Darkly owns the dark surface, so a light palette is suppressed there and
-    // returns when the reader switches back.
-    if (!isDarkMode() && id !== 'default' && themes.indexOf(id) !== -1) {
-      root.classList.add('theme-' + id);
-    }
-    return id;
+  function applyTheme() {
+    // Darkly owns the dark surface, so the light palette is suppressed there
+    // and returns when the reader switches back.
+    if (isDarkMode()) root.classList.remove('theme-' + THEME);
+    else root.classList.add('theme-' + THEME);
+    return THEME;
   }
 
-  applyTheme(readTheme());
+  applyTheme();
 
   // --- Reading mode --------------------------------------------------------
   // A toggle in the display rail, not a separate system. It hides the navbar,
@@ -163,19 +153,20 @@
   }
 
   // --- Print ---------------------------------------------------------------
-  // Paper keeps the house style. The chosen palette and any custom font are
-  // screen choices, so both come off for the duration of the print job.
+  // Paper keeps the house style. A custom font is a screen choice, so it comes
+  // off for the duration of the print job. The palette is not cleared here.
+  // The PRINT, FINAL OVERRIDES block at the end of styles.css already resets
+  // every branded surface at the palette's own specificity, and removing the
+  // class instead would hand paper the parked deep navy rules.
   var printRestore = null;
 
   function enterPrint() {
     if (printRestore) return;
     printRestore = {
-      theme: readTheme(),
       custom: readCustomFont(),
       reading: root.getAttribute('data-reading'),
       readingToc: root.getAttribute('data-reading-toc')
     };
-    applyTheme('default');
     clearCustomFont(false);
     // Reading mode is a screen choice. Left on, its 18.5px/1.70 typography
     // overrode the print type scale, and an open reading TOC forced the table
@@ -187,7 +178,6 @@
 
   function exitPrint() {
     if (!printRestore) return;
-    applyTheme(printRestore.theme);
     applyCustomFont(printRestore.custom);
     if (printRestore.reading) root.setAttribute('data-reading', printRestore.reading);
     if (printRestore.readingToc) root.setAttribute('data-reading-toc', printRestore.readingToc);
@@ -213,51 +203,33 @@
   // --- giscus --------------------------------------------------------------
   // The iframe cannot read the page's custom properties, so it gets a fixed
   // first-party stylesheet URL instead.
-  function getGiscusThemeUrl(theme) {
+  function getGiscusThemeUrl() {
     var base = 'https://oliabak.com';
-    if (isDarkMode()) return base + '/giscus-theme-dark.css';
-    return normalizeTheme(theme || readTheme()) === 'lion'
-      ? base + '/giscus-theme-lion.css'
-      : base + '/giscus-theme.css';
+    return isDarkMode()
+      ? base + '/giscus-theme-dark.css'
+      : base + '/giscus-theme-lion.css';
   }
 
-  function setGiscusTheme(theme) {
+  function setGiscusTheme() {
     var iframe = document.querySelector('iframe.giscus-frame');
     if (iframe) {
       iframe.contentWindow.postMessage(
-        { giscus: { setConfig: { theme: getGiscusThemeUrl(theme) } } },
+        { giscus: { setConfig: { theme: getGiscusThemeUrl() } } },
         'https://giscus.app');
     }
   }
 
   window.addEventListener('message', function(event) {
-    if (event.origin === 'https://giscus.app') setGiscusTheme(readTheme());
+    if (event.origin === 'https://giscus.app') setGiscusTheme();
   });
 
   // --- Display rail --------------------------------------------------------
-  var themeBadge = null, themeButton = null, darkModeButton = null;
-
-  function makeBadge(text) {
-    var b = document.createElement('span');
-    b.className = 'site-display-badge';
-    b.setAttribute('aria-hidden', 'true');
-    b.textContent = text;
-    return b;
-  }
+  var darkModeButton = null;
 
   function syncColorMode() {
-    var current = readTheme();
     var dark = isDarkMode();
-    applyTheme(current);
-    setGiscusTheme(current);
-    if (themeButton) {
-      themeButton.disabled = dark;
-      themeButton.style.opacity = dark ? '0.55' : '1';
-      themeButton.style.cursor = dark ? 'not-allowed' : 'pointer';
-      themeButton.title = dark
-        ? 'Switch to light mode to change the color palette'
-        : 'Switch light color palette';
-    }
+    applyTheme();
+    setGiscusTheme();
     if (darkModeButton) {
       var lbl = dark ? 'Switch to light mode' : 'Switch to dark mode';
       darkModeButton.title = lbl;
@@ -309,26 +281,6 @@
       controls.appendChild(darkToggle);
     }
 
-    // The two light palettes. Disabled while Quarto's dark mode is active.
-    themeButton = document.createElement('button');
-    themeButton.id = 'theme-toggle';
-    themeButton.type = 'button';
-    themeButton.className = 'site-display-control site-palette-control';
-    themeButton.title = 'Switch light color palette';
-    themeButton.setAttribute('aria-label', 'Switch light color palette');
-    themeButton.textContent = '🎨';
-    themeBadge = makeBadge(String(themes.indexOf(readTheme()) + 1));
-    themeButton.appendChild(themeBadge);
-    themeButton.addEventListener('click', function() {
-      var next = themes[(themes.indexOf(readTheme()) + 1) % themes.length];
-      applyTheme(next);
-      writeTheme(next);
-      setGiscusTheme(next);
-      themeBadge.textContent = String(themes.indexOf(next) + 1);
-      announce('theme');
-    });
-    controls.appendChild(themeButton);
-
     var header = document.getElementById('quarto-header');
     if (header && header.parentNode) header.parentNode.insertBefore(controls, header.nextSibling);
     else document.body.appendChild(controls);
@@ -372,19 +324,11 @@
     themes: themes,
     getTheme: readTheme,
     isDarkMode: isDarkMode,
-    getGiscusThemeUrl: function() { return getGiscusThemeUrl(readTheme()); },
+    getGiscusThemeUrl: getGiscusThemeUrl,
 
-    // persist false previews a palette on this page only, leaving the saved
-    // preference alone so the corner button still restores it.
-    setTheme: function(id, persist) {
-      id = normalizeTheme(id);
-      applyTheme(id);
-      setGiscusTheme(id);
-      if (persist) {
-        writeTheme(id);
-        if (themeBadge) themeBadge.textContent = String(themes.indexOf(id) + 1);
-      }
-    },
+    // Kept so a page still holding the older typography tool in its cache does
+    // not throw. There is one light palette, so this reapplies it.
+    setTheme: function() { applyTheme(); setGiscusTheme(); },
 
     isReadingMode: readingOn,
     setReadingMode: function(on) { applyReading(!!on, true); announce('reading'); },
