@@ -319,8 +319,11 @@
 			max: 100, defVal: 0},
 		{name: 'tunnelWidth', dispName: 'Width', type: 'float', min: 0.05,
 			max: 0.9, defVal: 0.45},
+		// Flat by default. The round-tube gradient reads as decoration on a
+		// diagram whose other shapes are solid, and it fights a fill the user
+		// has chosen deliberately. Raise it where the tube wants to look round.
 		{name: 'tunnelShading', dispName: 'Shading', type: 'float', min: 0,
-			max: 1, defVal: 0.6},
+			max: 1, defVal: 0},
 		{name: 'tunnelEndDepth', dispName: 'End Face', type: 'float', min: 0.05,
 			max: 1, defVal: 0.38},
 		{name: 'tunnelEnds', dispName: 'Open Ends', type: 'bool', defVal: true}
@@ -468,7 +471,7 @@
 		var g = this.getTunnelGeometry(this.style, x, y, w, h);
 		var r = g.thick / 2;
 		var shading = Math.max(0, Math.min(1,
-			mxUtils.getValue(this.style, 'tunnelShading', 0.6)));
+			mxUtils.getValue(this.style, 'tunnelShading', 0)));
 		var ends = mxUtils.getValue(this.style, 'tunnelEnds', '1') != '0';
 		var endD = g.endDepth;
 
