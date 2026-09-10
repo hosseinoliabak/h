@@ -2444,14 +2444,21 @@
 				var f = tunnelFrame(g, 0);
 				var t = endTrack(g);
 
-				// Along the tube axis from the left mouth. The rim itself is
-				// only half a tube-thickness away, so on a thin tube the whole
-				// range would fit in about twenty pixels and the handle was
-				// unusable. The track is held to a usable length instead, and
-				// only follows the rim once the tube is thick enough for that
-				// to be the longer of the two.
-				return new mxPoint(f.x - f.ny * t * g.endDepth,
-					f.y + f.nx * t * g.endDepth);
+				// Along the tube axis from the left mouth, heading into the
+				// tube. The unit tangent is (n.y, -n.x); negating it sent the
+				// handle out past the left edge instead, where it sat under
+				// draw.io's own left connection arrow and could not be
+				// grabbed.
+				//
+				// Held off the centre line as well, because the west resize
+				// handle and that connection arrow both live at mid-height,
+				// and at the shallowest depth the handle comes close enough to
+				// the left edge to collide with them.
+				var r = g.thick / 2;
+
+				return new mxPoint(
+					f.x + f.ny * t * g.endDepth - f.nx * r * 0.55,
+					f.y - f.nx * t * g.endDepth - f.ny * r * 0.55);
 			}, function(bounds, pt)
 			{
 				var g = tunnelGeometry(state, bounds);
@@ -2463,7 +2470,9 @@
 					return;
 				}
 
-				var d = ((f.x - pt.x) * f.ny + (pt.y - f.y) * f.nx) / t;
+				// Only the distance along the tube counts; the perpendicular
+				// offset the handle is drawn at is projected away.
+				var d = ((pt.x - f.x) * f.ny - (pt.y - f.y) * f.nx) / t;
 
 				state.style['tunnelEndDepth'] = Math.round(Math.max(0.05,
 					Math.min(1, d)) * 100) / 100;
