@@ -2281,6 +2281,254 @@
 		mxShapeOliabakBracketStem);
 
 	// ---------------------------------------------------------------------
+	// Cylinder label
+	// ---------------------------------------------------------------------
+
+	/**
+	 * Text wrapped around a cylinder, with the perspective a real label on a
+	 * pipe or a drum would have.
+	 *
+	 * A cylinder of radius R seen from the side projects a surface point at
+	 * angle t to x = R sin t, and foreshortens it horizontally by cos t. So
+	 * characters laid at even angles around the cylinder land at sine-spaced
+	 * x positions, bunching towards the edges on their own, and each one is
+	 * squashed by the cosine of where it sits. That is the whole trick: no
+	 * approximation, just the projection.
+	 *
+	 * Angles are handed out in proportion to how wide each character actually
+	 * is, measured through a canvas context, so an l takes less of the drum
+	 * than a W. Spreading them evenly instead makes narrow letters float in
+	 * gaps, which is what gives most faked barrel text away.
+	 *
+	 * Drawn as SVG directly rather than through the canvas, because every
+	 * character needs its own transform. Unfilled and unstroked by default so
+	 * it can be laid straight over an existing cylinder.
+	 */
+	function mxShapeOliabakCylinderLabel(bounds, fill, stroke, strokewidth)
+	{
+		mxShape.call(this);
+		this.bounds = bounds;
+		this.fill = fill;
+		this.stroke = stroke;
+		this.strokewidth = (strokewidth != null) ? strokewidth : 1;
+	};
+
+	mxUtils.extend(mxShapeOliabakCylinderLabel, mxShape);
+
+	mxShapeOliabakCylinderLabel.prototype.customProperties = [
+		{name: 'wrapAngle', dispName: 'Wrap', type: 'float', min: 10, max: 300,
+			defVal: 150},
+		{name: 'wrapSag', dispName: 'Curve', type: 'float', min: -1, max: 1,
+			defVal: 0},
+		{name: 'wrapFlip', dispName: 'Inside Out', type: 'bool', defVal: false}
+	];
+
+	// One context for measuring, kept because creating a canvas per repaint
+	// is far more expensive than the measuring itself.
+	var wrapMeasureCtx = null;
+
+	function wrapCharWidths(text, font)
+	{
+		if (wrapMeasureCtx == null)
+		{
+			try
+			{
+				wrapMeasureCtx = document.createElement('canvas').getContext('2d');
+			}
+			catch (e)
+			{
+				wrapMeasureCtx = false;
+			}
+		}
+
+		var out = [];
+
+		if (wrapMeasureCtx)
+		{
+			wrapMeasureCtx.font = font;
+
+			for (var i = 0; i < text.length; i++)
+			{
+				out.push(Math.max(0.001, wrapMeasureCtx.measureText(text.charAt(i)).width));
+			}
+		}
+		else
+		{
+			// No canvas: fall back to even spacing rather than no label.
+			for (var i = 0; i < text.length; i++)
+			{
+				out.push(1);
+			}
+		}
+
+		return out;
+	};
+
+	mxShapeOliabakCylinderLabel.prototype.paintVertexShape = function(c, x, y, w, h)
+	{
+		// Anything the style asks for behind the text, normally nothing.
+		if (mxUtils.getValue(this.style, mxConstants.STYLE_FILLCOLOR,
+			mxConstants.NONE) != mxConstants.NONE ||
+			mxUtils.getValue(this.style, mxConstants.STYLE_STROKECOLOR,
+			mxConstants.NONE) != mxConstants.NONE)
+		{
+			c.rect(x, y, w, h);
+			c.fillAndStroke();
+		}
+
+		this.paintWrappedLabel(c, x, y, w, h);
+	};
+
+	mxShapeOliabakCylinderLabel.prototype.paintWrappedLabel = function(c, x, y, w, h)
+	{
+		this.releaseWrap();
+
+		if (this.state == null || c.root == null ||
+			typeof c.createElement !== 'function' || !(w > 0))
+		{
+			return;
+		}
+
+		var graph = this.state.view.graph;
+
+		if (graph.cellEditor != null &&
+			graph.cellEditor.editingCell == this.state.cell)
+		{
+			return;
+		}
+
+		var text = graph.convertValueToString(this.state.cell);
+
+		if (text == null || text.length == 0)
+		{
+			return;
+		}
+
+		var fontSize = mxUtils.getValue(this.style, mxConstants.STYLE_FONTSIZE,
+			mxConstants.DEFAULT_FONTSIZE);
+		var fontFamily = mxUtils.getValue(this.style, mxConstants.STYLE_FONTFAMILY,
+			mxConstants.DEFAULT_FONTFAMILY);
+		var fontStyle = mxUtils.getValue(this.style, mxConstants.STYLE_FONTSTYLE, 0);
+		var bold = (fontStyle & mxConstants.FONT_BOLD) == mxConstants.FONT_BOLD;
+		var italic = (fontStyle & mxConstants.FONT_ITALIC) == mxConstants.FONT_ITALIC;
+
+		var arc = Math.max(10, Math.min(300,
+			mxUtils.getValue(this.style, 'wrapAngle', 150))) * Math.PI / 180;
+		var sag = Math.max(-1, Math.min(1,
+			mxUtils.getValue(this.style, 'wrapSag', 0)));
+		var flip = mxUtils.getValue(this.style, 'wrapFlip', '0') != '0';
+
+		// The drum's radius, chosen so the wrap spans exactly the cell width.
+		var R = w / (2 * Math.sin(arc / 2));
+		var cx = x + w / 2;
+		var cy = y + h / 2;
+		var sagPx = sag * h / 2;
+
+		var widths = wrapCharWidths(text,
+			(italic ? 'italic ' : '') + (bold ? 'bold ' : '') +
+			fontSize + 'px ' + fontFamily);
+		var total = 0;
+
+		for (var i = 0; i < widths.length; i++)
+		{
+			total += widths[i];
+		}
+
+		var s = c.state;
+		var sc = s.scale;
+		var group = c.createElement('g');
+
+		if (s.transform != null && s.transform.length > 0)
+		{
+			group.setAttribute('transform', s.transform);
+		}
+
+		if (s.alpha < 1)
+		{
+			group.setAttribute('opacity', s.alpha);
+		}
+
+		var run = 0;
+
+		for (var i = 0; i < text.length; i++)
+		{
+			var ch = text.charAt(i);
+
+			// The angle of this character's centre, its share of the wrap.
+			var t = (run + widths[i] / 2) / total;
+			run += widths[i];
+
+			var a = (flip ? -1 : 1) * (-arc / 2 + t * arc);
+			var cos = Math.cos(a);
+
+			if (ch === ' ' || Math.abs(cos) < 0.02)
+			{
+				continue;
+			}
+
+			var px = cx + R * Math.sin(a);
+			// Positive curve drops the ends, the way a band low on a drum
+			// reads; negative lifts them.
+			var py = cy + sagPx * (1 - Math.cos(a));
+			// Follow the band's slope so characters sit on it rather than
+			// across it. d/da of the y above, over d/da of the x.
+			var slope = (Math.abs(sagPx) < 0.01) ? 0 :
+				Math.atan2(sagPx * Math.sin(a), R * Math.cos(a)) * 180 / Math.PI;
+
+			var el = c.createElement('text');
+			el.setAttribute('font-size', (fontSize * sc) + 'px');
+			el.setAttribute('font-family', mxUtils.parseCssFontFamily(fontFamily));
+			el.setAttribute('fill', mxUtils.getValue(this.style,
+				mxConstants.STYLE_FONTCOLOR, '#000000'));
+			el.setAttribute('text-anchor', 'middle');
+			el.setAttribute('dominant-baseline', 'central');
+
+			if (bold)
+			{
+				el.setAttribute('font-weight', 'bold');
+			}
+
+			if (italic)
+			{
+				el.setAttribute('font-style', 'italic');
+			}
+
+			// Squash by the cosine: that is the foreshortening, and it is what
+			// makes the text sit on the surface rather than in front of it.
+			el.setAttribute('transform',
+				'translate(' + c.format((px + s.dx) * sc) + ',' +
+				c.format((py + s.dy) * sc) + ')' +
+				(slope != 0 ? ' rotate(' + c.format(slope) + ')' : '') +
+				' scale(' + c.format(Math.abs(cos)) + ',1)');
+
+			mxUtils.write(el, ch);
+			group.appendChild(el);
+		}
+
+		c.root.appendChild(group);
+		this._wrapGroup = group;
+	};
+
+	mxShapeOliabakCylinderLabel.prototype.releaseWrap = function()
+	{
+		if (this._wrapGroup != null && this._wrapGroup.parentNode != null)
+		{
+			this._wrapGroup.parentNode.removeChild(this._wrapGroup);
+		}
+
+		this._wrapGroup = null;
+	};
+
+	mxShapeOliabakCylinderLabel.prototype.destroy = function()
+	{
+		this.releaseWrap();
+		mxShape.prototype.destroy.apply(this, arguments);
+	};
+
+	mxCellRenderer.registerShape('mxgraph.oliabak.cylinderLabel',
+		mxShapeOliabakCylinderLabel);
+
+	// ---------------------------------------------------------------------
 	// Handles
 	// ---------------------------------------------------------------------
 
@@ -2393,6 +2641,36 @@
 
 			return shape.prototype.getTunnelGeometry(state.style, bounds.x,
 				bounds.y, bounds.width, bounds.height);
+		};
+
+		// Wrap span and curve. Wrap rides the right end of the band, curve the
+		// middle, so neither can be mistaken for the other.
+		Graph.handleFactory['mxgraph.oliabak.cylinderLabel'] = function(state)
+		{
+			return [Graph.createHandle(state, ['wrapAngle'], function(bounds)
+			{
+				var a = Math.max(10, Math.min(300, mxUtils.getValue(
+					state.style, 'wrapAngle', 150)));
+
+				return new mxPoint(bounds.x + bounds.width * (a / 300),
+					bounds.y);
+			}, function(bounds, pt)
+			{
+				state.style['wrapAngle'] = Math.round(Math.max(10, Math.min(300,
+					(pt.x - bounds.x) / bounds.width * 300)));
+			}, true), Graph.createHandle(state, ['wrapSag'], function(bounds)
+			{
+				var sg = Math.max(-1, Math.min(1, mxUtils.getValue(
+					state.style, 'wrapSag', 0)));
+
+				return new mxPoint(bounds.x + bounds.width / 2,
+					bounds.y + bounds.height / 2 + sg * bounds.height / 2);
+			}, function(bounds, pt)
+			{
+				state.style['wrapSag'] = Math.round(Math.max(-1, Math.min(1,
+					(pt.y - bounds.y - bounds.height / 2) /
+					(bounds.height / 2))) * 100) / 100;
+			}, true)];
 		};
 
 		Graph.handleFactory['mxgraph.oliabak.tunnel'] = function(state)
