@@ -52,7 +52,7 @@
 
   /* Typography. Sora for text and headings, Roboto Mono for code and the
      page metadata line. The scale below is the one knob for sizing. */
-  --site-font-body: "Sora", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --site-font-body: "Sora", "Sora Fallback", "Sora Fallback Arial", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --site-font-heading: var(--site-font-body);
   --site-font-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --site-font-size: 17.5px;
@@ -116,6 +116,27 @@
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7,
                  U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
                  U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* Metric-matched stand-ins for Sora while it loads. With font-display: swap
+   the first paint uses the next family in the stack, and Sora is about 13
+   percent wider than Helvetica Neue and Arial, so text re-wrapped when the
+   real face arrived and every block below it moved (a layout shift of 0.1 to
+   0.35 on a first visit). Each stand-in is the local face scaled with
+   size-adjust so a line holds the same words, carrying Sora's own vertical
+   metrics (970 / 290 / 0 on a 1000 em) divided by the same factor. Measured
+   2026-09-10 in Chromium at 17.5px: the scaled faces land within 1.2 percent
+   of Sora's line width at weight 400. A face that is absent on a platform
+   fails to load and the stack falls through to the next entry, so the plain
+   families after it still act as the last resort. */
+@font-face {
+  font-family: "Sora Fallback";
+  src: local("Helvetica Neue");
+  size-adjust: 112.07%; ascent-override: 86.55%; descent-override: 25.88%; line-gap-override: 0%;
+}
+@font-face {
+  font-family: "Sora Fallback Arial";
+  src: local("Arial");
+  size-adjust: 113.22%; ascent-override: 85.67%; descent-override: 25.61%; line-gap-override: 0%;
 }
 @font-face {
   font-family: "Roboto Mono";
@@ -2449,6 +2470,19 @@ div.callout.callout-tip .callout-body-container.callout-body {
   min-height: var(--site-chrome-height);
 }
 
+/* First-paint offset for the fixed navbar. Bootstrap pads the body 82px for
+   it, and quarto-nav.js replaces that with the header's measured height a
+   quarter second after DOMContentLoaded. This site's navbar is 92px tall in
+   both color modes, so every page moved 10px after it painted, and 138px on a
+   small screen where the secondary navigation row sits under the navbar.
+   The values below are the heights the script measures, so its correction
+   becomes a no-op. app-mode.css and reading mode hide the header and set
+   the padding to zero for the same reason. */
+body.nav-fixed { padding-top: 92px; }
+@media (max-width: 991.98px) {
+  body.nav-fixed:has(#quarto-header .quarto-secondary-nav) { padding-top: 138px; }
+}
+
 .nav-footer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2648,6 +2682,24 @@ div.callout.callout-tip .callout-body-container.callout-body > :first-child {
 .dashboard-loading-error {
   border-left: 4px solid #B42318;
 }
+
+/* Space for what dashboard.js draws once the data arrives, so the panels do
+   not move when it does. Each rule applies only while its container is still
+   empty and is sized to the desktop render; a narrower layout is taller and
+   simply grows past it. The loading notice sits inside the first grid it
+   fills, spanning its columns, so removing it moves nothing above it. */
+#publication-stats:has(> .dashboard-loading),
+#publication-stats:empty { min-height: 243px; }
+#publication-stats > .dashboard-loading { grid-column: 1 / -1; align-self: start; }
+#calendar-summary:empty { min-height: 28px; }
+#publication-calendar:empty { min-height: 129px; }
+#yearly-output:empty,
+#subject-coverage:empty { min-height: 164px; }
+#recent-publications:empty { min-height: 382px; }
+#traffic-stats:empty { min-height: 137px; }
+#traffic-trend:empty { min-height: 263px; }
+#traffic-yearly:empty { min-height: 23px; }
+#top-pages:empty { min-height: 528px; }
 
 .dashboard-section {
   margin: 2.3rem 0;
@@ -4036,6 +4088,11 @@ main.content .table-responsive {
 :root[data-reading="on"] #quarto-back-to-top {
   display: none !important;
 }
+
+/* The header is hidden, so the navbar offset goes with it from the first
+   paint rather than when quarto-nav.js measures the header. Important so it
+   outranks the small-screen rule above that keys on the secondary nav. */
+:root[data-reading="on"] body.nav-fixed { padding-top: 0 !important; }
 
 /* The metadata line stays. It is the one piece of chrome that is about the
    text rather than about the site. */

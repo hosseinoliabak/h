@@ -1199,12 +1199,17 @@
       renderBreakdowns(data);
       renderRecent(data);
       loadTraffic(data.metricPageCount);
-      document.getElementById('dashboard-loading').remove();
+      // The notice sits inside the statistics grid, which renderPublicationStats
+      // has already replaced; it is only still there if that render was skipped.
+      var loading = document.getElementById('dashboard-loading');
+      if (loading) loading.remove();
       root.classList.add('dashboard-ready');
     }).catch(function () {
       var loading = document.getElementById('dashboard-loading');
-      loading.textContent = 'Publication statistics could not be loaded. Please try again after the next site build.';
-      loading.classList.add('dashboard-loading-error');
+      if (loading) {
+        loading.textContent = 'Publication statistics could not be loaded. Please try again after the next site build.';
+        loading.classList.add('dashboard-loading-error');
+      }
       renderEdgeConnectionUnavailable();
       renderTrafficUnavailable();
     });

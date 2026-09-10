@@ -24,6 +24,27 @@ the site previously pulled from `fonts.googleapis.com` on every page load.
 The `unicode-range` on each `@font-face` in `styles.css` matches the subset, so
 a page with no latin-ext characters never fetches the second file.
 
+## Stand-in faces while Sora loads
+
+`styles.css` declares `Sora Fallback` (local Helvetica Neue) and
+`Sora Fallback Arial` (local Arial) right after Sora in the font stack. Each is
+the local face scaled with `size-adjust` to Sora's average character width and
+given Sora's vertical metrics (ascent 970, descent 290, line gap 0 on a 1000
+unit em) divided by the same factor, so a line holds the same words before and
+after the swap and the page does not move when Sora arrives.
+
+| Stand-in | Local face | size-adjust | ascent | descent |
+|---|---|---:|---:|---:|
+| `Sora Fallback` | Helvetica Neue | 112.07% | 86.55% | 25.88% |
+| `Sora Fallback Arial` | Arial | 113.22% | 85.67% | 25.61% |
+
+Measured in Chromium at 17.5px on 2026-09-10: the scaled faces come within 1.2
+percent of Sora's line width at weight 400 and wrap a test paragraph to the
+same number of lines. The frequency-weighted average advance of Sora is
+0.512 em, of Helvetica Neue 0.453 em, and of Arial 0.447 em; the raw ratios
+(113.1% and 114.5%) were then trimmed by the measured residual. Recompute the
+table if Sora is replaced.
+
 ## Origin
 
 Downloaded from `fonts.gstatic.com` on 2026-08-31.
