@@ -321,6 +321,8 @@
 			max: 0.9, defVal: 0.45},
 		{name: 'tunnelShading', dispName: 'Shading', type: 'float', min: 0,
 			max: 1, defVal: 0.6},
+		{name: 'tunnelEndDepth', dispName: 'End Face', type: 'float', min: 0.05,
+			max: 1, defVal: 0.38},
 		{name: 'tunnelEnds', dispName: 'Open Ends', type: 'bool', defVal: true}
 	];
 
@@ -332,7 +334,6 @@
 	// Depth of an end opening as a fraction of the tube radius. The same
 	// foreshortening a cylinder uses, so a tunnel sits next to one without
 	// looking like it is seen from a different angle.
-	var TUNNEL_DEPTH = 0.38;
 
 	/**
 	 * Resolves the styled geometry once, so the outline, the end openings,
@@ -347,6 +348,13 @@
 
 		var thick = tw * h;
 		var cy = y + h / 2;
+		// The openings bulge along the tube axis by half the thickness times
+		// the end depth, so the centre line starts that far in and the mouths
+		// land on the cell edge instead of hanging outside it. Without this a
+		// deep end face would sit outside its own selection box.
+		var endD = (mxUtils.getValue(style, 'tunnelEnds', '1') != '0') ?
+			Math.max(0.05, Math.min(1, mxUtils.getValue(style, 'tunnelEndDepth', 0.38))) : 0;
+		var inset = Math.min(w * 0.4, thick / 2 * endD);
 		// What is left over once the tube itself is accounted for. Bowing by
 		// the full 100 percent puts the tube's edge exactly on the cell edge.
 		var clearance = (h - thick) / 2;
@@ -358,13 +366,16 @@
 		// approximation of it.
 		var d = 4 / 3 * apex;
 
+		var x0 = x + inset, x1 = x + w - inset, span = x1 - x0;
+
 		return {
 			thick: thick, apex: apex, clearance: clearance, cy: cy,
+			endDepth: endD,
 			// Negative displacement, so a positive bow arches upwards.
-			p0x: x, p0y: cy,
-			c1x: x + w / 3, c1y: cy - d,
-			c2x: x + w * 2 / 3, c2y: cy - d,
-			p3x: x + w, p3y: cy
+			p0x: x0, p0y: cy,
+			c1x: x0 + span / 3, c1y: cy - d,
+			c2x: x0 + span * 2 / 3, c2y: cy - d,
+			p3x: x1, p3y: cy
 		};
 	};
 
@@ -408,17 +419,17 @@
 	 * projected: full radius across the tube, foreshortened along it, so it
 	 * stays square to the tunnel wherever the bow has tilted that end.
 	 */
-	function tunnelEllipsePoint(f, r, a)
+	function tunnelEllipsePoint(f, r, a, d)
 	{
 		// n is across the tube; (n.y, -n.x) is the unit tangent along it.
-		return [f.x + f.nx * r * Math.cos(a) + f.ny * r * TUNNEL_DEPTH * Math.sin(a),
-			f.y + f.ny * r * Math.cos(a) - f.nx * r * TUNNEL_DEPTH * Math.sin(a)];
+		return [f.x + f.nx * r * Math.cos(a) + f.ny * r * d * Math.sin(a),
+			f.y + f.ny * r * Math.cos(a) - f.nx * r * d * Math.sin(a)];
 	};
 
-	function tunnelEllipseTangent(f, r, a)
+	function tunnelEllipseTangent(f, r, a, d)
 	{
-		return [-f.nx * r * Math.sin(a) + f.ny * r * TUNNEL_DEPTH * Math.cos(a),
-			-f.ny * r * Math.sin(a) - f.nx * r * TUNNEL_DEPTH * Math.cos(a)];
+		return [-f.nx * r * Math.sin(a) + f.ny * r * d * Math.cos(a),
+			-f.ny * r * Math.sin(a) - f.nx * r * d * Math.cos(a)];
 	};
 
 	/**
@@ -427,7 +438,7 @@
 	 * of the sweep, which is what lets the outline trace one end forwards and
 	 * the other backwards.
 	 */
-	function tunnelEllipseArc(c, f, r, a0, a1)
+	function tunnelEllipseArc(c, f, r, a0, a1, d)
 	{
 		var steps = Math.max(1, Math.round(Math.abs(a1 - a0) / (Math.PI / 2)));
 		var step = (a1 - a0) / steps;
@@ -437,10 +448,10 @@
 		{
 			var a = a0 + step * i;
 			var b = a + step;
-			var pa = tunnelEllipsePoint(f, r, a);
-			var ta = tunnelEllipseTangent(f, r, a);
-			var pb = tunnelEllipsePoint(f, r, b);
-			var tb = tunnelEllipseTangent(f, r, b);
+			var pa = tunnelEllipsePoint(f, r, a, d);
+			var ta = tunnelEllipseTangent(f, r, a, d);
+			var pb = tunnelEllipsePoint(f, r, b, d);
+			var tb = tunnelEllipseTangent(f, r, b, d);
 
 			c.curveTo(pa[0] + ta[0] * k, pa[1] + ta[1] * k,
 				pb[0] - tb[0] * k, pb[1] - tb[1] * k, pb[0], pb[1]);
@@ -459,6 +470,7 @@
 		var shading = Math.max(0, Math.min(1,
 			mxUtils.getValue(this.style, 'tunnelShading', 0.6)));
 		var ends = mxUtils.getValue(this.style, 'tunnelEnds', '1') != '0';
+		var endD = g.endDepth;
 
 		var upper = [], lower = [];
 
@@ -503,7 +515,7 @@
 
 		if (ends)
 		{
-			tunnelEllipseArc(c, f1, r, 0, Math.PI);
+			tunnelEllipseArc(c, f1, r, 0, Math.PI, endD);
 		}
 		else
 		{
@@ -517,10 +529,34 @@
 
 		if (ends)
 		{
-			tunnelEllipseArc(c, f0, r, Math.PI, 2 * Math.PI);
+			tunnelEllipseArc(c, f0, r, Math.PI, 2 * Math.PI, endD);
 		}
 
 		c.close();
+
+		// The two mouths are holes in the fill, not faces drawn over it. The
+		// outline above runs clockwise, so tracing each opening the other way
+		// leaves it empty under the nonzero fill rule.
+		//
+		// This is what makes a connector read as going through the tube
+		// rather than over it: put the tunnel in front of the line and the
+		// wall hides the line along its length while both openings let it
+		// show, so it enters one end, disappears inside, and comes out the
+		// other. Filled faces would have covered the line at exactly the two
+		// places it needs to be visible.
+		if (ends)
+		{
+			var h0 = tunnelEllipsePoint(f0, r, 0, endD);
+			c.moveTo(h0[0], h0[1]);
+			tunnelEllipseArc(c, f0, r, 0, 2 * Math.PI, endD);
+			c.close();
+
+			var h1 = tunnelEllipsePoint(f1, r, 0, endD);
+			c.moveTo(h1[0], h1[1]);
+			tunnelEllipseArc(c, f1, r, 0, 2 * Math.PI, endD);
+			c.close();
+		}
+
 		c.fill();
 
 		c.setStrokeColor(mxUtils.getValue(this.style,
@@ -531,8 +567,8 @@
 			// Full ellipses, stroked and not filled, so both ends read as
 			// openings you can see through and the fill alpha still lands
 			// exactly once across the whole shape.
-			this.paintOpening(c, f0, r);
-			this.paintOpening(c, f1, r);
+			this.paintOpening(c, f0, r, endD);
+			this.paintOpening(c, f1, r, endD);
 		}
 		else
 		{
@@ -563,13 +599,13 @@
 		wall(lower);
 	};
 
-	mxShapeOliabakTunnel.prototype.paintOpening = function(c, f, r)
+	mxShapeOliabakTunnel.prototype.paintOpening = function(c, f, r, d)
 	{
 		c.begin();
 
-		var p = tunnelEllipsePoint(f, r, 0);
+		var p = tunnelEllipsePoint(f, r, 0, d);
 		c.moveTo(p[0], p[1]);
-		tunnelEllipseArc(c, f, r, 0, 2 * Math.PI);
+		tunnelEllipseArc(c, f, r, 0, 2 * Math.PI, d);
 		c.close();
 		c.stroke();
 	};
@@ -2385,6 +2421,34 @@
 
 				state.style['tunnelWidth'] = Math.round(Math.max(0.05,
 					Math.min(0.9, thick / bounds.height)) * 100) / 100;
+			}), Graph.createHandle(state, ['tunnelEndDepth'], function(bounds)
+			{
+				var g = tunnelGeometry(state, bounds);
+				var f = tunnelFrame(g, 0);
+				var r = g.thick / 2;
+
+				// On the left mouth, out along the tube axis by exactly the
+				// distance the opening bulges, so the handle sits on the rim
+				// it controls.
+				return new mxPoint(f.x - f.ny * r * g.endDepth,
+					f.y + f.nx * r * g.endDepth);
+			}, function(bounds, pt)
+			{
+				var g = tunnelGeometry(state, bounds);
+				var f = tunnelFrame(g, 0);
+				var r = g.thick / 2;
+
+				if (r <= 0)
+				{
+					return;
+				}
+
+				// Distance back along the tube axis, as a share of the tube's
+				// radius, which is what the opening's foreshortening is.
+				var d = ((f.x - pt.x) * f.ny + (pt.y - f.y) * f.nx) / r;
+
+				state.style['tunnelEndDepth'] = Math.round(Math.max(0.05,
+					Math.min(1, d)) * 100) / 100;
 			})];
 		};
 
