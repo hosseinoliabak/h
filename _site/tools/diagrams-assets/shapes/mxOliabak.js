@@ -546,14 +546,19 @@
 		// places it needs to be visible.
 		if (ends)
 		{
+			// Traced from 2pi down to 0, which is the opposite winding to the
+			// outline above. Under the nonzero fill rule a subpath only
+			// becomes a hole when it runs against the enclosing path; running
+			// it the same way just fills it again, which is what happened
+			// when these were first written.
 			var h0 = tunnelEllipsePoint(f0, r, 0, endD);
 			c.moveTo(h0[0], h0[1]);
-			tunnelEllipseArc(c, f0, r, 0, 2 * Math.PI, endD);
+			tunnelEllipseArc(c, f0, r, 2 * Math.PI, 0, endD);
 			c.close();
 
 			var h1 = tunnelEllipsePoint(f1, r, 0, endD);
 			c.moveTo(h1[0], h1[1]);
-			tunnelEllipseArc(c, f1, r, 0, 2 * Math.PI, endD);
+			tunnelEllipseArc(c, f1, r, 2 * Math.PI, 0, endD);
 			c.close();
 		}
 
@@ -2389,6 +2394,18 @@
 
 		Graph.handleFactory['mxgraph.oliabak.tunnel'] = function(state)
 		{
+			// How far the end-face handle travels for the full range. The rim
+			// distance where the tube is fat enough, a comfortable minimum
+			// otherwise, so the drag never becomes hair-trigger on a thin one.
+			function endTrack(g)
+			{
+				// The mouth is inset by half a tube-thickness times the depth,
+				// so it slides along with the handle and eats part of the
+				// travel. Adding the radius back cancels that, leaving about
+				// eighty pixels of real movement whatever the tube's size.
+				return g.thick / 2 + 80;
+			};
+
 			return [Graph.createHandle(state, ['tunnelBow'], function(bounds)
 			{
 				var g = tunnelGeometry(state, bounds);
@@ -2425,27 +2442,28 @@
 			{
 				var g = tunnelGeometry(state, bounds);
 				var f = tunnelFrame(g, 0);
-				var r = g.thick / 2;
+				var t = endTrack(g);
 
-				// On the left mouth, out along the tube axis by exactly the
-				// distance the opening bulges, so the handle sits on the rim
-				// it controls.
-				return new mxPoint(f.x - f.ny * r * g.endDepth,
-					f.y + f.nx * r * g.endDepth);
+				// Along the tube axis from the left mouth. The rim itself is
+				// only half a tube-thickness away, so on a thin tube the whole
+				// range would fit in about twenty pixels and the handle was
+				// unusable. The track is held to a usable length instead, and
+				// only follows the rim once the tube is thick enough for that
+				// to be the longer of the two.
+				return new mxPoint(f.x - f.ny * t * g.endDepth,
+					f.y + f.nx * t * g.endDepth);
 			}, function(bounds, pt)
 			{
 				var g = tunnelGeometry(state, bounds);
 				var f = tunnelFrame(g, 0);
-				var r = g.thick / 2;
+				var t = endTrack(g);
 
-				if (r <= 0)
+				if (t <= 0)
 				{
 					return;
 				}
 
-				// Distance back along the tube axis, as a share of the tube's
-				// radius, which is what the opening's foreshortening is.
-				var d = ((f.x - pt.x) * f.ny + (pt.y - f.y) * f.nx) / r;
+				var d = ((f.x - pt.x) * f.ny + (pt.y - f.y) * f.nx) / t;
 
 				state.style['tunnelEndDepth'] = Math.round(Math.max(0.05,
 					Math.min(1, d)) * 100) / 100;
