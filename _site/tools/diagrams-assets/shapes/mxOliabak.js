@@ -1110,10 +1110,33 @@
 	};
 
 	/**
-	 * A tunnel painted without a companion gets one, once, outside the paint
-	 * cycle. This covers diagrams drawn before the mouths existed and the
-	 * first tunnel dropped in a session, whose drop happened before the sync
-	 * above was installed.
+	 * Whether the tunnel's companion is missing or no longer matches it.
+	 * A mismatch is a companion saved by an earlier build, whose style is
+	 * only otherwise brought up to date when the tunnel is next edited.
+	 */
+	function tunnelMouthsStale(graph, cell)
+	{
+		var colors = tunnelInteriorColors(graph, cell);
+		var wants = colors.near != null || colors.far != null;
+		var found = tunnelMouthsOf(graph, cell);
+
+		if (!wants)
+		{
+			return found.length > 0;
+		}
+
+		return found.length != 1 ||
+			graph.getModel().getStyle(found[0]) != tunnelMouthsStyle(graph, cell) ||
+			!sameGeometry(graph.getModel().getGeometry(found[0]),
+				graph.getModel().getGeometry(cell));
+	};
+
+	/**
+	 * A tunnel painted without a companion, or with an out-of-date one, is
+	 * put right once, outside the paint cycle. This covers diagrams drawn
+	 * before the mouths existed or saved by an earlier build of them, and
+	 * the first tunnel dropped in a session, whose drop happened before the
+	 * sync above was installed.
 	 */
 	function scheduleTunnelMouths(shape)
 	{
@@ -1126,11 +1149,7 @@
 		var graph = shape.state.view.graph;
 		var cell = shape.state.cell;
 
-		var colors = (graph != null) ? tunnelInteriorColors(graph, cell) : null;
-
-		if (graph == null || !graph.isEnabled() ||
-			(colors.near == null && colors.far == null) ||
-			tunnelMouthsOf(graph, cell).length > 0)
+		if (graph == null || !graph.isEnabled() || !tunnelMouthsStale(graph, cell))
 		{
 			return;
 		}
@@ -1139,7 +1158,7 @@
 		{
 			var model = graph.getModel();
 
-			if (!model.contains(cell) || tunnelMouthsOf(graph, cell).length > 0)
+			if (!model.contains(cell) || !tunnelMouthsStale(graph, cell))
 			{
 				return;
 			}
