@@ -302,7 +302,9 @@
 	 * mouths is hidden by them, whatever sits between the mouths and the
 	 * tunnel shows in the openings and is hidden by the wall, and whatever is
 	 * above the tunnel is simply on top. One shape could not do that, since
-	 * everything a shape draws sits at a single depth.
+	 * everything a shape draws sits at a single depth. The openings are the
+	 * page colour by default, so they still look like openings; each end can
+	 * be coloured on its own (Interior, Interior (Far End) under Fill).
 	 *
 	 * The round tube shading is one gradient rather than separate highlight
 	 * bands, so a half-transparent fill still lands exactly once.
@@ -331,11 +333,25 @@
 		{name: 'tunnelEndDepth', dispName: 'End Face', type: 'float', min: 0.05,
 			max: 1, defVal: 0.38},
 		{name: 'tunnelEnds', dispName: 'Open Ends', type: 'bool', defVal: true},
-		// What fills the openings: 'default' is a darker shade of the fill,
-		// 'none' leaves them as true holes.
+		// What fills the openings. Primary, so both sit in Format > Style
+		// under Fill next to the fill itself rather than down in Property.
+		// 'default' is the page colour, so a mouth reads as an opening onto
+		// the page while still hiding whatever is sent behind it; 'none' is a
+		// true hole. The far end follows the near one unless set on its own.
 		{name: 'tunnelInteriorColor', dispName: 'Interior', type: 'color',
-			defVal: 'default'}
+			defVal: 'default', primary: true,
+			get defaultColor() { return tunnelPageColor(); }},
+		{name: 'tunnelInteriorColor2', dispName: 'Interior (Far End)', type: 'color',
+			defVal: 'default', primary: true,
+			get defaultColor() { return tunnelPageColor(); }}
 	];
+
+	// The colour 'default' resolves to on the page, for the swatches above.
+	function tunnelPageColor()
+	{
+		return (typeof Graph !== 'undefined' && Graph.prototype.shapeBackgroundColor != null) ?
+			Graph.prototype.shapeBackgroundColor : '#ffffff';
+	};
 
 	// Outline samples along each side. Fixed rather than adaptive because the
 	// centre line is a single gentle curve, where 64 segments stay under a
@@ -692,9 +708,20 @@
 		var g = mxShapeOliabakTunnel.prototype.getTunnelGeometry(this.style, x, y, w, h);
 		var r = g.thick / 2;
 		var frames = [tunnelFrame(g, 0), tunnelFrame(g, 1)];
+		// The near end is the cell's fill, which draw.io has already resolved
+		// (a 'default' becomes the page colour). The far end is its own key:
+		// absent means the same as the near end, 'off' means not painted.
+		var far = mxUtils.getValue(this.style, 'tunnelFarFill', null);
+		var fills = [this.fill, (far == null) ? this.fill : ((far == 'off') ? null : far)];
 
 		for (var i = 0; i < frames.length; i++)
 		{
+			if (fills[i] == null || fills[i] == mxConstants.NONE)
+			{
+				continue;
+			}
+
+			c.setFillColor(fills[i]);
 			var p = tunnelEllipsePoint(frames[i], r, 0, g.endDepth);
 			c.begin();
 			c.moveTo(p[0], p[1]);
@@ -729,37 +756,34 @@
 	};
 
 	/**
-	 * The colour of the interior, or null for no interior at all. 'default'
-	 * is a shade of the tunnel's fill, so recolouring the tunnel recolours
-	 * the mouths with it; 'none' leaves the openings as true holes.
+	 * The colours of the two openings, each null for no interior at that end.
+	 * 'default' is passed through as the word: draw.io resolves it to the
+	 * page colour when the companion's fill is read, light or dark theme
+	 * alike. The far end follows the near one unless set on its own.
+	 *
+	 * 'none' has to be read off the raw style, because the stylesheet drops
+	 * any key set to none while resolving, and it would read as unset.
 	 */
-	function tunnelInteriorColor(graph, cell)
+	function tunnelInteriorColors(graph, cell)
 	{
-		// 'none' has to be read off the raw style: the stylesheet drops any
-		// key set to none while resolving, so it would read as unset.
 		var raw = graph.getModel().getStyle(cell) || '';
-
-		if (/(^|;)tunnelInteriorColor=none(;|$)/.test(raw))
-		{
-			return null;
-		}
-
 		var style = graph.getCellStyle(cell);
-		var v = mxUtils.getValue(style, 'tunnelInteriorColor', 'default');
-
-		if (v == 'default' || v == '')
+		var read = function(key)
 		{
-			var fill = mxUtils.getValue(style, mxConstants.STYLE_FILLCOLOR, null);
-
-			if (fill == null || fill == mxConstants.NONE || fill == 'default')
+			if (new RegExp('(^|;)' + key + '=none(;|$)').test(raw))
 			{
-				fill = mxUtils.getValue(style, mxConstants.STYLE_STROKECOLOR, '#647687');
+				return null;
 			}
 
-			return shade(fill, -0.25);
-		}
+			var v = mxUtils.getValue(style, key, 'default');
 
-		return v;
+			return (v == '') ? 'default' : v;
+		};
+
+		var near = read('tunnelInteriorColor');
+		var far = read('tunnelInteriorColor2');
+
+		return {near: near, far: (far == 'default') ? near : far};
 	};
 
 	/**
@@ -814,12 +838,15 @@
 	function tunnelMouthsStyle(graph, body)
 	{
 		var st = graph.getModel().getStyle(body) || '';
-		var color = tunnelInteriorColor(graph, body);
+		var colors = tunnelInteriorColors(graph, body);
 		var set = {shape: TUNNEL_MOUTHS, tunnelOf: body.id, locked: '1',
-			fillColor: color, strokeColor: mxConstants.NONE,
+			fillColor: (colors.near != null) ? colors.near : mxConstants.NONE,
+			tunnelFarFill: (colors.far == null) ? 'off' :
+				((colors.far == colors.near) ? null : colors.far),
+			strokeColor: mxConstants.NONE,
 			gradientColor: mxConstants.NONE, shadow: '0', glass: '0',
 			pointerEvents: '0', connectable: '0', noLabel: '1',
-			tunnelInteriorColor: null};
+			tunnelInteriorColor: null, tunnelInteriorColor2: null};
 
 		for (var key in set)
 		{
@@ -859,7 +886,8 @@
 
 		var found = tunnelMouthsOf(graph, body);
 		var style = graph.getCellStyle(body);
-		var wants = tunnelInteriorColor(graph, body) != null &&
+		var colors = tunnelInteriorColors(graph, body);
+		var wants = (colors.near != null || colors.far != null) &&
 			mxUtils.getValue(style, 'tunnelEnds', '1') != '0';
 
 		// One companion at most. Extras come from a copied group carrying a
@@ -1095,8 +1123,10 @@
 		var graph = shape.state.view.graph;
 		var cell = shape.state.cell;
 
+		var colors = (graph != null) ? tunnelInteriorColors(graph, cell) : null;
+
 		if (graph == null || !graph.isEnabled() ||
-			tunnelInteriorColor(graph, cell) == null ||
+			(colors.near == null && colors.far == null) ||
 			tunnelMouthsOf(graph, cell).length > 0)
 		{
 			return;
