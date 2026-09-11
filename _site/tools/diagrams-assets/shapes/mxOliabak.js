@@ -295,13 +295,17 @@
 	 * the clearance left between the tube and the cell edge, so the tunnel can
 	 * bow to its limit without ever leaving its own bounds.
 	 *
-	 * Both ends are stroked ellipses with no fill, which reads as a tube you
-	 * can see through rather than a capped pipe. That also keeps the shape to
-	 * a single filled layer. It matters here: the palette style is half
-	 * transparent, and stacked translucent fills would show up as darker
-	 * patches wherever they overlapped. For the same reason the round tube
-	 * shading is one gradient rather than the separate highlight bands an
-	 * opaque shape could afford.
+	 * Both ends are holes in the fill. What shows through them is a second,
+	 * locked cell, mxgraph.oliabak.tunnelMouths, that fills just the two
+	 * openings and follows this one (see the tunnel sync below). The two
+	 * cells are what give the tunnel its layers: whatever is sent behind the
+	 * mouths is hidden by them, whatever sits between the mouths and the
+	 * tunnel shows in the openings and is hidden by the wall, and whatever is
+	 * above the tunnel is simply on top. One shape could not do that, since
+	 * everything a shape draws sits at a single depth.
+	 *
+	 * The round tube shading is one gradient rather than separate highlight
+	 * bands, so a half-transparent fill still lands exactly once.
 	 */
 	function mxShapeOliabakTunnel(bounds, fill, stroke, strokewidth)
 	{
@@ -326,7 +330,11 @@
 			max: 1, defVal: 0},
 		{name: 'tunnelEndDepth', dispName: 'End Face', type: 'float', min: 0.05,
 			max: 1, defVal: 0.38},
-		{name: 'tunnelEnds', dispName: 'Open Ends', type: 'bool', defVal: true}
+		{name: 'tunnelEnds', dispName: 'Open Ends', type: 'bool', defVal: true},
+		// What fills the openings: 'default' is a darker shade of the fill,
+		// 'none' leaves them as true holes.
+		{name: 'tunnelInteriorColor', dispName: 'Interior', type: 'color',
+			defVal: 'default'}
 	];
 
 	// Outline samples along each side. Fixed rather than adaptive because the
@@ -468,6 +476,9 @@
 			return;
 		}
 
+		installTunnelSync(this);
+		scheduleTunnelMouths(this);
+
 		var g = this.getTunnelGeometry(this.style, x, y, w, h);
 		var r = g.thick / 2;
 		var shading = Math.max(0, Math.min(1,
@@ -545,8 +556,9 @@
 		// rather than over it: put the tunnel in front of the line and the
 		// wall hides the line along its length while both openings let it
 		// show, so it enters one end, disappears inside, and comes out the
-		// other. Filled faces would have covered the line at exactly the two
-		// places it needs to be visible.
+		// other. The openings are then closed off from behind by the
+		// tunnelMouths cell, so a device sent to the back is hidden by them
+		// rather than showing through.
 		if (ends)
 		{
 			// Traced from 2pi down to 0, which is the opposite winding to the
@@ -647,6 +659,470 @@
 	// before it was reworked into a tunnel, and diagrams drawn in that window
 	// should still open rather than showing an unknown-shape box.
 	mxCellRenderer.registerShape('mxgraph.oliabak.curvedPipe', mxShapeOliabakTunnel);
+
+	// ---------------------------------------------------------------------
+	// Tunnel mouths: the interior seen through each opening
+	// ---------------------------------------------------------------------
+
+	/**
+	 * Fills the two openings of a tunnel and nothing else. It is drawn from
+	 * the same style keys as the tunnel, so it needs no geometry of its own
+	 * beyond a copy of the tunnel's cell bounds, which the sync below keeps
+	 * current.
+	 */
+	function mxShapeOliabakTunnelMouths(bounds, fill, stroke, strokewidth)
+	{
+		mxShape.call(this);
+		this.bounds = bounds;
+		this.fill = fill;
+		this.stroke = stroke;
+		this.strokewidth = (strokewidth != null) ? strokewidth : 1;
+	};
+
+	mxUtils.extend(mxShapeOliabakTunnelMouths, mxShape);
+
+	mxShapeOliabakTunnelMouths.prototype.paintVertexShape = function(c, x, y, w, h)
+	{
+		if (!(w > 0) || !(h > 0) ||
+			mxUtils.getValue(this.style, 'tunnelEnds', '1') == '0')
+		{
+			return;
+		}
+
+		var g = mxShapeOliabakTunnel.prototype.getTunnelGeometry(this.style, x, y, w, h);
+		var r = g.thick / 2;
+		var frames = [tunnelFrame(g, 0), tunnelFrame(g, 1)];
+
+		for (var i = 0; i < frames.length; i++)
+		{
+			var p = tunnelEllipsePoint(frames[i], r, 0, g.endDepth);
+			c.begin();
+			c.moveTo(p[0], p[1]);
+			tunnelEllipseArc(c, frames[i], r, 0, 2 * Math.PI, g.endDepth);
+			c.close();
+			c.fill();
+		}
+	};
+
+	mxCellRenderer.registerShape('mxgraph.oliabak.tunnelMouths', mxShapeOliabakTunnelMouths);
+
+	var TUNNEL_MOUTHS = 'mxgraph.oliabak.tunnelMouths';
+
+	// Styles are read from the model, not the view: the sync runs before the
+	// view has caught up with the edit, and the view's copy is one step stale.
+	function isTunnelBody(graph, cell)
+	{
+		if (cell == null || !graph.getModel().isVertex(cell))
+		{
+			return false;
+		}
+
+		var shape = graph.getCellStyle(cell)[mxConstants.STYLE_SHAPE];
+
+		return shape == 'mxgraph.oliabak.tunnel' || shape == 'mxgraph.oliabak.curvedPipe';
+	};
+
+	function isTunnelMouths(graph, cell)
+	{
+		return cell != null && graph.getModel().isVertex(cell) &&
+			graph.getCellStyle(cell)[mxConstants.STYLE_SHAPE] == TUNNEL_MOUTHS;
+	};
+
+	/**
+	 * The colour of the interior, or null for no interior at all. 'default'
+	 * is a shade of the tunnel's fill, so recolouring the tunnel recolours
+	 * the mouths with it; 'none' leaves the openings as true holes.
+	 */
+	function tunnelInteriorColor(graph, cell)
+	{
+		// 'none' has to be read off the raw style: the stylesheet drops any
+		// key set to none while resolving, so it would read as unset.
+		var raw = graph.getModel().getStyle(cell) || '';
+
+		if (/(^|;)tunnelInteriorColor=none(;|$)/.test(raw))
+		{
+			return null;
+		}
+
+		var style = graph.getCellStyle(cell);
+		var v = mxUtils.getValue(style, 'tunnelInteriorColor', 'default');
+
+		if (v == 'default' || v == '')
+		{
+			var fill = mxUtils.getValue(style, mxConstants.STYLE_FILLCOLOR, null);
+
+			if (fill == null || fill == mxConstants.NONE || fill == 'default')
+			{
+				fill = mxUtils.getValue(style, mxConstants.STYLE_STROKECOLOR, '#647687');
+			}
+
+			return shade(fill, -0.25);
+		}
+
+		return v;
+	};
+
+	/**
+	 * Every mouths cell that claims the given tunnel. The tunnel's own parent
+	 * is tried first; the whole model only if that finds nothing, which is
+	 * the case after a tunnel is deleted or moved into a group.
+	 */
+	function tunnelMouthsOf(graph, body)
+	{
+		var model = graph.getModel();
+		var found = [];
+		var parent = model.getParent(body);
+
+		if (parent != null)
+		{
+			for (var i = 0; i < model.getChildCount(parent); i++)
+			{
+				var child = model.getChildAt(parent, i);
+
+				if (isTunnelMouths(graph, child) &&
+					graph.getCellStyle(child)['tunnelOf'] == body.id)
+				{
+					found.push(child);
+				}
+			}
+		}
+
+		if (found.length == 0 && model.cells != null)
+		{
+			for (var id in model.cells)
+			{
+				var cell = model.cells[id];
+
+				if (isTunnelMouths(graph, cell) &&
+					graph.getCellStyle(cell)['tunnelOf'] == body.id)
+				{
+					found.push(cell);
+				}
+			}
+		}
+
+		return found;
+	};
+
+	/**
+	 * The mouths cell's style is the tunnel's own with the shape swapped, so
+	 * bow, width, end depth, direction, flips and opacity all carry over,
+	 * plus what makes it a companion rather than a shape in its own right:
+	 * locked so it can never be picked, and transparent to the pointer so a
+	 * click in an opening reaches whatever is behind.
+	 */
+	function tunnelMouthsStyle(graph, body)
+	{
+		var st = graph.getModel().getStyle(body) || '';
+		var color = tunnelInteriorColor(graph, body);
+		var set = {shape: TUNNEL_MOUTHS, tunnelOf: body.id, locked: '1',
+			fillColor: color, strokeColor: mxConstants.NONE,
+			gradientColor: mxConstants.NONE, shadow: '0', glass: '0',
+			pointerEvents: '0', connectable: '0', noLabel: '1',
+			tunnelInteriorColor: null};
+
+		for (var key in set)
+		{
+			st = mxUtils.setStyle(st, key, set[key]);
+		}
+
+		return st;
+	};
+
+	function sameGeometry(a, b)
+	{
+		return a != null && b != null && a.x == b.x && a.y == b.y &&
+			a.width == b.width && a.height == b.height;
+	};
+
+	/**
+	 * Brings one tunnel's mouths cell into line: created if the tunnel wants
+	 * an interior and has none, removed if it no longer does, otherwise kept
+	 * in the tunnel's parent, below the tunnel, at the tunnel's bounds and
+	 * with its style.
+	 *
+	 * A new mouths cell goes to the bottom of the parent, not just under the
+	 * tunnel. Everything already drawn therefore stays in front of the
+	 * interior, so a line already running through the tube keeps showing in
+	 * the openings, and only what is sent to the back from then on goes
+	 * behind the mouths. That is the layering people expect: to back means
+	 * behind the hole.
+	 */
+	function syncTunnelMouths(graph, body)
+	{
+		var model = graph.getModel();
+
+		if (!model.contains(body))
+		{
+			return;
+		}
+
+		var found = tunnelMouthsOf(graph, body);
+		var style = graph.getCellStyle(body);
+		var wants = tunnelInteriorColor(graph, body) != null &&
+			mxUtils.getValue(style, 'tunnelEnds', '1') != '0';
+
+		// One companion at most. Extras come from a copied group carrying a
+		// mouths cell whose tunnel was also copied.
+		for (var i = (wants ? 1 : 0); i < found.length; i++)
+		{
+			model.remove(found[i]);
+		}
+
+		if (!wants)
+		{
+			return;
+		}
+
+		var parent = model.getParent(body);
+		var geo = model.getGeometry(body);
+		var plate = found[0];
+
+		if (plate == null)
+		{
+			plate = new mxCell('', geo.clone(), tunnelMouthsStyle(graph, body));
+			plate.setVertex(true);
+			plate.setConnectable(false);
+			model.add(parent, plate, 0);
+
+			return;
+		}
+
+		if (model.getParent(plate) != parent)
+		{
+			model.add(parent, plate, 0);
+		}
+		else if (parent.getIndex(plate) > parent.getIndex(body))
+		{
+			model.add(parent, plate, parent.getIndex(body));
+		}
+
+		if (!sameGeometry(model.getGeometry(plate), geo))
+		{
+			model.setGeometry(plate, geo.clone());
+		}
+
+		var st = tunnelMouthsStyle(graph, body);
+
+		if (st != model.getStyle(plate))
+		{
+			model.setStyle(plate, st);
+		}
+	};
+
+	/**
+	 * A mouths cell that arrived on its own, typically inside a pasted group,
+	 * still names the tunnel it was copied from. If a tunnel next to it has
+	 * no companion yet it is adopted by that one; otherwise it is dropped.
+	 */
+	function adoptTunnelMouths(graph, plate)
+	{
+		var model = graph.getModel();
+
+		if (!model.contains(plate))
+		{
+			return;
+		}
+
+		var parent = model.getParent(plate);
+		var ownerId = graph.getCellStyle(plate)['tunnelOf'];
+
+		for (var i = 0; i < model.getChildCount(parent); i++)
+		{
+			var sibling = model.getChildAt(parent, i);
+
+			if (isTunnelBody(graph, sibling))
+			{
+				if (sibling.id == ownerId)
+				{
+					return;
+				}
+
+				var others = tunnelMouthsOf(graph, sibling);
+
+				if (others.length == 0 || (others.length == 1 && others[0] == plate))
+				{
+					model.setStyle(plate, mxUtils.setStyle(model.getStyle(plate) || '',
+						'tunnelOf', sibling.id));
+
+					return;
+				}
+			}
+		}
+
+		model.remove(plate);
+	};
+
+	/**
+	 * Installed once per graph, on the first tunnel painted in it. Hooks
+	 * BEFORE_UNDO, as draw.io's own style sync does, so the companion's
+	 * changes join the edit that caused them and one undo reverts both.
+	 * Undo and redo never fire it, so the companion is never touched twice.
+	 *
+	 * Skipped on a disabled graph: the sidebar draws its thumbnails in one,
+	 * and a lightbox is one, and neither should grow cells.
+	 */
+	function installTunnelSync(shape)
+	{
+		if (shape.state == null)
+		{
+			return;
+		}
+
+		var graph = shape.state.view.graph;
+
+		if (graph == null || graph.__oliabakTunnelSync ||
+			typeof mxStyleChange === 'undefined')
+		{
+			return;
+		}
+
+		graph.__oliabakTunnelSync = true;
+
+		graph.getModel().addListener(mxEvent.BEFORE_UNDO, function(sender, evt)
+		{
+			if (!graph.isEnabled())
+			{
+				return;
+			}
+
+			var edit = evt.getProperty('edit');
+			var changes = (edit != null) ? edit.changes : null;
+
+			if (changes == null)
+			{
+				return;
+			}
+
+			var model = graph.getModel();
+			var bodies = {}, removed = {}, strays = {};
+
+			// Snapshot the length: the sync below appends to this list.
+			var n = changes.length;
+
+			for (var i = 0; i < n; i++)
+			{
+				var ch = changes[i];
+				var cell = null;
+
+				if (ch instanceof mxStyleChange || ch instanceof mxGeometryChange)
+				{
+					cell = ch.cell;
+				}
+				else if (ch instanceof mxChildChange)
+				{
+					cell = ch.child;
+
+					if (cell != null && ch.parent == null && isTunnelBody(graph, cell))
+					{
+						removed[cell.id] = cell;
+						continue;
+					}
+
+					if (cell != null && ch.previous == null)
+					{
+						// Arrived from a paste, a drop or a clone. Its children
+						// came along inside it without changes of their own, so
+						// they are walked here: a pasted group carries copies of
+						// both the tunnel and its companion.
+						collect(cell);
+						continue;
+					}
+				}
+
+				if (cell != null && isTunnelBody(graph, cell))
+				{
+					bodies[cell.id] = cell;
+				}
+			}
+
+			function collect(cell)
+			{
+				if (isTunnelMouths(graph, cell))
+				{
+					strays[cell.id] = cell;
+				}
+				else if (isTunnelBody(graph, cell))
+				{
+					bodies[cell.id] = cell;
+				}
+
+				for (var i = 0; i < model.getChildCount(cell); i++)
+				{
+					collect(model.getChildAt(cell, i));
+				}
+			};
+
+			for (var id in removed)
+			{
+				var plates = tunnelMouthsOf(graph, removed[id]);
+
+				for (var i = 0; i < plates.length; i++)
+				{
+					if (model.contains(plates[i]))
+					{
+						model.remove(plates[i]);
+					}
+				}
+			}
+
+			for (var id in strays)
+			{
+				adoptTunnelMouths(graph, strays[id]);
+			}
+
+			for (var id in bodies)
+			{
+				syncTunnelMouths(graph, bodies[id]);
+			}
+		});
+	};
+
+	/**
+	 * A tunnel painted without a companion gets one, once, outside the paint
+	 * cycle. This covers diagrams drawn before the mouths existed and the
+	 * first tunnel dropped in a session, whose drop happened before the sync
+	 * above was installed.
+	 */
+	function scheduleTunnelMouths(shape)
+	{
+		if (shape.state == null || shape.__oliabakMouthsChecked)
+		{
+			return;
+		}
+
+		shape.__oliabakMouthsChecked = true;
+		var graph = shape.state.view.graph;
+		var cell = shape.state.cell;
+
+		if (graph == null || !graph.isEnabled() ||
+			tunnelInteriorColor(graph, cell) == null ||
+			tunnelMouthsOf(graph, cell).length > 0)
+		{
+			return;
+		}
+
+		window.setTimeout(function()
+		{
+			var model = graph.getModel();
+
+			if (!model.contains(cell) || tunnelMouthsOf(graph, cell).length > 0)
+			{
+				return;
+			}
+
+			model.beginUpdate();
+
+			try
+			{
+				syncTunnelMouths(graph, cell);
+			}
+			finally
+			{
+				model.endUpdate();
+			}
+		}, 0);
+	};
 
 	// ---------------------------------------------------------------------
 	// Arc chevron
