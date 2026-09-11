@@ -338,11 +338,14 @@
 		// 'default' is the page colour, so a mouth reads as an opening onto
 		// the page while still hiding whatever is sent behind it; 'none' is a
 		// true hole. The far end follows the near one unless set on its own.
+		// undefinedColor tells the row that an unset key means 'default', so
+		// its checkbox shows ticked and its swatch the page colour, which is
+		// what is drawn; without it the row would read as no colour at all.
 		{name: 'tunnelInteriorColor', dispName: 'Interior', type: 'color',
-			defVal: 'default', primary: true,
+			defVal: 'default', primary: true, undefinedColor: 'default',
 			get defaultColor() { return tunnelPageColor(); }},
 		{name: 'tunnelInteriorColor2', dispName: 'Interior (Far End)', type: 'color',
-			defVal: 'default', primary: true,
+			defVal: 'default', primary: true, undefinedColor: 'default',
 			get defaultColor() { return tunnelPageColor(); }}
 	];
 
