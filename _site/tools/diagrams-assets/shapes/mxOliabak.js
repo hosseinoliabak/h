@@ -2555,6 +2555,10 @@
 
 		c.setShadow(false);
 
+		// The body colour as the canvas resolved it, for a badge that punches
+		// a hole back through its own marking.
+		var body = c.state.fillColor;
+
 		// The lid, filled so the arrows sit on a face rather than on the body.
 		c.begin();
 		c.moveTo(0, size);
@@ -2566,6 +2570,7 @@
 		c.fillAndStroke();
 
 		this.paintMarkings(c, w * 0.5, size, w * 0.5, size);
+		this.paintBadge(c, w, h, size, body);
 	};
 
 	/**
@@ -2594,7 +2599,79 @@
 		}
 	};
 
+	/**
+	 * Hook for a variant's badge on the front face. The plain router has none.
+	 */
+	mxShapeOliabakRouter.prototype.paintBadge = function(c, w, h, size, body)
+	{
+	};
+
 	mxCellRenderer.registerShape('mxgraph.oliabak.router', mxShapeOliabakRouter);
+
+	/**
+	 * The MPLS router: the router above with a label on its front face.
+	 *
+	 * No icon set has a label switch router. Cisco's own MPLS material draws
+	 * P and PE routers with the plain router and writes the role beside it,
+	 * and the two "tag" icons in stencils/cisco/routers.xml (the ATM Tag
+	 * Switch Router and the Gigabit Switch ATM Tag Router) are Tag Switching
+	 * era ATM devices carrying the ATM cross, so they read as ATM. This
+	 * follows the set's own grammar instead. A variant is the router with a
+	 * badge on its front face, where the Service Router and the ATM Router
+	 * carry theirs, and the badge here is a luggage tag: the label that MPLS
+	 * switches on. Same depth handle and colours as the router.
+	 */
+	function mxShapeOliabakMplsRouter(bounds, fill, stroke, strokewidth)
+	{
+		mxShapeOliabakRouter.call(this, bounds, fill, stroke, strokewidth);
+	};
+
+	mxUtils.extend(mxShapeOliabakMplsRouter, mxShapeOliabakRouter);
+
+	/**
+	 * The tag, centred on the front face and sized to the face's height at
+	 * the middle, from the lid's front edge to the base's. Filled like the
+	 * arrows, with the eyelet punched back in the body colour.
+	 */
+	mxShapeOliabakMplsRouter.prototype.paintBadge = function(c, w, h, size, body)
+	{
+		var face = h - 2 * size;
+
+		if (face < 4 || w < 8)
+		{
+			return;
+		}
+
+		var th = Math.min(face * 0.62, w * 0.2);
+		var tw = Math.min(w * 0.46, th * 2.4);
+		var cx = w * 0.5;
+		var cy = 2 * size + face * 0.5;
+		var x0 = cx - tw * 0.5;
+		var x1 = cx + tw * 0.5;
+		// The pointed end, one half-height long so it meets the body at 45
+		// degrees.
+		var nose = x0 + th * 0.5;
+
+		c.setFillColor(mxUtils.getValue(this.style, 'strokeColor2', '#CC0000'));
+		c.begin();
+		c.moveTo(x0, cy);
+		c.lineTo(nose, cy - th * 0.5);
+		c.lineTo(x1, cy - th * 0.5);
+		c.lineTo(x1, cy + th * 0.5);
+		c.lineTo(nose, cy + th * 0.5);
+		c.close();
+		c.fill();
+
+		if (body != null && body != mxConstants.NONE)
+		{
+			var r = th * 0.15;
+			c.setFillColor(body);
+			c.ellipse(nose - r, cy - r, 2 * r, 2 * r);
+			c.fill();
+		}
+	};
+
+	mxCellRenderer.registerShape('mxgraph.oliabak.mplsRouter', mxShapeOliabakMplsRouter);
 
 	/**
 	 * The classic switch: an isometric box with four arrows on its top face.
@@ -3400,6 +3477,10 @@
 					Math.min(bounds.height * 0.5, pt.y - bounds.y)));
 			}, true)];
 		};
+
+		// The same lid, so the same handle.
+		Graph.handleFactory['mxgraph.oliabak.mplsRouter'] =
+			Graph.handleFactory['mxgraph.oliabak.router'];
 
 		/**
 		 * Band width, chevron depth and label position, on the segment itself.
