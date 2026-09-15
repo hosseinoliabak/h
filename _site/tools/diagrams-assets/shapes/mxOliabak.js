@@ -2517,15 +2517,23 @@
 	 *   headLength   the arrowhead's length along the curve, same unit
 	 *   headWidth    the arrowhead's full width, same unit, never narrower
 	 *                than the band
+	 *   tailSkew     degrees the outer edge's start is moved past the inner
+	 *                edge's, which cuts the tail on a slant
+	 *   fold         percent of the sweep at which the ribbon turns over;
+	 *                0 leaves one surface
+	 *   foldSkew     degrees the crease is slanted across the band
+	 *   fillColor2   the underside's colour
 	 *
 	 * Sizes are shares of the box rather than pixels so the arrow keeps its
 	 * proportions when it is resized, the way a stencil would, and a small
 	 * one in a legend and a large one over a topology are the same drawing.
-	 *   tailSkew     degrees the outer edge's start is moved past the inner
-	 *                edge's, which cuts the tail on a slant
 	 *
-	 * The two-tone shading is the ordinary fill gradient (Fill and Gradient
-	 * in the Format panel), so it needs no code of its own.
+	 * The ribbon is drawn as two pieces. From the tail to the crease it
+	 * shows its underside, in fillColor2; from the crease to the head it
+	 * shows its top, in the ordinary fill, gradient and all. The top piece
+	 * is painted first and the underside over it, cut on the slant of the
+	 * crease, so the tail leg appears to lie on the part that has turned
+	 * over, which is how the textbook figures read.
 	 */
 	function mxShapeOliabakArcArrow(bounds, fill, stroke, strokewidth)
 	{
@@ -2544,6 +2552,8 @@
 	mxShapeOliabakArcArrow.prototype.headLength = 24;
 	mxShapeOliabakArcArrow.prototype.headWidth = 38;
 	mxShapeOliabakArcArrow.prototype.tailSkew = 0;
+	mxShapeOliabakArcArrow.prototype.fold = 40;
+	mxShapeOliabakArcArrow.prototype.foldSkew = 8;
 
 	mxShapeOliabakArcArrow.prototype.customProperties = [
 		{name: 'startAngle', dispName: 'Tail Angle', type: 'float', min: 0,
@@ -2557,7 +2567,13 @@
 		{name: 'headWidth', dispName: 'Arrowhead Width %', type: 'float', min: 2,
 			max: 90, defVal: 38},
 		{name: 'tailSkew', dispName: 'Tail Skew', type: 'float', min: -60,
-			max: 60, defVal: 0}
+			max: 60, defVal: 0},
+		{name: 'fold', dispName: 'Fold %', type: 'float', min: 0, max: 90,
+			defVal: 40},
+		{name: 'foldSkew', dispName: 'Fold Skew', type: 'float', min: -30,
+			max: 30, defVal: 8},
+		{name: 'fillColor2', dispName: 'Underside Color', type: 'color',
+			defVal: '#8C8C8C'}
 	];
 
 	/**
@@ -2608,10 +2624,25 @@
 			this.headLength) * u) / rm);
 		var skew = Math.max(-60, Math.min(60, num('tailSkew', this.tailSkew))) *
 			Math.PI / 180;
+		var ab = a0 + sw - s * ha;
+		// The crease: a fraction of the sweep, slanted by foldSkew, and kept
+		// clear of the head so the top piece always has a band of its own.
+		var foldSkew = Math.max(-30, Math.min(30, num('foldSkew', this.foldSkew))) *
+			Math.PI / 180;
+		var foldFrac = Math.max(0, Math.min(90, num('fold', this.fold))) / 100;
+		var af = a0 + sw * foldFrac;
+		var room = Math.abs(ab - a0) - Math.abs(foldSkew) - 0.05;
+
+		if (foldFrac > 0 && (Math.abs(af - a0) + Math.abs(foldSkew) > room))
+		{
+			af = a0 + s * Math.max(0, room);
+		}
 
 		return {cx: x + w / 2, cy: y + h / 2, rx: rx, ry: ry, t: t, hw: hw, u: u,
 			rmx: rmx, rmy: rmy, rm: rm, a0: a0, sw: sw, s: s, ha: ha,
-			skew: skew, ab: a0 + sw - s * ha, ae: a0 + sw,
+			skew: skew, ab: ab, ae: a0 + sw,
+			folded: foldFrac > 0 && Math.abs(af - a0) > 0.02, af: af,
+			fs: foldSkew,
 			// A point of the centre ellipse.
 			mid: function(a)
 			{
@@ -2651,13 +2682,43 @@
 
 		c.translate(x, y);
 
-		// The band's two edges are parallel offsets of the centre ellipse,
-		// which are not ellipses themselves, so they are walked in steps of
-		// about three degrees: smooth at any size the box can reach, and
-		// free of the arc-flag cases a long sweep would otherwise raise.
 		var aOut0 = g.a0 + g.s * g.skew;
-		var n = Math.max(12, Math.ceil(Math.abs(g.ab - g.a0) / (Math.PI / 60)));
+
+		if (!g.folded)
+		{
+			this.paintPiece(c, g, aOut0, g.ab, g.ab, g.a0, true);
+
+			return;
+		}
+
+		// The top piece first, from just before the crease so that nothing
+		// shows through, then the underside over it, ending on the crease.
+		var creaseOut = g.af + g.s * g.fs;
+		var creaseIn = g.af - g.s * g.fs;
+		var under = (g.fs >= 0) ? creaseIn : creaseOut;
+
+		this.paintPiece(c, g, under, g.ab, g.ab, under, true);
+
+		c.setFillColor(mxUtils.getValue(this.style, 'fillColor2', '#8C8C8C'));
+		this.paintPiece(c, g, aOut0, creaseOut, creaseIn, g.a0, false);
+	};
+
+	/**
+	 * One piece of the ribbon. The outer edge runs from aOut0 to aOut1, the
+	 * inner edge back from aIn1 to aIn0, and a straight line joins each
+	 * pair of ends, which is what lets both cuts be slanted. With a head,
+	 * the arrowhead sits between the two edges' far ends instead.
+	 *
+	 * The edges are parallel offsets of the centre ellipse, which are not
+	 * ellipses themselves, so they are walked in steps of about three
+	 * degrees: smooth at any size the box can reach, and free of the
+	 * arc-flag cases a long sweep would otherwise raise.
+	 */
+	mxShapeOliabakArcArrow.prototype.paintPiece = function(c, g, aOut0, aOut1, aIn1, aIn0, head)
+	{
 		var half = g.t / 2;
+		var n = Math.max(6, Math.ceil(Math.max(Math.abs(aOut1 - aOut0),
+			Math.abs(aIn1 - aIn0)) / (Math.PI / 60)));
 		var p = g.edge(aOut0, half);
 		var i;
 
@@ -2666,20 +2727,23 @@
 
 		for (i = 1; i <= n; i++)
 		{
-			p = g.edge(aOut0 + (g.ab - aOut0) * i / n, half);
+			p = g.edge(aOut0 + (aOut1 - aOut0) * i / n, half);
 			c.lineTo(p.x, p.y);
 		}
 
-		p = g.edge(g.ab, g.hw / 2);
-		c.lineTo(p.x, p.y);
-		p = g.mid(g.ae);
-		c.lineTo(p.x, p.y);
-		p = g.edge(g.ab, -g.hw / 2);
-		c.lineTo(p.x, p.y);
+		if (head)
+		{
+			p = g.edge(g.ab, g.hw / 2);
+			c.lineTo(p.x, p.y);
+			p = g.mid(g.ae);
+			c.lineTo(p.x, p.y);
+			p = g.edge(g.ab, -g.hw / 2);
+			c.lineTo(p.x, p.y);
+		}
 
 		for (i = 0; i <= n; i++)
 		{
-			p = g.edge(g.ab + (g.a0 - g.ab) * i / n, -half);
+			p = g.edge(aIn1 + (aIn0 - aIn1) * i / n, -half);
 			c.lineTo(p.x, p.y);
 		}
 
@@ -3608,9 +3672,10 @@
 		};
 
 		/**
-		 * Four handles on the curved block arrow: the tail on the outer
-		 * edge, the head at the tip, the band on the inner edge midway, and
-		 * the head size at the head's outer corner. Angles are read off the
+		 * Five handles on the curved block arrow: the tail on the outer
+		 * edge, the head at the tip, the band on the inner edge midway, the
+		 * crease on the centre line, and the head size at the head's outer
+		 * corner. Angles are read off the
 		 * ellipse in its own parametric sense, so a drag lands where the
 		 * pointer is on a wide box as well as on a square one.
 		 */
@@ -3695,6 +3760,30 @@
 						var inward = -((pt.x - m.x) * nv.x + (pt.y - m.y) * nv.y);
 						this.state.style['arrowWidth'] = Math.round(Math.max(2,
 							Math.min(80, 2 * inward / g.u)));
+					}
+				}, true),
+				Graph.createHandle(state, ['fold'], function(bounds)
+				{
+					var g = geo(bounds);
+
+					if (g == null)
+					{
+						return null;
+					}
+
+					// On the crease, or at the tail when there is none, so a
+					// fold can be dragged into a flat arrow.
+					return g.mid(g.folded ? g.af : g.a0);
+				}, function(bounds, pt)
+				{
+					var g = geo(bounds);
+
+					if (g != null)
+					{
+						var d = g.s * (angleAt(g, pt, g.rmx, g.rmy) - g.a0);
+						d = d - 2 * Math.PI * Math.floor(d / (2 * Math.PI));
+						this.state.style['fold'] = Math.round(Math.max(0,
+							Math.min(90, d / Math.abs(g.sw) * 100)));
 					}
 				}, true),
 				Graph.createHandle(state, ['headLength', 'headWidth'], function(bounds)
