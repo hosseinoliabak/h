@@ -14,6 +14,8 @@
  *                              and a position handle on each hump
  *   mxgraph.oliabak.tunnel     see-through tube on a bowed centre line,
  *                              straight at zero curvature
+ *   mxgraph.oliabak.arcArrow   block arrow bent along an ellipse, with tail,
+ *                              head, band and head-size handles
  */
 (function()
 {
@@ -2495,6 +2497,199 @@
 	};
 
 	// ---------------------------------------------------------------------
+	// Curved block arrow
+	// ---------------------------------------------------------------------
+
+	/**
+	 * A block arrow bent along an ellipse that fills the shape's bounds: the
+	 * wide, shaded arrows textbooks draw for a label push, swap or pop.
+	 *
+	 * The stock libraries have such arrows only as fixed drawings (the
+	 * Jump-in, Circular and U-turn stencils), so the sweep, the band and the
+	 * head cannot be changed, and those three are exactly what differ from
+	 * one figure to the next. Here every one is a style key with a handle:
+	 *
+	 *   startAngle   where the tail sits on the ellipse, in degrees, screen
+	 *                sense (0 east, 90 south, 180 west, 270 north)
+	 *   sweep        how far the arrow runs, in degrees; positive clockwise,
+	 *                negative counter-clockwise
+	 *   arrowWidth   the band's thickness, percent of the box's shorter side
+	 *   headLength   the arrowhead's length along the curve, same unit
+	 *   headWidth    the arrowhead's full width, same unit, never narrower
+	 *                than the band
+	 *
+	 * Sizes are shares of the box rather than pixels so the arrow keeps its
+	 * proportions when it is resized, the way a stencil would, and a small
+	 * one in a legend and a large one over a topology are the same drawing.
+	 *   tailSkew     degrees the outer edge's start is moved past the inner
+	 *                edge's, which cuts the tail on a slant
+	 *
+	 * The two-tone shading is the ordinary fill gradient (Fill and Gradient
+	 * in the Format panel), so it needs no code of its own.
+	 */
+	function mxShapeOliabakArcArrow(bounds, fill, stroke, strokewidth)
+	{
+		mxShape.call(this);
+		this.bounds = bounds;
+		this.fill = fill;
+		this.stroke = stroke;
+		this.strokewidth = (strokewidth != null) ? strokewidth : 1;
+	};
+
+	mxUtils.extend(mxShapeOliabakArcArrow, mxShape);
+
+	mxShapeOliabakArcArrow.prototype.startAngle = 180;
+	mxShapeOliabakArcArrow.prototype.sweep = 180;
+	mxShapeOliabakArcArrow.prototype.arrowWidth = 20;
+	mxShapeOliabakArcArrow.prototype.headLength = 24;
+	mxShapeOliabakArcArrow.prototype.headWidth = 38;
+	mxShapeOliabakArcArrow.prototype.tailSkew = 0;
+
+	mxShapeOliabakArcArrow.prototype.customProperties = [
+		{name: 'startAngle', dispName: 'Tail Angle', type: 'float', min: 0,
+			max: 360, defVal: 180},
+		{name: 'sweep', dispName: 'Sweep', type: 'float', min: -350, max: 350,
+			defVal: 180},
+		{name: 'arrowWidth', dispName: 'Band Width %', type: 'float', min: 2,
+			max: 80, defVal: 20},
+		{name: 'headLength', dispName: 'Arrowhead Length %', type: 'float', min: 2,
+			max: 100, defVal: 24},
+		{name: 'headWidth', dispName: 'Arrowhead Width %', type: 'float', min: 2,
+			max: 90, defVal: 38},
+		{name: 'tailSkew', dispName: 'Tail Skew', type: 'float', min: -60,
+			max: 60, defVal: 0}
+	];
+
+	/**
+	 * Everything the painter and the handles need, from the style and the
+	 * box. Angles come back in radians. The outer ellipse is inset by what
+	 * the head sticks out past the band, so the whole arrow stays inside
+	 * the box. Null when the box is too small to hold anything.
+	 */
+	mxShapeOliabakArcArrow.prototype.getArcArrowGeometry = function(style, x, y, w, h)
+	{
+		var num = function(key, def)
+		{
+			var v = parseFloat(mxUtils.getValue(style, key, def));
+
+			return isNaN(v) ? def : v;
+		};
+
+		var a0 = num('startAngle', this.startAngle) * Math.PI / 180;
+		var sweepDeg = num('sweep', this.sweep);
+
+		if (Math.abs(sweepDeg) < 10)
+		{
+			sweepDeg = (sweepDeg < 0) ? -10 : 10;
+		}
+
+		var sw = Math.max(-350, Math.min(350, sweepDeg)) * Math.PI / 180;
+		var s = (sw < 0) ? -1 : 1;
+		// The unit every size is given in.
+		var u = Math.min(w, h) / 100;
+		var t = Math.max(1, num('arrowWidth', this.arrowWidth) * u);
+		var hw = Math.max(t, num('headWidth', this.headWidth) * u);
+		var inset = (hw - t) / 2;
+		var rx = w / 2 - inset;
+		var ry = h / 2 - inset;
+
+		if (rx < 4 || ry < 4)
+		{
+			return null;
+		}
+
+		t = Math.min(t, Math.min(rx, ry) - 1);
+		var rmx = rx - t / 2;
+		var rmy = ry - t / 2;
+		var rm = (rmx + rmy) / 2;
+		// The head's length as an angle on the middle ellipse, kept short of
+		// the whole sweep so a band always remains.
+		var ha = Math.min(Math.abs(sw) * 0.9, Math.max(1, num('headLength',
+			this.headLength) * u) / rm);
+		var skew = Math.max(-60, Math.min(60, num('tailSkew', this.tailSkew))) *
+			Math.PI / 180;
+
+		return {cx: x + w / 2, cy: y + h / 2, rx: rx, ry: ry, t: t, hw: hw, u: u,
+			rmx: rmx, rmy: rmy, rm: rm, a0: a0, sw: sw, s: s, ha: ha,
+			skew: skew, ab: a0 + sw - s * ha, ae: a0 + sw,
+			// A point of the centre ellipse.
+			mid: function(a)
+			{
+				return new mxPoint(this.cx + this.rmx * Math.cos(a),
+					this.cy + this.rmy * Math.sin(a));
+			},
+			// The outward unit normal of the centre ellipse there. On a
+			// flattened ellipse this is not the line to the centre, and
+			// using it is what keeps the band the same width all the way
+			// round and the head square to the curve.
+			normal: function(a)
+			{
+				var nx = Math.cos(a) / this.rmx;
+				var ny = Math.sin(a) / this.rmy;
+				var len = Math.sqrt(nx * nx + ny * ny);
+
+				return new mxPoint(nx / len, ny / len);
+			},
+			// A point d outward (negative: inward) of the centre ellipse.
+			edge: function(a, d)
+			{
+				var m = this.mid(a);
+				var n = this.normal(a);
+
+				return new mxPoint(m.x + n.x * d, m.y + n.y * d);
+			}};
+	};
+
+	mxShapeOliabakArcArrow.prototype.paintVertexShape = function(c, x, y, w, h)
+	{
+		var g = this.getArcArrowGeometry(this.style, 0, 0, w, h);
+
+		if (g == null)
+		{
+			return;
+		}
+
+		c.translate(x, y);
+
+		// The band's two edges are parallel offsets of the centre ellipse,
+		// which are not ellipses themselves, so they are walked in steps of
+		// about three degrees: smooth at any size the box can reach, and
+		// free of the arc-flag cases a long sweep would otherwise raise.
+		var aOut0 = g.a0 + g.s * g.skew;
+		var n = Math.max(12, Math.ceil(Math.abs(g.ab - g.a0) / (Math.PI / 60)));
+		var half = g.t / 2;
+		var p = g.edge(aOut0, half);
+		var i;
+
+		c.begin();
+		c.moveTo(p.x, p.y);
+
+		for (i = 1; i <= n; i++)
+		{
+			p = g.edge(aOut0 + (g.ab - aOut0) * i / n, half);
+			c.lineTo(p.x, p.y);
+		}
+
+		p = g.edge(g.ab, g.hw / 2);
+		c.lineTo(p.x, p.y);
+		p = g.mid(g.ae);
+		c.lineTo(p.x, p.y);
+		p = g.edge(g.ab, -g.hw / 2);
+		c.lineTo(p.x, p.y);
+
+		for (i = 0; i <= n; i++)
+		{
+			p = g.edge(g.ab + (g.a0 - g.ab) * i / n, -half);
+			c.lineTo(p.x, p.y);
+		}
+
+		c.close();
+		c.fillAndStroke();
+	};
+
+	mxCellRenderer.registerShape('mxgraph.oliabak.arcArrow', mxShapeOliabakArcArrow);
+
+	// ---------------------------------------------------------------------
 	// Parametric devices
 	// ---------------------------------------------------------------------
 
@@ -3409,6 +3604,124 @@
 				positionHandle(state, 'bowPos2', DEFAULT_BOW_POS2),
 				bowHandle(state, 'bow', 1 / 3, DEFAULT_BOW, 'bowPos', DEFAULT_BOW_POS),
 				bowHandle(state, 'bow2', 2 / 3, -DEFAULT_BOW, 'bowPos2', DEFAULT_BOW_POS2)
+			];
+		};
+
+		/**
+		 * Four handles on the curved block arrow: the tail on the outer
+		 * edge, the head at the tip, the band on the inner edge midway, and
+		 * the head size at the head's outer corner. Angles are read off the
+		 * ellipse in its own parametric sense, so a drag lands where the
+		 * pointer is on a wide box as well as on a square one.
+		 */
+		Graph.handleFactory['mxgraph.oliabak.arcArrow'] = function(state)
+		{
+			var proto = mxCellRenderer.defaultShapes['mxgraph.oliabak.arcArrow'].prototype;
+
+			function geo(bounds)
+			{
+				return proto.getArcArrowGeometry(state.style, bounds.x, bounds.y,
+					bounds.width, bounds.height);
+			};
+
+			function angleAt(g, pt, kx, ky)
+			{
+				return Math.atan2((pt.y - g.cy) / ky, (pt.x - g.cx) / kx);
+			};
+
+			function degrees(a)
+			{
+				var d = Math.round(a * 180 / Math.PI) % 360;
+
+				return (d < 0) ? d + 360 : d;
+			};
+
+			return [
+				Graph.createHandle(state, ['startAngle'], function(bounds)
+				{
+					var g = geo(bounds);
+
+					return (g == null) ? null : g.edge(g.a0, g.t / 2);
+				}, function(bounds, pt)
+				{
+					var g = geo(bounds);
+
+					if (g != null)
+					{
+						this.state.style['startAngle'] = degrees(angleAt(g, pt, g.rmx, g.rmy));
+					}
+				}, true),
+				Graph.createHandle(state, ['sweep'], function(bounds)
+				{
+					var g = geo(bounds);
+
+					return (g == null) ? null : g.mid(g.ae);
+				}, function(bounds, pt)
+				{
+					var g = geo(bounds);
+
+					if (g != null)
+					{
+						// Keep the direction, so the head walks round the
+						// ellipse; the sign is flipped in the property row.
+						var d = degrees(angleAt(g, pt, g.rmx, g.rmy) - g.a0);
+						d = Math.max(10, Math.min(350, d));
+						this.state.style['sweep'] = (g.s > 0) ? d : d - 360;
+					}
+				}, true),
+				Graph.createHandle(state, ['arrowWidth'], function(bounds)
+				{
+					var g = geo(bounds);
+
+					if (g == null)
+					{
+						return null;
+					}
+
+					var am = g.a0 + (g.ab - g.a0) / 2;
+
+					return g.edge(am, -g.t / 2);
+				}, function(bounds, pt)
+				{
+					var g = geo(bounds);
+
+					if (g != null)
+					{
+						// How far inside the centre line the pointer sits,
+						// along the normal there, is half the band.
+						var am = g.a0 + (g.ab - g.a0) / 2;
+						var m = g.mid(am);
+						var nv = g.normal(am);
+						var inward = -((pt.x - m.x) * nv.x + (pt.y - m.y) * nv.y);
+						this.state.style['arrowWidth'] = Math.round(Math.max(2,
+							Math.min(80, 2 * inward / g.u)));
+					}
+				}, true),
+				Graph.createHandle(state, ['headLength', 'headWidth'], function(bounds)
+				{
+					var g = geo(bounds);
+
+					return (g == null) ? null : g.edge(g.ab, g.hw / 2);
+				}, function(bounds, pt)
+				{
+					var g = geo(bounds);
+
+					if (g != null)
+					{
+						// Distance outside the centre line, along the normal at
+						// the head's base, is half the head's width; the angle
+						// back from the tip is its length.
+						var m = g.mid(g.ab);
+						var nv = g.normal(g.ab);
+						var out = (pt.x - m.x) * nv.x + (pt.y - m.y) * nv.y;
+						this.state.style['headWidth'] = Math.round(Math.max(g.t / g.u,
+							Math.min(90, 2 * out / g.u)));
+						var back = g.s * (g.ae - angleAt(g, pt, g.rmx, g.rmy));
+						back = back - 2 * Math.PI * Math.floor(back / (2 * Math.PI));
+						this.state.style['headLength'] = Math.round(Math.max(2,
+							Math.min(100, Math.min(Math.abs(g.sw) * 0.9, back) * g.rm / g.u)));
+					}
+				}, true)
 			];
 		};
 
