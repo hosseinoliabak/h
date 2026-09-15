@@ -2521,8 +2521,7 @@
 	 *   fold         percent of the sweep at which the ribbon turns over;
 	 *                0 leaves one surface
 	 *   foldSpan     how much of the sweep the ribbon takes to turn, percent
-	 *   foldPinch    the band's width at the turn, percent of the full width;
-	 *                0 closes it to a point
+	 *                of the sweep
 	 *   fillColor2   the back of the ribbon, shown before the turn
 	 *
 	 * The band is a share of the box rather than a pixel count, so the arrow
@@ -2537,11 +2536,11 @@
 	 * front. Nothing is drawn across the join, because there is no
 	 * thickness there to draw.
 	 *
-	 * The narrowing is taken off the inner edge alone. The outer edge is
-	 * then one clean arc from the tail to the arrowhead, and the fold's
-	 * point sits on it, which is how the printed figures read; tapering
-	 * both edges about the centre line instead makes each of them dip and
-	 * rise, and the arrow looks wavy rather than curved.
+	 * Both edges stay true offsets of the arc for their whole length. Only
+	 * the last stretch of each inner edge turns into the point, tangent to
+	 * the outer edge there, so the eye still follows one clean curve into
+	 * the fold. Narrowing the band into the point instead bends its inner
+	 * edge the whole way along, and the arrow looks wavy rather than curved.
 	 */
 	function mxShapeOliabakArcArrow(bounds, fill, stroke, strokewidth)
 	{
@@ -2561,8 +2560,7 @@
 	mxShapeOliabakArcArrow.prototype.headLength = 128;
 	mxShapeOliabakArcArrow.prototype.tailSkew = 0;
 	mxShapeOliabakArcArrow.prototype.fold = 40;
-	mxShapeOliabakArcArrow.prototype.foldSpan = 13;
-	mxShapeOliabakArcArrow.prototype.foldPinch = 0;
+	mxShapeOliabakArcArrow.prototype.foldSpan = 22;
 
 	mxShapeOliabakArcArrow.prototype.customProperties = [
 		{name: 'startAngle', dispName: 'Tail Angle', type: 'float', min: 0,
@@ -2580,9 +2578,7 @@
 		{name: 'fold', dispName: 'Fold %', type: 'float', min: 0, max: 90,
 			defVal: 40},
 		{name: 'foldSpan', dispName: 'Fold Span %', type: 'float', min: 1,
-			max: 50, defVal: 13},
-		{name: 'foldPinch', dispName: 'Fold Pinch %', type: 'float', min: 0,
-			max: 90, defVal: 0},
+			max: 50, defVal: 22},
 		{name: 'fillColor2', dispName: 'Underside Color', type: 'color',
 			defVal: '#8C8C8C'}
 	];
@@ -2654,7 +2650,6 @@
 			skew: skew, ab: ab, ae: a0 + sw, hl: ha * rm,
 			bandPct: num('arrowWidth', this.arrowWidth),
 			folded: foldFrac > 0, af: af, span: span,
-			pinch: Math.max(0, Math.min(90, num('foldPinch', this.foldPinch))) / 100,
 			// A point of the centre ellipse.
 			mid: function(a)
 			{
@@ -2707,116 +2702,169 @@
 
 		if (!g.folded)
 		{
-			this.paintSegment(c, g, aOut0, g.a0, g.ab, true);
+			this.paintPlain(c, g, aOut0);
 
 			return;
 		}
 
-		// Before the twist the ribbon shows its back, after it its front.
-		// The two legs are painted separately and meet at the pinch, where
-		// both are the same width, so the join is the line or point itself
-		// and nothing is drawn across it.
+		// Both legs come to the same point on the outer edge. Before it the
+		// ribbon shows its back, after it its front, and nothing is drawn
+		// across the join.
+		var pivot = g.edge(g.af, g.t / 2);
+
 		c.setFillColor(mxUtils.getValue(this.style, 'fillColor2', '#8C8C8C'));
-		this.paintSegment(c, g, aOut0, g.a0, g.af, false);
+		this.paintTailLeg(c, g, aOut0, pivot);
 
 		c.setFillColor(this.fill);
-		this.paintSegment(c, g, g.af, g.af, g.ab, true);
+		this.paintHeadLeg(c, g, pivot);
 	};
 
 	/**
-	 * Half the band's width at angle a, as a fraction of the full width.
-	 *
-	 * A ribbon that turns over is seen edge-on at the turn, so it has no
-	 * width there: the two legs narrow into a line, or a point when the
-	 * pinch is closed completely, and open out again beyond it. That taper
-	 * is the whole of the fold. Nothing is drawn across the join, because
-	 * there is no thickness there to draw.
+	 * How many steps to walk an angular span with, so that each is about a
+	 * pixel of arc. Stepping by angle instead shows as flats on a large
+	 * arrow, where a few degrees is ten pixels or more.
 	 */
-	mxShapeOliabakArcArrow.prototype.widthAt = function(g, a)
+	mxShapeOliabakArcArrow.prototype.steps = function(g, span)
 	{
-		if (!g.folded)
-		{
-			return 1;
-		}
-
-		var d = Math.abs(a - g.af);
-
-		if (d >= g.span)
-		{
-			return 1;
-		}
-
-		// Eased rather than linear, so the ribbon narrows the way a turning
-		// surface does instead of closing to a straight-sided wedge.
-		var k = Math.sin(d / g.span * Math.PI / 2);
-
-		return g.pinch + (1 - g.pinch) * k;
+		return Math.max(6, Math.min(720, Math.ceil(Math.abs(span) * g.rm)));
 	};
 
 	/**
-	 * One leg of the ribbon, from its outer edge's start to a1 and back
-	 * along the inner edge to aIn0, with the arrowhead at the far end when
-	 * asked for. The two edges are parallel offsets of the centre ellipse,
-	 * narrowed near the twist, so they are walked in steps of about three
-	 * degrees: smooth at any size the box can reach, and free of the
-	 * arc-flag cases a long sweep would otherwise raise.
+	 * Walks one edge of the band, at offset d from the centre line, from a0
+	 * to a1, emitting line segments. The first point is emitted only when
+	 * asked for, so an edge can continue a path already under way.
 	 */
-	mxShapeOliabakArcArrow.prototype.paintSegment = function(c, g, aOut0, aIn0, a1, head)
+	mxShapeOliabakArcArrow.prototype.walk = function(c, g, a0, a1, d, move)
 	{
-		var half = g.t / 2;
-		// Stepped by arc length rather than by angle, so a segment is about
-		// a pixel whatever the arrow's size. A fixed angular step is a few
-		// degrees, which is ten pixels or more on a large arrow and shows
-		// as flats along what should be a curve.
-		var n = this.steps(g, Math.max(Math.abs(a1 - aOut0), Math.abs(a1 - aIn0)));
-		var a = aOut0;
-		var p = g.edge(a, half);
+		var n = this.steps(g, a1 - a0);
+		var p = g.edge(a0, d);
 		var i;
 
-		c.begin();
-		c.moveTo(p.x, p.y);
+		if (move)
+		{
+			c.moveTo(p.x, p.y);
+		}
 
 		for (i = 1; i <= n; i++)
 		{
-			a = aOut0 + (a1 - aOut0) * i / n;
-			p = g.edge(a, half);
+			p = g.edge(a0 + (a1 - a0) * i / n, d);
 			c.lineTo(p.x, p.y);
 		}
+	};
 
-		if (head)
+	/**
+	 * The blend from the fold's point into the band's inner edge.
+	 *
+	 * This is what makes the fold read. The inner edge is a true offset of
+	 * the arc for most of the leg, so the band holds its width, and turns
+	 * into the point over the last stretch, tangent to the outer edge when
+	 * it arrives, so the eye follows one clean line into the fold.
+	 *
+	 * `from` and `to` are the angles of the two ends, and the path is
+	 * already standing on the first of them.
+	 */
+	mxShapeOliabakArcArrow.prototype.blend = function(c, g, from, fromPt, to, toPt)
+	{
+		// The direction of travel at each end: along the edge, signed by
+		// which way round the path is going.
+		var w = (to > from) ? 1 : -1;
+		var d1 = g.tangent(from);
+		var d2 = g.tangent(to);
+		var e1x = d1.x * w * g.s, e1y = d1.y * w * g.s;
+		var e2x = d2.x * w * g.s, e2y = d2.y * w * g.s;
+		// Where the two tangent lines meet. A quadratic through that point
+		// is tangent to both edges and cannot overshoot or double back,
+		// which a cubic with handles of its own does as soon as the leg is
+		// long or the band thick.
+		var cross = e1x * e2y - e1y * e2x;
+		var dx = toPt.x - fromPt.x;
+		var dy = toPt.y - fromPt.y;
+
+		if (Math.abs(cross) > 1e-6)
 		{
-			// The tip sits straight ahead of the base rather than further
-			// along the ellipse. On a flattened ellipse the two are not the
-			// same direction, and following the curve shears the head.
-			var m = g.mid(g.ab);
-			var d = g.tangent(g.ab);
+			var k = (dx * e2y - dy * e2x) / cross;
+			var span = Math.sqrt(dx * dx + dy * dy);
 
-			p = g.edge(g.ab, g.hw / 2);
-			c.lineTo(p.x, p.y);
-			c.lineTo(m.x + d.x * g.hl, m.y + d.y * g.hl);
-			p = g.edge(g.ab, -g.hw / 2);
-			c.lineTo(p.x, p.y);
+			// Only when the meeting point lies ahead and close enough to be
+			// a corner of this join rather than a spike far off the shape.
+			if (k > 0 && k < span * 4)
+			{
+				c.quadTo(fromPt.x + e1x * k, fromPt.y + e1y * k,
+					toPt.x, toPt.y);
+
+				return;
+			}
 		}
 
-		for (i = 0; i <= n; i++)
-		{
-			a = a1 + (aIn0 - a1) * i / n;
-			// Measured in from the outer edge, so only this edge moves.
-			p = g.edge(a, half - g.t * this.widthAt(g, a));
-			c.lineTo(p.x, p.y);
-		}
+		c.lineTo(toPt.x, toPt.y);
+	};
 
+	/**
+	 * The leg before the fold: the tail's band, running out to the point.
+	 */
+	mxShapeOliabakArcArrow.prototype.paintTailLeg = function(c, g, aOut0, pivot)
+	{
+		var half = g.t / 2;
+		var aq = g.af - g.s * g.span;
+		var q = g.edge(aq, -half);
+
+		c.begin();
+		this.walk(c, g, aOut0, g.af, half, true);
+		this.blend(c, g, g.af, pivot, aq, q);
+		this.walk(c, g, aq, g.a0, -half, false);
 		c.close();
 		c.fillAndStroke();
 	};
 
 	/**
-	 * How many steps to walk an angular span with, so that each is about a
-	 * pixel of arc.
+	 * The leg after the fold: the point, the band, and the arrowhead.
 	 */
-	mxShapeOliabakArcArrow.prototype.steps = function(g, span)
+	mxShapeOliabakArcArrow.prototype.paintHeadLeg = function(c, g, pivot)
 	{
-		return Math.max(8, Math.min(720, Math.ceil(Math.abs(span) * g.rm)));
+		var half = g.t / 2;
+		var aq = g.af + g.s * g.span;
+		var q = g.edge(aq, -half);
+
+		c.begin();
+		c.moveTo(pivot.x, pivot.y);
+		this.walk(c, g, g.af, g.ab, half, false);
+		this.paintHead(c, g);
+		this.walk(c, g, g.ab, aq, -half, false);
+		this.blend(c, g, aq, q, g.af, pivot);
+		c.close();
+		c.fillAndStroke();
+	};
+
+	/**
+	 * The plain band, tail to arrowhead, when the ribbon does not turn over.
+	 */
+	mxShapeOliabakArcArrow.prototype.paintPlain = function(c, g, aOut0)
+	{
+		var half = g.t / 2;
+
+		c.begin();
+		this.walk(c, g, aOut0, g.ab, half, true);
+		this.paintHead(c, g);
+		this.walk(c, g, g.ab, g.a0, -half, false);
+		c.close();
+		c.fillAndStroke();
+	};
+
+	/**
+	 * The arrowhead, on the band's end. Its tip sits straight ahead of its
+	 * base rather than further along the ellipse; on a flattened one the two
+	 * are not the same direction and following the curve shears the head.
+	 */
+	mxShapeOliabakArcArrow.prototype.paintHead = function(c, g)
+	{
+		var m = g.mid(g.ab);
+		var d = g.tangent(g.ab);
+		var p = g.edge(g.ab, g.hw / 2);
+
+		c.lineTo(p.x, p.y);
+		c.lineTo(m.x + d.x * g.hl, m.y + d.y * g.hl);
+		p = g.edge(g.ab, -g.hw / 2);
+		c.lineTo(p.x, p.y);
 	};
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.arcArrow', mxShapeOliabakArcArrow);
