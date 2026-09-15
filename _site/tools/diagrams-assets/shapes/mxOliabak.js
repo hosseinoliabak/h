@@ -2620,6 +2620,12 @@
 	 * badge on its front face, where the Service Router and the ATM Router
 	 * carry theirs, and the badge here is a luggage tag: the label that MPLS
 	 * switches on. Same depth handle and colours as the router.
+	 *
+	 * The tag has a width and a height of its own, 'tagWidth' as a share of
+	 * the shape's width and 'tagHeight' as a share of the front face, each
+	 * with a handle, because the role written on it (P, PE, LSR) needs room
+	 * and a fixed proportion gave none. 'tagText' writes that role on the
+	 * tag in the body colour, like the eyelet, at a size that fits.
 	 */
 	function mxShapeOliabakMplsRouter(bounds, fill, stroke, strokewidth)
 	{
@@ -2628,47 +2634,121 @@
 
 	mxUtils.extend(mxShapeOliabakMplsRouter, mxShapeOliabakRouter);
 
+	mxShapeOliabakMplsRouter.prototype.tagWidth = 0.6;
+	mxShapeOliabakMplsRouter.prototype.tagHeight = 0.62;
+
+	mxShapeOliabakMplsRouter.prototype.customProperties =
+		mxShapeOliabakRouter.prototype.customProperties.concat([
+		{name: 'tagWidth', dispName: 'Tag Width', type: 'float', min: 0.2,
+			max: 0.95, defVal: 0.6},
+		{name: 'tagHeight', dispName: 'Tag Height', type: 'float', min: 0.25,
+			max: 0.95, defVal: 0.62},
+		{name: 'tagText', dispName: 'Tag Text', type: 'string', defVal: ''}
+	]);
+
 	/**
-	 * The tag, centred on the front face and sized to the face's height at
-	 * the middle, from the lid's front edge to the base's. Filled like the
-	 * arrows, with the eyelet punched back in the body colour.
+	 * Where the tag sits, shared by the painter and the handles. The front
+	 * face is measured at its tallest, the middle column from the lid's
+	 * front edge to the base's, and the tag is centred on it. The point is
+	 * half the tag's height long, so it meets the body at 45 degrees, and
+	 * never more than half the width, so a tall narrow tag keeps a body.
+	 */
+	mxShapeOliabakMplsRouter.prototype.getTagGeometry = function(style, w, h)
+	{
+		var size = Math.max(0, Math.min(h * 0.5, parseFloat(
+			mxUtils.getValue(style, 'size', mxShapeOliabakRouter.prototype.size))));
+		var face = h - 2 * size;
+		var th = face * Math.max(0.25, Math.min(0.95, parseFloat(
+			mxUtils.getValue(style, 'tagHeight', this.tagHeight))));
+		var tw = w * Math.max(0.2, Math.min(0.95, parseFloat(
+			mxUtils.getValue(style, 'tagWidth', this.tagWidth))));
+		var cx = w * 0.5;
+		var x0 = cx - tw * 0.5;
+
+		return {face: face, th: th, tw: tw, cx: cx, cy: 2 * size + face * 0.5,
+			x0: x0, x1: cx + tw * 0.5, nose: x0 + Math.min(th, tw) * 0.5};
+	};
+
+	/**
+	 * The tag, filled like the arrows, with the eyelet and the text punched
+	 * back in the body colour. The text is bold, sized to the tag's height
+	 * and shrunk to fit its width, so widening the tag is what makes a long
+	 * role readable rather than the text spilling over the edge.
 	 */
 	mxShapeOliabakMplsRouter.prototype.paintBadge = function(c, w, h, size, body)
 	{
-		var face = h - 2 * size;
+		var g = this.getTagGeometry(this.style, w, h);
 
-		if (face < 4 || w < 8)
+		if (g.face < 4 || w < 8)
 		{
 			return;
 		}
 
-		var th = Math.min(face * 0.62, w * 0.2);
-		var tw = Math.min(w * 0.46, th * 2.4);
-		var cx = w * 0.5;
-		var cy = 2 * size + face * 0.5;
-		var x0 = cx - tw * 0.5;
-		var x1 = cx + tw * 0.5;
-		// The pointed end, one half-height long so it meets the body at 45
-		// degrees.
-		var nose = x0 + th * 0.5;
+		var top = g.cy - g.th * 0.5;
+		var bottom = g.cy + g.th * 0.5;
 
 		c.setFillColor(mxUtils.getValue(this.style, 'strokeColor2', '#CC0000'));
 		c.begin();
-		c.moveTo(x0, cy);
-		c.lineTo(nose, cy - th * 0.5);
-		c.lineTo(x1, cy - th * 0.5);
-		c.lineTo(x1, cy + th * 0.5);
-		c.lineTo(nose, cy + th * 0.5);
+		c.moveTo(g.x0, g.cy);
+		c.lineTo(g.nose, top);
+		c.lineTo(g.x1, top);
+		c.lineTo(g.x1, bottom);
+		c.lineTo(g.nose, bottom);
 		c.close();
 		c.fill();
 
-		if (body != null && body != mxConstants.NONE)
+		var hasBody = body != null && body != mxConstants.NONE;
+
+		if (hasBody)
 		{
-			var r = th * 0.15;
+			var r = g.th * 0.15;
 			c.setFillColor(body);
-			c.ellipse(nose - r, cy - r, 2 * r, 2 * r);
+			c.ellipse(g.nose - r, g.cy - r, 2 * r, 2 * r);
 			c.fill();
 		}
+
+		var text = mxUtils.getValue(this.style, 'tagText', '');
+
+		if (text == null || String(text).length == 0)
+		{
+			return;
+		}
+
+		// The Format panel stores the value URI-encoded.
+		try
+		{
+			text = decodeURIComponent(String(text));
+		}
+		catch (e)
+		{
+			text = String(text);
+		}
+
+		// Between the eyelet and the right edge, with a margin each side.
+		var left = g.nose + g.th * 0.3;
+		var right = g.x1 - g.th * 0.2;
+		var room = right - left;
+
+		if (room < 2)
+		{
+			return;
+		}
+
+		// Bold capitals run about 0.62 em per character.
+		var fs = Math.min(g.th * 0.72, room / (0.62 * text.length));
+
+		if (fs < 3)
+		{
+			return;
+		}
+
+		c.setFontColor(hasBody ? body : (this.stroke != null ? this.stroke : '#FFFFFF'));
+		c.setFontSize(fs);
+		c.setFontStyle(mxConstants.FONT_BOLD);
+		c.setFontFamily(mxUtils.getValue(this.style, 'fontFamily',
+			mxConstants.DEFAULT_FONTFAMILY));
+		c.text((left + right) * 0.5, g.cy, 0, 0, text, mxConstants.ALIGN_CENTER,
+			mxConstants.ALIGN_MIDDLE, 0, null, 0, 0, 0);
 	};
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.mplsRouter', mxShapeOliabakMplsRouter);
@@ -3478,9 +3558,44 @@
 			}, true)];
 		};
 
-		// The same lid, so the same handle.
-		Graph.handleFactory['mxgraph.oliabak.mplsRouter'] =
-			Graph.handleFactory['mxgraph.oliabak.router'];
+		// The router's lid handle, plus the tag's width on its right edge,
+		// dragged sideways, and its height on its bottom edge, dragged down.
+		// Both are read back as shares, so a drag means the same thing after
+		// the router is resized.
+		Graph.handleFactory['mxgraph.oliabak.mplsRouter'] = function(state)
+		{
+			var proto = mxCellRenderer.defaultShapes['mxgraph.oliabak.mplsRouter'].prototype;
+			var handles = Graph.handleFactory['mxgraph.oliabak.router'](state);
+
+			handles.push(Graph.createHandle(state, ['tagWidth'], function(bounds)
+			{
+				var g = proto.getTagGeometry(this.state.style, bounds.width, bounds.height);
+
+				return new mxPoint(bounds.x + g.x1, bounds.y + g.cy);
+			}, function(bounds, pt)
+			{
+				this.state.style['tagWidth'] = Math.round(Math.max(0.2, Math.min(0.95,
+					(pt.x - bounds.x - bounds.width * 0.5) * 2 / bounds.width)) * 100) / 100;
+			}, true));
+
+			handles.push(Graph.createHandle(state, ['tagHeight'], function(bounds)
+			{
+				var g = proto.getTagGeometry(this.state.style, bounds.width, bounds.height);
+
+				return new mxPoint(bounds.x + g.cx, bounds.y + g.cy + g.th * 0.5);
+			}, function(bounds, pt)
+			{
+				var g = proto.getTagGeometry(this.state.style, bounds.width, bounds.height);
+
+				if (g.face > 0)
+				{
+					this.state.style['tagHeight'] = Math.round(Math.max(0.25, Math.min(0.95,
+						(pt.y - bounds.y - g.cy) * 2 / g.face)) * 100) / 100;
+				}
+			}, true));
+
+			return handles;
+		};
 
 		/**
 		 * Band width, chevron depth and label position, on the segment itself.
