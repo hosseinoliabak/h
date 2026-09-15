@@ -11,6 +11,7 @@
  * Contents:
  *   mxgraph.oliabak.arc        curved connector, one bow handle (symmetric)
  *   mxgraph.oliabak.scurve     curved connector, two independent bow handles
+ *                              and a position handle on each hump
  *   mxgraph.oliabak.tunnel     see-through tube on a bowed centre line,
  *                              straight at zero curvature
  */
@@ -18,6 +19,19 @@
 {
 	// Percentage of the chord length used as the default bow.
 	var DEFAULT_BOW = 30;
+
+	// Where the S-curve's two control points sit along the chord, as a
+	// percentage. The arc keeps the thirds a plain cubic uses.
+	var DEFAULT_BOW_POS = 33.3;
+	var DEFAULT_BOW_POS2 = 66.7;
+
+	// A control point's fraction along the chord, read from the style and
+	// kept off the ends, where a control point stops shaping anything.
+	function bowFraction(style, key, def)
+	{
+		return Math.max(0.05, Math.min(0.95,
+			parseFloat(mxUtils.getValue(style, key, def)) / 100));
+	};
 
 	// Depth of the open end as a fraction of its radius. Low enough to read
 	// as a tube seen at an angle rather than a disc seen head on.
@@ -163,12 +177,18 @@
 		var b1 = mxUtils.getValue(this.style, 'bow', DEFAULT_BOW) / 100 * len;
 		var b2 = this.symmetric ? b1 :
 			mxUtils.getValue(this.style, 'bow2', -DEFAULT_BOW) / 100 * len;
+		// The arc is symmetric by construction, so its control points stay
+		// at the thirds. The S-curve's slide along the chord.
+		var t1 = this.symmetric ? 1 / 3 :
+			bowFraction(this.style, 'bowPos', DEFAULT_BOW_POS);
+		var t2 = this.symmetric ? 2 / 3 :
+			bowFraction(this.style, 'bowPos2', DEFAULT_BOW_POS2);
 
 		return [p0,
-			new mxPoint(p0.x + ux * len / 3 + nx * b1,
-				p0.y + uy * len / 3 + ny * b1),
-			new mxPoint(p0.x + ux * len * 2 / 3 + nx * b2,
-				p0.y + uy * len * 2 / 3 + ny * b2),
+			new mxPoint(p0.x + ux * len * t1 + nx * b1,
+				p0.y + uy * len * t1 + ny * b1),
+			new mxPoint(p0.x + ux * len * t2 + nx * b2,
+				p0.y + uy * len * t2 + ny * b2),
 			p3];
 	};
 
@@ -260,7 +280,9 @@
 
 	/**
 	 * Same curve, but the two bows move independently, which is what makes an
-	 * S, a hook or a lazy sweep possible.
+	 * S, a hook or a lazy sweep possible, and each control point can slide
+	 * along the chord ('bowPos', 'bowPos2', percent), which is what lets one
+	 * hump be long and lazy and the other short and sharp.
 	 */
 	function mxShapeOliabakSCurve()
 	{
@@ -275,7 +297,11 @@
 		{name: 'bow', dispName: 'Start Curvature', type: 'float', min: -400,
 			max: 400, defVal: DEFAULT_BOW},
 		{name: 'bow2', dispName: 'End Curvature', type: 'float', min: -400,
-			max: 400, defVal: -DEFAULT_BOW}
+			max: 400, defVal: -DEFAULT_BOW},
+		{name: 'bowPos', dispName: 'Start Position', type: 'float', min: 5,
+			max: 95, defVal: DEFAULT_BOW_POS},
+		{name: 'bowPos2', dispName: 'End Position', type: 'float', min: 5,
+			max: 95, defVal: DEFAULT_BOW_POS2}
 	];
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.scurve', mxShapeOliabakSCurve);
@@ -3225,72 +3251,145 @@
 		typeof Graph.createHandle === 'function')
 	{
 		/**
-		 * Builds a handle sitting at fraction t along the chord, offset by the
-		 * style key's percentage. Dragging it writes the perpendicular
-		 * distance back as a percentage of the chord.
+		 * The chord an edge's two ends define, in view coordinates, with the
+		 * scale and translation needed to speak to a handle. Null when the
+		 * edge has no ends yet or no length.
 		 */
-		function bowHandle(state, key, t, defVal)
+		function chordFrame(state)
+		{
+			var pts = state.absolutePoints;
+
+			if (pts == null || pts.length < 2 ||
+				pts[0] == null || pts[pts.length - 1] == null)
+			{
+				return null;
+			}
+
+			var p0 = pts[0];
+			var p1 = pts[pts.length - 1];
+			var dx = p1.x - p0.x;
+			var dy = p1.y - p0.y;
+			var len = Math.sqrt(dx * dx + dy * dy);
+
+			if (len < 1)
+			{
+				return null;
+			}
+
+			return {p0: p0, p1: p1, len: len, ux: dx / len, uy: dy / len,
+				s: state.view.scale, tr: state.view.translate};
+		};
+
+		/**
+		 * The curvature handle, an orange diamond at the control point
+		 * itself: a fraction along the chord (fixed for the arc, the style
+		 * key posKey for the S-curve) and pushed out by the style key's
+		 * percentage. Dragging it writes the perpendicular distance back as a
+		 * percentage of the chord and leaves the position alone, so this
+		 * gesture and the position handle's cannot be confused.
+		 */
+		function bowHandle(state, key, t, defVal, posKey, posDef)
 		{
 			return Graph.createHandle(state, [key], function(bounds)
 			{
-				var pts = state.absolutePoints;
+				var f = chordFrame(state);
 
-				if (pts == null || pts.length < 2 ||
-					pts[0] == null || pts[pts.length - 1] == null)
+				if (f == null)
 				{
 					return null;
 				}
 
-				var s = state.view.scale;
-				var tr = state.view.translate;
-				var p0 = pts[0];
-				var p1 = pts[pts.length - 1];
-				var dx = p1.x - p0.x;
-				var dy = p1.y - p0.y;
-				var len = Math.sqrt(dx * dx + dy * dy);
-
-				if (len < 1)
-				{
-					return null;
-				}
-
-				var ux = dx / len, uy = dy / len;
-				var b = mxUtils.getValue(state.style, key, defVal) / 100 * len;
+				var tt = (posKey != null) ? bowFraction(state.style, posKey, posDef) : t;
+				var b = mxUtils.getValue(state.style, key, defVal) / 100 * f.len;
 
 				return new mxPoint(
-					(p0.x + ux * len * t - uy * b) / s - tr.x,
-					(p0.y + uy * len * t + ux * b) / s - tr.y);
+					(f.p0.x + f.ux * f.len * tt - f.uy * b) / f.s - f.tr.x,
+					(f.p0.y + f.uy * f.len * tt + f.ux * b) / f.s - f.tr.y);
 			}, function(bounds, pt)
 			{
-				var pts = state.absolutePoints;
+				var f = chordFrame(state);
 
-				if (pts == null || pts.length < 2 ||
-					pts[0] == null || pts[pts.length - 1] == null)
+				if (f == null)
 				{
 					return;
 				}
 
-				var s = state.view.scale;
-				var tr = state.view.translate;
-				var p0 = pts[0];
-				var p1 = pts[pts.length - 1];
-				var dx = p1.x - p0.x;
-				var dy = p1.y - p0.y;
-				var len = Math.sqrt(dx * dx + dy * dy);
-
-				if (len < 1)
-				{
-					return;
-				}
-
-				var ux = dx / len, uy = dy / len;
-				var px = (pt.x + tr.x) * s - p0.x;
-				var py = (pt.y + tr.y) * s - p0.y;
+				var px = (pt.x + f.tr.x) * f.s - f.p0.x;
+				var py = (pt.y + f.tr.y) * f.s - f.p0.y;
 				// Signed distance along the left-hand normal (-uy, ux).
-				var bow = Math.round((px * -uy + py * ux) / len * 100);
-
-				state.style[key] = bow;
+				state.style[key] = Math.round((px * -f.uy + py * f.ux) / f.len * 100);
 			});
+		};
+
+		/**
+		 * The position handle, a blue dot riding the curve at its control
+		 * point's fraction, so it sits on the hump it moves. Dragging it
+		 * slides the hump along the chord and writes the fraction back as a
+		 * percentage; the curvature key is untouched. Blue, the colour of
+		 * the endpoints, because it moves a point of the curve rather than
+		 * setting an amount. Built the way Graph.createHandle builds the
+		 * orange ones, with the main handle image instead.
+		 */
+		function positionHandle(state, posKey, posDef)
+		{
+			var proto = mxCellRenderer.defaultShapes['mxgraph.oliabak.scurve'].prototype;
+			var image = (mxVertexHandler.prototype.handleImage != null) ?
+				mxVertexHandler.prototype.handleImage :
+				mxVertexHandler.prototype.secondaryHandleImage;
+			var handle = new mxHandle(state, null, image);
+
+			handle.execute = function(me)
+			{
+				this.copyStyle(posKey);
+			};
+
+			handle.getPosition = function(bounds)
+			{
+				var f = chordFrame(state);
+
+				if (f == null)
+				{
+					return null;
+				}
+
+				var bp = proto.getBowPoints.call({style: state.style, symmetric: false},
+					[f.p0, f.p1]);
+
+				if (bp == null)
+				{
+					return null;
+				}
+
+				// The cubic at the control point's own fraction.
+				var tt = bowFraction(state.style, posKey, posDef);
+				var m = 1 - tt;
+				var x = m * m * m * bp[0].x + 3 * m * m * tt * bp[1].x +
+					3 * m * tt * tt * bp[2].x + tt * tt * tt * bp[3].x;
+				var y = m * m * m * bp[0].y + 3 * m * m * tt * bp[1].y +
+					3 * m * tt * tt * bp[2].y + tt * tt * tt * bp[3].y;
+
+				return new mxPoint(x / f.s - f.tr.x, y / f.s - f.tr.y);
+			};
+
+			handle.setPosition = function(bounds, pt)
+			{
+				var f = chordFrame(state);
+
+				if (f == null)
+				{
+					return;
+				}
+
+				var px = (pt.x + f.tr.x) * f.s - f.p0.x;
+				var py = (pt.y + f.tr.y) * f.s - f.p0.y;
+				// Projection onto the chord, as a percentage of its length.
+				state.style[posKey] = Math.round(Math.max(5, Math.min(95,
+					(px * f.ux + py * f.uy) / f.len * 100)));
+			};
+
+			handle.ignoreGrid = true;
+
+			return handle;
 		};
 
 		// One handle: the arc paints symmetrically, so bow alone describes it.
@@ -3301,17 +3400,16 @@
 			return (h != null) ? [h] : null;
 		};
 
-		// Two independent handles.
+		// Four handles: a blue position dot on each hump and an orange
+		// curvature diamond at each control point.
 		Graph.handleFactory['mxgraph.oliabak.scurve'] = function(state)
 		{
-			var h1 = bowHandle(state, 'bow', 1 / 3, DEFAULT_BOW);
-			var h2 = bowHandle(state, 'bow2', 2 / 3, -DEFAULT_BOW);
-			var out = [];
-
-			if (h1 != null) { out.push(h1); }
-			if (h2 != null) { out.push(h2); }
-
-			return (out.length > 0) ? out : null;
+			return [
+				positionHandle(state, 'bowPos', DEFAULT_BOW_POS),
+				positionHandle(state, 'bowPos2', DEFAULT_BOW_POS2),
+				bowHandle(state, 'bow', 1 / 3, DEFAULT_BOW, 'bowPos', DEFAULT_BOW_POS),
+				bowHandle(state, 'bow2', 2 / 3, -DEFAULT_BOW, 'bowPos2', DEFAULT_BOW_POS2)
+			];
 		};
 
 		/**
