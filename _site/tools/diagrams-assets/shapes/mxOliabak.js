@@ -2514,9 +2514,8 @@
 	 *   sweep        how far the arrow runs, in degrees; positive clockwise,
 	 *                negative counter-clockwise
 	 *   arrowWidth   the band's thickness, percent of the box's shorter side
-	 *   headLength   the arrowhead's length along the curve, same unit
-	 *   headWidth    the arrowhead's full width, same unit, never narrower
-	 *                than the band
+	 *   headWidth    the arrowhead's full width, percent of the band's
+	 *   headLength   the arrowhead's length, percent of the band's width
 	 *   tailSkew     degrees the outer edge's start is moved past the inner
 	 *                edge's, which cuts the tail on a slant
 	 *   fold         percent of the sweep at which the ribbon turns over;
@@ -2526,9 +2525,10 @@
 	 *                0 closes it to a point
 	 *   fillColor2   the back of the ribbon, shown before the turn
 	 *
-	 * Sizes are shares of the box rather than pixels so the arrow keeps its
-	 * proportions when it is resized, the way a stencil would, and a small
-	 * one in a legend and a large one over a topology are the same drawing.
+	 * The band is a share of the box rather than a pixel count, so the arrow
+	 * keeps its proportions when it is resized, the way a stencil would; the
+	 * head is a share of the band, so it stays an arrowhead at any weight
+	 * instead of swallowing the curve when the band is made thin.
 	 *
 	 * A ribbon that turns over is seen edge-on at the turn, so it has no
 	 * width there. The fold is that pinch and nothing else: the two legs
@@ -2536,6 +2536,12 @@
 	 * again beyond it, one showing the ribbon's back and the other its
 	 * front. Nothing is drawn across the join, because there is no
 	 * thickness there to draw.
+	 *
+	 * The narrowing is taken off the inner edge alone. The outer edge is
+	 * then one clean arc from the tail to the arrowhead, and the fold's
+	 * point sits on it, which is how the printed figures read; tapering
+	 * both edges about the centre line instead makes each of them dip and
+	 * rise, and the arrow looks wavy rather than curved.
 	 */
 	function mxShapeOliabakArcArrow(bounds, fill, stroke, strokewidth)
 	{
@@ -2550,12 +2556,12 @@
 
 	mxShapeOliabakArcArrow.prototype.startAngle = 180;
 	mxShapeOliabakArcArrow.prototype.sweep = 180;
-	mxShapeOliabakArcArrow.prototype.arrowWidth = 20;
-	mxShapeOliabakArcArrow.prototype.headLength = 24;
-	mxShapeOliabakArcArrow.prototype.headWidth = 38;
+	mxShapeOliabakArcArrow.prototype.arrowWidth = 18;
+	mxShapeOliabakArcArrow.prototype.headWidth = 180;
+	mxShapeOliabakArcArrow.prototype.headLength = 128;
 	mxShapeOliabakArcArrow.prototype.tailSkew = 0;
 	mxShapeOliabakArcArrow.prototype.fold = 40;
-	mxShapeOliabakArcArrow.prototype.foldSpan = 18;
+	mxShapeOliabakArcArrow.prototype.foldSpan = 13;
 	mxShapeOliabakArcArrow.prototype.foldPinch = 0;
 
 	mxShapeOliabakArcArrow.prototype.customProperties = [
@@ -2564,17 +2570,17 @@
 		{name: 'sweep', dispName: 'Sweep', type: 'float', min: -350, max: 350,
 			defVal: 180},
 		{name: 'arrowWidth', dispName: 'Band Width %', type: 'float', min: 2,
-			max: 80, defVal: 20},
-		{name: 'headLength', dispName: 'Arrowhead Length %', type: 'float', min: 2,
-			max: 100, defVal: 24},
-		{name: 'headWidth', dispName: 'Arrowhead Width %', type: 'float', min: 2,
-			max: 90, defVal: 38},
+			max: 80, defVal: 18},
+		{name: 'headWidth', dispName: 'Arrowhead Width %', type: 'float', min: 105,
+			max: 400, defVal: 180},
+		{name: 'headLength', dispName: 'Arrowhead Length %', type: 'float', min: 20,
+			max: 400, defVal: 128},
 		{name: 'tailSkew', dispName: 'Tail Skew', type: 'float', min: -60,
 			max: 60, defVal: 0},
 		{name: 'fold', dispName: 'Fold %', type: 'float', min: 0, max: 90,
 			defVal: 40},
 		{name: 'foldSpan', dispName: 'Fold Span %', type: 'float', min: 1,
-			max: 50, defVal: 18},
+			max: 50, defVal: 13},
 		{name: 'foldPinch', dispName: 'Fold Pinch %', type: 'float', min: 0,
 			max: 90, defVal: 0},
 		{name: 'fillColor2', dispName: 'Underside Color', type: 'color',
@@ -2609,7 +2615,9 @@
 		// The unit every size is given in.
 		var u = Math.min(w, h) / 100;
 		var t = Math.max(1, num('arrowWidth', this.arrowWidth) * u);
-		var hw = Math.max(t, num('headWidth', this.headWidth) * u);
+		// The head is measured against the band, so it stays an arrowhead
+		// whatever the band's weight.
+		var hw = t * Math.max(1.05, num('headWidth', this.headWidth) / 100);
 		var inset = (hw - t) / 2;
 		var rx = w / 2 - inset;
 		var ry = h / 2 - inset;
@@ -2625,8 +2633,8 @@
 		var rm = (rmx + rmy) / 2;
 		// The head's length as an angle on the middle ellipse, kept short of
 		// the whole sweep so a band always remains.
-		var ha = Math.min(Math.abs(sw) * 0.9, Math.max(1, num('headLength',
-			this.headLength) * u) / rm);
+		var hl = t * Math.max(0.2, num('headLength', this.headLength) / 100);
+		var ha = Math.min(Math.abs(sw) * 0.9, hl / rm);
 		var skew = Math.max(-60, Math.min(60, num('tailSkew', this.tailSkew))) *
 			Math.PI / 180;
 		var ab = a0 + sw - s * ha;
@@ -2643,7 +2651,8 @@
 
 		return {cx: x + w / 2, cy: y + h / 2, rx: rx, ry: ry, t: t, hw: hw, u: u,
 			rmx: rmx, rmy: rmy, rm: rm, a0: a0, sw: sw, s: s, ha: ha,
-			skew: skew, ab: ab, ae: a0 + sw,
+			skew: skew, ab: ab, ae: a0 + sw, hl: ha * rm,
+			bandPct: num('arrowWidth', this.arrowWidth),
 			folded: foldFrac > 0, af: af, span: span,
 			pinch: Math.max(0, Math.min(90, num('foldPinch', this.foldPinch))) / 100,
 			// A point of the centre ellipse.
@@ -2663,6 +2672,15 @@
 				var len = Math.sqrt(nx * nx + ny * ny);
 
 				return new mxPoint(nx / len, ny / len);
+			},
+			// The forward unit tangent of the centre ellipse there.
+			tangent: function(a)
+			{
+				var tx = -this.rmx * Math.sin(a) * this.s;
+				var ty = this.rmy * Math.cos(a) * this.s;
+				var len = Math.sqrt(tx * tx + ty * ty);
+
+				return new mxPoint(tx / len, ty / len);
 			},
 			// A point d outward (negative: inward) of the centre ellipse.
 			edge: function(a, d)
@@ -2746,10 +2764,13 @@
 	mxShapeOliabakArcArrow.prototype.paintSegment = function(c, g, aOut0, aIn0, a1, head)
 	{
 		var half = g.t / 2;
-		var n = Math.max(8, Math.ceil(Math.max(Math.abs(a1 - aOut0),
-			Math.abs(a1 - aIn0)) / (Math.PI / 60)));
+		// Stepped by arc length rather than by angle, so a segment is about
+		// a pixel whatever the arrow's size. A fixed angular step is a few
+		// degrees, which is ten pixels or more on a large arrow and shows
+		// as flats along what should be a curve.
+		var n = this.steps(g, Math.max(Math.abs(a1 - aOut0), Math.abs(a1 - aIn0)));
 		var a = aOut0;
-		var p = g.edge(a, half * this.widthAt(g, a));
+		var p = g.edge(a, half);
 		var i;
 
 		c.begin();
@@ -2758,16 +2779,21 @@
 		for (i = 1; i <= n; i++)
 		{
 			a = aOut0 + (a1 - aOut0) * i / n;
-			p = g.edge(a, half * this.widthAt(g, a));
+			p = g.edge(a, half);
 			c.lineTo(p.x, p.y);
 		}
 
 		if (head)
 		{
+			// The tip sits straight ahead of the base rather than further
+			// along the ellipse. On a flattened ellipse the two are not the
+			// same direction, and following the curve shears the head.
+			var m = g.mid(g.ab);
+			var d = g.tangent(g.ab);
+
 			p = g.edge(g.ab, g.hw / 2);
 			c.lineTo(p.x, p.y);
-			p = g.mid(g.ae);
-			c.lineTo(p.x, p.y);
+			c.lineTo(m.x + d.x * g.hl, m.y + d.y * g.hl);
 			p = g.edge(g.ab, -g.hw / 2);
 			c.lineTo(p.x, p.y);
 		}
@@ -2775,12 +2801,22 @@
 		for (i = 0; i <= n; i++)
 		{
 			a = a1 + (aIn0 - a1) * i / n;
-			p = g.edge(a, -half * this.widthAt(g, a));
+			// Measured in from the outer edge, so only this edge moves.
+			p = g.edge(a, half - g.t * this.widthAt(g, a));
 			c.lineTo(p.x, p.y);
 		}
 
 		c.close();
 		c.fillAndStroke();
+	};
+
+	/**
+	 * How many steps to walk an angular span with, so that each is about a
+	 * pixel of arc.
+	 */
+	mxShapeOliabakArcArrow.prototype.steps = function(g, span)
+	{
+		return Math.max(8, Math.min(720, Math.ceil(Math.abs(span) * g.rm)));
 	};
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.arcArrow', mxShapeOliabakArcArrow);
@@ -3835,12 +3871,12 @@
 						var m = g.mid(g.ab);
 						var nv = g.normal(g.ab);
 						var out = (pt.x - m.x) * nv.x + (pt.y - m.y) * nv.y;
-						this.state.style['headWidth'] = Math.round(Math.max(g.t / g.u,
-							Math.min(90, 2 * out / g.u)));
+						this.state.style['headWidth'] = Math.round(Math.max(105,
+							Math.min(400, 2 * out / g.t * 100)));
 						var back = g.s * (g.ae - angleAt(g, pt, g.rmx, g.rmy));
 						back = back - 2 * Math.PI * Math.floor(back / (2 * Math.PI));
-						this.state.style['headLength'] = Math.round(Math.max(2,
-							Math.min(100, Math.min(Math.abs(g.sw) * 0.9, back) * g.rm / g.u)));
+						this.state.style['headLength'] = Math.round(Math.max(20,
+							Math.min(400, Math.min(Math.abs(g.sw) * 0.9, back) * g.rm / g.t * 100)));
 					}
 				}, true)
 			];
