@@ -2521,19 +2521,22 @@
 	 *                edge's, which cuts the tail on a slant
 	 *   fold         percent of the sweep at which the ribbon turns over;
 	 *                0 leaves one surface
-	 *   foldSkew     degrees the crease is slanted across the band
+	 *   foldOver     how far the turned-over tab runs past the fold, percent
+	 *                of the sweep: the width of the fold
+	 *   foldPoint    where the fold's point sits across the band, percent
+	 *                from the inner edge to the outer
 	 *   fillColor2   the underside's colour
 	 *
 	 * Sizes are shares of the box rather than pixels so the arrow keeps its
 	 * proportions when it is resized, the way a stencil would, and a small
 	 * one in a legend and a large one over a topology are the same drawing.
 	 *
-	 * The ribbon is drawn as two pieces. From the tail to the crease it
-	 * shows its underside, in fillColor2; from the crease to the head it
-	 * shows its top, in the ordinary fill, gradient and all. The top piece
-	 * is painted first and the underside over it, cut on the slant of the
-	 * crease, so the tail leg appears to lie on the part that has turned
-	 * over, which is how the textbook figures read.
+	 * A folded ribbon pinches to a single point. The two legs pivot about
+	 * one point on the band, the tab of the ribbon's back is the triangle
+	 * that opens from it, and that tab is painted over the leg beyond, so
+	 * the fold reads as the ribbon turning over rather than as a change of
+	 * colour. The leg past the fold carries the ordinary fill and gradient;
+	 * the tab carries fillColor2.
 	 */
 	function mxShapeOliabakArcArrow(bounds, fill, stroke, strokewidth)
 	{
@@ -2553,7 +2556,8 @@
 	mxShapeOliabakArcArrow.prototype.headWidth = 38;
 	mxShapeOliabakArcArrow.prototype.tailSkew = 0;
 	mxShapeOliabakArcArrow.prototype.fold = 40;
-	mxShapeOliabakArcArrow.prototype.foldSkew = 8;
+	mxShapeOliabakArcArrow.prototype.foldOver = 24;
+	mxShapeOliabakArcArrow.prototype.foldPoint = 0;
 
 	mxShapeOliabakArcArrow.prototype.customProperties = [
 		{name: 'startAngle', dispName: 'Tail Angle', type: 'float', min: 0,
@@ -2570,8 +2574,10 @@
 			max: 60, defVal: 0},
 		{name: 'fold', dispName: 'Fold %', type: 'float', min: 0, max: 90,
 			defVal: 40},
-		{name: 'foldSkew', dispName: 'Fold Skew', type: 'float', min: -30,
-			max: 30, defVal: 8},
+		{name: 'foldOver', dispName: 'Fold Width %', type: 'float', min: 1,
+			max: 40, defVal: 24},
+		{name: 'foldPoint', dispName: 'Fold Point %', type: 'float', min: 0,
+			max: 100, defVal: 0},
 		{name: 'fillColor2', dispName: 'Underside Color', type: 'color',
 			defVal: '#8C8C8C'}
 	];
@@ -2625,24 +2631,27 @@
 		var skew = Math.max(-60, Math.min(60, num('tailSkew', this.tailSkew))) *
 			Math.PI / 180;
 		var ab = a0 + sw - s * ha;
-		// The crease: a fraction of the sweep, slanted by foldSkew, and kept
-		// clear of the head so the top piece always has a band of its own.
-		var foldSkew = Math.max(-30, Math.min(30, num('foldSkew', this.foldSkew))) *
-			Math.PI / 180;
+		// Where the ribbon turns over, as a fraction of the sweep.
 		var foldFrac = Math.max(0, Math.min(90, num('fold', this.fold))) / 100;
 		var af = a0 + sw * foldFrac;
-		var room = Math.abs(ab - a0) - Math.abs(foldSkew) - 0.05;
+		// The tab's width, and enough room kept for the leg beyond it.
+		var over = Math.abs(sw) * Math.max(1, Math.min(40,
+			num('foldOver', this.foldOver))) / 100;
+		var room = Math.abs(ab - a0) - 0.05;
 
-		if (foldFrac > 0 && (Math.abs(af - a0) + Math.abs(foldSkew) > room))
+		if (Math.abs(af - a0) + over > room)
 		{
-			af = a0 + s * Math.max(0, room);
+			af = a0 + s * Math.max(0, room - over);
 		}
 
 		return {cx: x + w / 2, cy: y + h / 2, rx: rx, ry: ry, t: t, hw: hw, u: u,
 			rmx: rmx, rmy: rmy, rm: rm, a0: a0, sw: sw, s: s, ha: ha,
 			skew: skew, ab: ab, ae: a0 + sw,
 			folded: foldFrac > 0 && Math.abs(af - a0) > 0.02, af: af,
-			fs: foldSkew,
+			ov: s * over,
+			// The fold's point, across the band from the inner edge out.
+			fp: -t / 2 + t * Math.max(0, Math.min(100,
+				num('foldPoint', this.foldPoint))) / 100,
 			// A point of the centre ellipse.
 			mid: function(a)
 			{
@@ -2691,16 +2700,16 @@
 			return;
 		}
 
-		// The top piece first, from just before the crease so that nothing
-		// shows through, then the underside over it, ending on the crease.
-		var creaseOut = g.af + g.s * g.fs;
-		var creaseIn = g.af - g.s * g.fs;
-		var under = (g.fs >= 0) ? creaseIn : creaseOut;
+		// The leg beyond the fold, drawn whole from the fold's point to the
+		// head, then the turned-over tab painted over it. The tab's far end
+		// is not a cut across the band but a line running back to the single
+		// point the ribbon pinches to, so the two legs fan out from it.
+		var pivot = g.edge(g.af, g.fp);
 
-		this.paintPiece(c, g, under, g.ab, g.ab, under, true);
+		this.paintLeg(c, g, g.af, g.ab, g.af, pivot);
 
 		c.setFillColor(mxUtils.getValue(this.style, 'fillColor2', '#8C8C8C'));
-		this.paintPiece(c, g, aOut0, creaseOut, creaseIn, g.a0, false);
+		this.paintTab(c, g, aOut0, g.af + g.ov, pivot);
 	};
 
 	/**
@@ -2714,11 +2723,15 @@
 	 * degrees: smooth at any size the box can reach, and free of the
 	 * arc-flag cases a long sweep would otherwise raise.
 	 */
-	mxShapeOliabakArcArrow.prototype.paintPiece = function(c, g, aOut0, aOut1, aIn1, aIn0, head)
+	/**
+	 * The leg that carries the arrowhead. Its outer edge runs from aOut0,
+	 * its inner edge returns to aIn0, and when a pivot is given both ends
+	 * close on that single point rather than on a cut across the band.
+	 */
+	mxShapeOliabakArcArrow.prototype.paintLeg = function(c, g, aOut0, aOut1, aIn0, pivot)
 	{
 		var half = g.t / 2;
-		var n = Math.max(6, Math.ceil(Math.max(Math.abs(aOut1 - aOut0),
-			Math.abs(aIn1 - aIn0)) / (Math.PI / 60)));
+		var n = Math.max(6, Math.ceil(Math.abs(aOut1 - aOut0) / (Math.PI / 60)));
 		var p = g.edge(aOut0, half);
 		var i;
 
@@ -2731,19 +2744,93 @@
 			c.lineTo(p.x, p.y);
 		}
 
+		p = g.edge(g.ab, g.hw / 2);
+		c.lineTo(p.x, p.y);
+		p = g.mid(g.ae);
+		c.lineTo(p.x, p.y);
+		p = g.edge(g.ab, -g.hw / 2);
+		c.lineTo(p.x, p.y);
+
+		for (i = 0; i <= n; i++)
+		{
+			p = g.edge(g.ab + (aIn0 - g.ab) * i / n, -half);
+			c.lineTo(p.x, p.y);
+		}
+
+		if (pivot != null)
+		{
+			c.lineTo(pivot.x, pivot.y);
+		}
+
+		c.close();
+		c.fillAndStroke();
+	};
+
+	/**
+	 * The turned-over tab: the tail's band as far as aOut1 on the outer
+	 * edge, then straight back to the point the ribbon pinches to, then the
+	 * inner edge home. The triangle between that line and the band is what
+	 * makes the fold read.
+	 */
+	mxShapeOliabakArcArrow.prototype.paintTab = function(c, g, aOut0, aOut1, pivot)
+	{
+		var half = g.t / 2;
+		var n = Math.max(6, Math.ceil(Math.abs(aOut1 - aOut0) / (Math.PI / 60)));
+		var p = g.edge(aOut0, half);
+		var i;
+
+		c.begin();
+		c.moveTo(p.x, p.y);
+
+		for (i = 1; i <= n; i++)
+		{
+			p = g.edge(aOut0 + (aOut1 - aOut0) * i / n, half);
+			c.lineTo(p.x, p.y);
+		}
+
+		c.lineTo(pivot.x, pivot.y);
+
+		for (i = 0; i <= n; i++)
+		{
+			p = g.edge(g.af + (g.a0 - g.af) * i / n, -half);
+			c.lineTo(p.x, p.y);
+		}
+
+		c.close();
+		c.fillAndStroke();
+	};
+
+	mxShapeOliabakArcArrow.prototype.paintPiece = function(c, g, aOut0, aOut1, aIn1, aIn0, head, off)
+	{
+		off = (off != null) ? off : 0;
+		var half = g.t / 2;
+		var n = Math.max(6, Math.ceil(Math.max(Math.abs(aOut1 - aOut0),
+			Math.abs(aIn1 - aIn0)) / (Math.PI / 60)));
+		var p = g.edge(aOut0, half - off);
+		var i;
+
+		c.begin();
+		c.moveTo(p.x, p.y);
+
+		for (i = 1; i <= n; i++)
+		{
+			p = g.edge(aOut0 + (aOut1 - aOut0) * i / n, half - off);
+			c.lineTo(p.x, p.y);
+		}
+
 		if (head)
 		{
-			p = g.edge(g.ab, g.hw / 2);
+			p = g.edge(g.ab, g.hw / 2 - off);
 			c.lineTo(p.x, p.y);
-			p = g.mid(g.ae);
+			p = g.edge(g.ae, -off);
 			c.lineTo(p.x, p.y);
-			p = g.edge(g.ab, -g.hw / 2);
+			p = g.edge(g.ab, -g.hw / 2 - off);
 			c.lineTo(p.x, p.y);
 		}
 
 		for (i = 0; i <= n; i++)
 		{
-			p = g.edge(aIn1 + (aIn0 - aIn1) * i / n, -half);
+			p = g.edge(aIn1 + (aIn0 - aIn1) * i / n, -half - off);
 			c.lineTo(p.x, p.y);
 		}
 
