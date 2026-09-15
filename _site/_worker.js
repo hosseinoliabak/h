@@ -96,7 +96,7 @@ const STATIC_RESERVED = [
   'static', 'assets', 'cdn-cgi', 'functions', 'robots.txt', 'sitemap.xml',
   'favicon.ico', 'index', 'index.html', '404', '404.html', 'null', 'undefined'
 ];
-const BUILD_RESERVED = ["404", "404.html", "about", "about.html", "activation-colors.js", "ai", "app-mode.css", "auth.js", "cybersecurity", "dashboard.js", "deep-learning", "fonts", "giscus-note.js", "giscus-theme-dark.css", "giscus-theme-lion.css", "giscus-theme.css", "index", "index.html", "infrastructure", "listings.json", "machine-learning", "math", "media", "nav-columns.js", "networking", "resume-reading.js", "review-numbering.js", "robots.txt", "search-scope.js", "search.json", "sidebar-active.js", "site-metric-pages.json", "site-metrics.js", "site_libs", "sitemap.xml", "styles.css", "theme-toggle.js", "tools", "visit-history.js"];
+const BUILD_RESERVED = ["404", "404.html", "about", "about.html", "activation-colors.js", "ai", "app-mode.css", "auth.js", "cybersecurity", "dashboard.js", "deep-learning", "fonts", "giscus-note.js", "giscus-theme-dark.css", "giscus-theme-lion.css", "giscus-theme.css", "index", "index.html", "infrastructure", "listings.json", "machine-learning", "math", "media", "nav-columns.js", "networking", "privacy", "privacy.html", "resume-reading.js", "review-numbering.js", "robots.txt", "search-scope.js", "search.json", "sidebar-active.js", "site-metric-pages.json", "site-metrics.js", "site_libs", "sitemap.xml", "styles.css", "theme-toggle.js", "tools", "visit-history.js"];
 const RESERVED = new Set(STATIC_RESERVED.concat(BUILD_RESERVED).map(function (name) {
   return String(name).toLowerCase();
 }));
