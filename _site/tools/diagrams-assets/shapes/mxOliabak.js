@@ -2521,22 +2521,21 @@
 	 *                edge's, which cuts the tail on a slant
 	 *   fold         percent of the sweep at which the ribbon turns over;
 	 *                0 leaves one surface
-	 *   foldOver     how far the turned-over tab runs past the fold, percent
-	 *                of the sweep: the width of the fold
-	 *   foldPoint    where the fold's point sits across the band, percent
-	 *                from the inner edge to the outer
-	 *   fillColor2   the underside's colour
+	 *   foldSpan     how much of the sweep the ribbon takes to turn, percent
+	 *   foldPinch    the band's width at the turn, percent of the full width;
+	 *                0 closes it to a point
+	 *   fillColor2   the back of the ribbon, shown before the turn
 	 *
 	 * Sizes are shares of the box rather than pixels so the arrow keeps its
 	 * proportions when it is resized, the way a stencil would, and a small
 	 * one in a legend and a large one over a topology are the same drawing.
 	 *
-	 * A folded ribbon pinches to a single point. The two legs pivot about
-	 * one point on the band, the tab of the ribbon's back is the triangle
-	 * that opens from it, and that tab is painted over the leg beyond, so
-	 * the fold reads as the ribbon turning over rather than as a change of
-	 * colour. The leg past the fold carries the ordinary fill and gradient;
-	 * the tab carries fillColor2.
+	 * A ribbon that turns over is seen edge-on at the turn, so it has no
+	 * width there. The fold is that pinch and nothing else: the two legs
+	 * narrow into a line, or a point when the pinch is closed, and open out
+	 * again beyond it, one showing the ribbon's back and the other its
+	 * front. Nothing is drawn across the join, because there is no
+	 * thickness there to draw.
 	 */
 	function mxShapeOliabakArcArrow(bounds, fill, stroke, strokewidth)
 	{
@@ -2556,8 +2555,8 @@
 	mxShapeOliabakArcArrow.prototype.headWidth = 38;
 	mxShapeOliabakArcArrow.prototype.tailSkew = 0;
 	mxShapeOliabakArcArrow.prototype.fold = 40;
-	mxShapeOliabakArcArrow.prototype.foldOver = 24;
-	mxShapeOliabakArcArrow.prototype.foldPoint = 0;
+	mxShapeOliabakArcArrow.prototype.foldSpan = 18;
+	mxShapeOliabakArcArrow.prototype.foldPinch = 0;
 
 	mxShapeOliabakArcArrow.prototype.customProperties = [
 		{name: 'startAngle', dispName: 'Tail Angle', type: 'float', min: 0,
@@ -2574,10 +2573,10 @@
 			max: 60, defVal: 0},
 		{name: 'fold', dispName: 'Fold %', type: 'float', min: 0, max: 90,
 			defVal: 40},
-		{name: 'foldOver', dispName: 'Fold Width %', type: 'float', min: 1,
-			max: 40, defVal: 24},
-		{name: 'foldPoint', dispName: 'Fold Point %', type: 'float', min: 0,
-			max: 100, defVal: 0},
+		{name: 'foldSpan', dispName: 'Fold Span %', type: 'float', min: 1,
+			max: 50, defVal: 18},
+		{name: 'foldPinch', dispName: 'Fold Pinch %', type: 'float', min: 0,
+			max: 90, defVal: 0},
 		{name: 'fillColor2', dispName: 'Underside Color', type: 'color',
 			defVal: '#8C8C8C'}
 	];
@@ -2634,24 +2633,19 @@
 		// Where the ribbon turns over, as a fraction of the sweep.
 		var foldFrac = Math.max(0, Math.min(90, num('fold', this.fold))) / 100;
 		var af = a0 + sw * foldFrac;
-		// The tab's width, and enough room kept for the leg beyond it.
-		var over = Math.abs(sw) * Math.max(1, Math.min(40,
-			num('foldOver', this.foldOver))) / 100;
-		var room = Math.abs(ab - a0) - 0.05;
-
-		if (Math.abs(af - a0) + over > room)
-		{
-			af = a0 + s * Math.max(0, room - over);
-		}
+		// How much of the sweep the turn takes, kept inside the band so the
+		// taper never runs past the tail or into the arrowhead.
+		var span = Math.abs(sw) * Math.max(1, Math.min(50,
+			num('foldSpan', this.foldSpan))) / 100;
+		var room = Math.abs(ab - a0);
+		span = Math.min(span, room / 2);
+		af = a0 + s * Math.max(span, Math.min(room - span, Math.abs(af - a0)));
 
 		return {cx: x + w / 2, cy: y + h / 2, rx: rx, ry: ry, t: t, hw: hw, u: u,
 			rmx: rmx, rmy: rmy, rm: rm, a0: a0, sw: sw, s: s, ha: ha,
 			skew: skew, ab: ab, ae: a0 + sw,
-			folded: foldFrac > 0 && Math.abs(af - a0) > 0.02, af: af,
-			ov: s * over,
-			// The fold's point, across the band from the inner edge out.
-			fp: -t / 2 + t * Math.max(0, Math.min(100,
-				num('foldPoint', this.foldPoint))) / 100,
+			folded: foldFrac > 0, af: af, span: span,
+			pinch: Math.max(0, Math.min(90, num('foldPinch', this.foldPinch))) / 100,
 			// A point of the centre ellipse.
 			mid: function(a)
 			{
@@ -2695,44 +2689,67 @@
 
 		if (!g.folded)
 		{
-			this.paintPiece(c, g, aOut0, g.ab, g.ab, g.a0, true);
+			this.paintSegment(c, g, aOut0, g.a0, g.ab, true);
 
 			return;
 		}
 
-		// The leg beyond the fold, drawn whole from the fold's point to the
-		// head, then the turned-over tab painted over it. The tab's far end
-		// is not a cut across the band but a line running back to the single
-		// point the ribbon pinches to, so the two legs fan out from it.
-		var pivot = g.edge(g.af, g.fp);
-
-		this.paintLeg(c, g, g.af, g.ab, g.af, pivot);
-
+		// Before the twist the ribbon shows its back, after it its front.
+		// The two legs are painted separately and meet at the pinch, where
+		// both are the same width, so the join is the line or point itself
+		// and nothing is drawn across it.
 		c.setFillColor(mxUtils.getValue(this.style, 'fillColor2', '#8C8C8C'));
-		this.paintTab(c, g, aOut0, g.af + g.ov, pivot);
+		this.paintSegment(c, g, aOut0, g.a0, g.af, false);
+
+		c.setFillColor(this.fill);
+		this.paintSegment(c, g, g.af, g.af, g.ab, true);
 	};
 
 	/**
-	 * One piece of the ribbon. The outer edge runs from aOut0 to aOut1, the
-	 * inner edge back from aIn1 to aIn0, and a straight line joins each
-	 * pair of ends, which is what lets both cuts be slanted. With a head,
-	 * the arrowhead sits between the two edges' far ends instead.
+	 * Half the band's width at angle a, as a fraction of the full width.
 	 *
-	 * The edges are parallel offsets of the centre ellipse, which are not
-	 * ellipses themselves, so they are walked in steps of about three
+	 * A ribbon that turns over is seen edge-on at the turn, so it has no
+	 * width there: the two legs narrow into a line, or a point when the
+	 * pinch is closed completely, and open out again beyond it. That taper
+	 * is the whole of the fold. Nothing is drawn across the join, because
+	 * there is no thickness there to draw.
+	 */
+	mxShapeOliabakArcArrow.prototype.widthAt = function(g, a)
+	{
+		if (!g.folded)
+		{
+			return 1;
+		}
+
+		var d = Math.abs(a - g.af);
+
+		if (d >= g.span)
+		{
+			return 1;
+		}
+
+		// Eased rather than linear, so the ribbon narrows the way a turning
+		// surface does instead of closing to a straight-sided wedge.
+		var k = Math.sin(d / g.span * Math.PI / 2);
+
+		return g.pinch + (1 - g.pinch) * k;
+	};
+
+	/**
+	 * One leg of the ribbon, from its outer edge's start to a1 and back
+	 * along the inner edge to aIn0, with the arrowhead at the far end when
+	 * asked for. The two edges are parallel offsets of the centre ellipse,
+	 * narrowed near the twist, so they are walked in steps of about three
 	 * degrees: smooth at any size the box can reach, and free of the
 	 * arc-flag cases a long sweep would otherwise raise.
 	 */
-	/**
-	 * The leg that carries the arrowhead. Its outer edge runs from aOut0,
-	 * its inner edge returns to aIn0, and when a pivot is given both ends
-	 * close on that single point rather than on a cut across the band.
-	 */
-	mxShapeOliabakArcArrow.prototype.paintLeg = function(c, g, aOut0, aOut1, aIn0, pivot)
+	mxShapeOliabakArcArrow.prototype.paintSegment = function(c, g, aOut0, aIn0, a1, head)
 	{
 		var half = g.t / 2;
-		var n = Math.max(6, Math.ceil(Math.abs(aOut1 - aOut0) / (Math.PI / 60)));
-		var p = g.edge(aOut0, half);
+		var n = Math.max(8, Math.ceil(Math.max(Math.abs(a1 - aOut0),
+			Math.abs(a1 - aIn0)) / (Math.PI / 60)));
+		var a = aOut0;
+		var p = g.edge(a, half * this.widthAt(g, a));
 		var i;
 
 		c.begin();
@@ -2740,97 +2757,25 @@
 
 		for (i = 1; i <= n; i++)
 		{
-			p = g.edge(aOut0 + (aOut1 - aOut0) * i / n, half);
-			c.lineTo(p.x, p.y);
-		}
-
-		p = g.edge(g.ab, g.hw / 2);
-		c.lineTo(p.x, p.y);
-		p = g.mid(g.ae);
-		c.lineTo(p.x, p.y);
-		p = g.edge(g.ab, -g.hw / 2);
-		c.lineTo(p.x, p.y);
-
-		for (i = 0; i <= n; i++)
-		{
-			p = g.edge(g.ab + (aIn0 - g.ab) * i / n, -half);
-			c.lineTo(p.x, p.y);
-		}
-
-		if (pivot != null)
-		{
-			c.lineTo(pivot.x, pivot.y);
-		}
-
-		c.close();
-		c.fillAndStroke();
-	};
-
-	/**
-	 * The turned-over tab: the tail's band as far as aOut1 on the outer
-	 * edge, then straight back to the point the ribbon pinches to, then the
-	 * inner edge home. The triangle between that line and the band is what
-	 * makes the fold read.
-	 */
-	mxShapeOliabakArcArrow.prototype.paintTab = function(c, g, aOut0, aOut1, pivot)
-	{
-		var half = g.t / 2;
-		var n = Math.max(6, Math.ceil(Math.abs(aOut1 - aOut0) / (Math.PI / 60)));
-		var p = g.edge(aOut0, half);
-		var i;
-
-		c.begin();
-		c.moveTo(p.x, p.y);
-
-		for (i = 1; i <= n; i++)
-		{
-			p = g.edge(aOut0 + (aOut1 - aOut0) * i / n, half);
-			c.lineTo(p.x, p.y);
-		}
-
-		c.lineTo(pivot.x, pivot.y);
-
-		for (i = 0; i <= n; i++)
-		{
-			p = g.edge(g.af + (g.a0 - g.af) * i / n, -half);
-			c.lineTo(p.x, p.y);
-		}
-
-		c.close();
-		c.fillAndStroke();
-	};
-
-	mxShapeOliabakArcArrow.prototype.paintPiece = function(c, g, aOut0, aOut1, aIn1, aIn0, head, off)
-	{
-		off = (off != null) ? off : 0;
-		var half = g.t / 2;
-		var n = Math.max(6, Math.ceil(Math.max(Math.abs(aOut1 - aOut0),
-			Math.abs(aIn1 - aIn0)) / (Math.PI / 60)));
-		var p = g.edge(aOut0, half - off);
-		var i;
-
-		c.begin();
-		c.moveTo(p.x, p.y);
-
-		for (i = 1; i <= n; i++)
-		{
-			p = g.edge(aOut0 + (aOut1 - aOut0) * i / n, half - off);
+			a = aOut0 + (a1 - aOut0) * i / n;
+			p = g.edge(a, half * this.widthAt(g, a));
 			c.lineTo(p.x, p.y);
 		}
 
 		if (head)
 		{
-			p = g.edge(g.ab, g.hw / 2 - off);
+			p = g.edge(g.ab, g.hw / 2);
 			c.lineTo(p.x, p.y);
-			p = g.edge(g.ae, -off);
+			p = g.mid(g.ae);
 			c.lineTo(p.x, p.y);
-			p = g.edge(g.ab, -g.hw / 2 - off);
+			p = g.edge(g.ab, -g.hw / 2);
 			c.lineTo(p.x, p.y);
 		}
 
 		for (i = 0; i <= n; i++)
 		{
-			p = g.edge(aIn1 + (aIn0 - aIn1) * i / n, -half - off);
+			a = a1 + (aIn0 - a1) * i / n;
+			p = g.edge(a, -half * this.widthAt(g, a));
 			c.lineTo(p.x, p.y);
 		}
 
