@@ -798,10 +798,17 @@ h1, h2, h3, h4 { font-family: var(--font-sans); }
 .sq .coord.rank { left:3px; top:2px; }
 .sq.light .coord { color:var(--sq-dark); }
 .sq.dark  .coord { color:var(--sq-light); }
-.sq img.pc { position:absolute; inset:2.5%; width:95%; height:95%; pointer-events:none; }
+.sq img.pc { position:absolute; inset:2.5%; width:95%; height:95%; pointer-events:none; z-index:2; }
+/* Square paint order, made explicit because the coverage map added a second
+   full-square layer. Without a z-index an ::after paints above every child,
+   so the wash would cover the pieces. Bottom to top: coverage (::after, 0),
+   move and check tints (::before, 1), pieces (2), move dots and coordinates
+   (3). The squares never overlap, so these values only order one square. */
+.sq .coord, .sq .dot { z-index:3; }
+.sq.covsq::after { content:''; position:absolute; inset:0; pointer-events:none; z-index:0; background:var(--cov); }
 .sq.lastmove::before, .sq.selsq::before, .sq.plansq::before,
 .sq.tint-mist::before, .sq.tint-blun::before, .sq.checksq::before {
-  content:''; position:absolute; inset:0; pointer-events:none;
+  content:''; position:absolute; inset:0; pointer-events:none; z-index:1;
 }
 .sq.lastmove::before { background:rgba(155,199,0,.41); }
 .sq.selsq::before    { background:rgba(20,85,30,.45); }
@@ -917,7 +924,7 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 .credits a { color:#aaa; }
 
 /* assisted analysis: candidate-square tints */
-.sq.aa-g::before, .sq.aa-y::before, .sq.aa-r::before { content:''; position:absolute; inset:0; pointer-events:none; }
+.sq.aa-g::before, .sq.aa-y::before, .sq.aa-r::before { content:''; position:absolute; inset:0; pointer-events:none; z-index:1; }
 .sq.aa-g::before { background:rgba(39,174,96,.45); }
 .sq.aa-y::before { background:rgba(241,196,15,.5); }
 .sq.aa-r::before { background:rgba(231,76,60,.5); }
@@ -1166,6 +1173,15 @@ img.drag-ghost { position:fixed; pointer-events:none; z-index:1000; opacity:.9; 
 }
 .ana-config-fields { display:grid; grid-template-columns:1fr; gap:6px; margin-top:7px; }
 .ana-config-fields .theme-sel { width:100%; }
+/* coverage map key: the same ramp the board paints, at three of its steps */
+.cov-key { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; margin-top:6px; font-size:11.5px; color:#888; }
+.cov-key-side { display:flex; align-items:center; gap:5px; }
+/* the rail is narrow and resizable, so the note takes its own line rather
+   than wrapping mid-phrase beside the two chips */
+.cov-key-note { flex:1 0 100%; }
+.cov-chip { width:34px; height:10px; border-radius:3px; background-color:#eceff1; }
+.cov-chip-w { background-image:linear-gradient(90deg, rgba(0,180,216,.18) 0 33%, rgba(0,180,216,.34) 33% 66%, rgba(0,180,216,.50) 66%); }
+.cov-chip-b { background-image:linear-gradient(90deg, rgba(217,70,239,.18) 0 33%, rgba(217,70,239,.34) 33% 66%, rgba(217,70,239,.50) 66%); }
 .ana-primary-action {
   border-color:var(--site-accent) !important;
   color:var(--site-accent) !important;
@@ -2042,6 +2058,14 @@ body.chess-analysis-active #site-display-controls .site-display-control {
                   <option value="balanced">Engine balanced</option>
                   <option value="max">Engine max</option>
                 </select>
+              </div>
+              <label class="late-row" title="Shade every square by which side has more pieces bearing on it. Pawns, pieces and the king each count once, a pinned piece still counts, and a square both sides cover equally is left bare.">
+                <input type="checkbox" id="anaCovChk"> Coverage map: shade each square by which side controls it
+              </label>
+              <div class="cov-key" id="anaCovKey" hidden="">
+                <span class="cov-key-side"><span class="cov-chip cov-chip-w"></span>White</span>
+                <span class="cov-key-side"><span class="cov-chip cov-chip-b"></span>Black</span>
+                <span class="cov-key-note">deeper color means a wider margin</span>
               </div>
             </section>
 
@@ -3862,6 +3886,66 @@ $('assistChk').onchange = e => {
   if (!assistOn) { assistTints = null; renderBoard(); }
 };
 
+/* ============================== coverage map ==============================
+   Who controls what, painted straight onto the board. Every square is asked
+   how many white men and how many black men bear on it, and the side with
+   more gets the square in its color, deepening with the margin. Cyan for
+   White, magenta for Black, because neither collides with the move, check,
+   blunder or plan tints already on this board.
+
+   Only the margin is shown, not both counts. A wash that paints both colors
+   turns every contested square in the middle of the board into the same
+   muddy third color, which is exactly where the reader most needs to see who
+   is winning the argument. One color per square keeps 64 squares legible, and
+   a square both sides cover equally is left bare, which is the honest reading
+   of a standoff.
+
+   A count, not an exchange evaluation. A pawn, a queen and the king each
+   count once, a pinned piece still counts, and a battery counts only its
+   front piece, because chess.js stops a ray at the first man on it. That
+   makes this a map of contact, not a promise that a capture is safe. The
+   engine lines and Assisted Analysis answer the second question. */
+const COV_WHITE = '0,180,216';       /* cyan */
+const COV_BLACK = '217,70,239';      /* magenta */
+/* Opacity by margin, 1 through 6 or more. Hand-tuned rather than computed:
+   the first step has to be visible on both a cream and a dark green square,
+   and the ramp has to flatten before it buries the piece underneath. */
+const COV_ALPHA = [0, .18, .29, .37, .43, .47, .50];
+let covOn = lsGet('chess-trainer-coverage') === '1';
+let covFen = null, covMap = null;
+/* 64 squares times two colors is 128 board scans, so it is cached against the
+   position that produced it. renderBoard runs on far more than position
+   changes (theme, flip, selection, hints), and every one of those would
+   otherwise pay for the whole map again. */
+function coverageMap() {
+  const fen = game.fen();
+  if (covMap && covFen === fen) return covMap;
+  const map = {};
+  for (const f of FILES) for (let r = 1; r <= 8; r++) {
+    const sq = f + r;
+    map[sq] = game.attackers(sq, 'w').length - game.attackers(sq, 'b').length;
+  }
+  covFen = fen; covMap = map;
+  return map;
+}
+/* The analysis board only. On a live board this would hand the player a
+   permanent readout of every tactic in the position, which is the opposite of
+   what the coach is for. Setup is excluded too, because a half-built position
+   has no legal reading and may not have both kings yet. */
+function covActive() { return covOn && mode === 'analysis' && !anaSetup; }
+function covKeySync() {
+  const key = $('anaCovKey');
+  if (key) key.hidden = !covOn;
+}
+$('anaCovChk').checked = covOn;
+$('anaCovChk').onchange = e => {
+  covOn = e.target.checked;
+  lsSet('chess-trainer-coverage', covOn ? '1' : '0');
+  covKeySync();
+  renderBoard();
+};
+covKeySync();
+
 /* candidate-move panel: an opt-in ranked list of the engine's top choices with
    their evaluations, shown during the player's own turn -- the live-game
    counterpart to the Analysis board's three-line panel. */
@@ -4178,12 +4262,19 @@ function squareAt(x, y) {  // grid coords → square name
 function renderBoard() {
   const frag = document.createDocumentFragment();
   const inCheck = game.inCheck() ? findKing(game.turn()) : null;
+  const cover = covActive() ? coverageMap() : null;
   for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
     const sq = squareAt(x, y);
     const f = FILES.indexOf(sq[0]), r = +sq[1] - 1;
     const d = document.createElement('div');
     d.className = `sq ${sqColor(f, r)} bf-v${bfVariant(f, r)}`;
     d.dataset.sq = sq;
+    if (cover && cover[sq]) {
+      const margin = cover[sq];
+      const alpha = COV_ALPHA[Math.min(Math.abs(margin), COV_ALPHA.length - 1)];
+      d.classList.add('covsq');
+      d.style.setProperty('--cov', `rgba(${margin > 0 ? COV_WHITE : COV_BLACK},${alpha})`);
+    }
     let piece = game.get(sq) || null;
     /* ghost rendering: show the tentative move before it is committed */
     if (ghost) {
