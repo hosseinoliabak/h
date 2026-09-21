@@ -16,6 +16,8 @@
  *                              straight at zero curvature
  *   mxgraph.oliabak.arcArrow   block arrow bent along an ellipse, with tail,
  *                              head, band and head-size handles
+ *   mxgraph.oliabak.cornerRect rectangle whose four corners are set one at a
+ *                              time: square, rounded, snipped or scooped
  */
 (function()
 {
@@ -3289,6 +3291,138 @@
 	mxCellRenderer.registerShape('mxgraph.oliabak.switch', mxShapeOliabakSwitch);
 
 	// ---------------------------------------------------------------------
+	// Boxes
+	// ---------------------------------------------------------------------
+
+	// What a corner can be. Square and rounded are the everyday pair; snipped
+	// and scooped cost nothing, since all four are the same walk with a
+	// different segment at the turn, and they cover the chamfered and keyhole
+	// boxes draw.io otherwise offers only as separate fixed shapes.
+	var CORNER_KINDS = [
+		{val: 'round', dispName: 'Rounded'},
+		{val: 'square', dispName: 'Square'},
+		{val: 'snip', dispName: 'Snipped'},
+		{val: 'scoop', dispName: 'Scooped'}
+	];
+
+	/**
+	 * A rectangle whose four corners are set one at a time.
+	 *
+	 * draw.io rounds a rectangle all four corners at once: 'rounded=1' carries
+	 * a single arcSize and no way to say which corners it applies to. The
+	 * Basic library fills part of the gap with fixed shapes, one corner, two
+	 * diagonal corners, three corners, but there is nothing for the commonest
+	 * case of all, one rounded side: a box whose top is round and whose bottom
+	 * is square, the head of a card, a tab, a pill cut in half.
+	 *
+	 * One shape with four independent corners rather than a family of shapes,
+	 * so a box is changed after it is drawn instead of swapped for a different
+	 * one, and the palette entries are only starting values.
+	 *
+	 * 'size' is the corner in pixels and is shared by all four, which is what
+	 * makes a box with two rounded corners read as one object. It is clamped
+	 * to half the shorter side, so two corners on the same edge can meet but
+	 * never overrun each other.
+	 */
+	function mxShapeOliabakCornerRect()
+	{
+		mxActor.call(this);
+	};
+
+	mxUtils.extend(mxShapeOliabakCornerRect, mxActor);
+
+	mxShapeOliabakCornerRect.prototype.size = 12;
+
+	mxShapeOliabakCornerRect.prototype.customProperties = [
+		{name: 'size', dispName: 'Corner Size', type: 'float', min: 0, defVal: 12},
+		{name: 'cornerTL', dispName: 'Top Left', type: 'enum', defVal: 'round',
+			enumList: CORNER_KINDS},
+		{name: 'cornerTR', dispName: 'Top Right', type: 'enum', defVal: 'round',
+			enumList: CORNER_KINDS},
+		{name: 'cornerBR', dispName: 'Bottom Right', type: 'enum', defVal: 'round',
+			enumList: CORNER_KINDS},
+		{name: 'cornerBL', dispName: 'Bottom Left', type: 'enum', defVal: 'round',
+			enumList: CORNER_KINDS}
+	];
+
+	/**
+	 * The turn at one corner, from where the incoming edge stopped to where
+	 * the outgoing edge starts. Both points are already r away from the corner
+	 * itself, so a square corner is those two points collapsed onto it and
+	 * every other kind is one segment between the same pair.
+	 */
+	mxShapeOliabakCornerRect.prototype.paintCorner = function(c, kind, r, ex, ey)
+	{
+		if (r <= 0)
+		{
+			// Square: the walk already arrived at the corner point.
+			return;
+		}
+
+		if (kind == 'snip')
+		{
+			c.lineTo(ex, ey);
+		}
+		else
+		{
+			// Sweep 1 turns the arc the way the walk is going and rounds the
+			// corner off; sweep 0 turns it back on itself and scoops it out.
+			c.arcTo(r, r, 0, 0, (kind == 'scoop') ? 0 : 1, ex, ey);
+		}
+	};
+
+	mxShapeOliabakCornerRect.prototype.redrawPath = function(c, x, y, w, h)
+	{
+		var size = Math.max(0, Math.min(w / 2, h / 2, parseFloat(
+			mxUtils.getValue(this.style, 'size', this.size))));
+		var keys = ['cornerTL', 'cornerTR', 'cornerBR', 'cornerBL'];
+		var kind = [];
+		var r = [];
+
+		for (var i = 0; i < 4; i++)
+		{
+			kind[i] = mxUtils.getValue(this.style, keys[i], 'round');
+			r[i] = (kind[i] == 'square') ? 0 : size;
+		}
+
+		// Clockwise from the top edge: run along an edge, turn the corner at
+		// its end, four times. A square corner leaves nothing to turn, which
+		// is why the same four steps draw every combination.
+		c.moveTo(r[0], 0);
+		c.lineTo(w - r[1], 0);
+		this.paintCorner(c, kind[1], r[1], w, r[1]);
+		c.lineTo(w, h - r[2]);
+		this.paintCorner(c, kind[2], r[2], w - r[2], h);
+		c.lineTo(r[3], h);
+		this.paintCorner(c, kind[3], r[3], 0, h - r[3]);
+		c.lineTo(0, r[0]);
+		this.paintCorner(c, kind[0], r[0], r[0], 0);
+		c.close();
+	};
+
+	mxShapeOliabakCornerRect.prototype.constraints = null;
+
+	// The rectangle's own connection points, minus the four corners, which on
+	// this shape may be cut away.
+	mxShapeOliabakCornerRect.prototype.getConstraints = function(style, w, h)
+	{
+		var constr = [];
+
+		for (var i = 1; i <= 3; i++)
+		{
+			constr.push(new mxConnectionConstraint(new mxPoint(i * 0.25, 0), false));
+			constr.push(new mxConnectionConstraint(new mxPoint(i * 0.25, 1), false));
+			constr.push(new mxConnectionConstraint(new mxPoint(0, i * 0.25), false));
+			constr.push(new mxConnectionConstraint(new mxPoint(1, i * 0.25), false));
+		}
+
+		return constr;
+	};
+
+	mxCellRenderer.registerShape('mxgraph.oliabak.cornerRect',
+		mxShapeOliabakCornerRect);
+
+	// ---------------------------------------------------------------------
 	// Annotations
 	// ---------------------------------------------------------------------
 
@@ -3805,16 +3939,110 @@
 					bounds.width, bounds.height);
 			};
 
-			function angleAt(g, pt, kx, ky)
+			/**
+			 * The angle of the point on the handle's own track, the centre
+			 * ellipse pushed d outwards, that lies nearest the pointer.
+			 *
+			 * What this used to take was the pointer's angle about the
+			 * centre, and that is not the same thing: on a flattened ellipse
+			 * the angle races away from the pointer along the flat sides and
+			 * crawls at the ends, so the handle overshot by up to seven times
+			 * the distance dragged in one direction and barely moved in
+			 * another. A nearest point makes the handle keep pace with the
+			 * pointer whatever the box's proportions, and land where it is
+			 * dropped.
+			 *
+			 * Found by sampling rather than by solving: the nearest point on
+			 * an offset ellipse has no closed form worth the arithmetic, and
+			 * the track is a closed convex curve with one nearest point, so a
+			 * coarse sweep for its neighbourhood and a halving search inside
+			 * it reach a thousandth of a degree in about a hundred distance
+			 * evaluations, which is nothing on a pointer move.
+			 */
+			function angleNear(g, pt, d)
 			{
-				return Math.atan2((pt.y - g.cy) / ky, (pt.x - g.cx) / kx);
+				var dist = function(a)
+				{
+					var p = g.edge(a, d);
+
+					return (p.x - pt.x) * (p.x - pt.x) +
+						(p.y - pt.y) * (p.y - pt.y);
+				};
+
+				var step = Math.PI / 24;
+				var best = 0;
+				var bestD = Infinity;
+
+				for (var a = 0; a < 2 * Math.PI; a += step)
+				{
+					var dd = dist(a);
+
+					if (dd < bestD)
+					{
+						bestD = dd;
+						best = a;
+					}
+				}
+
+				for (var i = 0; i < 20; i++)
+				{
+					step /= 2;
+					var lo = dist(best - step);
+					var hi = dist(best + step);
+
+					if (lo < bestD && lo <= hi)
+					{
+						bestD = lo;
+						best -= step;
+					}
+					else if (hi < bestD)
+					{
+						bestD = hi;
+						best += step;
+					}
+				}
+
+				return best;
 			};
 
+			// Tenths of a degree, so a drag on a large arrow steps by less
+			// than a pixel rather than by a whole degree of arc.
 			function degrees(a)
 			{
-				var d = Math.round(a * 180 / Math.PI) % 360;
+				var d = Math.round(a * 1800 / Math.PI) / 10 % 360;
 
 				return (d < 0) ? d + 360 : d;
+			};
+
+			// The same step for the percentages the other handles write.
+			function tenths(v)
+			{
+				return Math.round(v * 10) / 10;
+			};
+
+			/**
+			 * How far round the sweep an angle difference is, in radians,
+			 * with the wrap put where it cannot be reached by accident.
+			 *
+			 * An angle difference taken modulo a full turn has its seam at
+			 * zero, which is the tail: drag a hair back past it and the
+			 * difference reads as a whole turn rather than as nothing, so the
+			 * value it drives jumps from its lowest to its highest and the
+			 * handle flies to the other end of the arrow. That is one drag in
+			 * two on a handle that starts at the tail.
+			 *
+			 * The arc leaves a gap of 2pi - limit that the sweep does not
+			 * cover, and nothing is being set in there, so the seam belongs
+			 * in the middle of it: the pointer then falls off whichever end
+			 * of the sweep it is nearer to, and the value stays put until the
+			 * pointer has crossed half the gap.
+			 */
+			function along(d, limit)
+			{
+				var gap = 2 * Math.PI - limit;
+				d = d - 2 * Math.PI * Math.floor((d + gap / 2) / (2 * Math.PI));
+
+				return Math.max(0, Math.min(limit, d));
 			};
 
 			return [
@@ -3829,7 +4057,10 @@
 
 					if (g != null)
 					{
-						this.state.style['startAngle'] = degrees(angleAt(g, pt, g.rmx, g.rmy));
+						// The tail handle rides the outer edge, so its track
+						// is the centre ellipse pushed out half a band.
+						this.state.style['startAngle'] = degrees(
+							angleNear(g, pt, g.t / 2));
 					}
 				}, true),
 				Graph.createHandle(state, ['sweep'], function(bounds)
@@ -3845,8 +4076,12 @@
 					{
 						// Keep the direction, so the head walks round the
 						// ellipse; the sign is flipped in the property row.
-						var d = degrees(angleAt(g, pt, g.rmx, g.rmy) - g.a0);
-						d = Math.max(10, Math.min(350, d));
+						// 350 degrees is the most the shape draws, so the
+						// seam sits in the 10 degrees it does not: a drag
+						// back past the tail shortens the sweep instead of
+						// flipping it to a full turn.
+						var d = Math.max(10, degrees(along(
+							angleNear(g, pt, 0) - g.a0, 350 * Math.PI / 180)));
 						this.state.style['sweep'] = (g.s > 0) ? d : d - 360;
 					}
 				}, true),
@@ -3874,7 +4109,7 @@
 						var m = g.mid(am);
 						var nv = g.normal(am);
 						var inward = -((pt.x - m.x) * nv.x + (pt.y - m.y) * nv.y);
-						this.state.style['arrowWidth'] = Math.round(Math.max(2,
+						this.state.style['arrowWidth'] = tenths(Math.max(2,
 							Math.min(80, 2 * inward / g.u)));
 					}
 				}, true),
@@ -3896,9 +4131,9 @@
 
 					if (g != null)
 					{
-						var d = g.s * (angleAt(g, pt, g.rmx, g.rmy) - g.a0);
-						d = d - 2 * Math.PI * Math.floor(d / (2 * Math.PI));
-						this.state.style['fold'] = Math.round(Math.max(0,
+						var d = along(g.s * (angleNear(g, pt, 0) - g.a0),
+							Math.abs(g.sw));
+						this.state.style['fold'] = tenths(Math.max(0,
 							Math.min(90, d / Math.abs(g.sw) * 100)));
 					}
 				}, true),
@@ -3919,11 +4154,13 @@
 						var m = g.mid(g.ab);
 						var nv = g.normal(g.ab);
 						var out = (pt.x - m.x) * nv.x + (pt.y - m.y) * nv.y;
-						this.state.style['headWidth'] = Math.round(Math.max(105,
+						this.state.style['headWidth'] = tenths(Math.max(105,
 							Math.min(400, 2 * out / g.t * 100)));
-						var back = g.s * (g.ae - angleAt(g, pt, g.rmx, g.rmy));
-						back = back - 2 * Math.PI * Math.floor(back / (2 * Math.PI));
-						this.state.style['headLength'] = Math.round(Math.max(20,
+						// This handle sits on the head's outer corner, half
+						// the head's width out from the centre line.
+						var back = along(g.s * (g.ae - angleNear(g, pt, g.hw / 2)),
+							Math.abs(g.sw));
+						this.state.style['headLength'] = tenths(Math.max(20,
 							Math.min(400, Math.min(Math.abs(g.sw) * 0.9, back) * g.rm / g.t * 100)));
 					}
 				}, true)
@@ -4155,6 +4392,36 @@
 			{
 				this.state.style['size'] = Math.round(Math.max(0, Math.min(1,
 					(pt.y - bounds.y) / bounds.height)) * 100) / 100;
+			}, true)];
+		};
+
+		/**
+		 * The corner size, on a handle that sits where the top-left corner's
+		 * arc has its centre, the same place draw.io puts it on its own
+		 * corner-rounded rectangles.
+		 */
+		Graph.handleFactory['mxgraph.oliabak.cornerRect'] = function(state)
+		{
+			return [Graph.createHandle(state, ['size'], function(bounds)
+			{
+				var size = Math.max(0, Math.min(bounds.width / 2, bounds.height / 2,
+					parseFloat(mxUtils.getValue(this.state.style, 'size',
+						mxShapeOliabakCornerRect.prototype.size))));
+
+				return new mxPoint(bounds.x + size, bounds.y + size);
+			}, function(bounds, pt)
+			{
+				// The handle rides the 45 degree line out of the corner, so
+				// what sets the size is how far along that line the pointer
+				// has gone, not one of its coordinates on its own. Taking x
+				// alone, as upstream's corner shapes do, makes the handle
+				// ignore half of a diagonal drag and lag behind the pointer.
+				var d = ((pt.x - bounds.x) + (pt.y - bounds.y)) / 2;
+
+				// Tenths of a pixel: a drag is continuous rather than
+				// stepping a whole pixel at a time.
+				this.state.style['size'] = Math.round(10 * Math.max(0, Math.min(
+					bounds.width / 2, bounds.height / 2, d))) / 10;
 			}, true)];
 		};
 
