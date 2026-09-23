@@ -12,12 +12,18 @@
  *   mxgraph.oliabak.arc        curved connector, one bow handle (symmetric)
  *   mxgraph.oliabak.scurve     curved connector, two independent bow handles
  *                              and a position handle on each hump
+ *   mxgraph.oliabak.doubleLine two parallel lines on one edge, each with its
+ *                              own arrowheads at either end
  *   mxgraph.oliabak.tunnel     see-through tube on a bowed centre line,
  *                              straight at zero curvature
  *   mxgraph.oliabak.arcArrow   block arrow bent along an ellipse, with tail,
  *                              head, band and head-size handles
  *   mxgraph.oliabak.cornerRect rectangle whose four corners are set one at a
  *                              time: square, rounded, snipped or scooped
+ *
+ * Every shape here carries fixed connection points. The drawn ones are read
+ * from the same geometry the painter walks, so they follow the handles; see
+ * the Connection points section below for the shared helpers.
  */
 (function()
 {
@@ -113,6 +119,71 @@
 			var v = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
 			v = Math.round(v + (target - v) * t);
 			out += ('0' + Math.max(0, Math.min(255, v)).toString(16)).slice(-2);
+		}
+
+		return out;
+	};
+
+	// ---------------------------------------------------------------------
+	// Connection points
+	// ---------------------------------------------------------------------
+
+	/**
+	 * A fixed connection point at (px, py), given as a fraction of the cell.
+	 *
+	 * perimeter is off on every point in this file. A perimeter point is a
+	 * direction to project from the middle of the cell, which is right for a
+	 * rectangle, where the projection lands back where it started, and wrong
+	 * for everything else here: on a cylinder, an isometric box or a bent
+	 * band, projecting moves the point off the drawing and onto the cell's
+	 * box, which is exactly what these shapes are drawn to avoid.
+	 */
+	function cp(px, py)
+	{
+		return new mxConnectionConstraint(new mxPoint(px, py), false);
+	};
+
+	/**
+	 * The sixteen points a rectangle has: the four corners, the four edge
+	 * midpoints and the quarters between them. Used by the shapes whose
+	 * outline is the cell itself, and as the fallback for a shape whose
+	 * parameters have collapsed it into a plain box.
+	 */
+	function boxConstraints()
+	{
+		var out = [];
+		var i;
+
+		for (i = 0; i <= 4; i++)
+		{
+			out.push(cp(i / 4, 0));
+			out.push(cp(i / 4, 1));
+		}
+
+		for (i = 1; i <= 3; i++)
+		{
+			out.push(cp(0, i / 4));
+			out.push(cp(1, i / 4));
+		}
+
+		return out;
+	};
+
+	/**
+	 * Points along the outline of a closed polygon given in cell pixels: each
+	 * corner, and the midpoint of each side. Cheap way to give a drawn
+	 * outline useful points without naming them one at a time.
+	 */
+	function outlineConstraints(pts, w, h)
+	{
+		var out = [];
+
+		for (var i = 0; i < pts.length; i++)
+		{
+			var a = pts[i];
+			var b = pts[(i + 1) % pts.length];
+			out.push(cp(a[0] / w, a[1] / h));
+			out.push(cp((a[0] + b[0]) / 2 / w, (a[1] + b[1]) / 2 / h));
 		}
 
 		return out;
@@ -309,6 +380,277 @@
 	];
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.scurve', mxShapeOliabakSCurve);
+
+	// ---------------------------------------------------------------------
+	// Double line
+	// ---------------------------------------------------------------------
+
+	// How far apart the two lines run, centre to centre, in pixels.
+	var DEFAULT_LINE_GAP = 6;
+
+	// Beyond this multiple of the gap a mitred corner is cut off square. An
+	// unbounded miter shoots off to infinity as a corner closes up, and on a
+	// double line that shows as a spike where the two lines should simply
+	// turn.
+	var MITER_LIMIT = 4;
+
+	/**
+	 * A polyline running parallel to the given one at distance d, positive
+	 * being the left-hand side looking from the first point to the last.
+	 *
+	 * Each corner is mitred: the offset point is where the two offset
+	 * segments meet, so the two lines stay the same distance apart the whole
+	 * way round a bend. Offsetting each segment on its own instead leaves a
+	 * notch on the inside of every corner and a gap on the outside.
+	 *
+	 * The identity used is that for unit normals n1 and n2 of the segments
+	 * either side of a corner, the miter offset is (n1 + n2) * d / (1 + n1.n2),
+	 * since |n1 + n2| = 2cos(t) and the miter runs d / cos(t) along it, where
+	 * 2t is the turn. The denominator goes to zero only where the line doubles
+	 * back on itself, which the miter cap covers.
+	 */
+	function offsetPolyline(pts, d)
+	{
+		// A missing point has no position and a repeated one no direction to
+		// offset along, and routing can leave either on a corner. Both go
+		// before anything is measured.
+		var clean = [];
+		var i;
+
+		for (i = 0; i < pts.length; i++)
+		{
+			var q = clean[clean.length - 1];
+
+			if (pts[i] != null && (q == null || Math.abs(pts[i].x - q.x) > 1e-6 ||
+				Math.abs(pts[i].y - q.y) > 1e-6))
+			{
+				clean.push(pts[i]);
+			}
+		}
+
+		if (clean.length < 2)
+		{
+			return null;
+		}
+
+		// Left-hand unit normal of each segment. With y running down the
+		// screen, turning the direction this way puts a positive offset above
+		// a left-to-right line, which is the one a reader calls the first.
+		var norms = [];
+
+		for (i = 1; i < clean.length; i++)
+		{
+			var dx = clean[i].x - clean[i - 1].x;
+			var dy = clean[i].y - clean[i - 1].y;
+			var len = Math.sqrt(dx * dx + dy * dy);
+			norms.push([dy / len, -dx / len]);
+		}
+
+		var out = [];
+		var cap = Math.abs(d) * MITER_LIMIT;
+
+		for (i = 0; i < clean.length; i++)
+		{
+			var a = norms[Math.max(0, i - 1)];
+			var b = norms[Math.min(norms.length - 1, i)];
+			var k = 1 + a[0] * b[0] + a[1] * b[1];
+			var ox, oy;
+
+			if (k > 1e-6)
+			{
+				ox = (a[0] + b[0]) * d / k;
+				oy = (a[1] + b[1]) * d / k;
+				var len2 = Math.sqrt(ox * ox + oy * oy);
+
+				if (len2 > cap)
+				{
+					ox = ox / len2 * cap;
+					oy = oy / len2 * cap;
+				}
+			}
+			else
+			{
+				// The line doubles back here; there is no miter to take, so
+				// the corner is squared off on the outgoing segment's normal.
+				ox = b[0] * d;
+				oy = b[1] * d;
+			}
+
+			out.push(new mxPoint(clean[i].x + ox, clean[i].y + oy));
+		}
+
+		return out;
+	};
+
+	/**
+	 * Two parallel lines on one edge, each carrying its own arrowheads.
+	 *
+	 * draw.io's own double line is the Double connection, shape 'link': an
+	 * open-ended block arrow whose two visible lines are the two sides of a
+	 * single filled band. That is why its Line start and Line end controls
+	 * are greyed out. A band has one outline, and an arrowhead belongs to a
+	 * line, so there is nowhere for two of them to go, let alone four.
+	 *
+	 * This draws two real lines instead, offset from the edge's own route by
+	 * half of 'lineGap' each way, and gives each of them the full marker
+	 * plumbing. The first line reads the stock marker keys, so the Format
+	 * panel's own Line start and Line end controls drive it and a diagram
+	 * that is switched to this shape keeps the arrowheads it already had; the
+	 * second line reads the same keys with a 2 on the end. Both heads the same
+	 * way is a wide one-way link, opposite ways is a duplex pair, and a head
+	 * at each end of each line is a two-way link drawn twice over.
+	 */
+	function mxShapeOliabakDoubleLine()
+	{
+		mxConnector.call(this);
+	};
+
+	mxUtils.extend(mxShapeOliabakDoubleLine, mxConnector);
+
+	// 'lineGap' has a Gap row of its own in Format > Style, next to the two
+	// lines' arrowheads, so it is deliberately not also declared as a custom
+	// property: that would list it a second time under Property, two controls
+	// for one value.
+	mxShapeOliabakDoubleLine.prototype.getLineGap = function()
+	{
+		var gap = parseFloat(mxUtils.getValue(this.style, 'lineGap',
+			DEFAULT_LINE_GAP));
+
+		return isNaN(gap) ? DEFAULT_LINE_GAP : Math.max(0, Math.min(200, gap));
+	};
+
+	/**
+	 * mxConnector's marker plumbing with the style keys named rather than
+	 * fixed, so the second line can carry arrowheads of its own.
+	 *
+	 * Like the original it shortens the end point in place, so that the line
+	 * does not poke out through the arrowhead; that is why every marker is
+	 * prepared before either line is painted and drawn afterwards.
+	 */
+	mxShapeOliabakDoubleLine.prototype.createLineMarker = function(c, pts, source,
+		second)
+	{
+		var suffix = second ? '2' : '';
+		var n = pts.length;
+		var type = mxUtils.getValue(this.style,
+			(source ? mxConstants.STYLE_STARTARROW : mxConstants.STYLE_ENDARROW) + suffix);
+		var p0 = source ? pts[1] : pts[n - 2];
+		var pe = source ? pts[0] : pts[n - 1];
+
+		if (type == null || type == mxConstants.NONE || p0 == null || pe == null)
+		{
+			return null;
+		}
+
+		var dx = pe.x - p0.x;
+		var dy = pe.y - p0.y;
+		var dist = Math.sqrt(dx * dx + dy * dy);
+
+		if (!(dist > 0))
+		{
+			return null;
+		}
+
+		var size = parseFloat(mxUtils.getValue(this.style,
+			(source ? mxConstants.STYLE_STARTSIZE : mxConstants.STYLE_ENDSIZE) + suffix,
+			mxConstants.DEFAULT_MARKERSIZE));
+		var filled = mxUtils.getValue(this.style,
+			(source ? mxConstants.STYLE_STARTFILL : mxConstants.STYLE_ENDFILL) + suffix,
+			'1') != '0';
+
+		return mxMarker.createMarker(c, this, type, pe, dx / dist, dy / dist,
+			isNaN(size) ? mxConstants.DEFAULT_MARKERSIZE : size, source,
+			this.strokewidth, filled);
+	};
+
+	mxShapeOliabakDoubleLine.prototype.paintEdgeShape = function(c, pts)
+	{
+		// A curve becomes a fine polyline first, so the offset is the same
+		// straight-segment walk either way and the two lines cannot part
+		// company on a bend. This is what mxArrowConnector does for its band.
+		var curved = this.style != null && pts.length > 2 &&
+			(this.style[mxConstants.STYLE_CURVED] == 1 ||
+			this.style[mxConstants.STYLE_BEZIER] == 1) &&
+			typeof Graph !== 'undefined' && Graph.getCurvePoints != null;
+		var base = curved ?
+			Graph.getCurvePoints(pts, this.style[mxConstants.STYLE_BEZIER] == 1) : pts;
+		var gap = this.getLineGap();
+		var lines = [offsetPolyline(base, gap / 2), offsetPolyline(base, -gap / 2)];
+		var i, k;
+
+		if (lines[0] == null || lines[1] == null)
+		{
+			return;
+		}
+
+		// Prepared before anything is painted: see createLineMarker.
+		var markers = [
+			[this.createLineMarker(c, lines[0], true, false),
+				this.createLineMarker(c, lines[0], false, false)],
+			[this.createLineMarker(c, lines[1], true, true),
+				this.createLineMarker(c, lines[1], false, true)]];
+
+		for (i = 0; i < 2; i++)
+		{
+			// mxPolyline's painter, not mxConnector's: the fork's line-jump
+			// override reroutes from the edge's own centre line, which is not
+			// where either of these two lines runs, and would draw that centre
+			// line twice over. A double line therefore takes no line jumps.
+			mxPolyline.prototype.paintLine.call(this, c, lines[i],
+				this.isRounded && !curved);
+		}
+
+		// An arrowhead stays solid on a dashed line and casts no shadow of
+		// its own.
+		c.setShadow(false);
+		c.setDashed(false);
+
+		for (i = 0; i < 2; i++)
+		{
+			for (k = 0; k < 2; k++)
+			{
+				if (markers[i][k] != null)
+				{
+					c.setFillColor(mxUtils.getValue(this.style, (k == 0) ?
+						mxConstants.STYLE_STARTFILLCOLOR :
+						mxConstants.STYLE_ENDFILLCOLOR, this.stroke));
+					markers[i][k]();
+				}
+			}
+		}
+	};
+
+	/**
+	 * Both lines and every arrowhead lie outside the route the edge was
+	 * measured from, so the box has to be grown by half the gap and by the
+	 * largest of the four markers, or the selection outline, the hit area and
+	 * an export crop all clip them.
+	 */
+	mxShapeOliabakDoubleLine.prototype.augmentBoundingBox = function(bbox)
+	{
+		mxShape.prototype.augmentBoundingBox.apply(this, arguments);
+
+		var arrows = [mxConstants.STYLE_STARTARROW, mxConstants.STYLE_ENDARROW,
+			mxConstants.STYLE_STARTARROW + '2', mxConstants.STYLE_ENDARROW + '2'];
+		var sizes = [mxConstants.STYLE_STARTSIZE, mxConstants.STYLE_ENDSIZE,
+			mxConstants.STYLE_STARTSIZE + '2', mxConstants.STYLE_ENDSIZE + '2'];
+		var size = 0;
+
+		for (var i = 0; i < arrows.length; i++)
+		{
+			if (mxUtils.getValue(this.style, arrows[i], mxConstants.NONE) !=
+				mxConstants.NONE)
+			{
+				size = Math.max(size, mxUtils.getNumber(this.style, sizes[i],
+					mxConstants.DEFAULT_MARKERSIZE) + 1);
+			}
+		}
+
+		bbox.grow((size + this.getLineGap() / 2) * this.scale);
+	};
+
+	mxCellRenderer.registerShape('mxgraph.oliabak.doubleLine',
+		mxShapeOliabakDoubleLine);
 
 	// ---------------------------------------------------------------------
 	// Tunnel
@@ -1741,6 +2083,11 @@
 		scheduleNormalise(this);
 	};
 
+	// The loop is a container that paints nothing of its own, and its two
+	// lobes reach the edges of the cell, so the cell's own points are the
+	// honest ones. Its stages carry points that follow the band.
+	mxShapeOliabakInfinity.prototype.constraints = boxConstraints();
+
 	mxCellRenderer.registerShape('mxgraph.oliabak.infinity', mxShapeOliabakInfinity);
 
 	/**
@@ -2051,6 +2398,40 @@
 		mxShape.prototype.destroy.apply(this, arguments);
 	};
 
+	/**
+	 * The middle of the outer wall, the middle of the inner wall and the two
+	 * notched ends: the same four a ring chevron gets. Read from the figure
+	 * the stage belongs to rather than from the stage's own box, which only
+	 * hugs the stage and is not the frame the band is built in.
+	 */
+	mxShapeOliabakLoopSegment.prototype.getConstraints = function(style, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return [];
+		}
+
+		var r = figureRectFor(this, 0, 0, w, h);
+		var g = mxShapeOliabakInfinity.prototype.getLoopGeometry(
+			loopStyleFor(this), r.x, r.y, r.w, r.h);
+		var k = Math.max(0, Math.min(g.n - 1,
+			Math.round(mxUtils.getValue(style, 'loopIndex', 0))));
+		var sa = g.bounds[k];
+		var sb = (k + 1 < g.n) ? g.bounds[k + 1] : g.total;
+		var hbx = g.hb * Math.min(g.sx, g.sy);
+		var f = loopFrame(g, (sa + sb) / 2);
+		var notch = g.notch * g.hb;
+		var pa = loopPoint(g, sa + notch);
+		var pb = loopPoint(g, sb + notch);
+
+		return [
+			cp((f.x + f.nx * hbx) / w, (f.y + f.ny * hbx) / h),
+			cp((f.x - f.nx * hbx) / w, (f.y - f.ny * hbx) / h),
+			cp(pa[0] / w, pa[1] / h),
+			cp(pb[0] / w, pb[1] / h)
+		];
+	};
+
 	mxCellRenderer.registerShape('mxgraph.oliabak.loopSegment', mxShapeOliabakLoopSegment);
 
 	// ---------------------------------------------------------------------
@@ -2088,6 +2469,34 @@
 	{
 		installLoopSync(this);
 		scheduleNormalise(this);
+	};
+
+	/**
+	 * Eight points around the outside of the ring and eight around the inside,
+	 * so a callout attaches to the ring itself rather than to the corner of a
+	 * box the ring never reaches. The inner circle moves with Ring Width.
+	 */
+	mxShapeOliabakCycle.prototype.getConstraints = function(style, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return [];
+		}
+
+		var ro = Math.min(w, h) / 2;
+		var ri = ro * (1 - Math.max(0.05, Math.min(0.95,
+			mxUtils.getValue(style, 'ringWidth', 0.36))));
+		var out = [];
+
+		for (var i = 0; i < 8; i++)
+		{
+			var a = i * Math.PI / 4;
+			var ca = Math.cos(a), sa = Math.sin(a);
+			out.push(cp((w / 2 + ca * ro) / w, (h / 2 + sa * ro) / h));
+			out.push(cp((w / 2 + ca * ri) / w, (h / 2 + sa * ri) / h));
+		}
+
+		return out;
 	};
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.cycle', mxShapeOliabakCycle);
@@ -2869,6 +3278,39 @@
 		c.lineTo(p.x, p.y);
 	};
 
+	/**
+	 * The places an arrow is actually joined to: the tail, both of its
+	 * corners, the middle of each edge of the band, the two barbs of the head
+	 * and its point. Built from the same geometry the painter walks, so they
+	 * follow every one of the arrow's handles.
+	 */
+	mxShapeOliabakArcArrow.prototype.getConstraints = function(style, w, h)
+	{
+		var g = this.getArcArrowGeometry(style, 0, 0, w, h);
+
+		if (g == null)
+		{
+			return [];
+		}
+
+		var am = (g.a0 + g.ab) / 2;
+		var m = g.mid(g.ab);
+		var d = g.tangent(g.ab);
+		var pts = [g.mid(g.a0),
+			g.edge(g.a0 + g.s * g.skew, g.t / 2), g.edge(g.a0, -g.t / 2),
+			g.edge(am, g.t / 2), g.edge(am, -g.t / 2),
+			g.edge(g.ab, g.hw / 2), g.edge(g.ab, -g.hw / 2),
+			new mxPoint(m.x + d.x * g.hl, m.y + d.y * g.hl)];
+		var out = [];
+
+		for (var i = 0; i < pts.length; i++)
+		{
+			out.push(cp(pts[i].x / w, pts[i].y / h));
+		}
+
+		return out;
+	};
+
 	mxCellRenderer.registerShape('mxgraph.oliabak.arcArrow', mxShapeOliabakArcArrow);
 
 	// ---------------------------------------------------------------------
@@ -3007,6 +3449,36 @@
 	 */
 	mxShapeOliabakRouter.prototype.paintBadge = function(c, w, h, size, body)
 	{
+	};
+
+	/**
+	 * The drum's own points: the top of the lid, the front of the lid, the
+	 * bottom of the base, and the two seams and the waist on each side. They
+	 * are read from 'size', so they stay on the drum when the top face is made
+	 * deeper, which points on the cell's box would not. The MPLS router
+	 * inherits them; its tag sits on the front face and changes no outline.
+	 */
+	mxShapeOliabakRouter.prototype.getConstraints = function(style, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return [];
+		}
+
+		var size = Math.max(0, Math.min(h * 0.5, parseFloat(
+			mxUtils.getValue(style, 'size', this.size))));
+
+		if (!(size > 0))
+		{
+			// Depth zero draws a plain rectangle.
+			return boxConstraints();
+		}
+
+		var s = size / h;
+
+		return [cp(0.5, 0), cp(0.5, 2 * s), cp(0.5, 1),
+			cp(0, s), cp(1, s), cp(0, 0.5), cp(1, 0.5),
+			cp(0, 1 - s), cp(1, 1 - s)];
 	};
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.router', mxShapeOliabakRouter);
@@ -3288,6 +3760,33 @@
 		}
 	};
 
+	/**
+	 * The isometric box's own outline: its six corners and the midpoint of
+	 * each side, from the same two offsets the faces are drawn with, so the
+	 * points follow the Top Height and Depth handles.
+	 */
+	mxShapeOliabakSwitch.prototype.getConstraints = function(style, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return [];
+		}
+
+		var dy = Math.max(0, Math.min(h * 0.9, parseFloat(
+			mxUtils.getValue(style, 'size', this.size))));
+		var dx = Math.max(0, Math.min(w * 0.9, parseFloat(
+			mxUtils.getValue(style, 'depth', this.depth))));
+
+		if (!(dy > 0) && !(dx > 0))
+		{
+			// Both offsets zero draws a plain rectangle.
+			return boxConstraints();
+		}
+
+		return outlineConstraints([[0, dy], [dx, 0], [w, 0], [w, h - dy],
+			[w - dx, h], [0, h]], w, h);
+	};
+
 	mxCellRenderer.registerShape('mxgraph.oliabak.switch', mxShapeOliabakSwitch);
 
 	// ---------------------------------------------------------------------
@@ -3459,6 +3958,12 @@
 		c.end();
 	};
 
+	// The run and the two returns. A bracket is a mark laid over something
+	// else, so it gets points where it is drawn and none across the middle,
+	// where an edge would end on empty page.
+	mxShapeOliabakBracket.prototype.constraints = [cp(0, 1), cp(0, 0),
+		cp(0.25, 0), cp(0.5, 0), cp(0.75, 0), cp(1, 0), cp(1, 1)];
+
 	mxCellRenderer.registerShape('mxgraph.oliabak.bracket', mxShapeOliabakBracket);
 
 	/**
@@ -3495,6 +4000,17 @@
 		c.moveTo(w / 2, st);
 		c.lineTo(w / 2, 0);
 		c.end();
+	};
+
+	// The same points on the run, lowered by however far the stem reaches,
+	// plus the tip of the stem, which is what this mark points with.
+	mxShapeOliabakBracketStem.prototype.getConstraints = function(style, w, h)
+	{
+		var st = Math.max(0, Math.min(1, parseFloat(
+			mxUtils.getValue(style, 'size', this.size))));
+
+		return [cp(0, 1), cp(0, st), cp(0.25, st), cp(0.5, st), cp(0.75, st),
+			cp(1, st), cp(1, 1), cp(0.5, 0)];
 	};
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.bracketStem',
@@ -3745,6 +4261,10 @@
 		mxShape.prototype.destroy.apply(this, arguments);
 	};
 
+	// The label is a flat overlay laid on a drum someone else drew, so its
+	// cell is its outline.
+	mxShapeOliabakCylinderLabel.prototype.constraints = boxConstraints();
+
 	mxCellRenderer.registerShape('mxgraph.oliabak.cylinderLabel',
 		mxShapeOliabakCylinderLabel);
 
@@ -3899,6 +4419,115 @@
 			handle.ignoreGrid = true;
 
 			return handle;
+		};
+
+		/**
+		 * The gap handle, an orange diamond riding one of the two lines a
+		 * little way in from an end, so the thing under the pointer is the
+		 * line itself rather than a marker beside it. Dragging it writes the
+		 * perpendicular distance back as the whole gap, each line running at
+		 * half of it.
+		 *
+		 * There is one at each end, and because the second reads its segment
+		 * backwards its left-hand normal points the other way, so the two
+		 * handles land on opposite lines. That is where the stock Double
+		 * connection puts its own width handles, and it is what was missing
+		 * here: the shape had no entry in Graph.handleFactory at all.
+		 */
+		function gapHandle(state, start)
+		{
+			// The segment the handle rides. Taken from the end of the edge
+			// rather than from the chord, because on a routed edge the
+			// chord is not where either line runs.
+			function seg()
+			{
+				var pts = state.absolutePoints;
+
+				if (pts == null || pts.length < 2)
+				{
+					return null;
+				}
+
+				var n = pts.length - 1;
+				var p0 = start ? pts[0] : pts[n];
+				var p1 = start ? pts[1] : pts[n - 1];
+
+				if (p0 == null || p1 == null)
+				{
+					return null;
+				}
+
+				var dx = p1.x - p0.x;
+				var dy = p1.y - p0.y;
+				var len = Math.sqrt(dx * dx + dy * dy);
+
+				return (len < 1) ? null : {p0: p0, len: len,
+					ux: dx / len, uy: dy / len,
+					s: state.view.scale, tr: state.view.translate};
+			};
+
+			return Graph.createHandle(state, ['lineGap'], function(bounds)
+			{
+				var f = seg();
+
+				if (f == null)
+				{
+					return null;
+				}
+
+				var gap = parseFloat(mxUtils.getValue(state.style, 'lineGap',
+					DEFAULT_LINE_GAP));
+				var d = Math.max(0, Math.min(200, isNaN(gap) ?
+					DEFAULT_LINE_GAP : gap)) / 2 * f.s;
+				// A quarter along, but never more than 40px in, so the handle
+				// stays near the end it belongs to on a long edge and still
+				// clears the arrowhead on a short one.
+				var t = Math.min(f.len / 4, 40 * f.s);
+
+				return new mxPoint(
+					(f.p0.x + f.ux * t + f.uy * d) / f.s - f.tr.x,
+					(f.p0.y + f.uy * t - f.ux * d) / f.s - f.tr.y);
+			}, function(bounds, pt, me)
+			{
+				var f = seg();
+
+				if (f == null)
+				{
+					return;
+				}
+
+				var px, py;
+
+				if (me != null && typeof me.getGraphX === 'function')
+				{
+					// The pointer itself, not the point mxHandle hands over.
+					// processEvent shifts that by a quarter of the handle's
+					// size on BOTH axes to centre the handle under the cursor,
+					// which is four pixels here. On a horizontal edge all four
+					// fall on the gap; on a diagonal one the perpendicular
+					// part of that (-4, -4) swings with the angle, so the same
+					// drag would set a different gap depending on which way
+					// the edge runs. Measuring from the pointer removes it.
+					px = me.getGraphX() - f.p0.x;
+					py = me.getGraphY() - f.p0.y;
+				}
+				else
+				{
+					px = (pt.x + f.tr.x) * f.s - f.p0.x;
+					py = (pt.y + f.tr.y) * f.s - f.p0.y;
+				}
+
+				// Distance from the edge's own route, whichever side the
+				// pointer is on, doubled: a line runs at half the gap.
+				state.style['lineGap'] = Math.max(0, Math.min(200,
+					Math.round(Math.abs(px * f.uy - py * f.ux) / f.s * 2)));
+			});
+		};
+
+		// One handle on each of the two lines.
+		Graph.handleFactory['mxgraph.oliabak.doubleLine'] = function(state)
+		{
+			return [gapHandle(state, true), gapHandle(state, false)];
 		};
 
 		// One handle: the arc paints symmetrically, so bow alone describes it.

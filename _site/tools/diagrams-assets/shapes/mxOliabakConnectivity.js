@@ -18,6 +18,11 @@
  * LEDs, dust caps), all live style keys. The cable edge is the one exception:
  * its strokeColor is the jacket, since that is what the Line colour picker
  * sets, and the presets carry the real jacket colours of the media.
+ *
+ * Every shape here carries fixed connection points, and the ones with sockets
+ * carry one on each socket or bore, which is what a cable is drawn to. The
+ * layouts that place them, portGridCells and patchPanelLayout, are the same
+ * ones the painters use, so the sockets and their points cannot drift apart.
  */
 (function()
 {
@@ -55,6 +60,57 @@
 	function bool(style, key, dflt)
 	{
 		return mxUtils.getValue(style, key, dflt ? '1' : '0') != '0';
+	};
+
+	// A fixed connection point at (px, py), as a fraction of the cell.
+	// perimeter is off: every point here is a place on the drawing, not a
+	// direction to project from the middle of the box.
+	function cp(px, py)
+	{
+		return new mxConnectionConstraint(new mxPoint(px, py), false);
+	};
+
+	// The sixteen points a rectangle has, for the shapes drawn to their box.
+	function boxConstraints()
+	{
+		var out = [];
+		var i;
+
+		for (i = 0; i <= 4; i++)
+		{
+			out.push(cp(i / 4, 0));
+			out.push(cp(i / 4, 1));
+		}
+
+		for (i = 1; i <= 3; i++)
+		{
+			out.push(cp(0, i / 4));
+			out.push(cp(1, i / 4));
+		}
+
+		return out;
+	};
+
+	// The four edge midpoints on their own, for a face already carrying a
+	// point per socket, where sixteen more would bury them.
+	function edgeConstraints()
+	{
+		return [cp(0.5, 0), cp(1, 0.5), cp(0.5, 1), cp(0, 0.5)];
+	};
+
+	// The middle of each rectangle in a list, as connection points. A cable
+	// is drawn to a socket, so the socket is where the point belongs.
+	function centreConstraints(cells, w, h)
+	{
+		var out = [];
+
+		for (var i = 0; i < cells.length; i++)
+		{
+			out.push(cp((cells[i].x + cells[i].w / 2) / w,
+				(cells[i].y + cells[i].h / 2) / h));
+		}
+
+		return out;
 	};
 
 	// Mix a hex colour towards white (amount > 0) or black (amount < 0).
@@ -650,6 +706,11 @@
 		}
 	};
 
+	// The module fills its cell, cage and latch included, so the cell is its
+	// outline. The aperture is on the left face, which the box already has a
+	// point in the middle of.
+	mxShapeOliabakPluggable.prototype.constraints = boxConstraints();
+
 	mxCellRenderer.registerShape('mxgraph.oliabak.conn.pluggable',
 		mxShapeOliabakPluggable);
 
@@ -714,6 +775,10 @@
 			c.fillAndStroke();
 		}
 	};
+
+	// Boot at the left, plug tip at the right, both on the cell edge; a duplex
+	// pair puts one lane in each half, which the quarter points already cover.
+	mxShapeOliabakConnector.prototype.constraints = boxConstraints();
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.conn.connector',
 		mxShapeOliabakConnector);
@@ -874,6 +939,10 @@
 			c.stroke();
 		}
 	};
+
+	// Both plugs point outwards to the cell edge and the jacket runs between
+	// them, so the cell is the icon's outline.
+	mxShapeOliabakPatchCable.prototype.constraints = boxConstraints();
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.conn.patchCable',
 		mxShapeOliabakPatchCable);
@@ -1058,26 +1127,64 @@
 	var PORT_ASPECT = {rj45: 0.95, sfp: 0.5, qsfp: 0.48, lc: 0.72, sc: 0.8, mpo: 0.6,
 		bnc: 1, ftype: 1};
 
-	// Lays n ports of one kind into a box, LEDs leaving room above each row.
-	// A row taller than its ports need centres them and keeps their shape.
-	function paintPortGrid(c, kind, x, y, w, h, perRow, rows, n, gap, leds, col)
+	// Lays n ports of one kind into a box, LEDs leaving room above each row,
+	// and returns each socket's rectangle. A row taller than its ports need
+	// centres them and keeps their shape. Returned rather than drawn so the
+	// painter and the connection points read the same layout.
+	function portGridCells(kind, x, y, w, h, perRow, rows, n, gap, leds)
 	{
 		var ledRoom = (leds > 0) ? 0.28 : 0;
 		var cellW = w / (perRow + gap * (perRow - 1));
 		var cellH = h / rows;
 		var portH = Math.min(cellH / (1 + ledRoom), cellW * (PORT_ASPECT[kind] || 0.8));
 		var slack = cellH - portH * (1 + ledRoom);
+		var out = [];
 		var k = 0;
 
 		for (var r = 0; r < rows && k < n; r++)
 		{
 			for (var i = 0; i < perRow && k < n; i++, k++)
 			{
-				var px = x + i * cellW * (1 + gap);
-				var py = y + r * cellH + slack / 2 + portH * ledRoom;
-				paintPortFace(c, kind, px, py, cellW, portH, col, leds);
+				out.push({x: x + i * cellW * (1 + gap),
+					y: y + r * cellH + slack / 2 + portH * ledRoom,
+					w: cellW, h: portH});
 			}
 		}
+
+		return out;
+	};
+
+	function paintPortGrid(c, kind, x, y, w, h, perRow, rows, n, gap, leds, col)
+	{
+		var cells = portGridCells(kind, x, y, w, h, perRow, rows, n, gap, leds);
+
+		for (var i = 0; i < cells.length; i++)
+		{
+			paintPortFace(c, kind, cells[i].x, cells[i].y, cells[i].w,
+				cells[i].h, col, leds);
+		}
+	};
+
+	/**
+	 * A point in the middle of every socket, which is what a cable is drawn
+	 * to, plus the four edge midpoints for an edge that means the whole block.
+	 * The sixteen box points are left off: with up to 48 sockets they would
+	 * bury the ones that matter.
+	 */
+	mxShapeOliabakPort.prototype.getConstraints = function(style, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return [];
+		}
+
+		var n = Math.round(num(style, 'ports', 1, 1, 48));
+		var rows = Math.round(num(style, 'rows', 1, 1, 4));
+
+		return edgeConstraints().concat(centreConstraints(portGridCells(
+			mxUtils.getValue(style, 'kind', 'rj45'), 0, 0, w, h,
+			Math.ceil(n / rows), rows, n, num(style, 'gap', 0.12, 0, 0.5),
+			Math.round(num(style, 'leds', 2, 0, 2))), w, h));
 	};
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.conn.port', mxShapeOliabakPort);
@@ -1235,6 +1342,30 @@
 		c.setFillColor(col.body);
 	};
 
+	/**
+	 * The card's box, plus a point on each port in the bracket. The two forms
+	 * carry the ports in different places, so the grid is resolved the same
+	 * way the painter resolves it rather than assumed.
+	 */
+	mxShapeOliabakNic.prototype.getConstraints = function(style, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return [];
+		}
+
+		var ocp = mxUtils.getValue(style, 'form', 'pcie') == 'ocp';
+		var n = Math.round(num(style, 'ports', 2, 1, 4));
+		var kind = mxUtils.getValue(style, 'portKind', 'rj45');
+		var leds = Math.round(num(style, 'leds', 2, 0, 2));
+		var bw = w * num(style, 'bracket', 0.2, 0.1, 0.4);
+		var cells = ocp ?
+			portGridCells(kind, bw * 0.12, h * 0.1, bw * 0.76, h * 0.62, 1, n, n, 0.15, leds) :
+			portGridCells(kind, bw * 0.12, h * 0.12, bw * 0.76, h * 0.76, 1, n, n, 0.15, leds);
+
+		return boxConstraints().concat(centreConstraints(cells, w, h));
+	};
+
 	mxCellRenderer.registerShape('mxgraph.oliabak.conn.nic', mxShapeOliabakNic);
 
 	// ---------------------------------------------------------------------
@@ -1266,6 +1397,73 @@
 		MARKING_PROP
 	];
 
+	/**
+	 * The panel's geometry, resolved once. The ports, the group ticks on the
+	 * label strip and the connection points all read it, so none of the three
+	 * can drift away from the other two.
+	 *
+	 * 'cols' is the left edge of every column in a row, already carrying the
+	 * extra gap that opens between groups; it is built for a whole row rather
+	 * than for the ports that exist, because the ticks are laid out per column
+	 * and a part-filled last row must not shift them.
+	 */
+	function patchPanelLayout(st, w, h)
+	{
+		var n = Math.round(num(st, 'ports', 24, 1, 96));
+		var rows = Math.round(num(st, 'rows', 1, 1, 4));
+		var group = Math.round(num(st, 'group', 6, 0, 24));
+		var ears = bool(st, 'ears', true);
+		var ew = ears ? w * num(st, 'earWidth', 0.05, 0.02, 0.15) : 0;
+		var strip = bool(st, 'labelStrip', true);
+		var fw = w - 2 * ew;
+		var inset = fw * 0.03;
+		var stripH = h * 0.16;
+		var top = h * 0.08 + (strip ? stripH + h * 0.06 : 0);
+		var perRow = Math.ceil(n / rows);
+		var gap = 0.12;
+		var groups = (group > 0) ? Math.ceil(perRow / group) : 1;
+		var units = perRow + gap * (perRow - 1) + (groups - 1) * gap * 3;
+		var cellW = (fw - 2 * inset) / units;
+		var cols = [];
+		var px = ew + inset;
+
+		for (var i = 0; i < perRow; i++)
+		{
+			if (group > 0 && i > 0 && i % group == 0)
+			{
+				px += cellW * gap * 3;
+			}
+
+			cols.push(px);
+			px += cellW * (1 + gap);
+		}
+
+		var rowH = (h - top - h * 0.08) / rows;
+
+		return {n: n, rows: rows, group: group, ears: ears, ew: ew, strip: strip,
+			fx: ew, fw: fw, inset: inset, stripH: stripH, top: top,
+			perRow: perRow, cellW: cellW, cols: cols, rowH: rowH,
+			portH: rowH * 0.86, r: Math.min(w, h) * 0.05};
+	};
+
+	// Every socket's rectangle, row by row, stopping at the port count.
+	function patchPanelCells(g)
+	{
+		var out = [];
+		var k = 0;
+
+		for (var r = 0; r < g.rows && k < g.n; r++)
+		{
+			for (var i = 0; i < g.perRow && k < g.n; i++, k++)
+			{
+				out.push({x: g.cols[i], y: g.top + r * g.rowH + (g.rowH - g.portH) / 2,
+					w: g.cellW, h: g.portH});
+			}
+		}
+
+		return out;
+	};
+
 	mxShapeOliabakPatchPanel.prototype.paintVertexShape = function(c, x, y, w, h)
 	{
 		if (!(w > 0) || !(h > 0))
@@ -1276,17 +1474,11 @@
 		var st = this.style;
 		var col = colors(this);
 		var kind = mxUtils.getValue(st, 'kind', 'rj45');
-		var n = Math.round(num(st, 'ports', 24, 1, 96));
-		var rows = Math.round(num(st, 'rows', 1, 1, 4));
-		var group = Math.round(num(st, 'group', 6, 0, 24));
-		var ears = bool(st, 'ears', true);
-		var ew = ears ? w * num(st, 'earWidth', 0.05, 0.02, 0.15) : 0;
-		var strip = bool(st, 'labelStrip', true);
-		var r = Math.min(w, h) * 0.05;
+		var g = patchPanelLayout(st, w, h);
 
 		c.translate(x, y);
 
-		if (ears)
+		if (g.ears)
 		{
 			c.setFillColor(shade(col.body, -0.2));
 			c.begin();
@@ -1294,8 +1486,8 @@
 			c.fillAndStroke();
 			// Mounting holes.
 			c.setFillColor(shade(col.body, -0.7));
-			var d = Math.min(ew * 0.45, h * 0.18);
-			var xs = [ew / 2 - d / 2, w - ew / 2 - d / 2];
+			var d = Math.min(g.ew * 0.45, h * 0.18);
+			var xs = [g.ew / 2 - d / 2, w - g.ew / 2 - d / 2];
 
 			for (var i = 0; i < 2; i++)
 			{
@@ -1309,76 +1501,60 @@
 		}
 
 		// Face plate.
-		var fx = ew, fw = w - 2 * ew;
 		c.setFillColor(col.body);
 		c.begin();
-		c.roundrect(fx, 0, fw, h, r, r);
+		c.roundrect(g.fx, 0, g.fw, h, g.r, g.r);
 		c.fillAndStroke();
 
-		var top = h * 0.08;
-		var inset = fw * 0.03;
-
-		if (strip)
+		if (g.strip)
 		{
-			// Label strip with a marking tick at the head of each group.
-			var sh = h * 0.16;
 			c.setFillColor(shade(col.body, 0.5));
 			c.begin();
-			c.rect(fx + inset, top, fw - 2 * inset, sh);
+			c.rect(g.fx + g.inset, h * 0.08, g.fw - 2 * g.inset, g.stripH);
 			c.fillAndStroke();
-			top += sh + h * 0.06;
 		}
 
 		// Ports, grouped: the gap between groups is a whole extra gap.
-		var perRow = Math.ceil(n / rows);
-		var gap = 0.12;
-		var groups = (group > 0) ? Math.ceil(perRow / group) : 1;
-		var units = perRow + gap * (perRow - 1) + (groups - 1) * gap * 3;
-		var cellW = (fw - 2 * inset) / units;
-		var rowH = (h - top - h * 0.08) / rows;
-		var portH = rowH * 0.86;
-		var k = 0;
+		var cells = patchPanelCells(g);
 
-		for (var rr = 0; rr < rows && k < n; rr++)
+		for (var i = 0; i < cells.length; i++)
 		{
-			var px = fx + inset;
-
-			for (var i = 0; i < perRow && k < n; i++, k++)
-			{
-				if (group > 0 && i > 0 && i % group == 0)
-				{
-					px += cellW * gap * 3;
-				}
-
-				paintPortFace(c, kind, px, top + rr * rowH + (rowH - portH) / 2, cellW,
-					portH, col, 0);
-				px += cellW * (1 + gap);
-			}
+			paintPortFace(c, kind, cells[i].x, cells[i].y, cells[i].w, cells[i].h,
+				col, 0);
 		}
 
-		if (strip)
+		if (g.strip)
 		{
+			// A marking tick at the head of each group.
 			c.setFillColor(col.mark);
-			var px = fx + inset;
-			var th = h * 0.16;
 
-			for (var i = 0; i < perRow; i++)
+			for (var i = 0; i < g.perRow; i++)
 			{
-				if (group > 0 && i > 0 && i % group == 0)
-				{
-					px += cellW * gap * 3;
-				}
-
-				if (group == 0 ? i == 0 : i % group == 0)
+				if (g.group == 0 ? i == 0 : i % g.group == 0)
 				{
 					c.begin();
-					c.rect(px, h * 0.08, cellW * 0.25, th);
+					c.rect(g.cols[i], h * 0.08, g.cellW * 0.25, g.stripH);
 					c.fill();
 				}
-
-				px += cellW * (1 + gap);
 			}
 		}
+	};
+
+	/**
+	 * A point in the middle of every socket, which is what a patch lead is
+	 * drawn to, plus the four edge midpoints for an edge that means the panel
+	 * rather than one port. The sixteen box points are left off: on a panel
+	 * carrying up to 96 sockets they would bury the ones that matter.
+	 */
+	mxShapeOliabakPatchPanel.prototype.getConstraints = function(style, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return [];
+		}
+
+		return edgeConstraints().concat(
+			centreConstraints(patchPanelCells(patchPanelLayout(style, w, h)), w, h));
 	};
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.conn.patchPanel',
@@ -1471,6 +1647,36 @@
 		}
 	};
 
+	// The box, plus a point on each port of the copper face and of the fibre
+	// face, laid out exactly as the painter lays them out.
+	mxShapeOliabakMediaConverter.prototype.getConstraints = function(style, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return [];
+		}
+
+		var cu = Math.round(num(style, 'copperPorts', 1, 0, 4));
+		var fi = Math.round(num(style, 'fiberPorts', 1, 0, 4));
+		var fd = w * num(style, 'faceDepth', 0.24, 0.12, 0.4);
+		var out = boxConstraints();
+
+		if (cu > 0)
+		{
+			out = out.concat(centreConstraints(portGridCells('rj45', fd * 0.15,
+				h * 0.12, fd * 0.7, h * 0.76, 1, cu, cu, 0.2, 0), w, h));
+		}
+
+		if (fi > 0)
+		{
+			out = out.concat(centreConstraints(portGridCells(
+				mxUtils.getValue(style, 'fiberKind', 'sfp'), w - fd + fd * 0.15,
+				h * 0.12, fd * 0.7, h * 0.76, 1, fi, fi, 0.2, 0), w, h));
+		}
+
+		return out;
+	};
+
 	mxCellRenderer.registerShape('mxgraph.oliabak.conn.mediaConverter',
 		mxShapeOliabakMediaConverter);
 
@@ -1556,6 +1762,32 @@
 			c.rect(w / 2 - fw * 0.3, 0, fw * 0.6, h * 0.14);
 			c.fillAndStroke();
 		}
+	};
+
+	// The box, plus the bore at each end of every lane: a coupler exists to
+	// have a cable plugged into either side of it.
+	mxShapeOliabakCoupler.prototype.getConstraints = function(style, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return [];
+		}
+
+		var kind = mxUtils.getValue(style, 'kind', 'lc');
+		var lanes = (bool(style, 'duplex', true) &&
+			(kind == 'lc' || kind == 'sc')) ? 2 : 1;
+		var laneH = h / lanes;
+		var boreW = w * 0.14;
+		var out = boxConstraints();
+
+		for (var i = 0; i < lanes; i++)
+		{
+			var cy = (i * laneH + laneH * 0.14 + laneH * 0.72 / 2) / h;
+			out.push(cp((w * 0.04 + boreW / 2) / w, cy));
+			out.push(cp((w - w * 0.04 - boreW / 2) / w, cy));
+		}
+
+		return out;
 	};
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.conn.coupler', mxShapeOliabakCoupler);
