@@ -16,6 +16,8 @@ form:
 
 | Date | Area | Change |
 |---|---|---|
+| 2026-09-25 | Shapes | Removed the four old Curved Block Arrow presets from Oliabak / Annotations, retaining their renderer for saved diagrams. Restored the initial Ribbon Arrow silhouette and its tail-width and arrowhead-size handles after the experimental resizing controls distorted the design. |
+| 2026-09-25 | Shapes | Added `mxgraph.oliabak.ribbonArrow`, a folded ribbon arrow with smooth cubic outlines, a light front and a gray underside. Four mirrored presets lead Oliabak / Annotations. Tail width and arrowhead size have bounded properties and drag handles. Fill, outline, underside, rotation, resizing and connection points remain editable, and vector export uses the same paths. Existing `arcArrow` diagrams retain their geometry. |
 | 2026-09-03 | Build | Upgraded the bundled Closure Compiler in `etc/build/compiler.jar` from v20220502 to v20260831. Verified: `ant app` builds with 0 errors and 0 warnings, and the resulting bundle boots with 0 console errors and 0 failed requests. Output grew 3,820 bytes (+0.04%). |
 | 2026-09-03 | Branding | Rebranded to Diagrams: `index.html` (title, meta, canonical, splash), `images/manifest.json`, `images/browserconfig.xml`, `clear.html`, and a new icon set generated from `etc/branding/`. Theme colour #d89000 -> #22176F. |
 | 2026-09-03 | Branding | Replaced 5,083 value-side occurrences of "draw.io" with "Diagrams" across all 59 `resources/dia*.txt` locale files, and 58 `app.diagrams.net` URLs with `diagrams.oliabak.com`. Resource *keys* (including the key literally named `draw.io`) are unchanged. |

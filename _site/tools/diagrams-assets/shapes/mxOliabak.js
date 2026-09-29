@@ -18,6 +18,7 @@
  *                              straight at zero curvature
  *   mxgraph.oliabak.arcArrow   block arrow bent along an ellipse, with tail,
  *                              head, band and head-size handles
+ *   mxgraph.oliabak.ribbonArrow folded ribbon with a shaded underside
  *   mxgraph.oliabak.cornerRect rectangle whose four corners are set one at a
  *                              time: square, rounded, snipped or scooped
  *
@@ -3314,6 +3315,114 @@
 	mxCellRenderer.registerShape('mxgraph.oliabak.arcArrow', mxShapeOliabakArcArrow);
 
 	// ---------------------------------------------------------------------
+	// Folded ribbon arrow
+	// ---------------------------------------------------------------------
+
+	/**
+	 * Two cubic surfaces meet at the fold. Their silhouettes are designed
+	 * independently so the tail curls upward and the front opens into a
+	 * broad arrowhead, as a ribbon viewed in perspective does. Keeping this
+	 * separate from arcArrow preserves the geometry of saved block arrows.
+	 * All coordinates are local fractions; resizing, rotation and flipping
+	 * use the normal shape transforms and the same paths reach SVG export.
+	 */
+	function mxShapeOliabakRibbonArrow(bounds, fill, stroke, strokewidth)
+	{
+		mxShape.call(this);
+		this.bounds = bounds;
+		this.fill = fill;
+		this.stroke = stroke;
+		this.strokewidth = (strokewidth != null) ? strokewidth : 1;
+	};
+
+	mxUtils.extend(mxShapeOliabakRibbonArrow, mxShape);
+
+	mxShapeOliabakRibbonArrow.prototype.customProperties = [
+		{name: 'ribbonTailWidth', dispName: 'Tail Width %', type: 'float',
+			min: 10, max: 30, defVal: 21},
+		{name: 'ribbonHeadSize', dispName: 'Arrowhead Size %', type: 'float',
+			min: 70, max: 115, defVal: 100},
+		{name: 'fillColor2', dispName: 'Underside Color', type: 'color',
+			defVal: '#BFBFBF'}
+	];
+
+	mxShapeOliabakRibbonArrow.prototype.getRibbonGeometry = function(style)
+	{
+		function bounded(key, fallback, min, max)
+		{
+			var value = parseFloat(mxUtils.getValue(style, key, fallback));
+
+			return isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
+		}
+
+		var tail = bounded('ribbonTailWidth', 21, 10, 30) / 100;
+		var head = bounded('ribbonHeadSize', 100, 70, 115) / 100;
+		function headPoint(x, y)
+		{
+			return new mxPoint(1 + (x - 1) * head, 0.07 + (y - 0.07) * head);
+		}
+
+		return {
+			fold: new mxPoint(0.235, 0.158),
+			tail: new mxPoint(0.10, 1),
+			tailInner: new mxPoint(0.10 + tail, 1 - tail * 0.586),
+			upper: headPoint(0.886, 0.187),
+			tip: new mxPoint(1, 0.07),
+			corner: headPoint(0.93, 0.40),
+			barb: headPoint(0.58, 0.41),
+			lower: headPoint(0.695, 0.333)
+		};
+	};
+
+	mxShapeOliabakRibbonArrow.prototype.paintVertexShape = function(c, x, y, w, h)
+	{
+		var g = this.getRibbonGeometry(this.style);
+		c.translate(x, y);
+		c.setLineJoin('round');
+
+		// The underside has its own flat fill. Save/restore also preserves
+		// the front gradient when one is chosen in the Format panel.
+		c.save();
+		c.setFillColor(mxUtils.getValue(this.style, 'fillColor2', '#BFBFBF'));
+		c.begin();
+		c.moveTo(g.tail.x * w, g.tail.y * h);
+		c.curveTo(-0.07 * w, 0.56 * h, -0.02 * w, 0.25 * h,
+			g.fold.x * w, g.fold.y * h);
+		c.curveTo(0.167 * w, 0.32 * h, (g.tailInner.x - 0.093) * w,
+			(g.tailInner.y - 0.227) * h, g.tailInner.x * w, g.tailInner.y * h);
+		c.close();
+		c.fillAndStroke();
+		c.restore();
+
+		c.begin();
+		c.moveTo(g.fold.x * w, g.fold.y * h);
+		c.curveTo(0.29 * w, 0.093 * h, 0.379 * w, 0.012 * h,
+			0.435 * w, 0.005 * h);
+		c.curveTo(0.60 * w, -0.018 * h, (g.upper.x - 0.116) * w,
+			(g.upper.y - 0.113) * h, g.upper.x * w, g.upper.y * h);
+		c.lineTo(g.tip.x * w, g.tip.y * h);
+		c.lineTo(g.corner.x * w, g.corner.y * h);
+		c.lineTo(g.barb.x * w, g.barb.y * h);
+		c.lineTo(g.lower.x * w, g.lower.y * h);
+		c.curveTo((g.lower.x - 0.145) * w, (g.lower.y - 0.133) * h,
+			0.40 * w, 0.105 * h, g.fold.x * w, g.fold.y * h);
+		c.close();
+		c.fillAndStroke();
+	};
+
+	mxShapeOliabakRibbonArrow.prototype.getConstraints = function(style, w, h)
+	{
+		var g = this.getRibbonGeometry(style);
+		var points = [g.tail, g.tailInner, g.fold, g.upper, g.tip, g.corner,
+			g.barb, g.lower, new mxPoint((g.tail.x + g.tailInner.x) / 2,
+				(g.tail.y + g.tailInner.y) / 2)];
+
+		return points.map(function(p) { return cp(p.x, p.y); });
+	};
+
+	mxCellRenderer.registerShape('mxgraph.oliabak.ribbonArrow', mxShapeOliabakRibbonArrow);
+
+	// ---------------------------------------------------------------------
 	// Parametric devices
 	// ---------------------------------------------------------------------
 
@@ -4547,6 +4656,52 @@
 				positionHandle(state, 'bowPos2', DEFAULT_BOW_POS2),
 				bowHandle(state, 'bow', 1 / 3, DEFAULT_BOW, 'bowPos', DEFAULT_BOW_POS),
 				bowHandle(state, 'bow2', 2 / 3, -DEFAULT_BOW, 'bowPos2', DEFAULT_BOW_POS2)
+			];
+		};
+
+		Graph.handleFactory['mxgraph.oliabak.ribbonArrow'] = function(state)
+		{
+			var proto = mxShapeOliabakRibbonArrow.prototype;
+			function position(bounds, point)
+			{
+				return new mxPoint(bounds.x + point.x * bounds.width,
+					bounds.y + point.y * bounds.height);
+			}
+
+			return [
+				Graph.createHandle(state, ['ribbonTailWidth'], function(bounds)
+				{
+					return position(bounds, proto.getRibbonGeometry(state.style).tailInner);
+				}, function(bounds, pt)
+				{
+					// Project onto the slanted tail cut in screen coordinates.
+					var dx = bounds.width, dy = -0.586 * bounds.height;
+					var denominator = dx * dx + dy * dy;
+
+					if (denominator > 0)
+					{
+						var t = ((pt.x - bounds.x - 0.10 * bounds.width) * dx +
+							(pt.y - bounds.y - bounds.height) * dy) / denominator;
+						state.style['ribbonTailWidth'] = Math.round(
+							Math.max(10, Math.min(30, t * 100)) * 10) / 10;
+					}
+				}, true),
+				Graph.createHandle(state, ['ribbonHeadSize'], function(bounds)
+				{
+					return position(bounds, proto.getRibbonGeometry(state.style).barb);
+				}, function(bounds, pt)
+				{
+					var dx = -0.42 * bounds.width, dy = 0.34 * bounds.height;
+					var denominator = dx * dx + dy * dy;
+
+					if (denominator > 0)
+					{
+						var size = ((pt.x - bounds.x - bounds.width) * dx +
+							(pt.y - bounds.y - 0.07 * bounds.height) * dy) / denominator;
+						state.style['ribbonHeadSize'] = Math.round(
+							Math.max(70, Math.min(115, size * 100)) * 10) / 10;
+					}
+				}, true)
 			];
 		};
 
