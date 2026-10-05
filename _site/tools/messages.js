@@ -5,7 +5,7 @@
   'use strict';
   if (!document.getElementById('messages')) return;
   var format = window.MessageFormat;
-  var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set(), feedFresh: false, autoOpened: false, panel: null };
+  var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set(), feedFresh: false, autoOpened: false, panel: null, panelOpen: false };
   var editor;
   var agentApproval = null, agentRequest = null;
   var agentNonce = new URL(window.location.href).searchParams.get('mcp_request');
@@ -153,7 +153,7 @@
     $('expiry').textContent = '';
     $('compose').hidden = true; $('delete').hidden = true; $('confirm-delete').hidden = true;
     markCurrent();
-    state.panel = null; drawPanel(null);
+    state.panel = null; closePanel(); drawPanel(null);
     $('agent').hidden = true; $('agent-ask').hidden = true; $('agent-info').textContent = ''; $('agent-client').textContent = ''; $('agent-limit').value = '5';
     resetEditor();
   }
@@ -209,7 +209,10 @@
     $('agent-ask').hidden = true;
     editor.focus(); $('compose').scrollIntoView({ block: 'nearest' });
   }
-  function showPanel(panel) { state.panel = panel; if (state.thread) drawPanel(state.thread); }
+  // The preview panel is always present beside the chat on wide screens.
+  // On narrow screens it covers the chat only after the reader opens it.
+  function showPanel(panel) { state.panel = panel; state.panelOpen = true; if (state.thread) drawPanel(state.thread); }
+  function closePanel() { state.panelOpen = false; $('workspace').classList.remove('msg-panel-open'); }
   function drawPanel(thread) {
     var entries = Object.entries(thread && thread.messages || {});
     var guide = entries.find(function (e) { return e[1] && e[1].kind === 'document'; });
@@ -218,16 +221,21 @@
     if (panel && panel.mode === 'guide' && !guide) panel = null;
     if (panel && panel.mode === 'files' && !files.length) panel = null;
     if (panel && panel.mode === 'message' && !(thread.messages || {})[panel.id]) panel = null;
+    // Without a choice, show the guide, then the files, then an empty note.
+    if (!panel) panel = guide ? { mode: 'guide' } : files.length ? { mode: 'files' } : null;
     state.panel = panel;
-    $('panel').hidden = !panel;
-    $('workspace').classList.toggle('msg-panel-open', !!panel);
+    $('workspace').classList.toggle('msg-panel-open', !!state.panelOpen && !!thread);
     $('tab-guide').hidden = !guide; $('tab-files').hidden = !files.length;
     $('tab-files').textContent = 'Files (' + files.length + ')';
     $('tab-guide').setAttribute('aria-pressed', String(!!panel && panel.mode === 'guide'));
     $('tab-files').setAttribute('aria-pressed', String(!!panel && panel.mode === 'files'));
     var actions = $('panel-actions'), body = $('panel-body');
     actions.replaceChildren(); body.replaceChildren();
-    if (!panel) return;
+    if (!panel) {
+      $('panel-title').textContent = 'Preview';
+      if (thread) body.appendChild(node('p', 'The shared guide, files, and long messages open here.', 'tool-note msg-panel-empty'));
+      return;
+    }
     try {
       if (panel.mode === 'files') {
         $('panel-title').textContent = 'Files';
@@ -561,10 +569,39 @@
     var on = !$('compose').classList.contains('msg-formatting');
     $('compose').classList.toggle('msg-formatting', on); $('format').setAttribute('aria-pressed', String(on));
   });
-  $('panel-close').addEventListener('click', function () { showPanel(null); });
+  $('panel-close').addEventListener('click', closePanel);
   $('tab-guide').addEventListener('click', function () { showPanel({ mode: 'guide' }); });
   $('tab-files').addEventListener('click', function () { showPanel({ mode: 'files' }); });
-  document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && state.panel && !state.editing) showPanel(null); });
+  document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && state.panelOpen && !state.editing) closePanel(); });
+  // Drag or arrow keys move the split between the chat and the preview.
+  // The share is a per-viewer convenience kept in this browser only.
+  var split = $('split'), SPLIT_KEY = 'messages-preview-share';
+  function setShare(share, save) {
+    share = Math.min(0.75, Math.max(0.25, share));
+    $('workspace').style.setProperty('--msg-preview-share', String(share));
+    split.setAttribute('aria-valuenow', String(Math.round(share * 100)));
+    if (save) { try { window.localStorage.setItem(SPLIT_KEY, String(share)); } catch (error) { /* storage unavailable */ } }
+  }
+  try { var saved = Number(window.localStorage.getItem(SPLIT_KEY)); if (saved) setShare(saved, false); } catch (error) { /* storage unavailable */ }
+  split.addEventListener('pointerdown', function (event) {
+    event.preventDefault(); split.setPointerCapture(event.pointerId); split.classList.add('msg-dragging');
+  });
+  split.addEventListener('pointermove', function (event) {
+    if (!split.hasPointerCapture(event.pointerId)) return;
+    var left = $('workspace').querySelector('.msg-conversation').getBoundingClientRect().left, right = $('panel').getBoundingClientRect().right;
+    setShare((right - event.clientX) / (right - left), false);
+  });
+  function endDrag(event) {
+    if (!split.hasPointerCapture(event.pointerId)) return;
+    split.releasePointerCapture(event.pointerId); split.classList.remove('msg-dragging');
+    setShare(Number(split.getAttribute('aria-valuenow')) / 100, true);
+  }
+  split.addEventListener('pointerup', endDrag); split.addEventListener('pointercancel', endDrag);
+  split.addEventListener('keydown', function (event) {
+    var now = Number(split.getAttribute('aria-valuenow')) / 100;
+    if (event.key === 'ArrowLeft') { event.preventDefault(); setShare(now + 0.05, true); }
+    if (event.key === 'ArrowRight') { event.preventDefault(); setShare(now - 0.05, true); }
+  });
   $('new').addEventListener('click', function () { var open = $('owner').hidden; toggle('owner', 'new', open); if (open) $('find').focus(); });
   $('attach-toggle').addEventListener('click', function () { var open = $('files').hidden; toggle('files', 'attach-toggle', open); if (open) $('file').focus(); });
   $('delete').addEventListener('click', function () { $('confirm-delete').hidden = false; });
