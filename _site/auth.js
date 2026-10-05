@@ -32,6 +32,9 @@
  *   siteAuth.handle()              chosen display handle, or null
  *   siteAuth.onChange(fn)          called with (user) on every state change
  *   siteAuth.signIn('google.com' | 'github.com')
+ *     A cold call prepares the modules and asks for another click. A warm
+ *     call opens the provider popup directly from that click. The navbar
+ *     waits for preparation before making provider buttons available.
  *   siteAuth.signOut()
  *   siteAuth.ref(path)             users/<uid>/<path> ref, or null
  *   siteAuth.db()                  raw database handle, or null
