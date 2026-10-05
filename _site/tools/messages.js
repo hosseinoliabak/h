@@ -5,7 +5,7 @@
   'use strict';
   if (!document.getElementById('messages')) return;
   var format = window.MessageFormat;
-  var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set() };
+  var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set(), feedFresh: false, autoOpened: false };
   var editor;
   var agentApproval = null, agentRequest = null;
   var agentNonce = new URL(window.location.href).searchParams.get('mcp_request');
@@ -23,6 +23,16 @@
     result.type = 'button';
     result.addEventListener('click', action);
     return result;
+  }
+  function when(time) {
+    return new Date(time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  }
+  function toggle(panelId, toggleId, open) {
+    $(panelId).hidden = !open;
+    $(toggleId).setAttribute('aria-expanded', String(open));
+  }
+  function markCurrent() {
+    document.querySelectorAll('#msg-inbox button').forEach(function (b) { b.setAttribute('aria-current', String(b.dataset.thread === state.threadId)); });
   }
   function readableError(error) {
     var code = error && error.code || '';
@@ -104,7 +114,7 @@
     agentRequest = null;
     if (editor) { editor.setText(''); editor.history.clear(); }
     $('editing').textContent = 'Write a message';
-    $('send').textContent = 'Send message';
+    $('send').textContent = 'Send';
     $('cancel').hidden = true;
     $('agent-ask').hidden = !state.thread || !state.thread.agentReady;
   }
@@ -115,7 +125,11 @@
     document.body.appendChild(link); link.click(); link.remove();
     window.setTimeout(function () { URL.revokeObjectURL(url); state.urls.delete(url); }, 10000);
   }
-  async function downloadFile(fileId) {
+  async function downloadFile(fileId, encrypted) {
+    if (encrypted && !$('file-pass').value) {
+      toggle('files', 'attach-toggle', true); $('file-pass').focus();
+      status('Enter the file passphrase, then choose Download file again.'); return;
+    }
     var epoch = state.epoch, threadId = state.threadId;
     var password = $('file-pass').value; $('file-pass').value = '';
     await run(async function () {
@@ -133,11 +147,12 @@
     state.threadRef = null; state.threadCallback = null;
     state.thread = null; state.threadId = null;
     state.urls.forEach(function (url) { URL.revokeObjectURL(url); }); state.urls.clear();
-    $('file').value = ''; $('file-pass').value = ''; $('file-encrypt').checked = true; $('files').hidden = true;
+    $('file').value = ''; $('file-pass').value = ''; $('file-encrypt').checked = true; toggle('files', 'attach-toggle', false);
     $('feed').replaceChildren();
     $('thread-title').textContent = 'Select a conversation';
     $('expiry').textContent = '';
     $('compose').hidden = true; $('delete').hidden = true; $('confirm-delete').hidden = true;
+    markCurrent();
     $('agent').hidden = true; $('agent-ask').hidden = true; $('agent-info').textContent = ''; $('agent-client').textContent = ''; $('agent-limit').value = '5';
     resetEditor();
   }
@@ -152,10 +167,10 @@
       var messageId = entry[0], message = entry[1];
       if (message && message.kind === 'file') {
         if (!/^[a-f0-9]{32}$/.test(messageId) || typeof message.author !== 'string' || !Number.isSafeInteger(message.bytes) || message.bytes < 1 || message.bytes > 1048576 || typeof message.encrypted !== 'boolean') throw new Error('Invalid attachment.');
-        var attachment = node('article', undefined, 'msg-card' + (message.author === state.user.uid ? ' msg-mine' : ''));
-        attachment.appendChild(node('strong', message.encrypted ? 'Password-encrypted attachment' : 'Attachment without file encryption'));
-        attachment.appendChild(node('p', Math.ceil(message.bytes / 1024) + ' KiB' + (message.encrypted ? ' · Enter its passphrase below, then download.' : ' · Available to conversation members.')));
-        attachment.appendChild(button('Download file', function () { if (!state.busy) downloadFile(messageId); }));
+        var attachment = node('article', undefined, 'msg-card msg-file' + (message.author === state.user.uid ? ' msg-mine' : ''));
+        attachment.appendChild(node('strong', message.encrypted ? 'Encrypted file' : 'File'));
+        attachment.appendChild(node('p', Math.ceil(message.bytes / 1024) + ' KiB · ' + (message.encrypted ? 'needs its passphrase to download' : 'readable by conversation members')));
+        attachment.appendChild(button('Download file', function () { if (!state.busy) downloadFile(messageId, message.encrypted); }));
         feed.appendChild(attachment); return;
       }
       if (!/^[a-f0-9]{32}$/.test(messageId) || !message || typeof message.body !== 'string' || message.body.length > 48000
@@ -166,10 +181,11 @@
       var head = node('header');
       var author = thread.names[message.author];
       head.appendChild(node('strong', message.kind === 'agent' ? 'Hossein’s assistant · AI' : message.kind === 'document' ? 'Shared guide · راهنمای مشترک' : typeof author === 'string' ? author.slice(0, 80) : 'Member'));
-      var time = node('time', new Date(message.createdAt).toLocaleString());
+      var time = node('time', when(message.createdAt));
       time.dateTime = new Date(message.createdAt).toISOString(); head.appendChild(time);
-      if (message.revision > 1) head.appendChild(node('span', 'Edited · revision ' + message.revision));
-      if (message.kind !== 'agent' && (mine || message.kind === 'document')) head.appendChild(button('Edit', function () {
+      if (message.revision > 1) head.appendChild(node('span', 'edited'));
+      var actions = node('span', undefined, 'msg-card-actions');
+      if (message.kind !== 'agent' && (mine || message.kind === 'document')) actions.appendChild(button('Edit', function () {
         if (!editor || state.busy) return;
         editor.setContents(format.normalize(JSON.parse(message.body)));
         state.editing = { messageId: messageId, revision: message.revision };
@@ -178,10 +194,11 @@
         $('agent-ask').hidden = true;
         editor.focus(); $('compose').scrollIntoView({ block: 'nearest' });
       }));
-      if (message.kind === 'document') head.appendChild(button('Download guide', function () {
+      if (message.kind === 'document') actions.appendChild(button('Download guide', function () {
         var text = format.normalize(JSON.parse(message.body)).ops.map(function (op) { return op.insert; }).join('');
         downloadBytes(new TextEncoder().encode(text), 'research-guide.txt');
       }));
+      if (actions.childNodes.length) head.appendChild(actions);
       card.appendChild(head); card.appendChild(renderRich(message.body)); feed.appendChild(card);
       } catch (error) {
         feed.appendChild(node('article', 'This message contains unsupported formatting. Other messages and conversation controls remain available.', 'msg-card'));
@@ -192,15 +209,21 @@
     $('agent').hidden = !state.owner && !thread.agentReady;
     $('agent-owner').hidden = !state.owner;
     if (document.activeElement !== $('agent-limit')) $('agent-limit').value = String(maximum);
+    $('agent-title').textContent = 'Research assistant · ' + (thread.agentReady ? 'connected' : 'not connected');
     $('agent-info').textContent = (thread.agentReady ? 'Connected. ' : 'An assistant has not been connected yet. ') + 'Maximum ' + maximum + ' requests per person in any three hours. Requests expire after 24 hours. When event delivery is connected, notifications may take five minutes.';
     $('agent-revoke').hidden = !thread.agentGrantId;
     $('agent-ask').hidden = !thread.agentReady || !!state.editing;
     showAgentApproval();
     $('thread-title').textContent = thread.title;
-    $('expiry').textContent = 'Available until ' + new Date(thread.expiresAt).toLocaleDateString() + '. Both members can edit the shared guide.';
-    $('feed').replaceChildren(feed);
+    $('expiry').textContent = 'Available until ' + new Date(thread.expiresAt).toLocaleDateString([], { dateStyle: 'medium' }) + '. Both members can edit the shared guide.';
+    // Keep the newest message in view unless the reader has scrolled up.
+    var list = $('feed'), stick = state.feedFresh || list.scrollHeight - list.scrollTop - list.clientHeight < 60, kept = list.scrollTop;
+    list.replaceChildren(feed);
+    list.scrollTop = stick ? list.scrollHeight : kept;
+    state.feedFresh = false;
     $('compose').hidden = !editor;
-    $('files').hidden = !window.MessageFiles;
+    $('attach-toggle').hidden = !window.MessageFiles;
+    if (!editor && window.MessageFiles) $('files').hidden = false;
     $('delete').hidden = !state.owner && thread.createdBy !== state.user.uid;
     window.clearTimeout(state.expiryTimer);
     state.expiryTimer = window.setTimeout(function () {
@@ -210,7 +233,7 @@
   }
   function openThread(threadId) {
     if (state.busy || !/^[a-f0-9]{32}$/.test(threadId) || !state.user) return;
-    clearThread(); state.threadId = threadId;
+    clearThread(); state.threadId = threadId; state.feedFresh = true; markCurrent();
     var epoch = state.epoch;
     var ref = window.siteAuth.db().ref('private-message-threads/' + threadId);
     state.threadRef = ref;
@@ -232,41 +255,57 @@
       var values = snapshot.val() || {};
       $('inbox').replaceChildren();
       if (typeof values !== 'object' || Array.isArray(values) || Object.keys(values).length > 20) { status('The conversation list is invalid.'); return; }
-      var count = 0;
+      var count = 0, newest = null;
+      // Newest conversation first, like a chat history.
       Object.entries(values).sort(function (a, b) { return b[1].createdAt - a[1].createdAt; }).forEach(function (entry) {
         var item = entry[1];
         if (!/^[a-f0-9]{32}$/.test(entry[0]) || !item || item.expiresAt <= Date.now() || typeof item.title !== 'string' || typeof item.peer !== 'string') return;
-        var li = node('li');
-        li.appendChild(button(item.peer.slice(0, 80) + ' · ' + item.title.slice(0, 120), function () { openThread(entry[0]); }));
-        $('inbox').appendChild(li); count += 1;
+        var li = node('li'), open = node('button');
+        open.type = 'button'; open.dataset.thread = entry[0];
+        open.appendChild(node('span', item.peer.slice(0, 80), 'msg-inbox-peer'));
+        open.appendChild(node('span', item.title.slice(0, 120), 'msg-inbox-title'));
+        if (Number.isFinite(item.createdAt)) open.appendChild(node('span', new Date(item.createdAt).toLocaleDateString([], { dateStyle: 'medium' }), 'msg-inbox-date'));
+        open.querySelectorAll('span').forEach(function (span) { span.dir = 'auto'; });
+        open.addEventListener('click', function () { openThread(entry[0]); });
+        li.appendChild(open); $('inbox').appendChild(li); count += 1;
+        if (!newest) newest = entry[0];
       });
       $('empty').hidden = count > 0;
+      markCurrent();
       if (state.threadId && !values[state.threadId]) clearThread();
+      // Open the newest conversation on arrival. An assistant approval waits
+      // for the owner to pick the conversation deliberately.
+      if (newest && !state.threadId && !state.autoOpened && !state.busy && !agentNonce) { state.autoOpened = true; openThread(newest); }
     };
     ref.on('value', callback, function () { if (epoch === state.epoch) status('Your conversation list could not be loaded.'); });
     state.subscriptions.push(function () { ref.off('value', callback); });
+  }
+  function profileSummary() {
+    var name = $('name').value.trim();
+    $('profile-summary').textContent = name ? 'Signed in as ' + name : 'Your profile';
   }
   async function onUser(user) {
     if (user && state.user && user.uid === state.user.uid) return;
     state.epoch += 1;
     state.subscriptions.forEach(function (off) { off(); }); state.subscriptions = [];
-    clearThread(); state.user = user; state.owner = false; state.busy = false;
+    clearThread(); state.user = user; state.owner = false; state.busy = false; state.autoOpened = false;
     agentApproval = null;
     $('inbox').replaceChildren(); $('people').replaceChildren(); $('name').value = ''; $('identity').textContent = ''; $('find').value = '';
     document.querySelectorAll('#messages button').forEach(function (b) { b.disabled = false; });
-    $('login').hidden = !!user; $('workspace').hidden = true; $('owner').hidden = true; $('profile').hidden = true;
+    $('login').hidden = !!user; $('workspace').hidden = true; toggle('owner', 'new', false); $('profile').hidden = true; $('profile').open = false;
     if (!user) { status('Sign in to see conversations shared with you.'); return; }
     status('Loading your private messages.');
     await run(function () { return call({ action: 'bootstrap' }); }, function (data) {
       if (typeof data.isOwner !== 'boolean' || !data.profile || data.profile.uid !== state.user.uid || typeof data.profile.name !== 'string' || typeof data.profile.email !== 'string' || typeof data.profile.handle !== 'string') throw new Error('Invalid profile.');
       state.owner = data.isOwner;
-      $('profile').hidden = false; $('workspace').hidden = false; $('owner').hidden = false;
+      $('profile').hidden = false; $('workspace').hidden = false;
       $('guide-label').hidden = !state.owner; $('guide').checked = state.owner;
       Array.from($('find-mode').options).forEach(function (option) { option.hidden = !state.owner && option.value !== 'email'; option.disabled = option.hidden; });
-      $('find-mode').value = 'email';
+      $('find-mode').value = 'email'; $('find-mode').hidden = !state.owner;
       $('name').value = data.profile.name.slice(0, 80);
       $('identity').textContent = [data.profile.handle, data.profile.email].filter(Boolean).join(' · ');
-      status('Ready. Choose a conversation.'); watchInbox();
+      profileSummary();
+      status('Ready.'); watchInbox();
       if (state.owner && agentNonce) loadAgentApproval();
     });
   }
@@ -392,7 +431,7 @@
       return call({ action: 'upload', threadId: threadId, envelope: payload, bytes: file.size });
     }, function () { $('file').value = ''; status(encrypted ? 'Encrypted file attached. Share the passphrase separately.' : 'File attached without file encryption.'); });
   });
-  $('profile-form').addEventListener('submit', function (event) { event.preventDefault(); run(function () { return call({ action: 'profile', name: $('name').value }); }, function () { status('Your messaging name was saved.'); }); });
+  $('profile-form').addEventListener('submit', function (event) { event.preventDefault(); run(function () { return call({ action: 'profile', name: $('name').value }); }, function () { profileSummary(); status('Your messaging name was saved.'); }); });
   $('find-form').addEventListener('submit', function (event) {
     event.preventDefault(); $('people').replaceChildren();
     run(function () { return call({ action: 'find', mode: $('find-mode').value, query: $('find').value }); }, function (data) {
@@ -406,7 +445,7 @@
             if (!/^[a-f0-9]{32}$/.test(response.threadId || '')) throw new Error('Invalid conversation.');
             // run restores controls before accepting another action.
             window.setTimeout(function () { if (state.user) openThread(response.threadId); }, 0);
-            status('Conversation created.'); $('people').replaceChildren();
+            status('Conversation created.'); $('people').replaceChildren(); $('find').value = ''; toggle('owner', 'new', false);
           });
         }));
         $('people').appendChild(li);
@@ -414,6 +453,8 @@
       status(data.users.length ? 'Choose the correct account before starting a conversation.' : 'No matching account. Ask them to sign in and confirm their email or username.');
     });
   });
+  $('new').addEventListener('click', function () { var open = $('owner').hidden; toggle('owner', 'new', open); if (open) $('find').focus(); });
+  $('attach-toggle').addEventListener('click', function () { var open = $('files').hidden; toggle('files', 'attach-toggle', open); if (open) $('file').focus(); });
   $('delete').addEventListener('click', function () { $('confirm-delete').hidden = false; });
   $('delete-no').addEventListener('click', function () { $('confirm-delete').hidden = true; });
   $('delete-yes').addEventListener('click', function () { if (!state.threadId) return; run(function () { return call({ action: 'delete', threadId: state.threadId }); }, function () { clearThread(); status('Conversation deleted for both members.'); }); });
