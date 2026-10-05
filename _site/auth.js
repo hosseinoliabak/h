@@ -2,15 +2,16 @@
  *
  * Sign-in exists so a reader's progress (reading position, chess training,
  * course completion) follows them between devices. It deliberately gates
- * nothing else. Every page on this site is public and lives in a public
- * repository, so a login wall over the content would be decoration.
+ * public notes. The Messages page is a public shell; its private conversation
+ * records are fetched only after server-enforced membership authorization.
  *
- * Identity comes from Google or GitHub. Nothing personal is ever written to
- * the database: the record under users/<uid> holds a self-chosen handle and
+ * Identity comes from Google or GitHub. The record under users/<uid> holds a self-chosen handle and
  * progress, never the provider's name or email address. The provider's real
  * name is deliberately not read, because it would end up on a public
  * leaderboard. The email address stays with the sign-in provider, which
  * needs it to identify the account; it is never copied into the database.
+ * Messages maintains a separate private name profile. Only the site owner
+ * can search accounts by their Authentication email or private profile name.
  *
  * Handles are unique, ignoring case and treating a space like a dash.
  * handles/<key> maps the folded name to the owning uid, and the rules refuse
@@ -43,6 +44,8 @@
   'use strict';
 
   var SDK = 'https://www.gstatic.com/firebasejs/10.12.0/';
+  var accountWatchEpoch = 0;
+  var accountWatchOff = null;
   var SEEN_KEY = 'site-auth-seen';           // "this browser has signed in before"
   var HANDLE_KEY = 'site-auth-handle';       // cached so the navbar can render before the SDK loads
   var HANDLE_OWNER_KEY = 'site-auth-handle-owner';
@@ -299,6 +302,7 @@
         lsDel(HANDLE_KEY);
         lsDel(HANDLE_OWNER_KEY);
       }
+      watchAccountStatus(currentUser);
       if (resolveInitialAuthState) {
         resolveInitialAuthState(currentUser);
         resolveInitialAuthState = null;
@@ -307,6 +311,39 @@
     });
     // A popup that fell back to a redirect finishes here.
     try { window.firebase.auth().getRedirectResult().catch(function () {}); } catch (e) {}
+  }
+
+  /* Login counts record observed auth_time values, not page refreshes. The
+     status stream ends revoked sessions on open pages; server rules enforce
+     the same status independently of this cooperative client behavior. */
+  function watchAccountStatus(user) {
+    accountWatchEpoch += 1;
+    var epoch = accountWatchEpoch;
+    if (accountWatchOff) accountWatchOff();
+    accountWatchOff = null;
+    if (!user || !db || typeof user.getIdTokenResult !== 'function') return;
+    var uid = user.uid;
+    user.getIdTokenResult().then(function (result) {
+      if (epoch !== accountWatchEpoch || !currentUser || currentUser.uid !== uid) return;
+      var authTime = result.claims && result.claims.auth_time;
+      if (!Number.isSafeInteger(authTime)) return;
+      var reference = db.ref('site-account-status/' + uid);
+      function changed(snapshot) {
+        if (epoch !== accountWatchEpoch || !currentUser || currentUser.uid !== uid) return;
+        var value = snapshot.val();
+        if (value && (value.disabled === true || Number(value.validAfter) > authTime)) signOut().catch(function () {});
+      }
+      reference.on('value', changed, function () {});
+      accountWatchOff = function () { reference.off('value', changed); };
+      var marker = 'site-observed-login-' + uid;
+      if (Number(lsGet(marker)) >= authTime) return;
+      window.siteAuth.firebaseFunctions().then(function (service) {
+        if (epoch !== accountWatchEpoch || !currentUser || currentUser.uid !== uid) return;
+        return service.httpsCallable('siteAdmin', { timeout: 30000, limitedUseAppCheckTokens: true })({ action: 'track' }).then(function () {
+          if (epoch === accountWatchEpoch && currentUser && currentUser.uid === uid) lsSet(marker, String(authTime));
+        });
+      }).catch(function () {});
+    }).catch(function () {});
   }
 
   /* Stamp last activity. This is what the 24-month retention job reads, and
@@ -485,7 +522,7 @@
     var provider = providerId === 'github.com'
       ? new window.firebase.auth.GithubAuthProvider()
       : new window.firebase.auth.GoogleAuthProvider();
-    // No extra scopes are requested: the default profile is never stored.
+    // No extra scopes are requested. Messages documents its private profile.
     return auth.signInWithPopup(provider).catch(function (err) {
       var code = (err && err.code) || '';
       /* signInWithRedirect is NOT a usable fallback here. Firebase routes it
@@ -634,6 +671,8 @@
       who.title = 'Account options';
       who.onclick = function () {
         openMenu(who, [
+          { label: 'Messages', onClick: function (ctx) { ctx.close(); window.location.assign('/tools/messages.html'); } },
+          { label: 'Account administration', onClick: function (ctx) { ctx.close(); window.location.assign('/tools/account-admin.html'); } },
           { label: 'Change name', onClick: function (ctx) { ctx.close(); askHandle(); } },
           { label: 'Sign out', onClick: function (ctx) { ctx.close(); signOut(); } }
         ]);
