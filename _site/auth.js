@@ -89,6 +89,9 @@
   var handleLoaded = false;
   var db = null;
   var loading = null;
+  var googlePopupAuth = null;
+  var googlePopupReady = false;
+  var signInEpoch = 0;
   var functionsLoading = null;
   var publicFunctionsLoading = null;
   var scriptLoads = {};
@@ -220,7 +223,10 @@
         try { window.firebase.appCheck().activate(RECAPTCHA, true); } catch (e) {}
         db = window.firebase.database();
         watchAuth();
-        return true;
+        return prepareGooglePopup().then(function () { return true; }).catch(function () {
+          loading = null;
+          return false;
+        });
       } catch (e) {
         loading = null;
         return false;
@@ -325,8 +331,8 @@
       }
       emit();
     });
-    // A popup that fell back to a redirect finishes here.
-    try { window.firebase.auth().getRedirectResult().catch(function () {}); } catch (e) {}
+    // Both providers complete through popup promises. Session restoration
+    // uses onAuthStateChanged, without starting a cross-origin redirect helper.
   }
 
   /* Login counts record observed auth_time values, not page refreshes. The
@@ -530,16 +536,48 @@
   }
 
   function sdkReady() {
-    return !!(window.firebase && window.firebase.auth && db);
+    return !!(window.firebase && window.firebase.auth && db && googlePopupReady);
+  }
+
+  /* Keep existing sessions and GitHub's registered callback on the default
+     app. Google uses a same-origin popup helper and transfers its credential
+     through the documented signInWithCredential API into the default app.
+     The helper app has memory-only Auth persistence and is cleared afterward. */
+  function prepareGooglePopup() {
+    if (googlePopupReady) return Promise.resolve();
+    if (!googlePopupAuth) {
+      var options = Object.assign({}, CONFIG, { authDomain: 'oliabak.com' });
+      var helper = window.firebase.apps.filter(function (app) { return app.name === 'site-google-popup'; })[0];
+      if (helper && (helper.options.authDomain !== options.authDomain || helper.options.projectId !== options.projectId)) {
+        return Promise.reject(new Error('Unexpected sign-in configuration'));
+      }
+      helper = helper || window.firebase.initializeApp(options, 'site-google-popup');
+      googlePopupAuth = helper.auth();
+    }
+    return googlePopupAuth.setPersistence(window.firebase.auth.Auth.Persistence.NONE).then(function () {
+      googlePopupReady = true;
+    });
   }
 
   function popupSignIn(providerId) {
     var auth = window.firebase.auth();
+    var epoch = ++signInEpoch;
     var provider = providerId === 'github.com'
       ? new window.firebase.auth.GithubAuthProvider()
       : new window.firebase.auth.GoogleAuthProvider();
     // No extra scopes are requested. Messages documents its private profile.
-    return auth.signInWithPopup(provider).catch(function (err) {
+    var attempt;
+    if (providerId === 'google.com') {
+      attempt = googlePopupAuth.signInWithPopup(provider).then(function (result) {
+        if (epoch !== signInEpoch) throw new Error('Sign-in was canceled');
+        var credential = window.firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+        if (!credential || credential.providerId !== 'google.com') throw new Error('Invalid sign-in response');
+        return auth.signInWithCredential(credential);
+      }).finally(function () { return googlePopupAuth.signOut(); });
+    } else {
+      attempt = auth.signInWithPopup(provider);
+    }
+    return attempt.catch(function (err) {
       var code = (err && err.code) || '';
       /* The auth helper is on a different origin. A redirect fallback would
          require a same-origin helper and updated provider callbacks first.
@@ -584,6 +622,7 @@
   }
 
   function signOut() {
+    signInEpoch += 1;
     var uid = currentUser && currentUser.uid;
     lsDel(SEEN_KEY);
     lsDel(HANDLE_KEY);

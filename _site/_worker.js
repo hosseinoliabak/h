@@ -5,7 +5,11 @@
  * _site/_routes.json that keeps every real page and asset away from it, so the
  * Worker only ever sees paths that are not part of the static site.
  *
- * Two jobs:
+ * The fixed /__/auth/ helper paths also proxy Firebase's hosted sign-in
+ * helpers under the site origin. Firebase documents this same-origin setup
+ * for browsers that partition cross-origin authentication storage.
+ *
+ * Two short-link jobs:
  *
  *   GET /<code>        look the code up and answer with a 307 to its target.
  *                      An unknown code is handed back to the static site, which
@@ -86,6 +90,21 @@ const JWKS_REFRESH_FLOOR_SECONDS = 5 * 60;
 const JWKS_TIMEOUT_MS = 10000;
 const MAX_JWKS_BYTES = 64 * 1024;
 
+const AUTH_HELPER_ORIGIN = 'https://oliabak-paste.firebaseapp.com';
+const AUTH_HELPER_TIMEOUT_MS = 15000;
+const AUTH_HELPER_RESPONSE_BYTES = 1024 * 1024;
+const AUTH_HELPER_REQUEST_BYTES = 64 * 1024;
+const AUTH_HELPER_QUERY_LENGTH = 16384;
+const AUTH_HELPERS = new Map([
+  ['/__/auth/handler', 'text/html'],
+  ['/__/auth/iframe', 'text/html'],
+  ['/__/auth/links', 'text/html'],
+  ['/__/auth/handler.js', 'javascript'],
+  ['/__/auth/iframe.js', 'javascript'],
+  ['/__/auth/links.js', 'javascript'],
+  ['/__/auth/experiments.js', 'javascript']
+]);
+
 /* Names that can never be a short code, whatever the static site contains.
    The deploy hook replaces BUILD_RESERVED with every top-level file and
    directory of the rendered site, and the API also asks the static site
@@ -143,6 +162,98 @@ function text(status, body) {
     status: status,
     headers: noStoreHeaders({ 'Content-Type': 'text/plain; charset=utf-8' })
   });
+}
+
+/* This is a fixed upstream proxy, not a remote-URL fetch service. OAuth
+   query and form fields go only to the existing project helper. Cookies,
+   authorization headers, response cookies and redirects are not relayed.
+   Hosted helper code remains provider-managed, as required by Firebase's
+   documented proxy option. Do not cache callback pages or log their URLs. */
+async function authHelperBytes(stream, maximum, signal) {
+  if (!stream) return new Uint8Array();
+  const reader = stream.getReader();
+  let rejectAbort;
+  const aborted = new Promise((resolve, reject) => { rejectAbort = reject; });
+  function abort() {
+    reader.cancel().catch(() => {});
+    rejectAbort(new Error('Auth helper timed out'));
+  }
+  signal.addEventListener('abort', abort, { once: true });
+  const chunks = [];
+  let size = 0;
+  try {
+    if (signal.aborted) throw new Error('Auth helper timed out');
+    for (;;) {
+      const result = await Promise.race([reader.read(), aborted]);
+      if (signal.aborted) throw new Error('Auth helper timed out');
+      if (result.done) break;
+      size += result.value.byteLength;
+      if (size > maximum) throw new Error('Auth helper size exceeded');
+      chunks.push(result.value);
+    }
+    const bytes = new Uint8Array(size);
+    let position = 0;
+    for (const chunk of chunks) { bytes.set(chunk, position); position += chunk.byteLength; }
+    return bytes;
+  } catch (error) {
+    reader.cancel().catch(() => {});
+    throw error;
+  } finally {
+    signal.removeEventListener('abort', abort);
+    reader.releaseLock();
+  }
+}
+
+function authHelperLength(headers, maximum) {
+  const value = headers.get('content-length');
+  return value === null || (/^\d+$/.test(value) && Number(value) <= maximum);
+}
+
+async function handleAuthHelper(request, url) {
+  const expected = AUTH_HELPERS.get(url.pathname);
+  if (!expected) return text(404, 'Unknown sign-in endpoint.');
+  if (url.origin !== SITE_ORIGIN_DEFAULT) return text(403, 'Sign-in requires the site domain.');
+  if (url.search.length > AUTH_HELPER_QUERY_LENGTH) return text(414, 'Sign-in request is too large.');
+  const method = request.method.toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && !(method === 'POST' && url.pathname === '/__/auth/handler')) {
+    return text(405, 'Unsupported sign-in request.');
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AUTH_HELPER_TIMEOUT_MS);
+  try {
+    const headers = new Headers({ Accept: expected === 'javascript' ? 'application/javascript, text/javascript' : expected });
+    const init = { method: method === 'HEAD' ? 'GET' : method, headers, redirect: 'manual', signal: controller.signal };
+    if (method === 'POST') {
+      const type = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      if (type !== 'application/x-www-form-urlencoded') return text(415, 'Unsupported sign-in form.');
+      if (!authHelperLength(request.headers, AUTH_HELPER_REQUEST_BYTES)) return text(413, 'Sign-in form is too large.');
+      headers.set('Content-Type', 'application/x-www-form-urlencoded');
+      init.body = await authHelperBytes(request.body, AUTH_HELPER_REQUEST_BYTES, controller.signal);
+    }
+    const upstream = await fetch(AUTH_HELPER_ORIGIN + url.pathname + url.search, init);
+    if (upstream.status !== 200 || (upstream.url && new URL(upstream.url).origin !== AUTH_HELPER_ORIGIN)) {
+      if (upstream.body) upstream.body.cancel().catch(() => {});
+      return text(502, 'The sign-in service is temporarily unavailable.');
+    }
+    const type = (upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const validType = expected === 'javascript' ? type === 'application/javascript' || type === 'text/javascript' : type === expected;
+    if (!validType || !authHelperLength(upstream.headers, AUTH_HELPER_RESPONSE_BYTES)) {
+      if (upstream.body) upstream.body.cancel().catch(() => {});
+      return text(502, 'The sign-in service returned an invalid response.');
+    }
+    const body = await authHelperBytes(upstream.body, AUTH_HELPER_RESPONSE_BYTES, controller.signal);
+    const output = noStoreHeaders({
+      'Content-Type': type + '; charset=utf-8',
+      'Referrer-Policy': 'no-referrer',
+      'X-Frame-Options': 'SAMEORIGIN'
+    });
+    return new Response(method === 'HEAD' ? null : body, { status: 200, headers: output });
+  } catch (error) {
+    return text(502, 'The sign-in service is temporarily unavailable. Try again.');
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+  }
 }
 
 function utcDay(now) {
@@ -711,6 +822,9 @@ async function handleShortLink(request, env, url) {
 
 async function handleRequest(request, env, now) {
   const url = new URL(request.url);
+  if (url.pathname === '/__/auth' || url.pathname.indexOf('/__/auth/') === 0) {
+    return handleAuthHelper(request, url);
+  }
   if (url.pathname === API_ROOT || url.pathname.indexOf(API_ROOT + '/') === 0) {
     return handleApi(request, env, url, now);
   }
