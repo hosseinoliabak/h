@@ -282,8 +282,7 @@
         // The guide reads in the side panel; the chat shows a card that opens it.
         format.normalize(JSON.parse(message.body));
         var chip = node('article', undefined, 'msg-card msg-chip');
-        chip.appendChild(node('strong', 'Shared guide · راهنمای مشترک'));
-        chip.appendChild(node('p', (message.revision > 1 ? 'Edited ' + when(message.updatedAt || message.createdAt) : 'Added ' + when(message.createdAt)) + ' · both members can edit'));
+        chip.appendChild(node('strong', 'Shared guide'));
         chip.appendChild(button('Open guide', function () { showPanel({ mode: 'guide' }); }));
         feed.appendChild(chip); return;
       }
@@ -306,7 +305,8 @@
     });
     state.thread = thread;
     var maximum = Number.isSafeInteger(thread.agentRequestLimit) && thread.agentRequestLimit >= 1 && thread.agentRequestLimit <= 50 ? thread.agentRequestLimit : 5;
-    $('agent').hidden = !state.owner && !thread.agentReady;
+    // The assistant line appears only once an assistant is connected.
+    $('agent').hidden = !thread.agentReady;
     $('agent-owner').hidden = !state.owner;
     if (document.activeElement !== $('agent-limit')) $('agent-limit').value = String(maximum);
     $('agent-title').textContent = 'Research assistant · ' + (thread.agentReady ? 'connected' : 'not connected');
@@ -316,7 +316,7 @@
     showAgentApproval();
     drawPanel(thread);
     $('thread-title').textContent = thread.title;
-    $('expiry').textContent = 'Available until ' + new Date(thread.expiresAt).toLocaleDateString([], { dateStyle: 'medium' }) + '. Both members can edit the shared guide.';
+    $('expiry').textContent = 'Expires ' + new Date(thread.expiresAt).toLocaleDateString([], { dateStyle: 'medium' });
     // Keep the newest message in view unless the reader has scrolled up.
     var list = $('feed'), stick = state.feedFresh || list.scrollHeight - list.scrollTop - list.clientHeight < 60, kept = list.scrollTop;
     list.replaceChildren(feed);
@@ -340,7 +340,7 @@
     state.threadRef = ref;
     state.threadCallback = function (snapshot) {
       if (epoch !== state.epoch || state.threadId !== threadId) return;
-      try { drawThread(snapshot.val()); status('Private conversation. Only its members can open it.'); }
+      try { drawThread(snapshot.val()); }
       catch (error) { clearThread(); status('This conversation is unavailable or contains unsupported formatting.'); }
     };
     ref.on('value', state.threadCallback, function () {
@@ -365,7 +365,6 @@
         open.type = 'button'; open.dataset.thread = entry[0];
         open.appendChild(node('span', item.peer.slice(0, 80), 'msg-inbox-peer'));
         open.appendChild(node('span', item.title.slice(0, 120), 'msg-inbox-title'));
-        if (Number.isFinite(item.createdAt)) open.appendChild(node('span', new Date(item.createdAt).toLocaleDateString([], { dateStyle: 'medium' }), 'msg-inbox-date'));
         open.querySelectorAll('span').forEach(function (span) { span.dir = 'auto'; });
         open.addEventListener('click', function () { openThread(entry[0]); });
         li.appendChild(open); $('inbox').appendChild(li); count += 1;
@@ -383,7 +382,7 @@
   }
   function profileSummary() {
     var name = $('name').value.trim();
-    $('profile-summary').textContent = name ? 'Signed in as ' + name : 'Your profile';
+    $('profile-summary').textContent = name || 'Your profile';
   }
   async function onUser(user) {
     if (user && state.user && user.uid === state.user.uid) return;
@@ -394,8 +393,8 @@
     $('inbox').replaceChildren(); $('people').replaceChildren(); $('name').value = ''; $('identity').textContent = ''; $('find').value = '';
     document.querySelectorAll('#messages button').forEach(function (b) { b.disabled = false; });
     $('login').hidden = !!user; $('workspace').hidden = true; toggle('owner', 'new', false); $('profile').hidden = true; $('profile').open = false;
-    if (!user) { status('Sign in to see conversations shared with you.'); return; }
-    status('Loading your private messages.');
+    if (!user) { status(''); return; }
+    status('Loading…');
     await run(function () { return call({ action: 'bootstrap' }); }, function (data) {
       if (typeof data.isOwner !== 'boolean' || !data.profile || data.profile.uid !== state.user.uid || typeof data.profile.name !== 'string' || typeof data.profile.email !== 'string' || typeof data.profile.handle !== 'string') throw new Error('Invalid profile.');
       state.owner = data.isOwner;
@@ -406,14 +405,14 @@
       $('name').value = data.profile.name.slice(0, 80);
       $('identity').textContent = [data.profile.handle, data.profile.email].filter(Boolean).join(' · ');
       profileSummary();
-      status('Ready.'); watchInbox();
+      status(''); watchInbox();
       if (state.owner && agentNonce) loadAgentApproval();
     });
   }
   try {
     if (!window.Quill || !format) throw new Error('Editor unavailable.');
     editor = new window.Quill('#msg-editor', {
-      theme: 'snow', placeholder: 'Write in Persian or English…',
+      theme: 'snow', placeholder: 'Write a message…',
       formats: ['bold', 'italic', 'underline', 'code', 'header', 'list', 'blockquote', 'code-block', 'direction', 'align', 'color', 'background'],
       modules: { toolbar: [[{ header: [2, 3, false] }], ['bold', 'italic', 'underline', 'code'], [{ color: format.COLORS }, { background: format.BACKGROUNDS }], [{ list: 'ordered' }, { list: 'bullet' }], ['blockquote', 'code-block'], [{ direction: 'rtl' }, { align: [] }], ['clean']] }
     });
@@ -557,6 +556,10 @@
   // Top-bar popovers close on an outside click, like a menu.
   document.addEventListener('click', function (event) {
     document.querySelectorAll('#messages .msg-pop[open]').forEach(function (pop) { if (!pop.contains(event.target)) pop.open = false; });
+  });
+  $('format').addEventListener('click', function () {
+    var on = !$('compose').classList.contains('msg-formatting');
+    $('compose').classList.toggle('msg-formatting', on); $('format').setAttribute('aria-pressed', String(on));
   });
   $('panel-close').addEventListener('click', function () { showPanel(null); });
   $('tab-guide').addEventListener('click', function () { showPanel({ mode: 'guide' }); });
