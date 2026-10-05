@@ -10,8 +10,9 @@
  * name is deliberately not read, because it would end up on a public
  * leaderboard. The email address stays with the sign-in provider, which
  * needs it to identify the account; it is never copied into the database.
- * Messages maintains a separate private name profile. Only the site owner
- * can search accounts by their Authentication email or private profile name.
+ * Messages maintains a separate private name profile. Signed-in readers can
+ * find an account by its complete sign-in email. Only the site owner can
+ * also search a site username or private profile name.
  *
  * Handles are unique, ignoring case and treating a space like a dash.
  * handles/<key> maps the folded name to the owning uid, and the rules refuse
@@ -152,15 +153,26 @@
       var script = Array.prototype.slice.call(document.scripts).filter(function (item) {
         return item.src === url.href;
       })[0];
+      var ownsScript = !script;
 
       function finish(error) {
         if (finished) return;
         finished = true;
         window.clearTimeout(timer);
         window.clearInterval(poll);
-        if (error || !ready()) reject(error || new Error('Firebase module did not initialize'));
+        if (script) {
+          script.removeEventListener('load', loaded);
+          script.removeEventListener('error', failed);
+        }
+        if (error || !ready()) {
+          if (ownsScript && script) script.remove();
+          reject(error || new Error('Firebase module did not initialize'));
+        }
         else resolve();
       }
+
+      function loaded() { finish(); }
+      function failed() { finish(new Error('Firebase module was blocked')); }
 
       if (!script) {
         script = document.createElement('script');
@@ -170,8 +182,8 @@
         script.referrerPolicy = 'no-referrer';
         document.head.appendChild(script);
       }
-      script.addEventListener('load', function () { finish(); }, { once: true });
-      script.addEventListener('error', function () { finish(new Error('Firebase module was blocked')); }, { once: true });
+      script.addEventListener('load', loaded, { once: true });
+      script.addEventListener('error', failed, { once: true });
     }).catch(function (error) {
       delete scriptLoads[file];
       throw error;
@@ -196,7 +208,7 @@
         .then(function () { return true; })
         .catch(function () { return false; });
     })().then(function (ok) {
-      if (!ok) return false;
+      if (!ok) { loading = null; return false; }
       try {
         // The tool pages initialize the same project; reuse their app if present.
         if (!window.firebase.apps.length) {
@@ -207,6 +219,7 @@
         watchAuth();
         return true;
       } catch (e) {
+        loading = null;
         return false;
       }
     });
@@ -525,19 +538,31 @@
     // No extra scopes are requested. Messages documents its private profile.
     return auth.signInWithPopup(provider).catch(function (err) {
       var code = (err && err.code) || '';
-      /* signInWithRedirect is NOT a usable fallback here. Firebase routes it
-         through an iframe on the firebaseapp.com auth domain, which Safari
-         16.1+, Chrome 115+, and Firefox 109+ block as third-party storage.
-         The documented fixes all require serving the auth handler from this
-         domain, which GitHub Pages cannot do. So the popup is the only route,
-         and a blocked popup has to be reported rather than worked around. */
+      /* The auth helper is on a different origin. A redirect fallback would
+         require a same-origin helper and updated provider callbacks first.
+         Keep the documented popup flow and report failures visibly. */
       if (code === 'auth/popup-blocked') {
         throw new Error('Your browser blocked the sign-in window. Allow pop-ups for this site and try again.');
       }
       if (code === 'auth/popup-closed-by-user' || code === 'auth/canceled-popup-request') {
-        throw new Error('Sign-in was canceled.');
+        throw new Error('The sign-in window closed before login finished. Keep it open until you return here, then try again.');
       }
-      throw err;
+      if (code === 'auth/network-request-failed' || code === 'auth/timeout') {
+        throw new Error('The sign-in service could not be reached. Check your connection or content blocker and try again.');
+      }
+      if (code === 'auth/web-storage-unsupported') {
+        throw new Error('Your browser cannot save the sign-in session. Allow site storage and try again in a regular browser tab.');
+      }
+      if (code === 'auth/account-exists-with-different-credential') {
+        throw new Error('This email already uses another sign-in method. Use the method you used previously.');
+      }
+      if (code === 'auth/user-disabled') {
+        throw new Error('This account is disabled. Contact the site owner.');
+      }
+      if (code === 'auth/unauthorized-domain' || code === 'auth/operation-not-allowed') {
+        throw new Error('This sign-in method needs a site configuration fix. Contact the site owner.');
+      }
+      throw new Error('Sign-in did not finish. Try again, or try the other sign-in method.');
     });
   }
 
@@ -548,8 +573,10 @@
        this the normal path. */
     if (sdkReady()) return popupSignIn(providerId);
     return loadSDK().then(function (ok) {
-      if (!ok) throw new Error('Firebase could not load. A content blocker is the usual cause.');
-      return popupSignIn(providerId);
+      if (!ok) throw new Error('The sign-in service could not load. Check your connection or content blocker, then try again.');
+      /* Loading remote modules can outlive the browser user gesture. Require
+         a fresh click instead of opening a popup from this async callback. */
+      throw new Error('Sign-in is ready. Tap Google or GitHub again to open the sign-in window.');
     });
   }
 
@@ -692,11 +719,11 @@
     btn.onclick = function () {
       /* Warm the SDK on open, so the provider click lands on the synchronous
          path and the popup stays inside the user gesture (Safari requires it). */
-      loadSDK();
-      openMenu(btn, PROVIDERS.map(function (p) {
+      var menu = openMenu(btn, PROVIDERS.map(function (p) {
         return {
           label: p.note ? p.label + ' (' + p.note + ')' : p.label,
           primary: true,
+          disabled: !sdkReady(),
           onClick: function (ctx) {
             ctx.button.disabled = true;
             signIn(p.id).then(function () {
@@ -707,7 +734,14 @@
             });
           }
         };
-      }), 'Sign-in keeps your reading position and chess progress across devices. The sign-in provider holds your email address to identify your account. It is never shown on this site, never shared, and nothing else about you is stored.');
+      }), 'Sign in with an existing Google or GitHub account. Your first successful sign-in creates your site account. Your progress and chosen site username are stored. Signed-in readers who know your complete sign-in email can find you in Messages.');
+      if (!menu) return;
+      if (!sdkReady()) menu.setStatus('Preparing sign-in. Please wait.');
+      loadSDK().then(function (ok) {
+        menu.setBusy(false);
+        menu.setStatus('');
+        if (!ok) menu.setError('The sign-in service could not load. Check your connection or content blocker, then tap a sign-in method to retry.');
+      });
     };
     host.appendChild(btn);
   }
@@ -745,21 +779,37 @@
     var err = document.createElement('div');
     err.className = 'site-auth-err';
     err.style.display = 'none';
+    err.setAttribute('role', 'alert');
+    var status = document.createElement('p');
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    status.hidden = true;
+    var buttons = [];
+
+    function setError(msg) {
+      if (!menu.isConnected) return;
+      err.textContent = msg;
+      err.style.display = msg ? 'block' : 'none';
+      place();
+    }
 
     items.forEach(function (item) {
       var b = document.createElement('button');
       b.className = 'site-auth-btn' + (item.primary ? '' : ' site-auth-btn-quiet');
       b.textContent = item.label;
+      b.disabled = Boolean(item.disabled);
+      buttons.push(b);
       b.onclick = function () {
+        setError('');
         item.onClick({
           button: b,
           close: dismiss,
-          setError: function (msg) { err.textContent = msg; err.style.display = 'block'; }
+          setError: setError
         });
       };
       menu.appendChild(b);
     });
-    menu.appendChild(err);
+    menu.append(status, err);
 
     document.body.appendChild(menu);
 
@@ -784,10 +834,24 @@
     // exposed so render() can tear this down properly, listeners and all
     menu.__dismiss = dismiss;
     setTimeout(function () {
+      if (!menu.isConnected) return;
       document.addEventListener('click', away, true);
       window.addEventListener('resize', place);
       window.addEventListener('scroll', dismiss, true);
     }, 0);
+    return {
+      setError: setError,
+      setBusy: function (busy) {
+        if (!menu.isConnected) return;
+        buttons.forEach(function (button) { button.disabled = busy; });
+      },
+      setStatus: function (message) {
+        if (!menu.isConnected) return;
+        status.textContent = message;
+        status.hidden = !message;
+        place();
+      }
+    };
   }
 
   function mount() {
