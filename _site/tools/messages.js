@@ -37,7 +37,8 @@
   function readableError(error) {
     var code = error && error.code || '';
     if (code === 'file-client') return error.message;
-    if (code.indexOf('permission') >= 0 || code.indexOf('unauthenticated') >= 0) return 'You do not have access to this conversation. Sign in to the invited account.';
+    if (code.indexOf('permission') >= 0 && error.details && error.details.reason === 'recent-login-required') return 'Your owner sign-in is more than ten minutes old. Use Sign in again above with the same owner account, then approve the connection.';
+    if (code.indexOf('permission') >= 0 || code.indexOf('unauthenticated') >= 0) return 'This action is not permitted for your current account or session. If you belong to this conversation, sign in again. Otherwise sign in to the invited account.';
     if (code.indexOf('not-found') >= 0 || code.indexOf('unimplemented') >= 0) return 'Messaging is not available yet. The site owner needs to finish setup.';
     if (code.indexOf('resource-exhausted') >= 0) return 'A messaging limit was reached. Please try later or contact the site owner.';
     if (code.indexOf('aborted') >= 0) return 'This text changed while you were editing. Cancel and reopen the latest version.';
@@ -538,6 +539,7 @@
   $('cancel').addEventListener('click', resetEditor);
   function showAgentApproval() {
     $('agent-approval').hidden = !state.owner || !agentApproval || !state.thread;
+    $('agent-reauth').hidden = !state.owner || !agentApproval || agentApproval.capability === 'research';
     $('agent-description').textContent = agentApproval && agentApproval.capability !== 'research' ? (agentApproval.capability === 'owner-runner' ? 'Approve this owner-only Mac runner to claim and finish published knowledge jobs. It cannot create jobs or read chat messages. ' : 'Approve this owner-only client to queue published knowledge searches and read their results. It cannot claim jobs or read chat messages. ') + 'This is separate from research chat access. Selected published text passes through Cloudflare to your agent. The private index, filesystem, reviewers and credentials are excluded. Sign in within the last ten minutes. Both connections must use the same selected conversation. Revoke access under Owner private tool connections.' : 'Approve access only for this selected conversation. The connection can read pending research requests and bounded text context, then post one AI reply per request. It cannot read attachments or manage accounts. Access lasts up to 30 days. Client names are supplied by the app, so check its callback host.';
     $('agent-approve').textContent = agentApproval && agentApproval.capability !== 'research' ? 'Approve owner private connection' : 'Connect to this conversation';
     $('agent-client').textContent = agentApproval ? 'Connecting app: ' + agentApproval.clientName + '. Callback host: ' + agentApproval.redirectHost + '. Check the selected conversation before approving.' : '';
@@ -599,6 +601,20 @@
     run(function () { return call({ action: 'revoke', threadId: state.threadId }, 'messageAgents'); }, function (data) { if (data.revoked !== true) throw new Error('Revocation failed.'); status('Assistant access disconnected.'); });
   });
   $('agent-deny').addEventListener('click', function () { agentApproval = null; agentNonce = null; showAgentApproval(); window.history.replaceState(null, '', window.location.pathname); status('Assistant connection canceled.'); });
+  ['google', 'github'].forEach(function (provider) {
+    $('agent-' + provider).addEventListener('click', function () {
+      if (!state.owner || !agentApproval || agentApproval.capability === 'research' || state.busy) return;
+      var uid = state.user.uid, control = $('agent-' + provider);
+      control.disabled = true;
+      // Call directly from the click so the existing popup flow retains the
+      // browser user gesture. Sign-in never approves a connection automatically.
+      try {
+        window.siteAuth.signIn(provider + '.com').then(function () {
+          if (state.user && state.user.uid === uid) status('Sign-in refreshed. Select the same conversation and approve the private connection.');
+        }).catch(function (error) { status(error.message || 'Sign-in failed. Please try again.'); }).finally(function () { control.disabled = false; });
+      } catch { control.disabled = false; status('Sign-in is unavailable. Reload the page and try again.'); }
+    });
+  });
   $('agent-approve').addEventListener('click', function () {
     if (!state.owner || !state.threadId || !agentApproval || agentApproval.expiresAt <= Date.now()) return;
     var approval = agentApproval, threadId = state.threadId, epoch = state.epoch;
