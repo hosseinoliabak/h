@@ -154,6 +154,7 @@
     $('compose').hidden = true; $('delete').hidden = true; $('confirm-delete').hidden = true;
     markCurrent();
     state.panel = null; closePanel(); drawPanel(null);
+    $('private-access').hidden = true; $('private-connections').replaceChildren();
     $('agent').hidden = true; $('agent-ask').hidden = true; $('agent-info').textContent = ''; $('agent-client').textContent = ''; $('agent-limit').value = '5';
     resetEditor();
   }
@@ -389,6 +390,7 @@
     $('agent-owner').hidden = !state.owner;
     if (document.activeElement !== $('agent-limit')) $('agent-limit').value = String(maximum);
     $('agent-title').textContent = 'Research assistant · ' + (thread.agentReady ? 'connected' : 'not connected');
+    $('private-access').hidden = !state.owner || thread.kind === 'group';
     $('agent-info').textContent = (thread.agentReady ? 'Connected. ' : 'An assistant has not been connected yet. ') + 'Maximum ' + maximum + ' requests per person in any three hours. Requests expire after 24 hours. When event delivery is connected, notifications may take five minutes.';
     $('agent-revoke').hidden = !thread.agentGrantId;
     $('agent-ask').hidden = !thread.agentReady || !!state.editing;
@@ -536,6 +538,8 @@
   $('cancel').addEventListener('click', resetEditor);
   function showAgentApproval() {
     $('agent-approval').hidden = !state.owner || !agentApproval || !state.thread;
+    $('agent-description').textContent = agentApproval && agentApproval.capability !== 'research' ? (agentApproval.capability === 'owner-runner' ? 'Approve this owner-only Mac runner to claim and finish published knowledge jobs. It cannot create jobs or read chat messages. ' : 'Approve this owner-only client to queue published knowledge searches and read their results. It cannot claim jobs or read chat messages. ') + 'This is separate from research chat access. Selected published text passes through Cloudflare to your agent. The private index, filesystem, reviewers and credentials are excluded. Sign in within the last ten minutes. Both connections must use the same selected conversation. Revoke access under Owner private tool connections.' : 'Approve access only for this selected conversation. The connection can read pending research requests and bounded text context, then post one AI reply per request. It cannot read attachments or manage accounts. Access lasts up to 30 days. Client names are supplied by the app, so check its callback host.';
+    $('agent-approve').textContent = agentApproval && agentApproval.capability !== 'research' ? 'Approve owner private connection' : 'Connect to this conversation';
     $('agent-client').textContent = agentApproval ? 'Connecting app: ' + agentApproval.clientName + '. Callback host: ' + agentApproval.redirectHost + '. Check the selected conversation before approving.' : '';
   }
   async function workerJson(path, options) {
@@ -558,10 +562,32 @@
       var data = await workerJson('/approval-info?request=' + agentNonce);
       if (epoch !== state.epoch || !state.user || !state.owner) return;
       if (data.nonce !== agentNonce || typeof data.clientId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(data.clientId) || typeof data.clientName !== 'string' || data.clientName.length > 100 || typeof data.redirectHost !== 'string' || data.redirectHost.length > 255 || !Number.isSafeInteger(data.expiresAt) || data.expiresAt <= Date.now()) throw new Error('Invalid connection.');
+      var scopeText = Array.isArray(data.scopes) ? data.scopes.slice().sort().join(' ') : '';
+      data.capability = scopeText === 'research.read research.reply' ? 'research' : scopeText === 'owner.jobs' ? 'owner-tools' : scopeText === 'owner.runner' ? 'owner-runner' : null;
+      if (!data.capability) throw new Error('Unknown connection capability.');
       agentApproval = data; showAgentApproval();
       status('Select the conversation the connecting assistant may access, then approve inside that conversation.');
     } catch { if (epoch === state.epoch) status('The assistant connection request is unavailable or expired. Start connecting again from your agent app.'); }
   }
+  $('private-refresh').addEventListener('click', function () {
+    if (!state.owner || !state.threadId) return;
+    var threadId = state.threadId, epoch = state.epoch;
+    run(function () { return call({ action: 'private-list', threadId: threadId }, 'messageAgents'); }, function (data) {
+      if (epoch !== state.epoch || threadId !== state.threadId) return;
+      if (!Array.isArray(data.connections) || data.connections.length > 40) throw new Error('Invalid connections.');
+      $('private-connections').replaceChildren();
+      data.connections.forEach(function (connection) {
+        if (!/^[a-f0-9]{32}$/.test(connection.grantId || '') || !['owner-tools', 'owner-runner'].includes(connection.capability) || !Number.isSafeInteger(connection.expiresAt)) throw new Error('Invalid connection.');
+        var li = node('li', connection.capability + ' · expires ' + new Date(connection.expiresAt).toLocaleString());
+        li.appendChild(button('Revoke', function () {
+          if (epoch !== state.epoch || threadId !== state.threadId) return;
+          run(function () { return call({ action: 'private-revoke', threadId: threadId, grantId: connection.grantId }, 'messageAgents'); }, function (answer) { if (answer.revoked !== true) throw new Error('Revocation failed.'); li.remove(); status('Private connection revoked.'); });
+        }));
+        $('private-connections').appendChild(li);
+      });
+      status(data.connections.length ? 'Private connections loaded.' : 'No active private connections.');
+    });
+  });
   $('agent-limit-save').addEventListener('click', function () {
     if (!state.owner || !state.threadId) return;
     var maximum = Number($('agent-limit').value);
@@ -577,7 +603,7 @@
     if (!state.owner || !state.threadId || !agentApproval || agentApproval.expiresAt <= Date.now()) return;
     var approval = agentApproval, threadId = state.threadId, epoch = state.epoch;
     run(async function () {
-      var ticket = await call({ action: 'connect', threadId: threadId, nonce: agentNonce, clientId: approval.clientId }, 'messageAgents');
+      var ticket = await call({ action: 'connect', threadId: threadId, nonce: agentNonce, clientId: approval.clientId, capability: approval.capability }, 'messageAgents');
       if (epoch !== state.epoch || threadId !== state.threadId || !/^[a-f0-9]{32}\.[a-f0-9]{64}$/.test(ticket.ticket || '')) throw new Error('Invalid connection.');
       return workerJson('/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nonce: agentNonce, ticket: ticket.ticket }) });
     }, function (data) {
