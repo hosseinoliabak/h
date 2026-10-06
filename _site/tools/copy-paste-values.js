@@ -3,6 +3,7 @@
   "use strict";
 
   const MAX_INPUT_CHARACTERS = 2 * 1024 * 1024;
+  const READING_WORDS_PER_MINUTE = 200;
   const SAFE_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:"]);
   const DROP_ENTIRELY = new Set([
     "APPLET", "AUDIO", "BASE", "BUTTON", "CANVAS", "EMBED", "FORM", "FRAME",
@@ -32,7 +33,11 @@
     "hc-text", "hc-urls-in-text", "hc-text-and-urls", "hc-link-list", "hc-html", "hc-markdown"
   ];
 
-  if (!editor || !status || outputIds.some(function (id) { return !document.getElementById(id); })) {
+  const countIds = [
+    "hc-count-words", "hc-count-chars", "hc-count-letters", "hc-count-paragraphs", "hc-count-reading"
+  ];
+
+  if (!editor || !status || outputIds.concat(countIds).some(function (id) { return !document.getElementById(id); })) {
     return;
   }
 
@@ -138,7 +143,8 @@
     if (!state.value.endsWith("\n")) state.value += "\n";
   }
 
-  function plainTextFrom(root, linkMode) {
+  // bare leaves out the list markers and rule lines the tool adds, so the counts see only what was pasted.
+  function plainTextFrom(root, linkMode, bare) {
     const state = { value: "" };
 
     function walk(node, inPre) {
@@ -157,7 +163,7 @@
       }
       if (tag === "HR") {
         appendNewline(state);
-        appendText(state, "---");
+        if (!bare) appendText(state, "---");
         appendNewline(state);
         return;
       }
@@ -176,7 +182,7 @@
         if (parent && parent.tagName === "OL") {
           marker = String(Array.from(parent.children).indexOf(element) + 1) + ". ";
         }
-        appendText(state, marker);
+        if (!bare) appendText(state, marker);
       } else if (BLOCK_TAGS.has(tag)) {
         appendNewline(state);
       }
@@ -295,11 +301,64 @@
     }).join("\n");
   }
 
+  // A word is a whitespace-separated token holding a letter or digit, as word processors count it,
+  // so bullets, dashes, and Markdown syntax such as "#" or "---" are skipped. Chinese and Japanese
+  // text has no spaces between words, so each Han or kana character counts as one word.
+  const WORDLESS_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
+  const HAS_LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+
+  function countWords(text) {
+    let words = 0;
+    text.split(/\s+/).forEach(function (token) {
+      const ideographs = token.match(WORDLESS_SCRIPT);
+      if (!ideographs) {
+        if (HAS_LETTER_OR_DIGIT.test(token)) words += 1;
+        return;
+      }
+      words += ideographs.length;
+      token.replace(WORDLESS_SCRIPT, " ").split(" ").forEach(function (rest) {
+        if (HAS_LETTER_OR_DIGIT.test(rest)) words += 1;
+      });
+    });
+    return words;
+  }
+
+  // Characters are counted as code points, so an emoji or an accented letter counts once.
+  // Line breaks are not counted, which matches how word processors report characters.
+  function textCounts(text) {
+    let characters = 0;
+    let nonSpace = 0;
+    for (const character of text) {
+      if (character === "\n" || character === "\r") continue;
+      characters += 1;
+      if (!/\s/.test(character)) nonSpace += 1;
+    }
+    const words = countWords(text);
+    return {
+      words: words,
+      characters: characters,
+      nonSpace: nonSpace,
+      paragraphs: text.split("\n").filter(function (line) { return line.trim(); }).length,
+      readingMinutes: Math.ceil(words / READING_WORDS_PER_MINUTE)
+    };
+  }
+
+  function showCounts(counts) {
+    const format = function (value) { return value.toLocaleString("en-US"); };
+    document.getElementById("hc-count-words").textContent = format(counts.words);
+    document.getElementById("hc-count-chars").textContent = format(counts.characters);
+    document.getElementById("hc-count-letters").textContent = format(counts.nonSpace);
+    document.getElementById("hc-count-paragraphs").textContent = format(counts.paragraphs);
+    document.getElementById("hc-count-reading").textContent = format(counts.readingMinutes) + " min";
+  }
+
   function updateResults(optionalMessage) {
     const sanitized = sanitizeRoot(editor);
     const safeRoot = sanitized.root;
     const links = safeRoot.querySelectorAll("a[href]").length;
-    document.getElementById("hc-text").value = plainTextFrom(safeRoot, "label");
+    const textOnly = plainTextFrom(safeRoot, "label");
+    showCounts(textCounts(plainTextFrom(safeRoot, "label", true)));
+    document.getElementById("hc-text").value = textOnly;
     document.getElementById("hc-urls-in-text").value = plainTextFrom(safeRoot, "url");
     document.getElementById("hc-text-and-urls").value = plainTextFrom(safeRoot, "both");
     document.getElementById("hc-link-list").value = linkListFrom(safeRoot);
@@ -308,7 +367,7 @@
 
     if (optionalMessage) {
       setStatus(optionalMessage, "success");
-    } else if (!plainTextFrom(safeRoot, "label")) {
+    } else if (!textOnly) {
       setStatus("No content yet.", "");
     } else {
       setStatus(links + (links === 1 ? " hyperlink found." : " hyperlinks found."), "");
@@ -408,6 +467,7 @@
     htmlFrom: htmlFrom,
     markdownFrom: markdownFrom,
     linkListFrom: linkListFrom,
+    textCounts: textCounts,
     safeHref: safeHref
   });
 }());

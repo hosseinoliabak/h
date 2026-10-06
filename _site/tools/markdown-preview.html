@@ -467,6 +467,14 @@ ul.task-list li input[type="checkbox"] {
         <li><hr class="dropdown-divider"></li>
         <li class="dropdown-header">Share and Copy</li>
         <li>
+    <a class="dropdown-item" href="../tools/messages">
+ <span class="dropdown-text">Messages</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../tools/account-admin">
+ <span class="dropdown-text">Account Administration</span></a>
+  </li>  
+        <li>
     <a class="dropdown-item" href="../tools/pastebin">
  <span class="dropdown-text">Pastebin</span></a>
   </li>  
@@ -1869,13 +1877,43 @@ main.content { margin-left: auto !important; margin-right: auto !important; padd
   }
 
   // --------------------------------------------------------------- status
+  // Same rule as Copy Paste Values. A word is a whitespace-separated token holding a letter or
+  // digit, so Markdown syntax such as "#", "-", "---", or "|" is skipped, and link destinations are
+  // dropped first so "[guide](https://...)" counts its label only. Chinese and Japanese have no
+  // spaces between words, so each Han or kana character counts as one word.
+  var WORDLESS_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
+  var HAS_LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+
+  function countWords(text) {
+    var words = 0;
+    text.replace(/\]\([^)\s]*(?:\s+"[^"]*")?\)/g, '] ').split(/\s+/).forEach(function (token) {
+      var ideographs = token.match(WORDLESS_SCRIPT);
+      if (!ideographs) {
+        if (HAS_LETTER_OR_DIGIT.test(token)) words += 1;
+        return;
+      }
+      words += ideographs.length;
+      token.replace(WORDLESS_SCRIPT, ' ').split(' ').forEach(function (rest) {
+        if (HAS_LETTER_OR_DIGIT.test(rest)) words += 1;
+      });
+    });
+    return words;
+  }
+
+  function plural(count, one, many) {
+    return count.toLocaleString('en-US') + ' ' + (count === 1 ? one : many);
+  }
+
   function updateStatus() {
     var text = cm.getValue();
-    var words = text.trim() ? text.trim().split(/\s+/).length : 0;
-    el('mdp-chars').textContent = text.length + ' chars';
-    el('mdp-words').textContent = words + ' words';
-    el('mdp-lines').textContent = cm.lineCount() + (cm.lineCount() === 1 ? ' line' : ' lines');
-    el('mdp-read').textContent = Math.max(1, Math.round(words / 200)) + ' min read';
+    var words = countWords(text);
+    // Code points without line breaks, so an emoji counts once.
+    var chars = 0;
+    for (var ch of text) if (ch !== '\n' && ch !== '\r') chars += 1;
+    el('mdp-chars').textContent = plural(chars, 'char', 'chars');
+    el('mdp-words').textContent = plural(words, 'word', 'words');
+    el('mdp-lines').textContent = plural(cm.lineCount(), 'line', 'lines');
+    el('mdp-read').textContent = Math.ceil(words / 200).toLocaleString('en-US') + ' min read';
   }
 
   function save() {
