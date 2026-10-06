@@ -5,7 +5,7 @@
   'use strict';
   if (!document.getElementById('messages')) return;
   var format = window.MessageFormat;
-  var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set(), feedFresh: false, autoOpened: false, panel: null, panelOpen: false };
+  var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set(), feedFresh: false, autoOpened: false, panel: null, panelOpen: false, groupDraft: [] };
   var editor;
   var agentApproval = null, agentRequest = null;
   var agentNonce = new URL(window.location.href).searchParams.get('mcp_request');
@@ -148,7 +148,7 @@
     state.thread = null; state.threadId = null;
     state.urls.forEach(function (url) { URL.revokeObjectURL(url); }); state.urls.clear();
     $('file').value = ''; $('file-pass').value = ''; $('file-encrypt').checked = true; toggle('files', 'attach-toggle', false);
-    $('feed').replaceChildren();
+    $('feed').replaceChildren(); $('feed').dataset.empty = 'Choose a conversation from the list.';
     $('thread-title').textContent = 'Select a conversation';
     $('expiry').textContent = '';
     $('compose').hidden = true; $('delete').hidden = true; $('confirm-delete').hidden = true;
@@ -184,7 +184,7 @@
       window.clearTimeout(armed); armed = null;
       if (state.editing && state.editing.messageId === messageId) resetEditor();
       var threadId = state.threadId;
-      run(function () { return call({ action: 'remove', threadId: threadId, messageId: messageId }); }, function () { status('Message deleted for both members.'); });
+      run(function () { return call({ action: 'remove', threadId: threadId, messageId: messageId }); }, function () { status('Message deleted.'); });
     });
     result.classList.add('msg-delete');
     return result;
@@ -221,11 +221,15 @@
     if (panel && panel.mode === 'guide' && !guide) panel = null;
     if (panel && panel.mode === 'files' && !files.length) panel = null;
     if (panel && panel.mode === 'message' && !(thread.messages || {})[panel.id]) panel = null;
-    // Without a choice, show the guide, then the files, then an empty note.
-    if (!panel) panel = guide ? { mode: 'guide' } : files.length ? { mode: 'files' } : null;
+    var group = !!thread && thread.kind === 'group';
+    if (panel && panel.mode === 'members' && !group) panel = null;
+    // Without a choice, show the guide, the members, the files, or a note.
+    if (!panel) panel = guide ? { mode: 'guide' } : group ? { mode: 'members' } : files.length ? { mode: 'files' } : null;
     state.panel = panel;
     $('workspace').classList.toggle('msg-panel-open', !!state.panelOpen && !!thread);
-    $('tab-guide').hidden = !guide; $('tab-files').hidden = !files.length;
+    $('tab-guide').hidden = !guide; $('tab-files').hidden = !files.length; $('tab-members').hidden = !group;
+    if (group) $('tab-members').textContent = 'Members (' + Object.keys(thread.members).length + ')';
+    $('tab-members').setAttribute('aria-pressed', String(!!panel && panel.mode === 'members'));
     $('tab-files').textContent = 'Files (' + files.length + ')';
     $('tab-guide').setAttribute('aria-pressed', String(!!panel && panel.mode === 'guide'));
     $('tab-files').setAttribute('aria-pressed', String(!!panel && panel.mode === 'files'));
@@ -237,6 +241,7 @@
       return;
     }
     try {
+      if (panel.mode === 'members') { drawMembers(thread, body); return; }
       if (panel.mode === 'files') {
         $('panel-title').textContent = 'Files';
         var list = node('ul', undefined, 'msg-file-list');
@@ -263,6 +268,72 @@
       body.appendChild(renderRich(message.body));
     } catch (error) {
       body.replaceChildren(node('p', 'This item contains unsupported formatting.', 'tool-note'));
+    }
+  }
+  function confirmButton(label, confirmLabel, action) {
+    var armed = null, result = button(label, function () {
+      if (state.busy) return;
+      if (!armed) {
+        result.textContent = confirmLabel; result.classList.add('msg-armed');
+        armed = window.setTimeout(function () { armed = null; result.textContent = label; result.classList.remove('msg-armed'); }, 4000);
+        return;
+      }
+      window.clearTimeout(armed); armed = null; action();
+    });
+    return result;
+  }
+  function groupCall(input, done) {
+    var threadId = state.threadId;
+    run(function () { return call(Object.assign({ threadId: threadId }, input)); }, done);
+  }
+  function drawMembers(thread, body) {
+    var creator = thread.createdBy === state.user.uid;
+    $('panel-title').textContent = 'Members';
+    var list = node('ul', undefined, 'msg-member-list');
+    Object.keys(thread.members).sort(function (a, b) { return (a === thread.createdBy ? -1 : 0) - (b === thread.createdBy ? -1 : 0); }).forEach(function (uid) {
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) return;
+      var item = node('li'), name = thread.names[uid];
+      item.appendChild(node('span', (typeof name === 'string' ? name.slice(0, 80) : 'Member') + (uid === state.user.uid ? ' (you)' : '')));
+      if (uid === thread.createdBy) item.appendChild(node('span', 'creator', 'tool-note'));
+      else if (creator) item.appendChild(confirmButton('Remove', 'Confirm remove', function () { groupCall({ action: 'kick', peerUid: uid }, function () { status('Removed from the group.'); }); }));
+      list.appendChild(item);
+    });
+    body.appendChild(list);
+    if (creator) {
+      var add = node('form', undefined, 'msg-group-manage');
+      add.appendChild(node('label', 'Add someone by exact email or username', 'tool-label'));
+      var row = node('div', undefined, 'tool-input-row'), input = node('input', undefined, 'tool-input');
+      input.maxLength = 254; input.autocomplete = 'off'; input.dir = 'ltr'; input.setAttribute('aria-label', 'Email or username to add');
+      var go = node('button', 'Add', 'tool-button'); go.type = 'submit';
+      row.appendChild(input); row.appendChild(go); add.appendChild(row);
+      add.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var query = input.value.trim(), threadId = state.threadId;
+        if (!query) return;
+        run(async function () {
+          var found = await call({ action: 'find', query: query });
+          if (!Array.isArray(found.users) || !found.users.length) return { missing: true };
+          var person = found.users[0];
+          if (!person || !/^[A-Za-z0-9_-]{1,128}$/.test(person.uid || '')) throw new Error('Invalid person.');
+          return call({ action: 'add', threadId: threadId, peerUid: person.uid });
+        }, function (result) { status(result && result.missing ? 'No exact match.' : 'Added to the group.'); });
+      });
+      body.appendChild(add);
+      var rename = node('form', undefined, 'msg-group-manage');
+      rename.appendChild(node('label', 'Group name', 'tool-label'));
+      var row2 = node('div', undefined, 'tool-input-row'), title = node('input', undefined, 'tool-input');
+      title.maxLength = 80; title.value = thread.title; title.dir = 'auto'; title.setAttribute('aria-label', 'Group name');
+      var save = node('button', 'Rename', 'tool-button'); save.type = 'submit';
+      row2.appendChild(title); row2.appendChild(save); rename.appendChild(row2);
+      rename.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (title.value.trim()) groupCall({ action: 'rename', title: title.value.trim() }, function () { status('Group renamed.'); });
+      });
+      body.appendChild(rename);
+      body.appendChild(node('p', 'Up to 10 members. To close the group for everyone, use Delete.', 'tool-note'));
+    } else {
+      var leave = confirmButton('Leave group', 'Confirm leave', function () { groupCall({ action: 'leave' }, function () { status('You left the group.'); }); });
+      leave.classList.add('msg-leave'); body.appendChild(leave);
     }
   }
   function drawThread(thread) {
@@ -327,7 +398,7 @@
     $('expiry').textContent = 'Expires ' + new Date(thread.expiresAt).toLocaleDateString([], { dateStyle: 'medium' });
     // Keep the newest message in view unless the reader has scrolled up.
     var list = $('feed'), stick = state.feedFresh || list.scrollHeight - list.scrollTop - list.clientHeight < 60, kept = list.scrollTop;
-    list.replaceChildren(feed);
+    list.replaceChildren(feed); list.dataset.empty = 'No messages yet.';
     list.scrollTop = stick ? list.scrollHeight : kept;
     state.feedFresh = false;
     $('compose').hidden = !editor;
@@ -372,7 +443,7 @@
         var li = node('li'), open = node('button');
         open.type = 'button'; open.dataset.thread = entry[0];
         open.appendChild(node('span', item.peer.slice(0, 80), 'msg-inbox-peer'));
-        open.appendChild(node('span', item.title.slice(0, 120), 'msg-inbox-title'));
+        open.appendChild(node('span', item.group === true ? 'Group' : item.title.slice(0, 120), 'msg-inbox-title'));
         open.querySelectorAll('span').forEach(function (span) { span.dir = 'auto'; });
         open.addEventListener('click', function () { openThread(entry[0]); });
         li.appendChild(open); $('inbox').appendChild(li); count += 1;
@@ -546,7 +617,8 @@
         if (!person || typeof person.uid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(person.uid) || typeof person.name !== 'string' || typeof person.email !== 'string' || typeof person.handle !== 'string') throw new Error('Invalid person.');
         var li = node('li');
         li.appendChild(node('span', [person.name.slice(0, 80), person.handle.slice(0, 20), person.email.slice(0, 254)].filter(Boolean).join(' · ')));
-        li.appendChild(button('Start conversation', function () {
+        var buttons = node('span', undefined, 'msg-person-actions');
+        buttons.appendChild(button('Chat', function () {
           run(function () { return call({ action: 'create', peerUid: person.uid, guide: $('guide').checked }); }, function (response) {
             if (!/^[a-f0-9]{32}$/.test(response.threadId || '')) throw new Error('Invalid conversation.');
             // run restores controls before accepting another action.
@@ -554,9 +626,38 @@
             status(response.existing ? 'Opened your existing conversation.' : 'Conversation created.'); $('people').replaceChildren(); $('find').value = ''; toggle('owner', 'new', false);
           });
         }));
+        buttons.appendChild(button('Add to group', function () {
+          if (!state.groupDraft.some(function (p) { return p.uid === person.uid; }) && state.groupDraft.length < 9) state.groupDraft.push({ uid: person.uid, label: (person.handle || person.name).slice(0, 80) });
+          drawGroupDraft(); $('people').replaceChildren(); $('find').value = ''; $('find').focus();
+        }));
+        li.appendChild(buttons);
         $('people').appendChild(li);
       });
       status(data.users.length ? '' : 'No exact match.');
+    });
+  });
+  // A group is drafted from search results: each Add to group lands here.
+  function drawGroupDraft() {
+    $('group-form').hidden = !state.groupDraft.length;
+    $('group-people').replaceChildren();
+    state.groupDraft.forEach(function (person) {
+      var chip = node('li', undefined, 'msg-chip-person');
+      chip.appendChild(node('span', person.label));
+      var x = button('×', function () { state.groupDraft = state.groupDraft.filter(function (p) { return p.uid !== person.uid; }); drawGroupDraft(); });
+      x.setAttribute('aria-label', 'Remove ' + person.label); chip.appendChild(x);
+      $('group-people').appendChild(chip);
+    });
+  }
+  $('group-form').addEventListener('submit', function (event) {
+    event.preventDefault();
+    var title = $('group-title').value.trim();
+    if (!title) { status('Name the group first.'); $('group-title').focus(); return; }
+    var peerUids = state.groupDraft.map(function (p) { return p.uid; });
+    run(function () { return call({ action: 'group', title: title, peerUids: peerUids }); }, function (response) {
+      if (!/^[a-f0-9]{32}$/.test(response.threadId || '')) throw new Error('Invalid conversation.');
+      state.groupDraft = []; drawGroupDraft(); $('group-title').value = ''; toggle('owner', 'new', false);
+      window.setTimeout(function () { if (state.user) openThread(response.threadId); }, 0);
+      status('Group created.');
     });
   });
   // Top-bar popovers close on an outside click, like a menu.
@@ -570,6 +671,7 @@
   $('panel-close').addEventListener('click', closePanel);
   $('tab-guide').addEventListener('click', function () { showPanel({ mode: 'guide' }); });
   $('tab-files').addEventListener('click', function () { showPanel({ mode: 'files' }); });
+  $('tab-members').addEventListener('click', function () { showPanel({ mode: 'members' }); });
   document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && state.panelOpen && !state.editing) closePanel(); });
   // Drag or arrow keys move the split between the chat and the preview.
   // The share is a per-viewer convenience kept in this browser only.
@@ -604,7 +706,7 @@
   $('attach-toggle').addEventListener('click', function () { var open = $('files').hidden; toggle('files', 'attach-toggle', open); if (open) $('file').focus(); });
   $('delete').addEventListener('click', function () { $('confirm-delete').hidden = false; });
   $('delete-no').addEventListener('click', function () { $('confirm-delete').hidden = true; });
-  $('delete-yes').addEventListener('click', function () { if (!state.threadId) return; run(function () { return call({ action: 'delete', threadId: state.threadId }); }, function () { clearThread(); status('Conversation deleted for both members.'); }); });
+  $('delete-yes').addEventListener('click', function () { if (!state.threadId) return; run(function () { return call({ action: 'delete', threadId: state.threadId }); }, function () { clearThread(); status('Conversation deleted.'); }); });
   ['google', 'github'].forEach(function (provider) {
     $('' + provider).addEventListener('click', function () {
       window.siteAuth.signIn(provider + '.com').catch(function (error) { status(error.message || 'Sign-in failed. Please try again.'); });
