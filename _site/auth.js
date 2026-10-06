@@ -570,8 +570,15 @@
     if (providerId === 'google.com') {
       attempt = googlePopupAuth.signInWithPopup(provider).then(function (result) {
         if (epoch !== signInEpoch) throw new Error('Sign-in was canceled');
-        var credential = window.firebase.auth.GoogleAuthProvider.credentialFromResult(result);
-        if (!credential || credential.providerId !== 'google.com') throw new Error('Invalid sign-in response');
+        // signInWithPopup on the compatibility SDK returns credential directly.
+        // The modular credentialFromResult extractor expects _tokenResponse,
+        // which the compatibility UserCredential wrapper does not expose.
+        var credential = result && result.credential;
+        if (!credential || credential.providerId !== 'google.com') {
+          var invalid = new Error('Invalid sign-in response');
+          invalid.code = 'auth/invalid-credential';
+          throw invalid;
+        }
         return auth.signInWithCredential(credential);
       }).finally(function () { return googlePopupAuth.signOut(); });
     } else {
@@ -602,6 +609,9 @@
       }
       if (code === 'auth/unauthorized-domain' || code === 'auth/operation-not-allowed') {
         throw new Error('This sign-in method needs a site configuration fix. Contact the site owner.');
+      }
+      if (code === 'auth/invalid-credential') {
+        throw new Error('Google did not return a usable sign-in credential. Try Google again, or use GitHub.');
       }
       throw new Error('Sign-in did not finish. Try again, or try the other sign-in method.');
     });
