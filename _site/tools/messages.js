@@ -408,8 +408,6 @@
       state.owner = data.isOwner;
       $('profile').hidden = false; $('workspace').hidden = false;
       $('guide-label').hidden = !state.owner; $('guide').checked = state.owner;
-      Array.from($('find-mode').options).forEach(function (option) { option.hidden = !state.owner && option.value !== 'email'; option.disabled = option.hidden; });
-      $('find-mode').value = 'email'; $('find-mode').hidden = !state.owner;
       $('name').value = data.profile.name.slice(0, 80);
       $('identity').textContent = [data.profile.handle, data.profile.email].filter(Boolean).join(' · ');
       profileSummary();
@@ -542,7 +540,7 @@
   $('profile-form').addEventListener('submit', function (event) { event.preventDefault(); run(function () { return call({ action: 'profile', name: $('name').value }); }, function () { profileSummary(); status('Your messaging name was saved.'); }); });
   $('find-form').addEventListener('submit', function (event) {
     event.preventDefault(); $('people').replaceChildren();
-    run(function () { return call({ action: 'find', mode: $('find-mode').value, query: $('find').value }); }, function (data) {
+    run(function () { return call({ action: 'find', query: $('find').value.trim() }); }, function (data) {
       if (!Array.isArray(data.users) || data.users.length > 5) throw new Error('Invalid search results.');
       data.users.forEach(function (person) {
         if (!person || typeof person.uid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(person.uid) || typeof person.name !== 'string' || typeof person.email !== 'string' || typeof person.handle !== 'string') throw new Error('Invalid person.');
@@ -553,12 +551,12 @@
             if (!/^[a-f0-9]{32}$/.test(response.threadId || '')) throw new Error('Invalid conversation.');
             // run restores controls before accepting another action.
             window.setTimeout(function () { if (state.user) openThread(response.threadId); }, 0);
-            status('Conversation created.'); $('people').replaceChildren(); $('find').value = ''; toggle('owner', 'new', false);
+            status(response.existing ? 'Opened your existing conversation.' : 'Conversation created.'); $('people').replaceChildren(); $('find').value = ''; toggle('owner', 'new', false);
           });
         }));
         $('people').appendChild(li);
       });
-      status(data.users.length ? 'Choose the correct account before starting a conversation.' : 'No matching account. Ask them to sign in and confirm their email or username.');
+      status(data.users.length ? '' : 'No exact match.');
     });
   });
   // Top-bar popovers close on an outside click, like a menu.
