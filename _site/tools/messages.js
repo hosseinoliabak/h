@@ -654,6 +654,7 @@
   function requestBill() {
     var threadId = state.threadId, epoch = state.epoch;
     $('bill').replaceChildren(); $('bill').hidden = true;
+    // A successful command reads the cached report; it never refreshes AWS.
     // Only the authenticated billing action runs. No message, AI request, or
     // AWS API request is created by typing this command.
     run(function () { return call({ action: 'bill', threadId: threadId }); }, function (result) {
