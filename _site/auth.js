@@ -639,7 +639,16 @@
     lsDel(HANDLE_OWNER_KEY);
     clearHandlePullMarkers(uid);
     if (!window.firebase || !window.firebase.auth) return Promise.resolve();
-    return window.firebase.auth().signOut().catch(function () {});
+    // The Messages worker is push-only. Unsubscribe even when signing out from
+    // another site page so a shared browser stops receiving account alerts.
+    var stopPush = Promise.resolve();
+    if (navigator.serviceWorker) stopPush = navigator.serviceWorker.getRegistration('/tools/messages').then(function (registration) {
+      return registration ? registration.pushManager.getSubscription() : null;
+    }).then(function (subscription) { return subscription ? subscription.unsubscribe() : null; }).catch(function () {});
+    var timer;
+    return Promise.race([stopPush, new Promise(function (resolve) { timer = setTimeout(resolve, 3000); })]).finally(function () { clearTimeout(timer); }).then(function () {
+      return window.firebase.auth().signOut();
+    }).catch(function () {});
   }
 
   /* ------------------------------ handle chooser ------------------------------ */

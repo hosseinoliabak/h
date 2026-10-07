@@ -7,6 +7,75 @@
   var format = window.MessageFormat;
   var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set(), feedFresh: false, autoOpened: false, panel: null, panelOpen: false, groupDraft: [] };
   var editor;
+  var push = window.MessagePush ? window.MessagePush.init({ call: call }) : null;
+  var inboxValues = {}, notificationReady = false, knownUnread = new Set(), noticeThread = null, noticeTimer = null;
+  var pageTitle = document.title, readTimer = null, readGeneration = 0, readPending = false, readAttempt = '';
+  function unreadIds(item) {
+    var values = item && item.unreadMessages;
+    if (!values || typeof values !== 'object' || Array.isArray(values) || Object.keys(values).length > 100) return [];
+    return Object.keys(values).filter(function (id) { return /^[a-f0-9]{32}$/.test(id) && Number.isSafeInteger(values[id]) && values[id] > 0 && values[id] <= Date.now() + 300000; });
+  }
+  function readingThread(threadId) {
+    var feed = $('feed');
+    return state.threadId === threadId && state.thread && !document.hidden && document.hasFocus() && feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60;
+  }
+  function dismissNotice() {
+    window.clearTimeout(noticeTimer); noticeTimer = null; noticeThread = null;
+    $('notice').hidden = true; $('notice-text').textContent = '';
+  }
+  function updateUnread(values) {
+    var next = new Set(), unreadChats = 0, newest = null, newestAt = 0;
+    Object.entries(values).forEach(function (entry) {
+      var id = entry[0], item = entry[1];
+      if (!/^[a-f0-9]{32}$/.test(id) || !item || item.expiresAt <= Date.now()) return;
+      var ids = unreadIds(item); if (ids.length) unreadChats++;
+      ids.forEach(function (messageId) {
+        var key = id + '/' + messageId; next.add(key);
+        if (notificationReady && !knownUnread.has(key) && !readingThread(id) && item.unreadMessages[messageId] > newestAt) { newest = id; newestAt = item.unreadMessages[messageId]; }
+      });
+    });
+    knownUnread = next; notificationReady = true;
+    $('unread-total').textContent = unreadChats + (unreadChats === 1 ? ' unread chat' : ' unread chats');
+    $('unread-total').hidden = unreadChats === 0;
+    document.title = (unreadChats ? '(' + unreadChats + ') ' : '') + pageTitle;
+    if (noticeThread && (!values[noticeThread] || !unreadIds(values[noticeThread]).length)) dismissNotice();
+    if (newest) {
+      noticeThread = newest; $('notice-text').textContent = 'New message'; $('notice').hidden = false;
+      window.clearTimeout(noticeTimer); noticeTimer = window.setTimeout(dismissNotice, 10000);
+    }
+    queueRead();
+  }
+  function queueRead() {
+    window.clearTimeout(readTimer);
+    if (!state.user || !readingThread(state.threadId)) return;
+    readTimer = window.setTimeout(markRead, 300);
+  }
+  async function markRead() {
+    if (!state.user || readPending || !readingThread(state.threadId)) return;
+    var ids = unreadIds(inboxValues[state.threadId]).filter(function (id) {
+      var message = state.thread.messages && state.thread.messages[id];
+      return message && (message.kind === 'agent' || message.author !== state.user.uid);
+    }).sort();
+    var signature = ids.join(',');
+    if (!ids.length || signature === readAttempt) return;
+    var epoch = state.epoch, threadId = state.threadId, generation = readGeneration;
+    readAttempt = signature; readPending = true;
+    try { await call({ action: 'read', threadId: threadId, messageIds: ids }); }
+    catch (error) {
+      if (epoch === state.epoch && generation === readGeneration && threadId === state.threadId) status('Messages could not be marked read. Reopen this chat to try again.');
+    } finally { if (epoch === state.epoch && generation === readGeneration) { readPending = false; queueRead(); } }
+  }
+  $('notice-dismiss').addEventListener('click', dismissNotice);
+  $('notice-open').addEventListener('click', function () {
+    if (!noticeThread || state.busy) return;
+    var threadId = noticeThread;
+    if (state.threadId === threadId) { $('feed').scrollTop = $('feed').scrollHeight; queueRead(); }
+    else openThread(threadId);
+    dismissNotice();
+  });
+  $('feed').addEventListener('scroll', queueRead, { passive: true });
+  window.addEventListener('focus', queueRead);
+  document.addEventListener('visibilitychange', queueRead);
   var billEpoch = 0, billVersion = 0, billObservedVersion = 0, billLoading = false;
   function closeBill() {
     billEpoch += 1; billVersion = 0; billObservedVersion = 0; billLoading = false;
@@ -172,6 +241,7 @@
     }, function () { status(previewOnly ? 'Text preview opened locally.' : 'Download started.'); });
   }
   function clearThread() {
+    window.clearTimeout(readTimer); readGeneration += 1; readPending = false; readAttempt = '';
     $('assistant-mode').checked = false;
     $('assistant-mode-label').hidden = true; $('assistant-hint').hidden = true;
     if (state.threadRef) state.threadRef.off('value', state.threadCallback);
@@ -495,7 +565,7 @@
     list.replaceChildren(feed); list.dataset.empty = 'No messages yet.';
     syncPreviewToggles();
     list.scrollTop = stick ? list.scrollHeight : kept;
-    state.feedFresh = false;
+    state.feedFresh = false; queueRead();
     $('compose').hidden = !editor;
     $('attach-toggle').hidden = !window.MessageFiles;
     if (!editor && window.MessageFiles) $('files').hidden = false;
@@ -530,6 +600,8 @@
       var values = snapshot.val() || {};
       $('inbox').replaceChildren();
       if (typeof values !== 'object' || Array.isArray(values) || Object.keys(values).length > 20) { status('The conversation list is invalid.'); return; }
+      inboxValues = values;
+      updateUnread(values);
       var count = 0, newest = null;
       // Newest conversation first, like a chat history.
       Object.entries(values).sort(function (a, b) { return b[1].createdAt - a[1].createdAt; }).forEach(function (entry) {
@@ -537,7 +609,11 @@
         if (!/^[a-f0-9]{32}$/.test(entry[0]) || !item || item.expiresAt <= Date.now() || typeof item.title !== 'string' || typeof item.peer !== 'string') return;
         var li = node('li'), open = node('button');
         open.type = 'button'; open.dataset.thread = entry[0];
-        open.appendChild(node('span', item.peer.slice(0, 80), 'msg-inbox-peer'));
+        var peerRow = node('span', undefined, 'msg-inbox-peer-row');
+        peerRow.appendChild(node('span', item.peer.slice(0, 80), 'msg-inbox-peer'));
+        var unread = unreadIds(item).length;
+        if (unread) { var badge = node('span', String(unread), 'msg-unread-badge'); badge.setAttribute('aria-label', unread + ' unread messages'); peerRow.appendChild(badge); }
+        open.appendChild(peerRow);
         open.appendChild(node('span', item.group === true ? 'Group' : item.title.slice(0, 120), 'msg-inbox-title'));
         open.querySelectorAll('span').forEach(function (span) { span.dir = 'auto'; });
         open.addEventListener('click', function () { openThread(entry[0]); });
@@ -562,7 +638,9 @@
     if (user && state.user && user.uid === state.user.uid) return;
     state.epoch += 1;
     state.subscriptions.forEach(function (off) { off(); }); state.subscriptions = [];
+    inboxValues = {}; notificationReady = false; knownUnread.clear(); dismissNotice(); document.title = pageTitle; $('unread-total').hidden = true;
     clearThread(); state.user = user; state.owner = false; state.busy = false; state.autoOpened = false;
+    if (push) push.onUser(user);
     agentApproval = null;
     $('inbox').replaceChildren(); $('people').replaceChildren(); $('name').value = ''; $('identity').textContent = ''; $('find').value = '';
     document.querySelectorAll('#messages button').forEach(function (b) { b.disabled = false; });
