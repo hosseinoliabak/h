@@ -292,11 +292,10 @@
     state.panel = panel;
     syncPreviewToggles();
     $('workspace').classList.toggle('msg-panel-open', !!state.panelOpen && !!thread);
-    $('tab-guide').hidden = !guide; $('tab-files').hidden = !files.length; $('tab-members').hidden = !group;
+    $('tab-files').hidden = !files.length; $('tab-members').hidden = !group;
     if (group) $('tab-members').textContent = 'Members (' + Object.keys(thread.members).length + ')';
     $('tab-members').setAttribute('aria-pressed', String(!!panel && panel.mode === 'members'));
     $('tab-files').textContent = 'Files (' + files.length + ')';
-    $('tab-guide').setAttribute('aria-pressed', String(!!panel && panel.mode === 'guide'));
     $('tab-files').setAttribute('aria-pressed', String(!!panel && panel.mode === 'files'));
     var actions = $('panel-actions'), body = $('panel-body');
     $('panel-meta').textContent = '';
@@ -890,7 +889,6 @@
     $('compose').classList.toggle('msg-formatting', on); $('format').setAttribute('aria-pressed', String(on));
   });
   $('panel-close').addEventListener('click', closePanel);
-  $('tab-guide').addEventListener('click', function () { showPanel({ mode: 'guide' }); });
   $('tab-files').addEventListener('click', function () { showPanel({ mode: 'files' }); });
   $('tab-members').addEventListener('click', function () { showPanel({ mode: 'members' }); });
   document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && state.panelOpen && !state.editing) closePanel(); });
