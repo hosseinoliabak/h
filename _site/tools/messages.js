@@ -448,7 +448,7 @@
         chip.appendChild(previewToggle('guide', messageId, 'Research guide'));
         feed.appendChild(chip); return;
       }
-      var card = node('article', undefined, 'msg-card' + (mine ? ' msg-mine' : ''));
+      var card = node('article', undefined, 'msg-card' + (mine ? ' msg-mine' : '') + (message.kind === 'agent' ? ' msg-assistant' : ''));
       var head = node('header');
       var author = thread.names[message.author];
       head.appendChild(node('strong', message.kind === 'agent' ? 'Hossein’s assistant · AI' : typeof author === 'string' ? author.slice(0, 80) : 'Member'));
