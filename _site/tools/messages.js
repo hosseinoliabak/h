@@ -7,6 +7,7 @@
   var format = window.MessageFormat;
   var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set(), feedFresh: false, autoOpened: false, panel: null, panelOpen: false, groupDraft: [] };
   var editor;
+  var researchTasks = window.MessageTasks ? window.MessageTasks.init({ context: function () { return state; }, call: call, run: run, status: status }) : null;
   var preview = null, previewTimer = null;
   function disposePreview() {
     window.clearTimeout(previewTimer);
@@ -165,6 +166,7 @@
     }, function () { status(previewOnly ? 'Text preview opened locally.' : 'Download started.'); });
   }
   function clearThread() {
+    if (researchTasks) researchTasks.reset();
     if (state.threadRef) state.threadRef.off('value', state.threadCallback);
     window.clearTimeout(state.expiryTimer);
     state.threadRef = null; state.threadCallback = null;
@@ -460,6 +462,7 @@
       }
     });
     state.thread = thread;
+    if (researchTasks) researchTasks.draw(thread);
     var maximum = Number.isSafeInteger(thread.agentRequestLimit) && thread.agentRequestLimit >= 1 && thread.agentRequestLimit <= 50 ? thread.agentRequestLimit : 5;
     // The assistant line appears only once an assistant is connected.
     $('agent').hidden = !thread.agentReady;
@@ -619,6 +622,10 @@
     return !state.editing && editor && editor.getText().trim().toLowerCase() === '/bill'
       && editor.getContents().ops.every(function (op) { return !op.attributes || !Object.keys(op.attributes).length; });
   }
+  function tasksCommand() {
+    return !state.editing && editor && editor.getText().trim().toLowerCase() === '/tasks'
+      && editor.getContents().ops.every(function (op) { return !op.attributes || !Object.keys(op.attributes).length; });
+  }
   function showBill(result) {
     var content = document.createDocumentFragment();
     var head = node('header');
@@ -666,6 +673,7 @@
     event.preventDefault();
     if (!editor || !state.threadId || !state.user || state.busy) return;
     if (billCommand()) { requestBill(); return; }
+    if (tasksCommand() && researchTasks) { researchTasks.open(); resetEditor(); return; }
     var body;
     try { body = format.normalize(editor.getContents()); }
     catch (error) { status(error.message); return; }
@@ -683,6 +691,7 @@
     $('agent-approval').hidden = !state.owner || !agentApproval || !state.thread;
     $('agent-reauth').hidden = !state.owner || !agentApproval || agentApproval.capability === 'research';
     $('agent-description').textContent = agentApproval && agentApproval.capability !== 'research' ? (agentApproval.capability === 'owner-runner' ? 'Approve this owner-only Mac runner to claim and finish published knowledge jobs. It cannot create jobs or read chat messages. ' : 'Approve this owner-only client to queue published knowledge searches and read their results. It cannot claim jobs or read chat messages. ') + 'This is separate from research chat access. Selected published text passes through Cloudflare to your agent. The private index, filesystem, reviewers and credentials are excluded. Sign in within the last ten minutes. Both connections must use the same selected conversation. Revoke access under Owner private tool connections.' : 'Approve access only for this selected conversation. The connection can read pending research requests and bounded text context, then post one AI reply per request. It cannot read attachments or manage accounts. Access lasts up to 30 days. Client names are supplied by the app, so check its callback host.';
+    if (agentApproval && agentApproval.capability === 'research-runner') $('agent-description').textContent = 'Approve this separate Mac execution runner for this conversation. It can claim explicitly approved typed research tasks and publish their results. It cannot read chat context, create proposals, or approve tasks. Known incremental exposure under $5 requires requester approval. Unknown exposure, $5 or more, and the BTC pilot require the owner. Existing archive quotas and private pilot approval gates still apply. Jobs wait when the Mac is offline. Sign in within the last ten minutes and revoke this connection under Owner private tool connections.';
     $('agent-approve').textContent = agentApproval && agentApproval.capability !== 'research' ? 'Approve owner private connection' : 'Connect to this conversation';
     $('agent-client').textContent = agentApproval ? 'Connecting app: ' + agentApproval.clientName + '. Callback host: ' + agentApproval.redirectHost + '. Check the selected conversation before approving.' : '';
   }
@@ -707,7 +716,7 @@
       if (epoch !== state.epoch || !state.user || !state.owner) return;
       if (data.nonce !== agentNonce || typeof data.clientId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(data.clientId) || typeof data.clientName !== 'string' || data.clientName.length > 100 || typeof data.redirectHost !== 'string' || data.redirectHost.length > 255 || !Number.isSafeInteger(data.expiresAt) || data.expiresAt <= Date.now()) throw new Error('Invalid connection.');
       var scopeText = Array.isArray(data.scopes) ? data.scopes.slice().sort().join(' ') : '';
-      data.capability = scopeText === 'research.read research.reply' ? 'research' : scopeText === 'owner.jobs' ? 'owner-tools' : scopeText === 'owner.runner' ? 'owner-runner' : null;
+      data.capability = scopeText === 'research.read research.reply' ? 'research' : scopeText === 'owner.jobs' ? 'owner-tools' : scopeText === 'owner.runner' ? 'owner-runner' : scopeText === 'research.runner' ? 'research-runner' : null;
       if (!data.capability) throw new Error('Unknown connection capability.');
       agentApproval = data; showAgentApproval();
       status('Select the conversation the connecting assistant may access, then approve inside that conversation.');
@@ -721,7 +730,7 @@
       if (!Array.isArray(data.connections) || data.connections.length > 40) throw new Error('Invalid connections.');
       $('private-connections').replaceChildren();
       data.connections.forEach(function (connection) {
-        if (!/^[a-f0-9]{32}$/.test(connection.grantId || '') || !['owner-tools', 'owner-runner'].includes(connection.capability) || !Number.isSafeInteger(connection.expiresAt)) throw new Error('Invalid connection.');
+        if (!/^[a-f0-9]{32}$/.test(connection.grantId || '') || !['owner-tools', 'owner-runner', 'research-runner'].includes(connection.capability) || !Number.isSafeInteger(connection.expiresAt)) throw new Error('Invalid connection.');
         var li = node('li', connection.capability + ' · expires ' + new Date(connection.expiresAt).toLocaleString());
         li.appendChild(button('Revoke', function () {
           if (epoch !== state.epoch || threadId !== state.threadId) return;
@@ -773,6 +782,7 @@
   $('agent-ask').addEventListener('click', function () {
     if (!editor || !state.threadId || !state.user || state.editing || !state.thread?.agentReady) return;
     if (billCommand()) { requestBill(); return; }
+    if (tasksCommand() && researchTasks) { researchTasks.open(); resetEditor(); return; }
     var text = editor.getText().trim();
     if (!text || text.length > 4000) { status('Write a research question of up to 4,000 characters.'); return; }
     if (!agentRequest || agentRequest.text !== text || agentRequest.threadId !== state.threadId) agentRequest = { text: text, threadId: state.threadId, requestId: Array.from(window.crypto.getRandomValues(new Uint8Array(16)), function (b) { return b.toString(16).padStart(2, '0'); }).join('') };
