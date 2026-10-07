@@ -781,7 +781,16 @@
         return n > 0 && n < 0.0001 ? '< $0.0001' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(n);
       }
       content.appendChild(node('p', result.project + ' · Total reported cost ' + money(result.totalUsd)));
-      content.appendChild(node('p', 'Period ' + result.start + ' through ' + result.end + ' (end date excluded, UTC). Checked ' + when(result.updatedAt) + '. Checked daily. New reports appear automatically here.', 'tool-note'));
+      content.appendChild(node('p', 'Period ' + result.start + ' through ' + result.end + ' (end date excluded, UTC). Checked ' + when(result.updatedAt) + '.', 'tool-note'));
+      if (result.refresh != null) {
+        if (!Number.isSafeInteger(result.refresh.nextRefreshAt) || result.refresh.nextRefreshAt <= 0
+            || result.refresh.nextRefreshAt > Date.now() + 2 * 86400000 || result.refresh.timeZone !== 'UTC' || result.refresh.dailyAtUTC !== '12:00') throw new Error('Invalid refresh schedule.');
+        var next = new Intl.DateTimeFormat([], { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(result.refresh.nextRefreshAt));
+        var time = node('time', next); time.dateTime = new Date(result.refresh.nextRefreshAt).toISOString();
+        var schedule = node('p', 'Next refresh, estimated: ', 'tool-note msg-bill-next-refresh');
+        schedule.appendChild(time); schedule.appendChild(document.createTextNode('. Checked daily at 12:00 UTC, even when your computer is off. New reports appear automatically here.'));
+        content.appendChild(schedule);
+      } else content.appendChild(node('p', 'Automatic refresh is not active for this linked report.', 'tool-note'));
       var list = node('ul');
       result.services.forEach(function (service) {
         if (!service || typeof service.name !== 'string' || service.name.length > 100 || typeof service.usd !== 'string' || !amount.test(service.usd)) throw new Error('Invalid cost report.');
