@@ -606,10 +606,25 @@
         if (type === 'cut') editor.deleteText(range.index, range.length, 'user');
       }, true);
     });
-    editor.root.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); $('compose').requestSubmit(); }
-      if (event.key === 'Escape' && state.editing) { event.preventDefault(); resetEditor(); }
+    var composing = false, compositionEnding = false;
+    editor.root.addEventListener('compositionstart', function () { composing = true; });
+    editor.root.addEventListener('compositionend', function () {
+      composing = false; compositionEnding = true;
+      // Some input methods end composition before the confirming keydown.
+      window.setTimeout(function () { compositionEnding = false; }, 0);
     });
+    editor.root.setAttribute('aria-describedby', 'msg-compose-hint');
+    // Capture Enter before Quill handles paragraph, list, and code breaks.
+    // Shift+Enter retains the editor newline behavior. Submission reuses the
+    // same validation, command routing, and busy guard as the Send button.
+    editor.root.addEventListener('keydown', function (event) {
+      if (composing || compositionEnding || event.isComposing) return;
+      if (event.key === 'Enter' && !event.shiftKey && !event.altKey) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (!event.repeat) $('compose').requestSubmit();
+      }
+      if (event.key === 'Escape' && state.editing) { event.preventDefault(); resetEditor(); }
+    }, true);
     editor.on('text-change', function () {
       if (!state.panel || state.panel.mode !== 'draft') return;
       window.clearTimeout(previewTimer);
