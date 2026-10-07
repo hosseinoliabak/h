@@ -3,10 +3,15 @@
   else root.MessageFileFormat = factory();
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
-  var MAX_BYTES = 1048576;
+  // Shared chat default matches Pastebin at 7 MiB. One base64 envelope is
+  // below the 10 MB callable request budget and the database string limit.
+  var MAX_BYTES = 7 * 1024 * 1024;
   function base64(value, maximum) {
-    return typeof value === 'string' && value.length > 0 && value.length <= maximum
-      && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
+    if (typeof value !== 'string' || value.length < 4 || value.length > maximum || value.length % 4 !== 0) return false;
+    var padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+    // A flat scan avoids repeated-group regex stack growth on large files.
+    return !/[^A-Za-z0-9+/]/.test(value.slice(0, value.length - padding))
+      && value.slice(value.length - padding) === '='.repeat(padding);
   }
   function envelope(value) {
     if (value && value.v === 0) {

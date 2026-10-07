@@ -1,5 +1,5 @@
-/* Password-encrypted file transport. Only ciphertext leaves this browser.
-   Filename and file bytes are authenticated and encrypted together. */
+/* Optional password-encrypted file transport. Encrypted filenames and bytes
+   are authenticated together. Plaintext is sent only when selected. */
 (function () {
   'use strict';
   var schema = window.MessageFileFormat;
@@ -28,7 +28,7 @@
   }
   async function encrypt(file, password, threadId) {
     cryptoReady();
-    if (!file || file.size < 1 || file.size > schema.MAX_BYTES) throw new Error('Choose a file between 1 byte and 1 MiB.');
+    if (!file || file.size < 1 || file.size > schema.MAX_BYTES) throw new Error('Choose a file between 1 byte and 7 MiB.');
     var salt = crypto.getRandomValues(new Uint8Array(16));
     var iv = crypto.getRandomValues(new Uint8Array(12));
     var derived = await key(password, salt);
@@ -61,7 +61,7 @@
     finally { packed.fill(0); }
   }
   async function plain(file) {
-    if (!file || file.size < 1 || file.size > schema.MAX_BYTES) throw new Error('Choose a file between 1 byte and 1 MiB.');
+    if (!file || file.size < 1 || file.size > schema.MAX_BYTES) throw new Error('Choose a file between 1 byte and 7 MiB.');
     var bytes = new Uint8Array(await file.arrayBuffer());
     try { return schema.envelope({ v: 0, name: filename(file.name), data: base64(bytes) }); }
     finally { bytes.fill(0); }

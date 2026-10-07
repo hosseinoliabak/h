@@ -7,6 +7,28 @@
   var format = window.MessageFormat;
   var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set(), feedFresh: false, autoOpened: false, panel: null, panelOpen: false, groupDraft: [] };
   var editor;
+  var stagedFile = null;
+  function clearFile() {
+    stagedFile = null; $('file').value = '';
+    $('file-name').textContent = ''; $('file-staged').hidden = true;
+  }
+  function stageFile(file, pasted) {
+    if (!state.threadId || !state.user || state.busy) return;
+    if (!file || file.size < 1 || file.size > window.MessageFileFormat.MAX_BYTES) {
+      clearFile(); status('Choose a file between 1 byte and 7 MiB.'); return;
+    }
+    stagedFile = file;
+    // Treat images as opaque downloadable files. No uploaded image is decoded
+    // or injected into Quill, HTML, or a preview based on its claimed MIME.
+    $('file-name').textContent = window.MessageFiles.filename(file.name) + ' · ' + Math.ceil(file.size / 1024) + ' KiB';
+    $('file-staged').hidden = false;
+    toggle('files', 'attach-toggle', true);
+    if (pasted) {
+      $('file').value = '';
+      status('Image ready to attach. Choose encryption and Attach to send it.');
+      if ($('file-encrypt').checked) $('file-pass').focus();
+    }
+  }
   var push = window.MessagePush ? window.MessagePush.init({ call: call }) : null;
   var inboxValues = {}, notificationReady = false, knownUnread = new Set(), noticeThread = null, noticeTimer = null;
   var pageTitle = document.title, readTimer = null, readGeneration = 0, readPending = false, readAttempt = '';
@@ -131,7 +153,7 @@
     var epoch = state.epoch;
     var service = await window.siteAuth.firebaseFunctions();
     if (epoch !== state.epoch || !state.user) throw new Error('Session changed.');
-    var result = await service.httpsCallable(serviceName || 'privateMessages', { timeout: 30000, limitedUseAppCheckTokens: true })(input);
+    var result = await service.httpsCallable(serviceName || 'privateMessages', { timeout: ['upload', 'download'].includes(input.action) ? 120000 : 30000, limitedUseAppCheckTokens: true })(input);
     if (epoch !== state.epoch || !state.user) throw new Error('Session changed.');
     if (!result || !result.data || typeof result.data !== 'object') throw new Error('Invalid response.');
     return result.data;
@@ -140,12 +162,14 @@
     if (state.busy) return;
     var epoch = state.epoch;
     state.busy = true;
+    $('file').disabled = true;
     document.querySelectorAll('#messages button').forEach(function (b) { b.disabled = true; });
     try { var result = await action(); if (epoch === state.epoch) { if (success) success(result); } }
     catch (error) { if (epoch === state.epoch) status(readableError(error)); }
     finally {
       if (epoch === state.epoch) {
         state.busy = false;
+        $('file').disabled = false;
         document.querySelectorAll('#messages button').forEach(function (b) { b.disabled = false; });
       }
     }
@@ -249,7 +273,7 @@
     state.threadRef = null; state.threadCallback = null;
     state.thread = null; state.threadId = null;
     state.urls.forEach(function (url) { URL.revokeObjectURL(url); }); state.urls.clear();
-    $('file').value = ''; $('file-pass').value = ''; $('file-encrypt').checked = true; toggle('files', 'attach-toggle', false);
+    clearFile(); $('file').disabled = false; $('file-pass').value = ''; $('file-encrypt').checked = true; toggle('files', 'attach-toggle', false);
     $('feed').replaceChildren(); $('feed').dataset.empty = 'Choose a conversation from the list.';
     closeBill();
     $('thread-title').textContent = 'Select a conversation';
@@ -262,7 +286,7 @@
     resetEditor();
   }
   function checkFile(messageId, message) {
-    if (!/^[a-f0-9]{32}$/.test(messageId) || typeof message.author !== 'string' || !Number.isSafeInteger(message.bytes) || message.bytes < 1 || message.bytes > 1048576 || typeof message.encrypted !== 'boolean') throw new Error('Invalid attachment.');
+    if (!/^[a-f0-9]{32}$/.test(messageId) || typeof message.author !== 'string' || !Number.isSafeInteger(message.bytes) || message.bytes < 1 || message.bytes > window.MessageFileFormat.MAX_BYTES || typeof message.encrypted !== 'boolean') throw new Error('Invalid attachment.');
   }
   function checkMessage(messageId, message) {
     if (!/^[a-f0-9]{32}$/.test(messageId) || !message || typeof message.body !== 'string' || message.body.length > 48000
@@ -667,10 +691,18 @@
       modules: { toolbar: [[{ header: [2, 3, false] }], ['bold', 'italic', 'underline', 'code'], [{ color: format.COLORS }, { background: format.BACKGROUNDS }], [{ list: 'ordered' }, { list: 'bullet' }], ['blockquote', 'code-block'], [{ direction: 'rtl' }, { align: [] }], ['clean']] }
     });
     editor.root.setAttribute('aria-label', 'Message rich-text editor'); editor.root.setAttribute('role', 'textbox'); editor.root.setAttribute('aria-multiline', 'true');
-    // External paste is plain text. Formatting is applied with this toolbar;
-    // clipboard HTML and embeds never enter Quill's HTML import pipeline.
+    // Text paste stays plain. Clipboard images are staged as attachments only
+    // after the user's paste gesture. HTML never enters Quill's import path.
     editor.root.addEventListener('paste', function (event) {
       event.preventDefault(); event.stopImmediatePropagation();
+      if (!state.user || !state.threadId || state.busy) return;
+      var images = event.clipboardData ? Array.from(event.clipboardData.items || []).filter(function (item) { return item.kind === 'file' && /^image\//.test(item.type); }) : [];
+      if (images.length) {
+        if (images.length !== 1) { status('Paste one image at a time.'); return; }
+        var image = images[0].getAsFile();
+        if (!image) { status('The clipboard image is unavailable. Use Attach a file instead.'); return; }
+        stageFile(image, true); return;
+      }
       var pasted = event.clipboardData ? event.clipboardData.getData('text/plain') : '';
       if (pasted.length + editor.getLength() > 16000) { status('The pasted text exceeds the 16,000 character limit.'); return; }
       var range = editor.getSelection(true) || { index: editor.getLength() - 1, length: 0 };
@@ -918,10 +950,12 @@
     run(function () { return call(input, 'messageAgents'); }, function (data) { if (data.queued !== true) throw new Error('Request not queued.'); resetEditor(); status('Research request queued. The connected assistant will reply when available.'); });
   }
   $('agent-ask').addEventListener('click', askAssistant);
+  $('file').addEventListener('change', function () { stageFile($('file').files[0], false); });
+  $('file-clear').addEventListener('click', clearFile);
   $('upload-form').addEventListener('submit', function (event) {
     event.preventDefault();
     if (!state.threadId || !state.user || state.busy) return;
-    var file = $('file').files[0], password = $('file-pass').value, encrypted = $('file-encrypt').checked;
+    var file = stagedFile || $('file').files[0], password = $('file-pass').value, encrypted = $('file-encrypt').checked;
     var threadId = state.threadId, epoch = state.epoch;
     $('file-pass').value = '';
     run(async function () {
@@ -930,7 +964,7 @@
       catch (error) { error.code = 'file-client'; throw error; }
       if (epoch !== state.epoch || threadId !== state.threadId) throw new Error('Session changed.');
       return call({ action: 'upload', threadId: threadId, envelope: payload, bytes: file.size });
-    }, function () { $('file').value = ''; status(encrypted ? 'Encrypted file attached. Share the passphrase separately.' : 'File attached without file encryption.'); });
+    }, function () { clearFile(); status(encrypted ? 'Encrypted file attached. Share the passphrase separately.' : 'File attached without file encryption.'); });
   });
   $('profile-form').addEventListener('submit', function (event) { event.preventDefault(); run(function () { return call({ action: 'profile', name: $('name').value }); }, function () { profileSummary(); status('Your messaging name was saved.'); }); });
   $('find-form').addEventListener('submit', function (event) {
