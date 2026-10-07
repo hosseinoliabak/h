@@ -881,11 +881,17 @@
   document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && state.panelOpen && !state.editing) closePanel(); });
   // Drag or arrow keys move the split between the chat and the preview.
   // The share is a per-viewer convenience kept in this browser only.
-  var split = $('split'), SPLIT_KEY = 'messages-preview-share-v2';
+  // Version 3 starts with the wider default instead of restoring the old narrow split.
+  var split = $('split'), SPLIT_KEY = 'messages-preview-share-v3';
   function setShare(share, save) {
     if (!Number.isFinite(share)) return;
-    share = Math.min(0.9, Math.max(0.25, share));
-    $('workspace').style.setProperty('--msg-preview-width', 'calc((100% - 287.5px) * ' + share + ')');
+    var available = $('workspace').clientWidth - 287.5;
+    var minimum = available >= 720 ? Math.max(0.25, 360 / available) : 0.25;
+    var maximum = available >= 720 ? Math.min(0.9, 1 - 360 / available) : 0.9;
+    share = Math.min(maximum, Math.max(minimum, share));
+    split.setAttribute('aria-valuemin', String(Math.round(minimum * 100)));
+    split.setAttribute('aria-valuemax', String(Math.round(maximum * 100)));
+    $('workspace').style.setProperty('--msg-preview-width', 'clamp(360px, calc((100% - 287.5px) * ' + share + '), calc(100% - 647.5px))');
     split.setAttribute('aria-valuenow', String(Math.round(share * 100)));
     if (save) { try { window.localStorage.setItem(SPLIT_KEY, String(share)); } catch (error) { /* storage unavailable */ } }
   }
