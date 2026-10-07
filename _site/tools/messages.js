@@ -7,6 +7,11 @@
   var format = window.MessageFormat;
   var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set(), feedFresh: false, autoOpened: false, panel: null, panelOpen: false, groupDraft: [] };
   var editor;
+  var billEpoch = 0, billVersion = 0, billObservedVersion = 0, billLoading = false;
+  function closeBill() {
+    billEpoch += 1; billVersion = 0; billObservedVersion = 0; billLoading = false;
+    $('bill').replaceChildren(); $('bill').hidden = true;
+  }
   var researchTasks = window.MessageTasks ? window.MessageTasks.init({ context: function () { return state; }, call: call, run: run, status: status, update: function (task) { if (state.thread) { state.thread.researchTasks ||= {}; state.thread.researchTasks[task.taskId] = task; drawThread(state.thread); } } }) : null;
   var preview = null, previewTimer = null;
   function disposePreview() {
@@ -176,7 +181,7 @@
     state.urls.forEach(function (url) { URL.revokeObjectURL(url); }); state.urls.clear();
     $('file').value = ''; $('file-pass').value = ''; $('file-encrypt').checked = true; toggle('files', 'attach-toggle', false);
     $('feed').replaceChildren(); $('feed').dataset.empty = 'Choose a conversation from the list.';
-    $('bill').replaceChildren(); $('bill').hidden = true;
+    closeBill();
     $('thread-title').textContent = 'Select a conversation';
     $('expiry').textContent = '';
     $('compose').hidden = true; $('delete').hidden = true; $('confirm-delete').hidden = true;
@@ -467,6 +472,7 @@
       }
     });
     state.thread = thread;
+    refreshOpenBill();
     var maximum = Number.isSafeInteger(thread.agentRequestLimit) && thread.agentRequestLimit >= 1 && thread.agentRequestLimit <= 50 ? thread.agentRequestLimit : 5;
     // The assistant line appears only once an assistant is connected.
     $('agent').hidden = !thread.agentReady;
@@ -648,7 +654,7 @@
     var content = document.createDocumentFragment();
     var head = node('header');
     head.appendChild(node('strong', 'Research costs · /bill'));
-    head.appendChild(button('Close', function () { $('bill').hidden = true; $('bill').replaceChildren(); }));
+    head.appendChild(button('Close', closeBill));
     content.appendChild(head);
     if (result.available === false) {
       content.appendChild(node('p', 'A research cost report has not been linked to this conversation. Ask the site owner to connect it. No amount is available yet.'));
@@ -665,7 +671,7 @@
         return n > 0 && n < 0.0001 ? '< $0.0001' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(n);
       }
       content.appendChild(node('p', result.project + ' · Total reported cost ' + money(result.totalUsd)));
-      content.appendChild(node('p', 'Period ' + result.start + ' through ' + result.end + ' (end date excluded, UTC). Updated ' + when(result.updatedAt) + '.', 'tool-note'));
+      content.appendChild(node('p', 'Period ' + result.start + ' through ' + result.end + ' (end date excluded, UTC). Checked ' + when(result.updatedAt) + '. Checked daily. New reports appear automatically here.', 'tool-note'));
       var list = node('ul');
       result.services.forEach(function (service) {
         if (!service || typeof service.name !== 'string' || service.name.length > 100 || typeof service.usd !== 'string' || !amount.test(service.usd)) throw new Error('Invalid cost report.');
@@ -675,15 +681,35 @@
       content.appendChild(node('p', (result.stale ? 'This report is older than 36 hours. ' : '') + (result.estimated ? 'AWS marks these charges as estimated. ' : '') + 'Billing can lag by 24 hours or more. Costs exclude credits, refunds, and tax. This is not a final invoice or an amount you owe.', 'tool-note'));
     }
     $('bill').replaceChildren(content); $('bill').hidden = false;
+    billVersion = result.available === true ? result.updatedAt : 0;
   }
+  async function refreshOpenBill() {
+    var version = state.thread && state.thread.billingUpdatedAt;
+    if (!state.user || !state.threadId || $('bill').hidden || document.hidden || billLoading
+        || !Number.isSafeInteger(version) || version <= Math.max(billVersion, billObservedVersion) || version > Date.now() + 300000) return;
+    var threadId = state.threadId, epoch = state.epoch, generation = billEpoch;
+    billObservedVersion = version; billLoading = true;
+    try {
+      var result = await call({ action: 'bill', threadId: threadId });
+      if (epoch !== state.epoch || threadId !== state.threadId || generation !== billEpoch || $('bill').hidden) return;
+      showBill(result);
+    } catch (error) {
+      if (epoch !== state.epoch || threadId !== state.threadId || generation !== billEpoch || $('bill').hidden) return;
+      var code = error && error.code || '';
+      if (/permission|unauthenticated/.test(code)) { closeBill(); status(readableError(error)); }
+      else if (!$('bill').querySelector('.msg-bill-refresh-error')) $('bill').appendChild(node('p', 'The latest report could not be loaded. The previous check time still applies. Use /bill to try again.', 'tool-note msg-bill-refresh-error'));
+    } finally { if (generation === billEpoch) { billLoading = false; refreshOpenBill(); } }
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshOpenBill(); });
   function requestBill() {
     var threadId = state.threadId, epoch = state.epoch;
-    $('bill').replaceChildren(); $('bill').hidden = true;
+    closeBill();
+    var generation = billEpoch;
     // A successful command reads the cached report; it never refreshes AWS.
     // Only the authenticated billing action runs. No message, AI request, or
     // AWS API request is created by typing this command.
     run(function () { return call({ action: 'bill', threadId: threadId }); }, function (result) {
-      if (epoch !== state.epoch || state.threadId !== threadId) return;
+      if (epoch !== state.epoch || state.threadId !== threadId || generation !== billEpoch) return;
       showBill(result); resetEditor(); status('Research costs loaded. Every conversation member can use /bill.');
     });
   }
