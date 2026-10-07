@@ -7,6 +7,14 @@
   var format = window.MessageFormat;
   var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set(), feedFresh: false, autoOpened: false, panel: null, panelOpen: false, groupDraft: [] };
   var editor;
+  var preview = null, previewTimer = null;
+  function disposePreview() {
+    window.clearTimeout(previewTimer);
+    if (preview) preview.dispose();
+    preview = null;
+  }
+  function sourceBody(body) { return format.normalize(typeof body === 'string' ? JSON.parse(body) : body); }
+  function isSource(body) { return !!window.MessagePreview && window.MessagePreview.isSource(sourceBody(body)); }
   var agentApproval = null, agentRequest = null;
   var agentNonce = new URL(window.location.href).searchParams.get('mcp_request');
   if (!/^[a-f0-9]{32}$/.test(agentNonce || '')) agentNonce = null;
@@ -118,6 +126,7 @@
     $('send').textContent = 'Send';
     $('cancel').hidden = true;
     $('agent-ask').hidden = !state.thread || !state.thread.agentReady;
+    if (state.panel && state.panel.mode === 'draft') { state.panel = null; drawPanel(state.thread); }
   }
   function downloadBytes(bytes, name) {
     var url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
@@ -126,10 +135,10 @@
     document.body.appendChild(link); link.click(); link.remove();
     window.setTimeout(function () { URL.revokeObjectURL(url); state.urls.delete(url); }, 10000);
   }
-  async function downloadFile(fileId, encrypted) {
+  async function downloadFile(fileId, encrypted, previewOnly) {
     if (encrypted && !$('file-pass').value) {
       toggle('files', 'attach-toggle', true); $('file-pass').focus();
-      status('Enter the file passphrase, then choose Download file again.'); return;
+      status('Enter the file passphrase, then choose Preview text or Download file again.'); return;
     }
     var epoch = state.epoch, threadId = state.threadId;
     var password = $('file-pass').value; $('file-pass').value = '';
@@ -138,9 +147,22 @@
       var decoded;
       try { decoded = await window.MessageFiles.decrypt(response.envelope, password, threadId); }
       catch (error) { error.code = 'file-client'; throw error; }
-      try { if (epoch === state.epoch && threadId === state.threadId) downloadBytes(decoded.bytes, decoded.name); }
+      try {
+        if (epoch === state.epoch && threadId === state.threadId) {
+          if (previewOnly) {
+            var text;
+            try {
+              if (decoded.bytes.length > 64000) throw new Error('limit');
+              text = new TextDecoder('utf-8', { fatal: true }).decode(decoded.bytes);
+              if (text.length > 16000 || !text.trim()) throw new Error('limit');
+              sourceBody({ ops: [{ insert: text }] });
+            } catch (error) { var invalid = new Error('Preview supports UTF-8 text up to 16,000 characters. Download other file formats to view them.'); invalid.code = 'file-client'; throw invalid; }
+            showPanel({ mode: 'file-text', id: fileId, text: text });
+          } else downloadBytes(decoded.bytes, decoded.name);
+        }
+      }
       finally { decoded.bytes.fill(0); }
-    }, function () { status('Download started.'); });
+    }, function () { status(previewOnly ? 'Text preview opened locally.' : 'Download started.'); });
   }
   function clearThread() {
     if (state.threadRef) state.threadRef.off('value', state.threadCallback);
@@ -193,14 +215,17 @@
   }
   function fileActions(messageId, message) {
     var actions = node('span', undefined, 'msg-card-actions');
+    var open = button('Preview text', function () {
+      if (state.busy) return;
+      if (state.panel && state.panel.mode === 'file-text' && state.panel.id === messageId) closePanel();
+      else downloadFile(messageId, message.encrypted, true);
+    });
+    open.dataset.previewId = messageId; open.dataset.previewMode = 'file-text'; open.dataset.previewLabel = 'Preview text';
+    open.setAttribute('aria-expanded', 'false'); open.setAttribute('aria-controls', 'msg-panel');
+    actions.appendChild(open);
     actions.appendChild(button('Download file', function () { if (!state.busy) downloadFile(messageId, message.encrypted); }));
     if (canDelete(message)) actions.appendChild(deleteButton(messageId));
     return actions;
-  }
-  // Headings, lists, quotes, code blocks or long text read better as a page.
-  function isLong(body) {
-    var ops = format.normalize(JSON.parse(body)).ops, length = 0;
-    return ops.some(function (op) { length += op.insert.length; var a = op.attributes || {}; return a.header || a['code-block'] || a.blockquote || a.list; }) || length > 1200;
   }
   function startEdit(messageId, message) {
     if (!editor || state.busy) return;
@@ -214,20 +239,52 @@
   // The preview panel is always present beside the chat on wide screens.
   // On narrow screens it covers the chat only after the reader opens it.
   function showPanel(panel) { state.panel = panel; state.panelOpen = true; if (state.thread) drawPanel(state.thread); }
-  function closePanel() { state.panelOpen = false; $('workspace').classList.remove('msg-panel-open'); }
+  function closePanel() {
+    state.panel = null; state.panelOpen = false;
+    $('workspace').classList.remove('msg-panel-open'); disposePreview();
+    if (state.thread) drawPanel(state.thread);
+    syncPreviewToggles();
+  }
+  function togglePreview(mode, id) {
+    if (state.panel && state.panel.mode === mode && state.panel.id === id) closePanel();
+    else showPanel({ mode: mode, id: id });
+  }
+  function syncPreviewToggles() {
+    $('preview').setAttribute('aria-pressed', String(!!state.panel && state.panel.mode === 'draft'));
+    document.querySelectorAll('#msg-feed [data-preview-id]').forEach(function (control) {
+      var selected = !!state.panel && state.panel.id === control.dataset.previewId && state.panel.mode === control.dataset.previewMode;
+      control.setAttribute('aria-expanded', String(selected));
+      control.setAttribute('aria-label', selected ? 'Close preview' : control.dataset.previewLabel || (control.dataset.previewMode === 'guide' ? 'Open guide' : 'Open'));
+      var label = control.querySelector('.msg-preview-label');
+      if (label) label.textContent = selected ? 'Close preview' : 'Open preview';
+      control.closest('.msg-card').classList.toggle('msg-preview-selected', selected);
+    });
+  }
+  function previewToggle(mode, id, text) {
+    var control = button('', function () { togglePreview(mode, id); });
+    control.className = 'msg-message-preview'; control.dataset.previewId = id; control.dataset.previewMode = mode;
+    control.setAttribute('aria-controls', 'msg-panel'); control.setAttribute('aria-expanded', 'false');
+    control.setAttribute('aria-label', mode === 'guide' ? 'Open guide' : 'Open');
+    control.appendChild(node('span', text, 'msg-preview-summary'));
+    control.appendChild(node('span', 'Open preview', 'msg-preview-label'));
+    return control;
+  }
   function drawPanel(thread) {
     var entries = Object.entries(thread && thread.messages || {});
     var guide = entries.find(function (e) { return e[1] && e[1].kind === 'document'; });
     var files = entries.filter(function (e) { return e[1] && e[1].kind === 'file'; }).sort(function (a, b) { return a[1].createdAt - b[1].createdAt; });
     var panel = state.panel;
     if (panel && panel.mode === 'guide' && !guide) panel = null;
+    if (panel && panel.mode === 'guide' && guide) panel.id = guide[0];
     if (panel && panel.mode === 'files' && !files.length) panel = null;
     if (panel && panel.mode === 'message' && !(thread.messages || {})[panel.id]) panel = null;
+    if (panel && panel.mode === 'file-text' && !(thread.messages || {})[panel.id]) panel = null;
     var group = !!thread && thread.kind === 'group';
     if (panel && panel.mode === 'members' && !group) panel = null;
-    // Without a choice, show the guide, the members, the files, or a note.
-    if (!panel) panel = guide ? { mode: 'guide' } : group ? { mode: 'members' } : files.length ? { mode: 'files' } : null;
+    // Messages and guides stay collapsed until the reader chooses one.
+    if (!panel) panel = group ? { mode: 'members' } : null;
     state.panel = panel;
+    syncPreviewToggles();
     $('workspace').classList.toggle('msg-panel-open', !!state.panelOpen && !!thread);
     $('tab-guide').hidden = !guide; $('tab-files').hidden = !files.length; $('tab-members').hidden = !group;
     if (group) $('tab-members').textContent = 'Members (' + Object.keys(thread.members).length + ')';
@@ -236,13 +293,28 @@
     $('tab-guide').setAttribute('aria-pressed', String(!!panel && panel.mode === 'guide'));
     $('tab-files').setAttribute('aria-pressed', String(!!panel && panel.mode === 'files'));
     var actions = $('panel-actions'), body = $('panel-body');
+    disposePreview();
     actions.replaceChildren(); body.replaceChildren();
     if (!panel) {
       $('panel-title').textContent = 'Preview';
-      if (thread) body.appendChild(node('p', 'The shared guide, files, and long messages open here.', 'tool-note msg-panel-empty'));
+      if (thread) body.appendChild(node('p', 'Click a message to open its preview here. Click it again to close it.', 'tool-note msg-panel-empty'));
       return;
     }
     try {
+      if (panel.mode === 'file-text') {
+        $('panel-title').textContent = 'Text file preview';
+        if (window.MessagePreview) preview = window.MessagePreview.mount(body, panel.text);
+        else body.appendChild(node('pre', panel.text));
+        return;
+      }
+      if (panel.mode === 'draft') {
+        $('panel-title').textContent = 'Draft preview';
+        if (!editor || !editor.getText().trim()) { body.appendChild(node('p', 'Write or paste a message to preview it.', 'tool-note')); return; }
+        var draft = sourceBody(editor.getContents());
+        if (window.MessagePreview && !draft.ops.some(function (op) { return op.attributes && Object.keys(op.attributes).length; })) preview = window.MessagePreview.mount(body, window.MessagePreview.text(draft));
+        else body.appendChild(renderRich(draft));
+        return;
+      }
       if (panel.mode === 'members') { drawMembers(thread, body); return; }
       if (panel.mode === 'files') {
         $('panel-title').textContent = 'Files';
@@ -264,10 +336,11 @@
       if (message.kind !== 'agent' && (message.kind === 'document' || message.author === state.user.uid)) actions.appendChild(button('Edit', function () { startEdit(id, message); }));
       actions.appendChild(button('Download', function () {
         var text = format.normalize(JSON.parse(message.body)).ops.map(function (op) { return op.insert; }).join('');
-        downloadBytes(new TextEncoder().encode(text), panel.mode === 'guide' ? 'research-guide.txt' : 'message.txt');
+        downloadBytes(new TextEncoder().encode(text), isSource(message.body) ? 'message.md' : panel.mode === 'guide' ? 'research-guide.txt' : 'message.txt');
       }));
       body.appendChild(node('p', (message.revision > 1 ? 'Edited ' + when(message.updatedAt || message.createdAt) : when(message.createdAt)), 'tool-note'));
-      body.appendChild(renderRich(message.body));
+      if (isSource(message.body)) preview = window.MessagePreview.mount(body, window.MessagePreview.text(sourceBody(message.body)));
+      else body.appendChild(renderRich(message.body));
     } catch (error) {
       body.replaceChildren(node('p', 'This item contains unsupported formatting.', 'tool-note'));
     }
@@ -364,7 +437,7 @@
         format.normalize(JSON.parse(message.body));
         var chip = node('article', undefined, 'msg-card msg-chip');
         chip.appendChild(node('strong', 'Shared guide'));
-        chip.appendChild(button('Open guide', function () { showPanel({ mode: 'guide' }); }));
+        chip.appendChild(previewToggle('guide', messageId, 'Research guide'));
         feed.appendChild(chip); return;
       }
       var card = node('article', undefined, 'msg-card' + (mine ? ' msg-mine' : ''));
@@ -375,11 +448,12 @@
       time.dateTime = new Date(message.createdAt).toISOString(); head.appendChild(time);
       if (message.revision > 1) head.appendChild(node('span', 'edited'));
       var actions = node('span', undefined, 'msg-card-actions');
-      if (isLong(message.body)) actions.appendChild(button('Open', function () { showPanel({ mode: 'message', id: messageId }); }));
       if (message.kind !== 'agent' && mine) actions.appendChild(button('Edit', function () { startEdit(messageId, message); }));
       if (canDelete(message)) actions.appendChild(deleteButton(messageId));
       if (actions.childNodes.length) head.appendChild(actions);
-      card.appendChild(head); card.appendChild(renderRich(message.body)); feed.appendChild(card);
+      var text = sourceBody(message.body).ops.map(function (op) { return op.insert; }).join('').trim();
+      var summary = text.length > 240 ? text.slice(0, 240) + '…' : text;
+      card.appendChild(head); card.appendChild(previewToggle('message', messageId, summary)); feed.appendChild(card);
       } catch (error) {
         feed.appendChild(node('article', 'This message contains unsupported formatting. Other messages and conversation controls remain available.', 'msg-card'));
       }
@@ -402,6 +476,7 @@
     // Keep the newest message in view unless the reader has scrolled up.
     var list = $('feed'), stick = state.feedFresh || list.scrollHeight - list.scrollTop - list.clientHeight < 60, kept = list.scrollTop;
     list.replaceChildren(feed); list.dataset.empty = 'No messages yet.';
+    syncPreviewToggles();
     list.scrollTop = stick ? list.scrollHeight : kept;
     state.feedFresh = false;
     $('compose').hidden = !editor;
@@ -523,6 +598,19 @@
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); $('compose').requestSubmit(); }
       if (event.key === 'Escape' && state.editing) { event.preventDefault(); resetEditor(); }
     });
+    editor.on('text-change', function () {
+      if (!state.panel || state.panel.mode !== 'draft') return;
+      window.clearTimeout(previewTimer);
+      previewTimer = window.setTimeout(function () {
+        if (!state.thread || !state.panel || state.panel.mode !== 'draft') return;
+        try {
+          var draft = sourceBody(editor.getContents());
+          var plain = !draft.ops.some(function (op) { return op.attributes && Object.keys(op.attributes).length; });
+          if (preview && plain) preview.update(window.MessagePreview.text(draft));
+          else drawPanel(state.thread);
+        } catch (error) { drawPanel(state.thread); }
+      }, 300);
+    });
     document.querySelectorAll('#messages .ql-toolbar button').forEach(function (b) { var label = b.className.replace(/ql-/g, '').trim() + (b.value ? ' ' + b.value : ''); b.setAttribute('aria-label', label); b.title = label; });
     document.querySelectorAll('#messages .ql-toolbar select').forEach(function (s) { s.setAttribute('aria-label', s.className.replace(/ql-/g, '')); });
   } catch (error) { status('The editor could not load. You can still read your conversations.'); }
@@ -537,6 +625,11 @@
     run(function () { return call(input); }, function () { resetEditor(); status('Saved.'); });
   });
   $('cancel').addEventListener('click', resetEditor);
+  $('preview').addEventListener('click', function () {
+    if (state.busy) return;
+    if (state.panel && state.panel.mode === 'draft') closePanel();
+    else showPanel({ mode: 'draft' });
+  });
   function showAgentApproval() {
     $('agent-approval').hidden = !state.owner || !agentApproval || !state.thread;
     $('agent-reauth').hidden = !state.owner || !agentApproval || agentApproval.capability === 'research';
