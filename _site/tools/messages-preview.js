@@ -14,11 +14,12 @@
     frame.setAttribute('sandbox', 'allow-scripts');
     frame.setAttribute('referrerpolicy', 'no-referrer');
     frame.src = 'messages-preview-assets/public/frame.html?v=' + encodeURIComponent(window.MessagePreviewVersion || '1');
-    var note = document.createElement('p'); note.className = 'tool-note'; note.textContent = 'Loading local preview…'; note.setAttribute('role', 'status');
+    var note = document.createElement('p'); note.className = 'tool-note'; note.textContent = 'Loading local preview…'; note.setAttribute('role', 'status'); note.setAttribute('aria-live', 'polite');
     var ready = false, disposed = false, source = initialText, request = 0, timer;
     function fail() {
       if (disposed) return;
       disposed = true; window.clearTimeout(timer); window.removeEventListener('message', receive); frame.remove();
+      note.classList.remove('visually-hidden');
       note.textContent = 'Preview could not load. The original text is still available in the conversation.';
     }
     function send() {
@@ -32,7 +33,7 @@
     function receive(event) {
       if (disposed || event.source !== frame.contentWindow || event.origin !== 'null' || !event.data) return;
       if (event.data.type === 'preview-ready') { ready = true; send(); }
-      if (event.data.type === 'preview-done' && event.data.request === request) { window.clearTimeout(timer); note.textContent = 'Local preview. Links and remote images are inactive.'; }
+      if (event.data.type === 'preview-done' && event.data.request === request) { window.clearTimeout(timer); note.classList.add('visually-hidden'); note.textContent = 'Preview ready.'; }
     }
     window.addEventListener('message', receive);
     frame.addEventListener('error', fail);

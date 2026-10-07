@@ -7,7 +7,7 @@
   var format = window.MessageFormat;
   var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set(), feedFresh: false, autoOpened: false, panel: null, panelOpen: false, groupDraft: [] };
   var editor;
-  var researchTasks = window.MessageTasks ? window.MessageTasks.init({ context: function () { return state; }, call: call, run: run, status: status }) : null;
+  var researchTasks = window.MessageTasks ? window.MessageTasks.init({ context: function () { return state; }, call: call, run: run, status: status, update: function (task) { if (state.thread) { state.thread.researchTasks ||= {}; state.thread.researchTasks[task.taskId] = task; drawThread(state.thread); } } }) : null;
   var preview = null, previewTimer = null;
   function disposePreview() {
     window.clearTimeout(previewTimer);
@@ -127,6 +127,7 @@
     $('send').textContent = 'Send';
     $('cancel').hidden = true;
     $('agent-ask').hidden = !state.thread || !state.thread.agentReady;
+    assistantMode();
     if (state.panel && state.panel.mode === 'draft') { state.panel = null; drawPanel(state.thread); }
   }
   function downloadBytes(bytes, name) {
@@ -166,7 +167,8 @@
     }, function () { status(previewOnly ? 'Text preview opened locally.' : 'Download started.'); });
   }
   function clearThread() {
-    if (researchTasks) researchTasks.reset();
+    $('assistant-mode').checked = false;
+    $('assistant-mode-label').hidden = true; $('assistant-hint').hidden = true;
     if (state.threadRef) state.threadRef.off('value', state.threadCallback);
     window.clearTimeout(state.expiryTimer);
     state.threadRef = null; state.threadCallback = null;
@@ -237,6 +239,7 @@
     $('editing').textContent = message.kind === 'document' ? 'Edit the shared guide' : 'Edit your message';
     $('send').textContent = 'Save changes'; $('cancel').hidden = false;
     $('agent-ask').hidden = true;
+    assistantMode();
     editor.focus(); $('compose').scrollIntoView({ block: 'nearest' });
   }
   // The preview panel is always present beside the chat on wide screens.
@@ -296,6 +299,7 @@
     $('tab-guide').setAttribute('aria-pressed', String(!!panel && panel.mode === 'guide'));
     $('tab-files').setAttribute('aria-pressed', String(!!panel && panel.mode === 'files'));
     var actions = $('panel-actions'), body = $('panel-body');
+    $('panel-meta').textContent = '';
     disposePreview();
     actions.replaceChildren(); body.replaceChildren();
     if (!panel) {
@@ -341,7 +345,7 @@
         var text = format.normalize(JSON.parse(message.body)).ops.map(function (op) { return op.insert; }).join('');
         downloadBytes(new TextEncoder().encode(text), isSource(message.body) ? 'message.md' : panel.mode === 'guide' ? 'research-guide.txt' : 'message.txt');
       }));
-      body.appendChild(node('p', (message.revision > 1 ? 'Edited ' + when(message.updatedAt || message.createdAt) : when(message.createdAt)), 'tool-note'));
+      $('panel-meta').textContent = message.revision > 1 ? 'Edited ' + when(message.updatedAt || message.createdAt) : when(message.createdAt);
       if (isSource(message.body)) preview = window.MessagePreview.mount(body, window.MessagePreview.text(sourceBody(message.body)));
       else body.appendChild(renderRich(message.body));
     } catch (error) {
@@ -418,11 +422,13 @@
     if (!thread || !thread.members || thread.members[state.user.uid] !== true || !Number.isFinite(thread.expiresAt) || thread.expiresAt <= Date.now()
         || typeof thread.title !== 'string' || thread.title.length > 120 || !thread.names || Object.keys(thread.messages || {}).length > 100) throw new Error('Invalid conversation.');
     var feed = document.createDocumentFragment();
-    Object.entries(thread.messages || {}).sort(function (a, b) {
+    var entries = Object.entries(thread.messages || {}).concat(Object.entries(thread.researchTasks || {}).slice(0, 20).map(function (e) { return [e[0], { createdAt: e[1].createdAt, record: e[1] }, true]; }));
+    entries.sort(function (a, b) {
       return (a[1].kind === 'document' ? 0 : 1) - (b[1].kind === 'document' ? 0 : 1) || a[1].createdAt - b[1].createdAt;
     }).forEach(function (entry) {
       try {
       var messageId = entry[0], message = entry[1];
+      if (entry[2] === true) { if (researchTasks && message.record.taskId === messageId) { var taskCard = researchTasks.card(message.record, thread); if (taskCard) feed.appendChild(taskCard); } return; }
       if (message && message.kind === 'file') {
         checkFile(messageId, message);
         var attachment = node('article', undefined, 'msg-card msg-file' + (message.author === state.user.uid ? ' msg-mine' : ''));
@@ -462,7 +468,6 @@
       }
     });
     state.thread = thread;
-    if (researchTasks) researchTasks.draw(thread);
     var maximum = Number.isSafeInteger(thread.agentRequestLimit) && thread.agentRequestLimit >= 1 && thread.agentRequestLimit <= 50 ? thread.agentRequestLimit : 5;
     // The assistant line appears only once an assistant is connected.
     $('agent').hidden = !thread.agentReady;
@@ -473,6 +478,9 @@
     $('agent-info').textContent = (thread.agentReady ? 'Connected. ' : 'An assistant has not been connected yet. ') + 'Maximum ' + maximum + ' requests per person in any three hours. Requests expire after 24 hours. When event delivery is connected, notifications may take five minutes.';
     $('agent-revoke').hidden = !thread.agentGrantId;
     $('agent-ask').hidden = !thread.agentReady || !!state.editing;
+    $('assistant-mode-label').hidden = !thread.agentReady || thread.kind === 'group';
+    if (!thread.agentReady) $('assistant-mode').checked = false;
+    assistantMode();
     showAgentApproval();
     drawPanel(thread);
     $('thread-title').textContent = thread.title;
@@ -622,10 +630,6 @@
     return !state.editing && editor && editor.getText().trim().toLowerCase() === '/bill'
       && editor.getContents().ops.every(function (op) { return !op.attributes || !Object.keys(op.attributes).length; });
   }
-  function tasksCommand() {
-    return !state.editing && editor && editor.getText().trim().toLowerCase() === '/tasks'
-      && editor.getContents().ops.every(function (op) { return !op.attributes || !Object.keys(op.attributes).length; });
-  }
   function showBill(result) {
     var content = document.createDocumentFragment();
     var head = node('header');
@@ -666,14 +670,14 @@
     // AWS API request is created by typing this command.
     run(function () { return call({ action: 'bill', threadId: threadId }); }, function (result) {
       if (epoch !== state.epoch || state.threadId !== threadId) return;
-      showBill(result); resetEditor(); status('Cost report shown only to you.');
+      showBill(result); resetEditor(); status('Research costs loaded. Every conversation member can use /bill.');
     });
   }
   $('compose').addEventListener('submit', function (event) {
     event.preventDefault();
     if (!editor || !state.threadId || !state.user || state.busy) return;
     if (billCommand()) { requestBill(); return; }
-    if (tasksCommand() && researchTasks) { researchTasks.open(); resetEditor(); return; }
+    if (!state.editing && $('assistant-mode').checked) { askAssistant(); return; }
     var body;
     try { body = format.normalize(editor.getContents()); }
     catch (error) { status(error.message); return; }
@@ -779,16 +783,23 @@
       window.location.assign(redirect.href);
     });
   });
-  $('agent-ask').addEventListener('click', function () {
+  function assistantMode() {
+    var on = $('assistant-mode').checked && !!state.thread?.agentReady && !state.editing;
+    $('send').textContent = state.editing ? 'Save changes' : on ? 'Send to assistant' : 'Send';
+    $('assistant-hint').hidden = !on;
+    if (on) $('assistant-hint').textContent = 'Queues a request with the shared guide and up to six recent messages. Approval appears here before an action. ' + (state.thread.agentRequestLimit || 5) + ' requests per person in three hours. Processing waits for the connected assistant.';
+  }
+  $('assistant-mode').addEventListener('change', assistantMode);
+  function askAssistant() {
     if (!editor || !state.threadId || !state.user || state.editing || !state.thread?.agentReady) return;
     if (billCommand()) { requestBill(); return; }
-    if (tasksCommand() && researchTasks) { researchTasks.open(); resetEditor(); return; }
     var text = editor.getText().trim();
     if (!text || text.length > 4000) { status('Write a research question of up to 4,000 characters.'); return; }
     if (!agentRequest || agentRequest.text !== text || agentRequest.threadId !== state.threadId) agentRequest = { text: text, threadId: state.threadId, requestId: Array.from(window.crypto.getRandomValues(new Uint8Array(16)), function (b) { return b.toString(16).padStart(2, '0'); }).join('') };
     var input = Object.assign({ action: 'request' }, agentRequest);
     run(function () { return call(input, 'messageAgents'); }, function (data) { if (data.queued !== true) throw new Error('Request not queued.'); resetEditor(); status('Research request queued. The connected assistant will reply when available.'); });
-  });
+  }
+  $('agent-ask').addEventListener('click', askAssistant);
   $('upload-form').addEventListener('submit', function (event) {
     event.preventDefault();
     if (!state.threadId || !state.user || state.busy) return;
@@ -870,21 +881,24 @@
   document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && state.panelOpen && !state.editing) closePanel(); });
   // Drag or arrow keys move the split between the chat and the preview.
   // The share is a per-viewer convenience kept in this browser only.
-  var split = $('split'), SPLIT_KEY = 'messages-preview-share';
+  var split = $('split'), SPLIT_KEY = 'messages-preview-share-v2';
   function setShare(share, save) {
-    share = Math.min(0.75, Math.max(0.25, share));
-    $('workspace').style.setProperty('--msg-preview-share', String(share));
+    if (!Number.isFinite(share)) return;
+    share = Math.min(0.9, Math.max(0.25, share));
+    $('workspace').style.setProperty('--msg-preview-width', 'calc((100% - 287.5px) * ' + share + ')');
     split.setAttribute('aria-valuenow', String(Math.round(share * 100)));
     if (save) { try { window.localStorage.setItem(SPLIT_KEY, String(share)); } catch (error) { /* storage unavailable */ } }
   }
   try { var saved = Number(window.localStorage.getItem(SPLIT_KEY)); if (saved) setShare(saved, false); } catch (error) { /* storage unavailable */ }
   split.addEventListener('pointerdown', function (event) {
+    var left = $('workspace').querySelector('.msg-conversation').getBoundingClientRect().left, right = $('panel').getBoundingClientRect().right;
+    setShare($('panel').getBoundingClientRect().width / (right - left - 7), false);
     event.preventDefault(); split.setPointerCapture(event.pointerId); split.classList.add('msg-dragging');
   });
   split.addEventListener('pointermove', function (event) {
     if (!split.hasPointerCapture(event.pointerId)) return;
     var left = $('workspace').querySelector('.msg-conversation').getBoundingClientRect().left, right = $('panel').getBoundingClientRect().right;
-    setShare((right - event.clientX) / (right - left), false);
+    setShare((right - event.clientX) / (right - left - 7), false);
   });
   function endDrag(event) {
     if (!split.hasPointerCapture(event.pointerId)) return;
