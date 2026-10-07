@@ -14,6 +14,7 @@
     state.pending = null;
     if ($('confirm').open) $('confirm').close();
     $('confirm-text').textContent = '';
+    $('confirm-note').textContent = '';
     $('rows').replaceChildren(); $('stats').replaceChildren(); $('summary').textContent = ''; $('query').value = ''; $('panel').hidden = true;
   }
   async function call(data) {
@@ -31,6 +32,7 @@
     try { var value = await action(); if (epoch === state.epoch) done(value); }
     catch (error) { if (epoch === state.epoch) {
       if (/permission|unauthenticated/.test(error.code || '')) { clearPrivate(); message('Administrator access is required. Sign in to the correct account.'); }
+      else if (/aborted/.test(error.code || '')) message('Knowledge permissions changed. Refresh the directory before trying again.');
       else message('The request could not be completed. No success was confirmed. Check access and try again.');
     } }
     finally { if (epoch === state.epoch) { state.busy = false; controls(); } }
@@ -38,8 +40,9 @@
   function actionButton(label, action, account) {
     var button = node('button', label, 'tool-button'); button.type = 'button';
     button.addEventListener('click', function () {
-      state.pending = { action: action, uid: account.uid };
+      state.pending = action === 'knowledge-access' ? { action: action, uid: account.uid, enabled: !account.knowledgeAllowed, version: account.knowledgeVersion } : { action: action, uid: account.uid };
       $('confirm-text').textContent = label + ' for ' + (account.email || account.handle || account.uid) + '?';
+      $('confirm-note').textContent = action === 'knowledge-access' ? (account.knowledgeAllowed ? 'Revoking blocks subsequent knowledge requests. Granting again requires a new connection. Previously delivered text cannot be recalled.' : 'This permits read-only retrieval from the entire shared knowledge library, including indexed notes and reference materials. It grants no account administration, research execution, shell access, or source editing. The shared search service still needs to be connected.') : 'Administrator accounts are protected. Disabling blocks new sign-ins and private website access. Revoking ends the current sessions; an enabled account can sign in again. Existing services that validate old tokens independently can take up to one hour to recognize revocation. Public tools remain public.';
       $('confirm').showModal();
     }); return button;
   }
@@ -53,10 +56,15 @@
     var rows = document.createDocumentFragment();
     data.rows.forEach(function (account) {
       if (!account || typeof account.uid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(account.uid) || ['name', 'email', 'handle'].some(function (k) { return typeof account[k] !== 'string' || account[k].length > 1000; }) || typeof account.disabled !== 'boolean' || typeof account.protected !== 'boolean' || !Number.isSafeInteger(account.count) || account.count < 0 || !Number.isFinite(account.lastSignInAt) || !Number.isFinite(account.createdAt)) throw new Error('Invalid account.');
+      if (typeof account.knowledgeAllowed !== 'boolean' || typeof account.knowledgeVersion !== 'string' || !/^(?:[a-f0-9]{32}|owner)?$/.test(account.knowledgeVersion)) throw new Error('Invalid knowledge permission.');
       var tr = node('tr'), who = node('td');
       [account.name || 'Unnamed', account.email, account.handle ? '@' + account.handle : '', account.uid].filter(Boolean).forEach(function (value, index) { var field = node('span', value); field.dir = index === 0 ? 'auto' : 'ltr'; who.appendChild(field); });
       tr.appendChild(who); tr.appendChild(node('td', account.protected ? 'Administrator' : account.disabled ? 'Disabled' : 'Enabled'));
       tr.appendChild(node('td', date(account.lastSignInAt))); tr.appendChild(node('td', String(account.count))); tr.appendChild(node('td', date(account.createdAt)));
+      var knowledge = node('td');
+      knowledge.appendChild(node('span', account.protected ? 'Owner access' : account.knowledgeAllowed ? 'Allowed' : 'Not granted'));
+      if (!account.protected && (!account.disabled || account.knowledgeAllowed)) knowledge.appendChild(actionButton(account.knowledgeAllowed ? 'Revoke knowledge access' : 'Grant knowledge access', 'knowledge-access', account));
+      tr.appendChild(knowledge);
       var actions = node('td');
       if (!account.protected) { actions.appendChild(actionButton(account.disabled ? 'Enable' : 'Disable', account.disabled ? 'enable' : 'disable', account)); actions.appendChild(actionButton('Revoke sessions', 'revoke', account)); }
       tr.appendChild(actions); rows.appendChild(tr);
