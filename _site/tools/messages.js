@@ -475,7 +475,7 @@
     if (document.activeElement !== $('agent-limit')) $('agent-limit').value = String(maximum);
     $('agent-title').textContent = 'Research assistant · ' + (thread.agentReady ? 'connected' : 'not connected');
     $('private-access').hidden = !state.owner || thread.kind === 'group';
-    $('agent-info').textContent = (thread.agentReady ? 'Connected. ' : 'An assistant has not been connected yet. ') + 'Maximum ' + maximum + ' requests per person in any three hours. Requests expire after 24 hours. When event delivery is connected, notifications may take five minutes.';
+    $('agent-info').textContent = (thread.agentReady ? 'Connected. ' : 'An assistant has not been connected yet. ') + 'Maximum ' + maximum + ' requests per person in any three hours. New requests expire after 48 hours. When event delivery is connected, notifications may take five minutes. You can also ask the connected assistant to process pending requests.';
     $('agent-revoke').hidden = !thread.agentGrantId;
     $('agent-ask').hidden = !thread.agentReady || !!state.editing;
     $('assistant-mode-label').hidden = !thread.agentReady || thread.kind === 'group';
