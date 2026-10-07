@@ -172,6 +172,7 @@
     state.urls.forEach(function (url) { URL.revokeObjectURL(url); }); state.urls.clear();
     $('file').value = ''; $('file-pass').value = ''; $('file-encrypt').checked = true; toggle('files', 'attach-toggle', false);
     $('feed').replaceChildren(); $('feed').dataset.empty = 'Choose a conversation from the list.';
+    $('bill').replaceChildren(); $('bill').hidden = true;
     $('thread-title').textContent = 'Select a conversation';
     $('expiry').textContent = '';
     $('compose').hidden = true; $('delete').hidden = true; $('confirm-delete').hidden = true;
@@ -614,9 +615,56 @@
     document.querySelectorAll('#messages .ql-toolbar button').forEach(function (b) { var label = b.className.replace(/ql-/g, '').trim() + (b.value ? ' ' + b.value : ''); b.setAttribute('aria-label', label); b.title = label; });
     document.querySelectorAll('#messages .ql-toolbar select').forEach(function (s) { s.setAttribute('aria-label', s.className.replace(/ql-/g, '')); });
   } catch (error) { status('The editor could not load. You can still read your conversations.'); }
+  function billCommand() {
+    return !state.editing && editor && editor.getText().trim().toLowerCase() === '/bill'
+      && editor.getContents().ops.every(function (op) { return !op.attributes || !Object.keys(op.attributes).length; });
+  }
+  function showBill(result) {
+    var content = document.createDocumentFragment();
+    var head = node('header');
+    head.appendChild(node('strong', 'Research costs · /bill'));
+    head.appendChild(button('Close', function () { $('bill').hidden = true; $('bill').replaceChildren(); }));
+    content.appendChild(head);
+    if (result.available === false) {
+      content.appendChild(node('p', 'A research cost report has not been linked to this conversation. Ask the site owner to connect it. No amount is available yet.'));
+    } else {
+      // Never render remote markup or treat a missing amount as zero.
+      var amount = /^-?(?:0|[1-9]\d{0,6})(?:\.\d{1,10})?$/;
+      if (result.available !== true || typeof result.project !== 'string' || result.project.length > 80
+          || typeof result.totalUsd !== 'string' || !amount.test(result.totalUsd)
+          || !Number.isSafeInteger(result.updatedAt) || typeof result.estimated !== 'boolean' || typeof result.stale !== 'boolean'
+          || !/^\d{4}-\d{2}-\d{2}$/.test(result.start || '') || !/^\d{4}-\d{2}-\d{2}$/.test(result.end || '')
+          || !Array.isArray(result.services) || result.services.length > 40) throw new Error('Invalid cost report.');
+      function money(usd) {
+        var n = Number(usd);
+        return n > 0 && n < 0.0001 ? '< $0.0001' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(n);
+      }
+      content.appendChild(node('p', result.project + ' · Total reported cost ' + money(result.totalUsd)));
+      content.appendChild(node('p', 'Period ' + result.start + ' through ' + result.end + ' (end date excluded, UTC). Updated ' + when(result.updatedAt) + '.', 'tool-note'));
+      var list = node('ul');
+      result.services.forEach(function (service) {
+        if (!service || typeof service.name !== 'string' || service.name.length > 100 || typeof service.usd !== 'string' || !amount.test(service.usd)) throw new Error('Invalid cost report.');
+        list.appendChild(node('li', service.name + ' · ' + money(service.usd)));
+      });
+      content.appendChild(list);
+      content.appendChild(node('p', (result.stale ? 'This report is older than 36 hours. ' : '') + (result.estimated ? 'AWS marks these charges as estimated. ' : '') + 'Billing can lag by 24 hours or more. Costs exclude credits, refunds, and tax. This is not a final invoice or an amount you owe.', 'tool-note'));
+    }
+    $('bill').replaceChildren(content); $('bill').hidden = false;
+  }
+  function requestBill() {
+    var threadId = state.threadId, epoch = state.epoch;
+    $('bill').replaceChildren(); $('bill').hidden = true;
+    // Only the authenticated billing action runs. No message, AI request, or
+    // AWS API request is created by typing this command.
+    run(function () { return call({ action: 'bill', threadId: threadId }); }, function (result) {
+      if (epoch !== state.epoch || state.threadId !== threadId) return;
+      showBill(result); resetEditor(); status('Cost report shown only to you.');
+    });
+  }
   $('compose').addEventListener('submit', function (event) {
     event.preventDefault();
     if (!editor || !state.threadId || !state.user || state.busy) return;
+    if (billCommand()) { requestBill(); return; }
     var body;
     try { body = format.normalize(editor.getContents()); }
     catch (error) { status(error.message); return; }
@@ -723,6 +771,7 @@
   });
   $('agent-ask').addEventListener('click', function () {
     if (!editor || !state.threadId || !state.user || state.editing || !state.thread?.agentReady) return;
+    if (billCommand()) { requestBill(); return; }
     var text = editor.getText().trim();
     if (!text || text.length > 4000) { status('Write a research question of up to 4,000 characters.'); return; }
     if (!agentRequest || agentRequest.text !== text || agentRequest.threadId !== state.threadId) agentRequest = { text: text, threadId: state.threadId, requestId: Array.from(window.crypto.getRandomValues(new Uint8Array(16)), function (b) { return b.toString(16).padStart(2, '0'); }).join('') };
