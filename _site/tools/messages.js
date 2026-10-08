@@ -75,8 +75,9 @@
   });
   var editor;
   var stagedFile = null;
-  // Shared reaction counts require authenticated live data, beyond Quarto's
-  // static rendering. The picker itself uses native disclosure and buttons.
+  // Reactions release 2026-10-08. Shared counts require authenticated live
+  // data, beyond Quarto's static rendering. The picker uses native disclosure
+  // and buttons. Keep these six IDs in sync with the server allowlist.
   var REACTIONS = [
     ['thumbs-up', '👍', 'Thumbs up'], ['star', '⭐', 'Star'],
     ['heart', '❤️', 'Heart'], ['laugh', '😂', 'Laugh'],
