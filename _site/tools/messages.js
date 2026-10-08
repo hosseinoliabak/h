@@ -542,6 +542,24 @@
       leave.classList.add('msg-leave'); body.appendChild(leave);
     }
   }
+  // Quarto renders the shell. Private request receipts depend on the current
+  // authenticated conversation and therefore use this existing controller.
+  function requestReceipt(thread, messageId, message) {
+    var job = thread.agentJobs && thread.agentJobs[messageId], now = Date.now();
+    if ((!job && message.assistantRequest !== true) || message.kind !== 'message') return null;
+    var text;
+    if (!job && Number.isSafeInteger(message.assistantAnsweredAt) && message.assistantAnsweredAt >= message.createdAt) text = 'Answered in this conversation.';
+    else if (!job) text = 'Assistant request expired. Send a new request if you still need help.';
+    else if (job.requester !== message.author || !Number.isSafeInteger(job.createdAt) || !Number.isSafeInteger(job.expiresAt) || !['pending', 'done'].includes(job.state)) text = 'Assistant request status is unavailable.';
+    else if (job.state === 'done') text = 'Answered in this conversation.';
+    else if (job.expiresAt <= now) text = 'Assistant request expired. Send a new request if you still need help.';
+    else if (!thread.agentReady || job.grantId !== thread.agentGrantId) text = 'Assistant connection changed. Ask the owner to reconnect before sending a new request.';
+    else if (Number.isSafeInteger(job.firstReadAt) && job.firstReadAt >= job.createdAt) text = 'Opened by the assistant ' + when(job.firstReadAt) + '. Awaiting a reply here.';
+    else text = 'Received. Your request is queued for the assistant. Updates will appear here when it responds.';
+    var receipt = node('p', text, 'msg-request-status');
+    receipt.setAttribute('role', 'status');
+    return receipt;
+  }
   function drawThread(thread) {
     if (!thread || !thread.members || thread.members[state.user.uid] !== true || !Number.isFinite(thread.expiresAt) || thread.expiresAt <= Date.now()
         || typeof thread.title !== 'string' || thread.title.length > 120 || !thread.names || Object.keys(thread.messages || {}).length > 100) throw new Error('Invalid conversation.');
@@ -586,7 +604,10 @@
       if (actions.childNodes.length) head.appendChild(actions);
       var text = sourceBody(message.body).ops.map(function (op) { return op.insert; }).join('').trim();
       var summary = text.length > 240 ? text.slice(0, 240) + '…' : text;
-      card.appendChild(head); card.appendChild(previewToggle('message', messageId, summary)); feed.appendChild(card);
+      card.appendChild(head); card.appendChild(previewToggle('message', messageId, summary));
+      var receipt = requestReceipt(thread, messageId, message);
+      if (receipt) card.appendChild(receipt);
+      feed.appendChild(card);
       } catch (error) {
         feed.appendChild(node('article', 'This message contains unsupported formatting. Other messages and conversation controls remain available.', 'msg-card'));
       }
@@ -600,7 +621,7 @@
     if (document.activeElement !== $('agent-limit')) $('agent-limit').value = String(maximum);
     $('agent-title').textContent = 'Research assistant · ' + (thread.agentReady ? 'connected' : 'not connected');
     $('private-access').hidden = !state.owner || thread.kind === 'group';
-    $('agent-info').textContent = (thread.agentReady ? 'Connected. ' : 'An assistant has not been connected yet. ') + 'Maximum ' + maximum + ' requests per person in any three hours. New requests expire after 48 hours. When event delivery is connected, notifications may take five minutes. You can also ask the connected assistant to process pending requests.';
+    $('agent-info').textContent = (thread.agentReady ? 'Connected. ' : 'An assistant has not been connected yet. ') + 'Maximum ' + maximum + ' requests per person in any three hours. Requests expire after 48 hours. Each request shows its receipt and answer status in the chat. A connection alone does not start automatic processing. You can ask the connected assistant to process pending requests.';
     $('agent-revoke').hidden = !thread.agentGrantId;
     $('agent-ask').hidden = !thread.agentReady || !!state.editing;
     $('assistant-mode-label').hidden = !thread.agentReady || thread.kind === 'group';
@@ -624,6 +645,9 @@
     var nextExpiry = Object.values(thread.researchTasks || {}).reduce(function (next, job) {
       return [job.expiresAt, job.plan && job.plan.quote && job.plan.quote.expiresAt].reduce(function (time, expiry) { return Number.isSafeInteger(expiry) && expiry > Date.now() ? Math.min(time, expiry) : time; }, next);
     }, thread.expiresAt);
+    Object.values(thread.agentJobs || {}).forEach(function (job) {
+      if (job.state === 'pending' && Number.isSafeInteger(job.expiresAt) && job.expiresAt > Date.now()) nextExpiry = Math.min(nextExpiry, job.expiresAt);
+    });
     state.expiryTimer = window.setTimeout(function () {
       if (state.thread && state.thread.expiresAt <= Date.now()) { clearThread(); status('This conversation has expired.'); }
       else if (state.thread) drawThread(state.thread);
