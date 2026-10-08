@@ -9,6 +9,7 @@
   var editor;
   var stagedFile = null;
   function clearFile() {
+    status('');
     stagedFile = null; $('file').value = '';
     $('file-name').textContent = ''; $('file-staged').hidden = true;
   }
@@ -17,6 +18,7 @@
     if (!file || file.size < 1 || file.size > window.MessageFileFormat.MAX_BYTES) {
       clearFile(); status('Choose a file between 1 byte and 7 MiB.'); return;
     }
+    status('');
     stagedFile = file;
     // Treat images as opaque downloadable files. No uploaded image is decoded
     // or injected into Quill, HTML, or a preview based on its claimed MIME.
@@ -112,7 +114,9 @@
   }
   function sourceBody(body) { return format.normalize(typeof body === 'string' ? JSON.parse(body) : body); }
   function isSource(body) { return !!window.MessagePreview && window.MessagePreview.isSource(sourceBody(body)); }
-  var agentApproval = null, agentRequest = null;
+  var agentApproval = null, agentRequest = null, agentApprovalTimer = null, agentNeedsReauth = false, agentReauthPending = false;
+  var privateConnectionTimer = null;
+  var statusTimer = null;
   var agentNonce = new URL(window.location.href).searchParams.get('mcp_request');
   if (!/^[a-f0-9]{32}$/.test(agentNonce || '')) agentNonce = null;
   function $(id) { return document.getElementById('msg-' + id); }
@@ -122,7 +126,13 @@
     if (className) element.className = className;
     return element;
   }
-  function status(text) { $('status').textContent = text; }
+  function status(text, transient) {
+    window.clearTimeout(statusTimer);
+    $('status').textContent = text;
+    // Receipts expire; failures and instructions remain until resolved or the
+    // context changes. A newer status always cancels the previous timer.
+    if (text && transient === true) statusTimer = window.setTimeout(function () { $('status').textContent = ''; }, 8000);
+  }
   function button(text, action) {
     var result = node('button', text, 'tool-button');
     result.type = 'button';
@@ -158,19 +168,32 @@
     if (!result || !result.data || typeof result.data !== 'object') throw new Error('Invalid response.');
     return result.data;
   }
-  async function run(action, success) {
+  async function run(action, success, progress) {
     if (state.busy) return;
-    var epoch = state.epoch;
+    var epoch = state.epoch, threadId = state.threadId;
     state.busy = true;
+    status(progress || '');
     $('file').disabled = true;
-    document.querySelectorAll('#messages button').forEach(function (b) { b.disabled = true; });
-    try { var result = await action(); if (epoch === state.epoch) { if (success) success(result); } }
-    catch (error) { if (epoch === state.epoch) status(readableError(error)); }
+    // Notification controls have their own asynchronous state machine. Do not
+    // overwrite their disabled state when an unrelated chat operation ends.
+    var controls = new Map();
+    document.querySelectorAll('#messages button:not(#msg-push-toggle):not(#msg-push-all)').forEach(function (b) { controls.set(b, b.disabled); b.disabled = true; });
+    try {
+      var result = await action();
+      if (epoch === state.epoch && threadId === state.threadId && success) success(result);
+    }
+    catch (error) {
+      if (epoch === state.epoch && threadId === state.threadId) {
+        if (error && error.details && error.details.reason === 'recent-login-required' && agentApproval) { agentNeedsReauth = true; showAgentApproval(); }
+        status(readableError(error));
+      }
+    }
     finally {
       if (epoch === state.epoch) {
         state.busy = false;
         $('file').disabled = false;
-        document.querySelectorAll('#messages button').forEach(function (b) { b.disabled = false; });
+        controls.forEach(function (disabled, b) { if (b.isConnected) b.disabled = disabled; });
+        showAgentApproval();
       }
     }
   }
@@ -262,9 +285,10 @@
         }
       }
       finally { decoded.bytes.fill(0); }
-    }, function () { status(previewOnly ? 'Text preview opened locally.' : 'Download started.'); });
+    }, function () { status(previewOnly ? 'Text preview opened locally.' : 'Download started.', true); });
   }
   function clearThread() {
+    status('');
     window.clearTimeout(readTimer); readGeneration += 1; readPending = false; readAttempt = '';
     $('assistant-mode').checked = false;
     $('assistant-mode-label').hidden = true; $('assistant-hint').hidden = true;
@@ -281,8 +305,10 @@
     $('compose').hidden = true; $('delete').hidden = true; $('confirm-delete').hidden = true;
     markCurrent();
     state.panel = null; closePanel(); drawPanel(null);
-    $('private-access').hidden = true; $('private-connections').replaceChildren();
+    window.clearTimeout(privateConnectionTimer);
+    $('private-access').hidden = true; $('private-access').open = false; $('private-connections').replaceChildren();
     $('agent').hidden = true; $('agent-ask').hidden = true; $('agent-info').textContent = ''; $('agent-client').textContent = ''; $('agent-limit').value = '5';
+    showAgentApproval();
     resetEditor();
   }
   function checkFile(messageId, message) {
@@ -312,7 +338,7 @@
       window.clearTimeout(armed); armed = null;
       if (state.editing && state.editing.messageId === messageId) resetEditor();
       var threadId = state.threadId;
-      run(function () { return call({ action: 'remove', threadId: threadId, messageId: messageId }); }, function () { status('Message deleted.'); });
+      run(function () { return call({ action: 'remove', threadId: threadId, messageId: messageId }); }, function () { status('Message deleted.', true); });
     });
     result.classList.add('msg-delete');
     return result;
@@ -475,7 +501,7 @@
       var item = node('li'), name = thread.names[uid];
       item.appendChild(node('span', (typeof name === 'string' ? name.slice(0, 80) : 'Member') + (uid === state.user.uid ? ' (you)' : '')));
       if (uid === thread.createdBy) item.appendChild(node('span', 'creator', 'tool-note'));
-      else if (creator) item.appendChild(confirmButton('Remove', 'Confirm remove', function () { groupCall({ action: 'kick', peerUid: uid }, function () { status('Removed from the group.'); }); }));
+      else if (creator) item.appendChild(confirmButton('Remove', 'Confirm remove', function () { groupCall({ action: 'kick', peerUid: uid }, function () { status('Removed from the group.', true); }); }));
       list.appendChild(item);
     });
     body.appendChild(list);
@@ -496,7 +522,7 @@
           var person = found.users[0];
           if (!person || !/^[A-Za-z0-9_-]{1,128}$/.test(person.uid || '')) throw new Error('Invalid person.');
           return call({ action: 'add', threadId: threadId, peerUid: person.uid });
-        }, function (result) { status(result && result.missing ? 'No exact match.' : 'Added to the group.'); });
+        }, function (result) { status(result && result.missing ? 'No exact match.' : 'Added to the group.', true); });
       });
       body.appendChild(add);
       var rename = node('form', undefined, 'msg-group-manage');
@@ -507,12 +533,12 @@
       row2.appendChild(title); row2.appendChild(save); rename.appendChild(row2);
       rename.addEventListener('submit', function (event) {
         event.preventDefault();
-        if (title.value.trim()) groupCall({ action: 'rename', title: title.value.trim() }, function () { status('Group renamed.'); });
+        if (title.value.trim()) groupCall({ action: 'rename', title: title.value.trim() }, function () { status('Group renamed.', true); });
       });
       body.appendChild(rename);
       body.appendChild(node('p', 'Up to 10 members. To close the group for everyone, use Delete.', 'tool-note'));
     } else {
-      var leave = confirmButton('Leave group', 'Confirm leave', function () { groupCall({ action: 'leave' }, function () { status('You left the group.'); }); });
+      var leave = confirmButton('Leave group', 'Confirm leave', function () { groupCall({ action: 'leave' }, function () { status('You left the group.', true); }); });
       leave.classList.add('msg-leave'); body.appendChild(leave);
     }
   }
@@ -595,10 +621,13 @@
     if (!editor && window.MessageFiles) $('files').hidden = false;
     $('delete').hidden = !state.owner && thread.createdBy !== state.user.uid;
     window.clearTimeout(state.expiryTimer);
+    var nextExpiry = Object.values(thread.researchTasks || {}).reduce(function (next, job) {
+      return [job.expiresAt, job.plan && job.plan.quote && job.plan.quote.expiresAt].reduce(function (time, expiry) { return Number.isSafeInteger(expiry) && expiry > Date.now() ? Math.min(time, expiry) : time; }, next);
+    }, thread.expiresAt);
     state.expiryTimer = window.setTimeout(function () {
       if (state.thread && state.thread.expiresAt <= Date.now()) { clearThread(); status('This conversation has expired.'); }
       else if (state.thread) drawThread(state.thread);
-    }, Math.min(2147483647, Math.max(1, thread.expiresAt - Date.now())));
+    }, Math.min(2147483647, Math.max(1, nextExpiry - Date.now())));
   }
   function openThread(threadId) {
     if (state.busy || !/^[a-f0-9]{32}$/.test(threadId) || !state.user) return;
@@ -665,12 +694,11 @@
     inboxValues = {}; notificationReady = false; knownUnread.clear(); dismissNotice(); document.title = pageTitle; $('unread-total').hidden = true;
     clearThread(); state.user = user; state.owner = false; state.busy = false; state.autoOpened = false;
     if (push) push.onUser(user);
-    agentApproval = null;
+    agentApproval = null; agentNeedsReauth = false; agentReauthPending = false; window.clearTimeout(agentApprovalTimer); showAgentApproval();
     $('inbox').replaceChildren(); $('people').replaceChildren(); $('name').value = ''; $('identity').textContent = ''; $('find').value = '';
-    document.querySelectorAll('#messages button').forEach(function (b) { b.disabled = false; });
+    document.querySelectorAll('#messages button:not(#msg-push-toggle):not(#msg-push-all)').forEach(function (b) { b.disabled = false; });
     $('login').hidden = !!user; $('workspace').hidden = true; toggle('owner', 'new', false); $('profile').hidden = true; $('profile').open = false;
     if (!user) { status(''); return; }
-    status('Loading…');
     await run(function () { return call({ action: 'bootstrap' }); }, function (data) {
       if (typeof data.isOwner !== 'boolean' || !data.profile || data.profile.uid !== state.user.uid || typeof data.profile.name !== 'string' || typeof data.profile.email !== 'string' || typeof data.profile.handle !== 'string') throw new Error('Invalid profile.');
       state.owner = data.isOwner;
@@ -681,7 +709,7 @@
       profileSummary();
       status(''); watchInbox();
       if (state.owner && agentNonce) loadAgentApproval();
-    });
+    }, 'Loading…');
   }
   try {
     if (!window.Quill || !format) throw new Error('Editor unavailable.');
@@ -829,7 +857,7 @@
     // AWS API request is created by typing this command.
     run(function () { return call({ action: 'bill', threadId: threadId }); }, function (result) {
       if (epoch !== state.epoch || state.threadId !== threadId || generation !== billEpoch) return;
-      showBill(result); resetEditor(); status('Research costs loaded. Every conversation member can use /bill.');
+      showBill(result); resetEditor(); status('Research costs loaded. Every conversation member can use /bill.', true);
     });
   }
   $('compose').addEventListener('submit', function (event) {
@@ -842,21 +870,29 @@
     catch (error) { status(error.message); return; }
     var input = { action: state.editing ? 'edit' : 'send', threadId: state.threadId, body: body };
     if (state.editing) { input.messageId = state.editing.messageId; input.revision = state.editing.revision; }
-    run(function () { return call(input); }, function () { resetEditor(); status('Saved.'); });
+    run(function () { return call(input); }, function () { resetEditor(); status('Saved.', true); });
   });
-  $('cancel').addEventListener('click', resetEditor);
+  $('cancel').addEventListener('click', function () { resetEditor(); status(''); });
   $('preview').addEventListener('click', function () {
     if (state.busy) return;
     if (state.panel && state.panel.mode === 'draft') closePanel();
     else showPanel({ mode: 'draft' });
   });
   function showAgentApproval() {
+    ['google', 'github'].forEach(function (provider) { $('agent-' + provider).disabled = state.busy || agentReauthPending; });
+    $('agent-approve').disabled = state.busy || agentReauthPending;
     $('agent-approval').hidden = !state.owner || !agentApproval || !state.thread;
-    $('agent-reauth').hidden = !state.owner || !agentApproval || agentApproval.capability === 'research';
+    $('agent-reauth').hidden = !state.owner || !agentApproval || !agentNeedsReauth || agentApproval.capability === 'research';
     $('agent-description').textContent = agentApproval && agentApproval.capability !== 'research' ? (agentApproval.capability === 'owner-runner' ? 'Approve this owner-only Mac runner to claim and finish published knowledge jobs. It cannot create jobs or read chat messages. ' : 'Approve this owner-only client to queue published knowledge searches and read their results. It cannot claim jobs or read chat messages. ') + 'This is separate from research chat access. Selected published text passes through Cloudflare to your agent. The private index, filesystem, reviewers and credentials are excluded. Sign in within the last ten minutes. Both connections must use the same selected conversation. Revoke access under Owner private tool connections.' : 'Approve access only for this selected conversation. The connection can read pending research requests and bounded text context, then post one AI reply per request. It cannot read attachments or manage accounts. Access lasts up to 30 days. Client names are supplied by the app, so check its callback host.';
     if (agentApproval && agentApproval.capability === 'research-runner') $('agent-description').textContent = 'Approve this separate Mac execution runner for this conversation. It can claim explicitly approved typed research tasks and publish their results. It cannot read chat context, create proposals, or approve tasks. Known incremental exposure under $5 requires requester approval. Unknown exposure, $5 or more, and the BTC pilot require the owner. Existing archive quotas and private pilot approval gates still apply. Jobs wait when the Mac is offline. Sign in within the last ten minutes and revoke this connection under Owner private tool connections.';
     $('agent-approve').textContent = agentApproval && agentApproval.capability !== 'research' ? 'Approve owner private connection' : 'Connect to this conversation';
     $('agent-client').textContent = agentApproval ? 'Connecting app: ' + agentApproval.clientName + '. Callback host: ' + agentApproval.redirectHost + '. Check the selected conversation before approving.' : '';
+  }
+  function finishAgentApproval() {
+    window.clearTimeout(agentApprovalTimer);
+    agentApproval = null; agentNonce = null; agentNeedsReauth = false; showAgentApproval();
+    var url = new URL(window.location.href); url.searchParams.delete('mcp_request');
+    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
   }
   async function workerJson(path, options) {
     var controller = new AbortController(), timer = window.setTimeout(function () { controller.abort(); }, 15000);
@@ -873,72 +909,91 @@
     } finally { window.clearTimeout(timer); }
   }
   async function loadAgentApproval() {
-    var epoch = state.epoch;
+    var epoch = state.epoch, nonce = agentNonce;
     try {
-      var data = await workerJson('/approval-info?request=' + agentNonce);
-      if (epoch !== state.epoch || !state.user || !state.owner) return;
+      var data = await workerJson('/approval-info?request=' + nonce);
+      if (epoch !== state.epoch || !state.user || !state.owner || nonce !== agentNonce) return;
       if (data.nonce !== agentNonce || typeof data.clientId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(data.clientId) || typeof data.clientName !== 'string' || data.clientName.length > 100 || typeof data.redirectHost !== 'string' || data.redirectHost.length > 255 || !Number.isSafeInteger(data.expiresAt) || data.expiresAt <= Date.now()) throw new Error('Invalid connection.');
       var scopeText = Array.isArray(data.scopes) ? data.scopes.slice().sort().join(' ') : '';
       data.capability = scopeText === 'research.read research.reply' ? 'research' : scopeText === 'owner.jobs' ? 'owner-tools' : scopeText === 'owner.runner' ? 'owner-runner' : scopeText === 'research.runner' ? 'research-runner' : null;
       if (!data.capability) throw new Error('Unknown connection capability.');
       agentApproval = data; showAgentApproval();
+      window.clearTimeout(agentApprovalTimer);
+      agentApprovalTimer = window.setTimeout(function () {
+        if (epoch !== state.epoch || agentApproval !== data) return;
+        finishAgentApproval(); status('The connection request expired. Start connecting again from your agent app.');
+      }, Math.min(2147483647, Math.max(1, data.expiresAt - Date.now())));
       status('Select the conversation the connecting assistant may access, then approve inside that conversation.');
-    } catch { if (epoch === state.epoch) status('The assistant connection request is unavailable or expired. Start connecting again from your agent app.'); }
+    } catch { if (epoch === state.epoch && nonce === agentNonce) { finishAgentApproval(); status('The assistant connection request is unavailable or expired. Start connecting again from your agent app.'); } }
   }
   $('private-refresh').addEventListener('click', function () {
     if (!state.owner || !state.threadId) return;
     var threadId = state.threadId, epoch = state.epoch;
     run(function () { return call({ action: 'private-list', threadId: threadId }, 'messageAgents'); }, function (data) {
       if (epoch !== state.epoch || threadId !== state.threadId) return;
-      if (!Array.isArray(data.connections) || data.connections.length > 40) throw new Error('Invalid connections.');
+      if (!Array.isArray(data.connections) || data.connections.length > 40 || data.connections.some(function (connection) { return !/^[a-f0-9]{32}$/.test(connection.grantId || '') || !['owner-tools', 'owner-runner', 'research-runner'].includes(connection.capability) || !Number.isSafeInteger(connection.expiresAt); })) throw new Error('Invalid connections.');
       $('private-connections').replaceChildren();
       data.connections.forEach(function (connection) {
-        if (!/^[a-f0-9]{32}$/.test(connection.grantId || '') || !['owner-tools', 'owner-runner', 'research-runner'].includes(connection.capability) || !Number.isSafeInteger(connection.expiresAt)) throw new Error('Invalid connection.');
+        if (connection.expiresAt <= Date.now()) return;
         var li = node('li', connection.capability + ' · expires ' + new Date(connection.expiresAt).toLocaleString());
+        li.dataset.expiresAt = String(connection.expiresAt);
         li.appendChild(button('Revoke', function () {
           if (epoch !== state.epoch || threadId !== state.threadId) return;
-          run(function () { return call({ action: 'private-revoke', threadId: threadId, grantId: connection.grantId }, 'messageAgents'); }, function (answer) { if (answer.revoked !== true) throw new Error('Revocation failed.'); li.remove(); status('Private connection revoked.'); });
+          run(function () { return call({ action: 'private-revoke', threadId: threadId, grantId: connection.grantId }, 'messageAgents'); }, function (answer) { if (answer.revoked !== true) throw new Error('Revocation failed.'); li.remove(); status('Private connection revoked.', true); });
         }));
         $('private-connections').appendChild(li);
       });
-      status(data.connections.length ? 'Private connections loaded.' : 'No active private connections.');
+      expirePrivateConnections();
+      status(data.connections.length ? 'Private connections loaded.' : 'No active private connections.', true);
     });
   });
+  function expirePrivateConnections() {
+    window.clearTimeout(privateConnectionTimer);
+    var next = Infinity;
+    $('private-connections').querySelectorAll('li[data-expires-at]').forEach(function (li) {
+      var expiry = Number(li.dataset.expiresAt);
+      if (expiry <= Date.now()) li.remove(); else next = Math.min(next, expiry);
+    });
+    if (Number.isFinite(next)) privateConnectionTimer = window.setTimeout(expirePrivateConnections, Math.min(2147483647, Math.max(1, next - Date.now())));
+  }
   $('agent-limit-save').addEventListener('click', function () {
     if (!state.owner || !state.threadId) return;
     var maximum = Number($('agent-limit').value);
     if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 50) { status('Choose a limit from 1 to 50.'); return; }
-    run(function () { return call({ action: 'limit', threadId: state.threadId, maximum: maximum }, 'messageAgents'); }, function (data) { if (data.saved !== true) throw new Error('The limit was not saved.'); status('Assistant limit saved for this conversation.'); });
+    run(function () { return call({ action: 'limit', threadId: state.threadId, maximum: maximum }, 'messageAgents'); }, function (data) { if (data.saved !== true) throw new Error('The limit was not saved.'); status('Assistant limit saved for this conversation.', true); });
   });
   $('agent-revoke').addEventListener('click', function () {
     if (!state.owner || !state.threadId) return;
-    run(function () { return call({ action: 'revoke', threadId: state.threadId }, 'messageAgents'); }, function (data) { if (data.revoked !== true) throw new Error('Revocation failed.'); status('Assistant access disconnected.'); });
+    run(function () { return call({ action: 'revoke', threadId: state.threadId }, 'messageAgents'); }, function (data) { if (data.revoked !== true) throw new Error('Revocation failed.'); status('Assistant access disconnected.', true); });
   });
-  $('agent-deny').addEventListener('click', function () { agentApproval = null; agentNonce = null; showAgentApproval(); window.history.replaceState(null, '', window.location.pathname); status('Assistant connection canceled.'); });
+  $('agent-deny').addEventListener('click', function () { finishAgentApproval(); status('Assistant connection canceled.', true); });
   ['google', 'github'].forEach(function (provider) {
     $('agent-' + provider).addEventListener('click', function () {
-      if (!state.owner || !agentApproval || agentApproval.capability === 'research' || state.busy) return;
-      var uid = state.user.uid, control = $('agent-' + provider);
-      control.disabled = true;
+      if (!state.owner || !agentApproval || agentApproval.capability === 'research' || state.busy || agentReauthPending) return;
+      var uid = state.user.uid, epoch = state.epoch, approval = agentApproval;
+      agentReauthPending = true; showAgentApproval();
       // Call directly from the click so the existing popup flow retains the
       // browser user gesture. Sign-in never approves a connection automatically.
       try {
         window.siteAuth.signIn(provider + '.com').then(function () {
-          if (state.user && state.user.uid === uid) status('Sign-in refreshed. Select the same conversation and approve the private connection.');
-        }).catch(function (error) { status(error.message || 'Sign-in failed. Please try again.'); }).finally(function () { control.disabled = false; });
-      } catch { control.disabled = false; status('Sign-in is unavailable. Reload the page and try again.'); }
+          if (epoch === state.epoch && state.user && state.user.uid === uid && agentApproval === approval) { agentNeedsReauth = false; showAgentApproval(); status('Sign-in refreshed. Select the same conversation and approve the private connection.'); }
+        }).catch(function (error) { if (epoch === state.epoch && agentApproval === approval) status(error.message || 'Sign-in failed. Please try again.'); }).finally(function () { if (epoch === state.epoch) { agentReauthPending = false; showAgentApproval(); } });
+      } catch { agentReauthPending = false; showAgentApproval(); status('Sign-in is unavailable. Reload the page and try again.'); }
     });
   });
   $('agent-approve').addEventListener('click', function () {
     if (!state.owner || !state.threadId || !agentApproval || agentApproval.expiresAt <= Date.now()) return;
-    var approval = agentApproval, threadId = state.threadId, epoch = state.epoch;
+    var approval = agentApproval, nonce = agentNonce, threadId = state.threadId, epoch = state.epoch;
     run(async function () {
-      var ticket = await call({ action: 'connect', threadId: threadId, nonce: agentNonce, clientId: approval.clientId, capability: approval.capability }, 'messageAgents');
-      if (epoch !== state.epoch || threadId !== state.threadId || !/^[a-f0-9]{32}\.[a-f0-9]{64}$/.test(ticket.ticket || '')) throw new Error('Invalid connection.');
-      return workerJson('/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nonce: agentNonce, ticket: ticket.ticket }) });
+      var ticket = await call({ action: 'connect', threadId: threadId, nonce: nonce, clientId: approval.clientId, capability: approval.capability }, 'messageAgents');
+      if (epoch !== state.epoch || threadId !== state.threadId || agentApproval !== approval) return;
+      if (!/^[a-f0-9]{32}\.[a-f0-9]{64}$/.test(ticket.ticket || '')) throw new Error('Invalid connection.');
+      return workerJson('/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nonce: nonce, ticket: ticket.ticket }) });
     }, function (data) {
+      if (epoch !== state.epoch || threadId !== state.threadId || agentApproval !== approval) return;
       var redirect = new URL(data.redirectTo);
       if (redirect.host !== approval.redirectHost || redirect.username || redirect.password || redirect.hash || !(redirect.protocol === 'https:' || redirect.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(redirect.hostname))) throw new Error('Invalid callback.');
+      finishAgentApproval(); status('Authorization accepted. Returning to the connecting app.', true);
       window.location.assign(redirect.href);
     });
   });
@@ -956,7 +1011,7 @@
     if (!text || text.length > 4000) { status('Write a research question of up to 4,000 characters.'); return; }
     if (!agentRequest || agentRequest.text !== text || agentRequest.threadId !== state.threadId) agentRequest = { text: text, threadId: state.threadId, requestId: Array.from(window.crypto.getRandomValues(new Uint8Array(16)), function (b) { return b.toString(16).padStart(2, '0'); }).join('') };
     var input = Object.assign({ action: 'request' }, agentRequest);
-    run(function () { return call(input, 'messageAgents'); }, function (data) { if (data.queued !== true) throw new Error('Request not queued.'); resetEditor(); status('Research request queued. The connected assistant will reply when available.'); });
+    run(function () { return call(input, 'messageAgents'); }, function (data) { if (data.queued !== true) throw new Error('Request not queued.'); resetEditor(); status('Research request queued. The connected assistant will reply when available.', true); });
   }
   $('agent-ask').addEventListener('click', askAssistant);
   $('file').addEventListener('change', function () { stageFile($('file').files[0], false); });
@@ -973,9 +1028,9 @@
       catch (error) { error.code = 'file-client'; throw error; }
       if (epoch !== state.epoch || threadId !== state.threadId) throw new Error('Session changed.');
       return call({ action: 'upload', threadId: threadId, envelope: payload, bytes: file.size });
-    }, function () { clearFile(); status(encrypted ? 'Encrypted file attached. Share the passphrase separately.' : 'File attached without file encryption.'); });
+    }, function () { clearFile(); status(encrypted ? 'Encrypted file attached. Share the passphrase separately.' : 'File attached without file encryption.', true); });
   });
-  $('profile-form').addEventListener('submit', function (event) { event.preventDefault(); run(function () { return call({ action: 'profile', name: $('name').value }); }, function () { profileSummary(); status('Your messaging name was saved.'); }); });
+  $('profile-form').addEventListener('submit', function (event) { event.preventDefault(); run(function () { return call({ action: 'profile', name: $('name').value }); }, function () { profileSummary(); status('Your messaging name was saved.', true); }); });
   $('find-form').addEventListener('submit', function (event) {
     event.preventDefault(); $('people').replaceChildren();
     run(function () { return call({ action: 'find', query: $('find').value.trim() }); }, function (data) {
@@ -990,7 +1045,7 @@
             if (!/^[a-f0-9]{32}$/.test(response.threadId || '')) throw new Error('Invalid conversation.');
             // run restores controls before accepting another action.
             window.setTimeout(function () { if (state.user) openThread(response.threadId); }, 0);
-            status(response.existing ? 'Opened your existing conversation.' : 'Conversation created.'); $('people').replaceChildren(); $('find').value = ''; toggle('owner', 'new', false);
+            status(response.existing ? 'Opened your existing conversation.' : 'Conversation created.', true); $('people').replaceChildren(); $('find').value = ''; toggle('owner', 'new', false);
           });
         }));
         buttons.appendChild(button('Add to group', function () {
@@ -1000,7 +1055,7 @@
         li.appendChild(buttons);
         $('people').appendChild(li);
       });
-      status(data.users.length ? '' : 'No exact match.');
+      status(data.users.length ? '' : 'No exact match.', true);
     });
   });
   // A group is drafted from search results: each Add to group lands here.
@@ -1024,7 +1079,7 @@
       if (!/^[a-f0-9]{32}$/.test(response.threadId || '')) throw new Error('Invalid conversation.');
       state.groupDraft = []; drawGroupDraft(); $('group-title').value = ''; toggle('owner', 'new', false);
       window.setTimeout(function () { if (state.user) openThread(response.threadId); }, 0);
-      status('Group created.');
+      status('Group created.', true);
     });
   });
   // Top-bar popovers close on an outside click, like a menu.
@@ -1081,7 +1136,7 @@
   $('attach-toggle').addEventListener('click', function () { var open = $('files').hidden; toggle('files', 'attach-toggle', open); if (open) $('file').focus(); });
   $('delete').addEventListener('click', function () { $('confirm-delete').hidden = false; });
   $('delete-no').addEventListener('click', function () { $('confirm-delete').hidden = true; });
-  $('delete-yes').addEventListener('click', function () { if (!state.threadId) return; run(function () { return call({ action: 'delete', threadId: state.threadId }); }, function () { clearThread(); status('Conversation deleted.'); }); });
+  $('delete-yes').addEventListener('click', function () { if (!state.threadId) return; run(function () { return call({ action: 'delete', threadId: state.threadId }); }, function () { clearThread(); status('Conversation deleted.', true); }); });
   ['google', 'github'].forEach(function (provider) {
     $('' + provider).addEventListener('click', function () {
       window.siteAuth.signIn(provider + '.com').catch(function (error) { status(error.message || 'Sign-in failed. Please try again.'); });

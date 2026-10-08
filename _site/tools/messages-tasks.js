@@ -14,7 +14,7 @@
           if (latest.threadId !== threadId || latest.epoch !== epoch) return;
           if (!result.task || result.task.taskId !== input.taskId || result.task.digest !== input.digest) throw new Error('Invalid approval response.');
           adapter.update(result.task);
-          adapter.status('Research action ' + result.task.state + '.');
+          adapter.status('Research action ' + result.task.state + '.', true);
         });
       });
       return control;
@@ -26,7 +26,9 @@
       var quote = job.plan.quote.maximumCents;
       var amount = Number.isSafeInteger(quote) && quote >= 0 ? 'up to $' + (quote / 100).toFixed(2) + ' incremental allowance' : 'unknown maximum cost';
       var labels = { archive_status: 'Check archive quota', archive_list: 'List archive entries', archive_head: 'Inspect object metadata', archive_sample: 'Download one small sample', btc_pilot_august_2025: 'August 2025 BTC pilot' };
-      var head = node('header'); head.appendChild(node('strong', 'Action approval')); head.appendChild(node('span', job.state)); card.appendChild(head);
+      var expired = !Number.isSafeInteger(job.expiresAt) || job.expiresAt <= Date.now();
+      var pending = ['awaiting-approval', 'approved', 'running'].includes(job.state);
+      var head = node('header'); head.appendChild(node('strong', job.state === 'awaiting-approval' && !expired ? 'Action approval' : 'Research action')); head.appendChild(node('span', pending && expired ? 'expired' : job.state)); card.appendChild(head);
       card.appendChild(node('strong', labels[job.plan.tool] || job.plan.tool));
       var requester = thread.names[job.requester];
       card.appendChild(node('p', 'Requested by ' + (typeof requester === 'string' ? requester.slice(0, 80) : 'Member') + '. ' + amount + '.'));
@@ -39,7 +41,6 @@
       details.appendChild(node('p', 'Approved actions wait for the connected Mac runner. Cancellation stops future steps after the next authorization check. Sent requests may still incur costs. Failed execution is not retried automatically.'));
       card.appendChild(details);
       if (job.plan.tool === 'btc_pilot_august_2025') card.appendChild(node('p', 'Owner approval here does not replace private execution approval, verified output retention, source-schema checks, or the approved network-cap change.'));
-      var expired = !Number.isSafeInteger(job.expiresAt) || job.expiresAt <= Date.now();
       var currentQuote = Number.isSafeInteger(job.plan.quote.expiresAt) && job.plan.quote.expiresAt > Date.now();
       if (job.state === 'awaiting-approval' && !expired && !currentQuote && !context.owner) card.appendChild(node('p', 'The cost allowance expired. Owner approval is required.'));
       if (job.state === 'awaiting-approval' && !expired && (context.owner || currentQuote && job.plan.approvalRole === 'researcher' && job.requester === context.user.uid)) card.appendChild(action('Approve action · ' + amount, { action: 'task-approve', taskId: job.taskId, digest: job.digest }));
