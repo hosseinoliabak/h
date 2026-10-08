@@ -2,6 +2,8 @@
   'use strict';
   if (!document.getElementById('knowledge-access')) return;
   var state = { user: null, epoch: 0, busy: false, approval: null };
+  var description = $('description').textContent;
+  function resetCopy() { $('description').textContent = description; $('heading').textContent = 'Approve knowledge connection'; $('approve').textContent = 'Approve read-only connection'; }
   var nonce = new URLSearchParams(window.location.search).get('mcp_request');
   if (!/^[a-f0-9]{32}$/.test(nonce || '')) nonce = null;
   function $(id) { return document.getElementById('ka-' + id); }
@@ -30,15 +32,21 @@
   }
   async function load() {
     var epoch = state.epoch;
-    state.approval = null; $('consent').hidden = true; $('client').textContent = ''; controls();
+    resetCopy(); state.approval = null; $('consent').hidden = true; $('client').textContent = ''; controls();
     try {
       var permission = await call({ action: 'knowledge-status' });
       if (epoch !== state.epoch) return;
       if (permission.allowed !== true) { status('The site owner has not granted knowledge access to this account.'); return; }
-      if (!nonce) { status('Your account has knowledge permission. Start a new connection from your assistant app. Shared search is awaiting connection.'); return; }
+      if (!nonce) { status('Your account has knowledge permission. Start a new knowledge connection from your assistant app. Retrieval requires the owner’s computer to be online.'); return; }
       var data = await workerJson('/approval-info?request=' + nonce);
       if (epoch !== state.epoch || !state.user) return;
-      if (data.nonce !== nonce || typeof data.clientId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(data.clientId) || typeof data.clientName !== 'string' || data.clientName.length > 100 || typeof data.redirectHost !== 'string' || data.redirectHost.length > 255 || !Number.isSafeInteger(data.expiresAt) || data.expiresAt <= Date.now() || !Array.isArray(data.scopes) || data.scopes.length !== 1 || data.scopes[0] !== 'knowledge.read') throw new Error('Invalid approval.');
+      if (data.nonce !== nonce || typeof data.clientId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(data.clientId) || typeof data.clientName !== 'string' || data.clientName.length > 100 || typeof data.redirectHost !== 'string' || data.redirectHost.length > 255 || !Number.isSafeInteger(data.expiresAt) || data.expiresAt <= Date.now() || !Array.isArray(data.scopes) || data.scopes.length !== 1 || !['knowledge.read', 'knowledge.runner'].includes(data.scopes[0])) throw new Error('Invalid approval.');
+      if (data.scopes[0] === 'knowledge.runner') {
+        if (permission.owner !== true) throw new Error('Owner connection required.');
+        $('heading').textContent = 'Approve Mac retrieval worker';
+        $('description').textContent = 'Authorize this separate read-only Mac worker to claim library lookups from owner-approved accounts and publish bounded excerpts through the authenticated gateway. The full index and Qdrant remain local. This does not grant shell access, arbitrary file reads, chat access or research execution. Pending lookups expire after 48 hours and completed results after one hour. Revoking this worker stops further claims and publication.';
+        $('approve').textContent = 'Approve Mac retrieval worker';
+      }
       state.approval = data;
       $('client').textContent = 'Connecting app: ' + data.clientName + '. Callback host: ' + data.redirectHost + '.';
       $('consent').hidden = false; status('Review this read-only connection, then explicitly approve it.'); controls();
@@ -49,7 +57,7 @@
     var epoch = state.epoch, approval = state.approval;
     state.busy = true; controls();
     try {
-      var ticket = await call({ action: 'knowledge-connect', nonce: nonce, clientId: approval.clientId });
+      var ticket = await call({ action: approval.scopes[0] === 'knowledge.runner' ? 'knowledge-runner-connect' : 'knowledge-connect', nonce: nonce, clientId: approval.clientId });
       if (epoch !== state.epoch) return;
       if (!/^[a-f0-9]{32}\.[a-f0-9]{64}$/.test(ticket.ticket || '')) throw new Error('Invalid ticket.');
       var data = await workerJson('/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nonce: nonce, ticket: ticket.ticket }) });
@@ -60,10 +68,10 @@
     } catch { if (epoch === state.epoch) status('No connection success was confirmed. Sign in again with the invited account, then try approving or start a fresh connection.'); }
     finally { if (epoch === state.epoch) { state.busy = false; controls(); } }
   });
-  $('cancel').addEventListener('click', function () { if (state.busy) return; state.epoch += 1; nonce = null; state.approval = null; $('consent').hidden = true; $('client').textContent = ''; window.history.replaceState(null, '', window.location.pathname); status('Connection canceled.'); controls(); });
+  $('cancel').addEventListener('click', function () { if (state.busy) return; state.epoch += 1; nonce = null; resetCopy(); state.approval = null; $('consent').hidden = true; $('client').textContent = ''; window.history.replaceState(null, '', window.location.pathname); status('Connection canceled.'); controls(); });
   ['google', 'github'].forEach(function (provider) { $(provider).addEventListener('click', function () { window.siteAuth.signIn(provider + '.com').then(load).catch(function () { status('Sign-in failed. Try again with the invited account.'); }); }); });
   function onUser(user) {
-    state.epoch += 1; state.user = user; state.busy = false; state.approval = null;
+    resetCopy(); state.epoch += 1; state.user = user; state.busy = false; state.approval = null;
     $('consent').hidden = true; $('client').textContent = ''; controls();
     if (user) load(); else status('Sign in to check your knowledge access.');
   }
