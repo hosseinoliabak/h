@@ -33,15 +33,28 @@
   }
   var push = window.MessagePush ? window.MessagePush.init({ call: call }) : null;
   var inboxValues = {}, notificationReady = false, knownUnread = new Set(), noticeThread = null, noticeTimer = null;
+  var seenMessages = new Set(), unseenIncoming = new Set();
   var pageTitle = document.title, readTimer = null, readGeneration = 0, readPending = false, readAttempt = '';
+  function feedAtEnd() {
+    var feed = $('feed');
+    return feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60;
+  }
+  function showNewMessages() {
+    var count = unseenIncoming.size;
+    $('new-messages').textContent = count ? count + (count === 1 ? ' new message' : ' new messages') + ' · Jump to latest' : '';
+    $('new-messages').hidden = !count;
+  }
+  function jumpToLatest() {
+    unseenIncoming.clear(); showNewMessages();
+    $('feed').scrollTop = $('feed').scrollHeight; queueRead();
+  }
   function unreadIds(item) {
     var values = item && item.unreadMessages;
     if (!values || typeof values !== 'object' || Array.isArray(values) || Object.keys(values).length > 100) return [];
     return Object.keys(values).filter(function (id) { return /^[a-f0-9]{32}$/.test(id) && Number.isSafeInteger(values[id]) && values[id] > 0 && values[id] <= Date.now() + 300000; });
   }
   function readingThread(threadId) {
-    var feed = $('feed');
-    return state.threadId === threadId && state.thread && !document.hidden && document.hasFocus() && feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60;
+    return state.threadId === threadId && state.thread && !document.hidden && document.hasFocus() && feedAtEnd();
   }
   function dismissNotice() {
     window.clearTimeout(noticeTimer); noticeTimer = null; noticeThread = null;
@@ -93,11 +106,15 @@
   $('notice-open').addEventListener('click', function () {
     if (!noticeThread || state.busy) return;
     var threadId = noticeThread;
-    if (state.threadId === threadId) { $('feed').scrollTop = $('feed').scrollHeight; queueRead(); }
+    if (state.threadId === threadId) jumpToLatest();
     else openThread(threadId);
     dismissNotice();
   });
-  $('feed').addEventListener('scroll', queueRead, { passive: true });
+  $('new-messages').addEventListener('click', jumpToLatest);
+  $('feed').addEventListener('scroll', function () {
+    if (feedAtEnd() && unseenIncoming.size) jumpToLatest();
+    else queueRead();
+  }, { passive: true });
   window.addEventListener('focus', queueRead);
   document.addEventListener('visibilitychange', queueRead);
   var billEpoch = 0, billVersion = 0, billObservedVersion = 0, billLoading = false;
@@ -289,6 +306,7 @@
   }
   function clearThread() {
     status('');
+    seenMessages.clear(); unseenIncoming.clear(); showNewMessages();
     window.clearTimeout(readTimer); readGeneration += 1; readPending = false; readAttempt = '';
     $('assistant-mode').checked = false;
     $('assistant-mode-label').hidden = true; $('assistant-hint').hidden = true;
@@ -563,6 +581,18 @@
   function drawThread(thread) {
     if (!thread || !thread.members || thread.members[state.user.uid] !== true || !Number.isFinite(thread.expiresAt) || thread.expiresAt <= Date.now()
         || typeof thread.title !== 'string' || thread.title.length > 120 || !thread.names || Object.keys(thread.messages || {}).length > 100) throw new Error('Invalid conversation.');
+    // Capture the reader's position before assistant hints, previews, or
+    // receipts change the available feed height.
+    var list = $('feed'), stick = state.feedFresh || feedAtEnd(), kept = list.scrollTop;
+    var messages = thread.messages || {};
+    Object.entries(messages).forEach(function (entry) {
+      var id = entry[0], message = entry[1];
+      if (!state.feedFresh && !stick && !seenMessages.has(id) && /^[a-f0-9]{32}$/.test(id) && message
+          && ['message', 'file', 'agent'].includes(message.kind) && (message.kind === 'agent' || message.author !== state.user.uid)) unseenIncoming.add(id);
+    });
+    seenMessages = new Set(Object.keys(messages));
+    unseenIncoming.forEach(function (id) { if (!messages[id]) unseenIncoming.delete(id); });
+    if (stick) unseenIncoming.clear();
     var feed = document.createDocumentFragment();
     var entries = Object.entries(thread.messages || {}).concat(Object.entries(thread.researchTasks || {}).slice(0, 20).map(function (e) { return [e[0], { createdAt: e[1].createdAt, record: e[1] }, true]; }));
     entries.sort(function (a, b) {
@@ -632,9 +662,11 @@
     $('thread-title').textContent = thread.title;
     $('expiry').textContent = 'Expires ' + new Date(thread.expiresAt).toLocaleDateString([], { dateStyle: 'medium' });
     // Keep the newest message in view unless the reader has scrolled up.
-    var list = $('feed'), stick = state.feedFresh || list.scrollHeight - list.scrollTop - list.clientHeight < 60, kept = list.scrollTop;
     list.replaceChildren(feed); list.dataset.empty = 'No messages yet.';
     syncPreviewToggles();
+    // Thread arrivals drive this persistent control directly. Delayed inbox
+    // notifications must not be required to discover a new peer request.
+    showNewMessages();
     list.scrollTop = stick ? list.scrollHeight : kept;
     state.feedFresh = false; queueRead();
     $('compose').hidden = !editor;
@@ -1022,10 +1054,12 @@
     });
   });
   function assistantMode() {
+    var stick = feedAtEnd();
     var on = $('assistant-mode').checked && !!state.thread?.agentReady && !state.editing;
     $('send').textContent = state.editing ? 'Save changes' : on ? 'Send to assistant' : 'Send';
     $('assistant-hint').hidden = !on;
-    if (on) $('assistant-hint').textContent = 'Queues a request with the shared guide and up to six recent messages. Approval appears here before an action. ' + (state.thread.agentRequestLimit || 5) + ' requests per person in three hours. Processing waits for the connected assistant.';
+    if (on) $('assistant-hint').textContent = 'Queues a shared request with the shared guide and up to six recent messages. Everyone in this conversation can read it. Approval appears here before an action. ' + (state.thread.agentRequestLimit || 5) + ' requests per person in three hours. Processing waits for the connected assistant.';
+    if (stick && state.thread) $('feed').scrollTop = $('feed').scrollHeight;
   }
   $('assistant-mode').addEventListener('change', assistantMode);
   function askAssistant() {
