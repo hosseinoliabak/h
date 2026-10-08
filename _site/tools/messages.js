@@ -175,7 +175,7 @@
   }
   function unreadIds(item) {
     var values = item && item.unreadMessages;
-    if (!values || typeof values !== 'object' || Array.isArray(values) || Object.keys(values).length > 100) return [];
+    if (!values || typeof values !== 'object' || Array.isArray(values)) return [];
     return Object.keys(values).filter(function (id) { return /^[a-f0-9]{32}$/.test(id) && Number.isSafeInteger(values[id]) && values[id] > 0 && values[id] <= Date.now() + 300000; });
   }
   function readingThread(threadId) {
@@ -217,7 +217,7 @@
     var ids = unreadIds(inboxValues[state.threadId]).filter(function (id) {
       var message = state.thread.messages && state.thread.messages[id];
       return message && (message.kind === 'agent' || message.author !== state.user.uid);
-    }).sort();
+    }).sort().slice(0, 100);
     var signature = ids.join(',');
     if (!ids.length || signature === readAttempt) return;
     var epoch = state.epoch, threadId = state.threadId, generation = readGeneration;
@@ -706,7 +706,8 @@
   }
   function drawThread(thread) {
     if (!thread || !thread.members || thread.members[state.user.uid] !== true || !Number.isFinite(thread.expiresAt) || thread.expiresAt <= Date.now()
-        || typeof thread.title !== 'string' || thread.title.length > 120 || !thread.names || Object.keys(thread.messages || {}).length > 100) throw new Error('Invalid conversation.');
+        || typeof thread.title !== 'string' || thread.title.length > 120 || !thread.names
+        || (thread.messages && (typeof thread.messages !== 'object' || Array.isArray(thread.messages)))) throw new Error('Invalid conversation.');
     // Capture the reader's position before assistant hints, previews, or
     // receipts change the available feed height.
     var list = $('feed'), stick = state.feedFresh || feedAtEnd(), kept = list.scrollTop;
