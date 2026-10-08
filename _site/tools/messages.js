@@ -75,6 +75,59 @@
   });
   var editor;
   var stagedFile = null;
+  // Shared reaction counts require authenticated live data, beyond Quarto's
+  // static rendering. The picker itself uses native disclosure and buttons.
+  var REACTIONS = [
+    ['thumbs-up', '👍', 'Thumbs up'], ['star', '⭐', 'Star'],
+    ['heart', '❤️', 'Heart'], ['laugh', '😂', 'Laugh'],
+    ['celebrate', '🎉', 'Celebrate'], ['eyes', '👀', 'Eyes']
+  ];
+  function reactionControls(thread, messageId, message) {
+    var row = node('div', undefined, 'msg-reactions'); row.dataset.messageId = messageId;
+    var picker = node('details', undefined, 'msg-reaction-picker');
+    var summary = node('summary', 'React'); summary.dataset.reaction = 'picker';
+    summary.title = 'Choose one reaction. Select it again to remove it. Reactions do not approve jobs.';
+    picker.appendChild(summary);
+    var choices = node('div', undefined, 'msg-reaction-choices');
+    REACTIONS.forEach(function (reaction) {
+      var people = Object.keys(thread.members).filter(function (uid) { return thread.members[uid] === true && message.reactions && message.reactions[uid] === reaction[0]; }).slice(0, 10);
+      var selected = people.includes(state.user.uid);
+      function control(count) {
+        var result = node('button', undefined, 'msg-reaction'); result.type = 'button';
+        result.dataset.reaction = reaction[0]; result.setAttribute('aria-label', reaction[2]);
+        result.setAttribute('aria-pressed', String(selected));
+        var emoji = node('span', reaction[1]); emoji.setAttribute('aria-hidden', 'true'); result.appendChild(emoji);
+        if (count) {
+          result.appendChild(node('span', String(people.length), 'msg-reaction-count'));
+          result.setAttribute('aria-label', reaction[2] + ', ' + people.length + (people.length === 1 ? ' reaction' : ' reactions'));
+          result.title = people.map(function (uid) { return typeof thread.names[uid] === 'string' ? thread.names[uid].slice(0, 80) : 'Member'; }).join(', ');
+        } else result.title = reaction[2];
+        return result;
+      }
+      if (people.length) row.appendChild(control(true));
+      choices.appendChild(control(false));
+    });
+    picker.appendChild(choices); row.appendChild(picker);
+    return row;
+  }
+  // One listener survives feed redraws. The server derives the participant
+  // from the session and applies an explicit, idempotent choice or removal.
+  $('feed').addEventListener('click', function (event) {
+    var control = event.target.closest('button[data-reaction]');
+    if (!control || !state.user || !state.thread || state.busy) return;
+    var row = control.closest('.msg-reactions'), threadId = state.threadId;
+    if (!row || !row.isConnected || !$('feed').contains(row)) return;
+    var messageId = row.dataset.messageId, message = state.thread.messages && state.thread.messages[messageId];
+    if (!message || !/^[a-f0-9]{32}$/.test(messageId) || !REACTIONS.some(function (r) { return r[0] === control.dataset.reaction; })) return;
+    var reaction = message.reactions && message.reactions[state.user.uid] === control.dataset.reaction ? null : control.dataset.reaction;
+    row.querySelector('details').open = false;
+    run(function () { return call({ action: 'react', threadId: threadId, messageId: messageId, reaction: reaction }); }, function () {
+      status(reaction === null ? 'Reaction removed.' : 'Reaction saved.', true);
+      var current = $('feed').querySelector('[data-message-id="' + messageId + '"]');
+      var focus = current && (reaction && current.querySelector('button[data-reaction="' + reaction + '"]') || current.querySelector('summary'));
+      if (focus) focus.focus({ preventScroll: true });
+    }, 'Saving reaction.', 'The reaction could not be saved. Please try again.');
+  });
   function clearFile() {
     status('');
     stagedFile = null; $('file').value = '';
@@ -233,7 +286,7 @@
   function markCurrent() {
     document.querySelectorAll('#msg-inbox button').forEach(function (b) { b.setAttribute('aria-current', String(b.dataset.thread === state.threadId)); });
   }
-  function readableError(error) {
+  function readableError(error, fallback) {
     var code = error && error.code || '';
     if (code === 'file-client') return error.message;
     if (code.indexOf('permission') >= 0 && error.details && error.details.reason === 'recent-login-required') return 'Your owner sign-in is more than ten minutes old. Use Sign in again above with the same owner account, then approve the connection.';
@@ -241,7 +294,7 @@
     if (code.indexOf('not-found') >= 0 || code.indexOf('unimplemented') >= 0) return 'Messaging is not available yet. The site owner needs to finish setup.';
     if (code.indexOf('resource-exhausted') >= 0) return 'A messaging limit was reached. Please try later or contact the site owner.';
     if (code.indexOf('aborted') >= 0) return 'This text changed while you were editing. Cancel and reopen the latest version.';
-    return 'The request failed. Your unsent text is still here. Please try again.';
+    return fallback || 'The request failed. Your unsent text is still here. Please try again.';
   }
   async function call(input, serviceName) {
     var epoch = state.epoch;
@@ -252,7 +305,7 @@
     if (!result || !result.data || typeof result.data !== 'object') throw new Error('Invalid response.');
     return result.data;
   }
-  async function run(action, success, progress) {
+  async function run(action, success, progress, failureText) {
     if (state.busy) return;
     var epoch = state.epoch, threadId = state.threadId;
     state.busy = true;
@@ -269,7 +322,7 @@
     catch (error) {
       if (epoch === state.epoch && threadId === state.threadId) {
         if (error && error.details && error.details.reason === 'recent-login-required' && agentApproval) { agentNeedsReauth = true; showAgentApproval(); }
-        status(readableError(error));
+        status(readableError(error, failureText));
       }
     }
     finally {
@@ -652,6 +705,9 @@
     // Capture the reader's position before assistant hints, previews, or
     // receipts change the available feed height.
     var list = $('feed'), stick = state.feedFresh || feedAtEnd(), kept = list.scrollTop;
+    var openReactions = Array.from(list.querySelectorAll('.msg-reaction-picker[open]')).map(function (picker) { return picker.parentElement.dataset.messageId; });
+    var activeReaction = document.activeElement && document.activeElement.closest('.msg-reactions');
+    var reactionFocus = activeReaction && { messageId: activeReaction.dataset.messageId, choice: document.activeElement.dataset.reaction };
     var messages = thread.messages || {};
     Object.entries(messages).forEach(function (entry) {
       var id = entry[0], message = entry[1];
@@ -677,6 +733,7 @@
         fileHead.appendChild(fileActions(messageId, message));
         attachment.appendChild(fileHead);
         attachment.appendChild(node('p', fileText(message)));
+        attachment.appendChild(reactionControls(thread, messageId, message));
         feed.appendChild(attachment); return;
       }
       checkMessage(messageId, message);
@@ -703,6 +760,7 @@
       var text = sourceBody(message.body).ops.map(function (op) { return op.insert; }).join('').trim();
       var summary = text.length > 240 ? text.slice(0, 240) + '…' : text;
       card.appendChild(head); card.appendChild(previewToggle('message', messageId, summary));
+      card.appendChild(reactionControls(thread, messageId, message));
       var receipt = requestReceipt(thread, messageId, message);
       if (receipt) card.appendChild(receipt);
       feed.appendChild(card);
@@ -732,6 +790,13 @@
     $('expiry').textContent = 'Expires ' + new Date(thread.expiresAt).toLocaleDateString([], { dateStyle: 'medium' });
     // Keep the newest message in view unless the reader has scrolled up.
     list.replaceChildren(feed); list.dataset.empty = 'No messages yet.';
+    list.querySelectorAll('.msg-reactions').forEach(function (row) {
+      row.querySelector('details').open = openReactions.includes(row.dataset.messageId);
+      if (reactionFocus && reactionFocus.messageId === row.dataset.messageId) {
+        var focused = Array.from(row.querySelectorAll('[data-reaction]')).find(function (control) { return control.dataset.reaction === reactionFocus.choice; });
+        if (focused) focused.focus({ preventScroll: true });
+      }
+    });
     syncPreviewToggles();
     // Thread arrivals drive this persistent control directly. Delayed inbox
     // notifications must not be required to discover a new peer request.
