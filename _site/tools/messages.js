@@ -6,6 +6,73 @@
   if (!document.getElementById('messages')) return;
   var format = window.MessageFormat;
   var state = { user: null, epoch: 0, owner: false, thread: null, threadId: null, editing: null, busy: false, subscriptions: [], threadRef: null, threadCallback: null, expiryTimer: null, urls: new Set(), feedFresh: false, autoOpened: false, panel: null, panelOpen: false, groupDraft: [] };
+  // Quarto cannot render authenticated live monitoring state. Keep the
+  // existing chat callable as the sole browser data boundary.
+  var healthTimer = null, healthGeneration = 0, healthKey = '', healthBusy = false;
+  var HEALTH_INTERVAL = 120000;
+  function clearHealth() {
+    window.clearTimeout(healthTimer); healthTimer = null; healthGeneration++;
+    healthKey = ''; healthBusy = false;
+    $('assistant-health').hidden = true;
+    $('assistant-health-refresh').disabled = false;
+    ['detail', 'activity', 'checked'].forEach(function (part) { $('assistant-health-' + part).textContent = ''; });
+  }
+  function drawHealth(data) {
+    var title, detail;
+    if (data.access === 'not_connected') { title = 'not connected'; detail = 'The owner must connect an assistant to this conversation.'; }
+    else if (data.access === 'authorization_pending') { title = 'authorization pending'; detail = 'Connection approval has not finished.'; }
+    else if (data.access === 'reconnect_required') { title = 'reconnect required'; detail = 'Assistant access has expired or was revoked. The owner must reconnect it.'; }
+    else if (data.monitoring === 'callback_setup_required') { title = 'setup incomplete'; detail = 'Access is authorized, but the notification receiver is missing or no longer approved. Automatic replies are not active. The site owner must finish receiver setup.'; }
+    else if (data.monitoring === 'subscription_required') { title = 'monitoring not active'; detail = 'Access is authorized, but no current verified monitoring subscription exists. The owner must set up monitoring in ChatGPT once. A disconnected or expired subscription needs setup again.'; }
+    else if (data.monitoring === 'subscribed' && !(Date.parse(data.subscriptionExpiresAt) > Date.now())) { title = 'monitoring expired'; detail = 'The monitoring subscription has expired. The owner must set up monitoring again in ChatGPT.'; }
+    else if (data.monitoring === 'subscribed' && data.pendingDeliveryFailures > 0) { title = 'delivery failed'; detail = 'Monitoring is registered, but notifications for ' + data.pendingDeliveryFailures + ' pending request(s) exhausted their delivery attempts. The owner must investigate delivery.'; }
+    else if (data.monitoring === 'subscribed' && (!data.dispatchCheckedAt || Date.now() - Date.parse(data.dispatchCheckedAt) > 900000)) { title = 'delivery check overdue'; detail = 'Monitoring is registered, but no completed delivery check was recorded in the last 15 minutes. Automatic processing is not confirmed.'; }
+    else if (data.monitoring === 'subscribed' && Date.parse(data.subscriptionExpiresAt) > Date.now()) { title = 'monitoring active'; detail = 'A verified subscription is registered. New assistant requests can notify ChatGPT automatically. Replies still depend on successful delivery and processing.'; }
+    else { title = 'status unavailable'; detail = 'Monitoring could not be verified. Refresh status to check again. An earlier success is not confirmation of current health.'; }
+    $('assistant-health-title').textContent = 'Automatic replies · ' + title;
+    if (data.changedRequests) detail += ' ' + data.changedRequests + ' earlier request(s) belong to a previous connection and are not in the current queue. Send them again only if still needed.';
+    $('assistant-health-detail').textContent = detail;
+    var activity = [];
+    if (Number.isSafeInteger(data.pendingRequests)) activity.push('Current queue ' + data.pendingRequests);
+    [['lastDeliveryAttemptAt', 'Last notification attempt'], ['lastDeliveryAcceptedAt', 'Last notification accepted'], ['dispatchCheckedAt', 'Last delivery check'], ['subscriptionExpiresAt', 'Subscription expires'], ['lastReadAt', 'Last request opened'], ['lastReplyAt', 'Last AI reply in this chat']].forEach(function (entry) {
+      if (data[entry[0]]) activity.push(entry[1] + ' ' + when(typeof data[entry[0]] === 'number' ? data[entry[0]] : Date.parse(data[entry[0]])));
+    });
+    $('assistant-health-activity').textContent = activity.join(' · ');
+    $('assistant-health-checked').textContent = 'Last checked ' + when(Date.now()) + '. Times use your device time zone.';
+  }
+  async function refreshHealth() {
+    if (healthBusy || document.hidden || !state.user || !state.threadId || !state.thread || state.thread.kind === 'group') return;
+    window.clearTimeout(healthTimer); healthTimer = null;
+    var generation = healthGeneration, epoch = state.epoch, threadId = state.threadId;
+    healthBusy = true; $('assistant-health-refresh').disabled = true;
+    $('assistant-health-title').textContent = 'Automatic replies · checking';
+    $('assistant-health-detail').textContent = 'Checking access, monitoring, and delivery.';
+    $('assistant-health-activity').textContent = ''; $('assistant-health-checked').textContent = '';
+    try {
+      var data = await call({ action: 'connection-status', threadId: threadId }, 'messageAgents');
+      if (generation === healthGeneration && epoch === state.epoch && threadId === state.threadId) drawHealth(data);
+    } catch (error) {
+      if (generation === healthGeneration && epoch === state.epoch && threadId === state.threadId) drawHealth({ monitoring: 'unavailable' });
+    } finally {
+      if (generation === healthGeneration && epoch === state.epoch && threadId === state.threadId) {
+        healthBusy = false; $('assistant-health-refresh').disabled = false;
+        if (!document.hidden) healthTimer = window.setTimeout(refreshHealth, HEALTH_INTERVAL);
+      }
+    }
+  }
+  function syncHealth(thread) {
+    if (thread.kind === 'group') { clearHealth(); return; }
+    var key = state.threadId + '/' + (thread.agentGrantId || '') + '/' + Boolean(thread.agentReady);
+    if (key === healthKey) return;
+    clearHealth(); healthKey = key; $('assistant-health').hidden = false;
+    $('assistant-health-title').textContent = 'Automatic replies · checking';
+    refreshHealth();
+  }
+  $('assistant-health-refresh').addEventListener('click', refreshHealth);
+  document.addEventListener('visibilitychange', function () {
+    window.clearTimeout(healthTimer); healthTimer = null;
+    if (!document.hidden) refreshHealth();
+  });
   var editor;
   var stagedFile = null;
   function clearFile() {
@@ -305,6 +372,7 @@
     }, function () { status(previewOnly ? 'Text preview opened locally.' : 'Download started.', true); });
   }
   function clearThread() {
+    clearHealth();
     status('');
     seenMessages.clear(); unseenIncoming.clear(); showNewMessages();
     window.clearTimeout(readTimer); readGeneration += 1; readPending = false; readAttempt = '';
@@ -643,6 +711,7 @@
       }
     });
     state.thread = thread;
+    syncHealth(thread);
     refreshOpenBill();
     var maximum = Number.isSafeInteger(thread.agentRequestLimit) && thread.agentRequestLimit >= 1 && thread.agentRequestLimit <= 50 ? thread.agentRequestLimit : 5;
     // The assistant line appears only once an assistant is connected.
@@ -651,7 +720,7 @@
     if (document.activeElement !== $('agent-limit')) $('agent-limit').value = String(maximum);
     $('agent-title').textContent = 'Research assistant · ' + (thread.agentReady ? 'connected' : 'not connected');
     $('private-access').hidden = !state.owner || thread.kind === 'group';
-    $('agent-info').textContent = (thread.agentReady ? 'Connected. ' : 'An assistant has not been connected yet. ') + 'Maximum ' + maximum + ' requests per person in any three hours. Requests expire after 48 hours. Each request shows its receipt and answer status in the chat. A connection alone does not start automatic processing. You can ask the connected assistant to process pending requests.';
+    $('agent-info').textContent = (thread.agentReady ? 'Connected. ' : 'An assistant has not been connected yet. ') + 'Maximum ' + maximum + ' requests per person in any three hours. Requests expire after 48 hours. Each request shows its receipt and answer status in the chat. A connection alone does not start automatic processing. See Automatic replies for current monitoring and delivery status.';
     $('agent-revoke').hidden = !thread.agentGrantId;
     $('agent-ask').hidden = !thread.agentReady || !!state.editing;
     $('assistant-mode-label').hidden = !thread.agentReady || thread.kind === 'group';
