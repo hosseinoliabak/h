@@ -34,6 +34,10 @@
     $('assistant-health-detail').textContent = detail;
     var activity = [];
     if (Number.isSafeInteger(data.pendingRequests)) activity.push('Current queue ' + data.pendingRequests);
+    if (data.lastSubscriptionAttemptAt) {
+      var setupLabels = { received: 'request received; setup not confirmed', callback_origin_not_configured: 'receiver approval required', invalid_callback: 'invalid receiver address', challenge_failed: 'verification or authorization failed', subscribed: 'subscription registered' };
+      activity.push('Last monitoring setup ' + when(Date.parse(data.lastSubscriptionAttemptAt)) + ' (' + (setupLabels[data.subscriptionSetupOutcome] || 'outcome unavailable') + ')');
+    } else if (data.access === 'authorized') activity.push('No monitoring setup request recorded in the last 48 hours. Setup diagnostics began October 8, 2026; earlier attempts are not recorded.');
     [['lastDeliveryAttemptAt', 'Last notification attempt'], ['lastDeliveryAcceptedAt', 'Last notification accepted'], ['dispatchCheckedAt', 'Last delivery check'], ['subscriptionExpiresAt', 'Subscription expires'], ['lastReadAt', 'Last request opened'], ['lastReplyAt', 'Last AI reply in this chat']].forEach(function (entry) {
       if (data[entry[0]]) activity.push(entry[1] + ' ' + when(typeof data[entry[0]] === 'number' ? data[entry[0]] : Date.parse(data[entry[0]])));
     });
