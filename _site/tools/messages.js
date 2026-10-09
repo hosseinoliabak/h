@@ -1008,11 +1008,12 @@
       content.appendChild(node('p', 'Period ' + result.start + ' through ' + result.end + ' (end date excluded, UTC). Checked ' + when(result.updatedAt) + '.', 'tool-note'));
       if (result.refresh != null) {
         if (!Number.isSafeInteger(result.refresh.nextRefreshAt) || result.refresh.nextRefreshAt <= 0
-            || result.refresh.nextRefreshAt > Date.now() + 2 * 86400000 || result.refresh.timeZone !== 'UTC' || result.refresh.dailyAtUTC !== '12:00') throw new Error('Invalid refresh schedule.');
+            || result.refresh.nextRefreshAt > Date.now() + 2 * 86400000 || result.refresh.timeZone !== 'UTC'
+            || typeof result.refresh.dailyAtUTC !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(result.refresh.dailyAtUTC)) throw new Error('Invalid refresh schedule.');
         var next = new Intl.DateTimeFormat([], { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(result.refresh.nextRefreshAt));
         var time = node('time', next); time.dateTime = new Date(result.refresh.nextRefreshAt).toISOString();
         var schedule = node('p', 'Next refresh, estimated: ', 'tool-note msg-bill-next-refresh');
-        schedule.appendChild(time); schedule.appendChild(document.createTextNode('. Checked daily at 12:00 UTC, even when your computer is off. New reports appear automatically here.'));
+        schedule.appendChild(time); schedule.appendChild(document.createTextNode('. Checked daily at ' + result.refresh.dailyAtUTC + ' UTC, even when your computer is off. New reports appear automatically here.'));
         content.appendChild(schedule);
       } else content.appendChild(node('p', 'Automatic refresh is not active for this linked report.', 'tool-note'));
       var list = node('ul');
