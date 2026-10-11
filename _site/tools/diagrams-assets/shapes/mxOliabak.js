@@ -4076,9 +4076,11 @@
 	mxCellRenderer.registerShape('mxgraph.oliabak.bracket', mxShapeOliabakBracket);
 
 	/**
-	 * The same bracket with a stem out of the middle, for pointing the span at
-	 * a label rather than just sitting over it. 'size' is how far the stem
-	 * reaches, as a share of the height, and it gets a handle.
+	 * The same bracket with a stem, for pointing the span at a label rather
+	 * than just sitting over it. 'size' is how far the stem reaches, as a
+	 * share of the height, and 'position' is where along the run it leaves,
+	 * as a share of the width. One handle sets both: along the run slides
+	 * the stem, across it sets the reach.
 	 */
 	function mxShapeOliabakBracketStem()
 	{
@@ -4088,9 +4090,11 @@
 	mxUtils.extend(mxShapeOliabakBracketStem, mxActor);
 
 	mxShapeOliabakBracketStem.prototype.size = 0.4;
+	mxShapeOliabakBracketStem.prototype.position = 0.5;
 
 	mxShapeOliabakBracketStem.prototype.customProperties = [
-		{name: 'size', dispName: 'Stem', type: 'float', min: 0, max: 1, defVal: 0.4}
+		{name: 'size', dispName: 'Stem', type: 'float', min: 0, max: 1, defVal: 0.4},
+		{name: 'position', dispName: 'Stem Position', type: 'float', min: 0, max: 1, defVal: 0.5}
 	];
 
 	mxShapeOliabakBracketStem.prototype.redrawPath = function(c, x, y, w, h)
@@ -4099,15 +4103,16 @@
 
 		var st = Math.max(0, Math.min(1, parseFloat(
 			mxUtils.getValue(this.style, 'size', this.size)))) * h;
+		var px = Math.max(0, Math.min(1, parseFloat(
+			mxUtils.getValue(this.style, 'position', this.position)))) * w;
 		var arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE,
 			mxConstants.LINE_ARCSIZE) / 2;
 
-		// The run, then back to the middle and out along the stem, so the
-		// whole mark is one stroke and joins cleanly at the corners.
+		// The run, then back to the stem's foot and out along it.
 		this.addPoints(c, [new mxPoint(0, h), new mxPoint(0, st),
 			new mxPoint(w, st), new mxPoint(w, h)], this.isRounded, arcSize, false);
-		c.moveTo(w / 2, st);
-		c.lineTo(w / 2, 0);
+		c.moveTo(px, st);
+		c.lineTo(px, 0);
 		c.end();
 	};
 
@@ -4117,9 +4122,11 @@
 	{
 		var st = Math.max(0, Math.min(1, parseFloat(
 			mxUtils.getValue(style, 'size', this.size))));
+		var pos = Math.max(0, Math.min(1, parseFloat(
+			mxUtils.getValue(style, 'position', this.position))));
 
 		return [cp(0, 1), cp(0, st), cp(0.25, st), cp(0.5, st), cp(0.75, st),
-			cp(1, st), cp(1, 1), cp(0.5, 0)];
+			cp(1, st), cp(1, 1), cp(pos, 0)];
 	};
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.bracketStem',
@@ -5161,21 +5168,27 @@
 			}, true)];
 		};
 
-		// Stem length, as a share of the height, on the shape's centre line.
+		// The stem's foot: along the run slides the stem, across it sets
+		// how far the stem reaches.
 		Graph.handleFactory['mxgraph.oliabak.bracketStem'] = function(state)
 		{
-			return [Graph.createHandle(state, ['size'], function(bounds)
+			return [Graph.createHandle(state, ['size', 'position'], function(bounds)
 			{
 				var st = Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(
 					this.state.style, 'size',
 					mxShapeOliabakBracketStem.prototype.size))));
+				var pos = Math.max(0, Math.min(1, parseFloat(mxUtils.getValue(
+					this.state.style, 'position',
+					mxShapeOliabakBracketStem.prototype.position))));
 
-				return new mxPoint(bounds.x + bounds.width / 2,
+				return new mxPoint(bounds.x + pos * bounds.width,
 					bounds.y + st * bounds.height);
 			}, function(bounds, pt)
 			{
 				this.state.style['size'] = Math.round(Math.max(0, Math.min(1,
 					(pt.y - bounds.y) / bounds.height)) * 100) / 100;
+				this.state.style['position'] = Math.round(Math.max(0, Math.min(1,
+					(pt.x - bounds.x) / bounds.width)) * 100) / 100;
 			}, true)];
 		};
 
