@@ -77,6 +77,53 @@
     window.clearTimeout(healthTimer); healthTimer = null;
     if (!document.hidden) refreshHealth();
   });
+  var brooksGeneration = 0, brooksKey = '', brooksTimer = null, brooksBusy = false;
+  function clearBrooks() {
+    brooksGeneration++; brooksKey = ''; brooksBusy = false; window.clearTimeout(brooksTimer);
+    $('brooks').hidden = true; $('brooks-refresh').disabled = false;
+  }
+  async function refreshBrooks() {
+    if (brooksBusy || document.hidden || !state.user || !state.threadId || state.thread?.kind === 'group') return;
+    window.clearTimeout(brooksTimer);
+    var generation = brooksGeneration, epoch = state.epoch, threadId = state.threadId;
+    brooksBusy = true; $('brooks-refresh').disabled = true;
+    try {
+      var data = await call({ action: 'brooks-status', threadId: threadId }, 'messageAgents');
+      if (generation !== brooksGeneration || epoch !== state.epoch || threadId !== state.threadId) return;
+      ['status', 'evidence', 'publish', 'test'].forEach(function (name) { $('brooks-' + name).disabled = !['online', 'offline'].includes(data.state); });
+      var label = ['online', 'offline', 'not_configured'].includes(data.state) ? data.state.replace('_', ' ') : 'unavailable';
+      $('brooks-title').textContent = 'Server operations · ' + label;
+      $('brooks-detail').textContent = data.state === 'online' ? 'The server worker checked in recently. Approved operations can run independently of the Mac.' : 'Server execution is not confirmed. Approved actions wait for a valid worker.';
+      if (Number.isSafeInteger(data.lastSeenAt)) $('brooks-detail').textContent += ' Last check-in ' + when(data.lastSeenAt) + '.';
+    } catch (error) {
+      if (generation === brooksGeneration && epoch === state.epoch && threadId === state.threadId) { ['status', 'evidence', 'publish', 'test'].forEach(function (name) { $('brooks-' + name).disabled = true; }); $('brooks-title').textContent = 'Server operations · unavailable'; $('brooks-detail').textContent = 'Server status could not be verified. Try refreshing.'; }
+    } finally {
+      if (generation === brooksGeneration && epoch === state.epoch && threadId === state.threadId) { brooksBusy = false; $('brooks-refresh').disabled = false; if (!document.hidden) brooksTimer = window.setTimeout(refreshBrooks, 120000); }
+    }
+  }
+  function syncBrooks(thread) {
+    if (thread.kind === 'group') { clearBrooks(); return; }
+    if (brooksKey === state.threadId) return;
+    clearBrooks(); brooksKey = state.threadId; $('brooks').hidden = false; refreshBrooks();
+  }
+  $('brooks-refresh').addEventListener('click', refreshBrooks);
+  document.addEventListener('visibilitychange', function () { window.clearTimeout(brooksTimer); if (!document.hidden) refreshBrooks(); });
+  [['status', 'brooks_status'], ['evidence', 'brooks_evidence'], ['publish', 'brooks_publish_candidate'], ['test', 'brooks_test_candidate']].forEach(function (entry) {
+    $('brooks-' + entry[0]).addEventListener('click', function () {
+      if (!state.user || !state.threadId || !state.thread || state.thread.kind === 'group') return;
+      var threadId = state.threadId, epoch = state.epoch, bytes = crypto.getRandomValues(new Uint8Array(16));
+      var taskId = Array.from(bytes).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+      var plan = { tool: entry[1] };
+      if (entry[0] !== 'status') plan.releaseId = 'diagnostic-107-v1';
+      if (entry[0] === 'evidence') { plan.file = 'REPAIR_REPORT.txt'; plan.offset = 0; }
+      run(function () { return call({ action: 'task-propose', threadId: threadId, taskId: taskId, plan: plan }, 'messageAgents'); }, function (result) {
+        if (epoch !== state.epoch || threadId !== state.threadId) return;
+        if (!result.task || result.task.taskId !== taskId) throw new Error('Invalid server proposal.');
+        state.thread.researchTasks ||= {}; state.thread.researchTasks[taskId] = result.task; drawThread(state.thread);
+        status('Server operation proposed. Review its plan and approve it in the chat.', true);
+      });
+    });
+  });
   var editor;
   var stagedFile = null;
   // Reactions release 2026-10-08. Shared counts require authenticated live
@@ -430,7 +477,7 @@
     }, function () { status(previewOnly ? 'Text preview opened locally.' : 'Download started.', true); });
   }
   function clearThread() {
-    clearHealth();
+    clearHealth(); clearBrooks();
     status('');
     seenMessages.clear(); unseenIncoming.clear(); showNewMessages();
     window.clearTimeout(readTimer); readGeneration += 1; readPending = false; readAttempt = '';
@@ -775,7 +822,7 @@
       }
     });
     state.thread = thread;
-    syncHealth(thread);
+    syncHealth(thread); syncBrooks(thread);
     refreshOpenBill();
     var maximum = Number.isSafeInteger(thread.agentRequestLimit) && thread.agentRequestLimit >= 1 && thread.agentRequestLimit <= 50 ? thread.agentRequestLimit : 5;
     // The assistant line appears only once an assistant is connected.
