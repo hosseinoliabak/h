@@ -3899,14 +3899,16 @@
 	mxCellRenderer.registerShape('mxgraph.oliabak.switch', mxShapeOliabakSwitch);
 
 	/**
-	 * A spine switch: the Layer 3 Switch cube with a fabric cap on top, one
+	 * A spine switch: the Layer 3 Switch with a fabric cap stacked on it, one
 	 * cell, so it moves, resizes and connects as a single device.
 	 *
-	 * The cube is the stencil's own geometry, redrawn here because a stencil
-	 * cannot carry a second part. The cap is a thin slab of the same depth
-	 * with the fabric mark on its front: two nodes above, three below, every
-	 * upper node joined to every lower one. 'capSize' is the cap's share of
-	 * the height and has a handle on the left edge.
+	 * Cap and switch are one isometric box split across its front and right
+	 * faces, so the cap sits directly on the switch and they share one top
+	 * face. The switch panel is the stencil's own geometry, redrawn here
+	 * because a stencil cannot carry a second part. The cap carries the
+	 * fabric mark: two nodes above, three below, every upper node joined to
+	 * every lower one. 'capSize' is the cap panel's share of the height and
+	 * has a handle on the left edge.
 	 */
 	function mxShapeOliabakSpineSwitch(bounds, fill, stroke, strokewidth)
 	{
@@ -3919,11 +3921,11 @@
 
 	mxUtils.extend(mxShapeOliabakSpineSwitch, mxShape);
 
-	mxShapeOliabakSpineSwitch.prototype.capSize = 0.27;
+	mxShapeOliabakSpineSwitch.prototype.capSize = 0.25;
 
 	mxShapeOliabakSpineSwitch.prototype.customProperties = [
 		{name: 'capSize', dispName: 'Cap Height', type: 'float', min: 0.1, max: 0.5,
-			step: 0.01, defVal: 0.27},
+			step: 0.01, defVal: 0.25},
 		{name: 'strokeColor2', dispName: 'Marking Color', type: 'color',
 			defVal: '#CC0000'}
 	];
@@ -3949,36 +3951,18 @@
 		[14.33,30.67,19.33,31.67,22.67,29]];
 
 	/**
-	 * Front, right and top faces of an isometric slab at (0, y0) of size
-	 * w by h, with the stencil's offsets: 'back' to the top face's back-left
-	 * corner, 'dx' and 'dy' for the depth.
+	 * The stack's proportions in cell pixels. The depth offsets follow the
+	 * width, as the stencil's do, so the box keeps the stencil's angle at any
+	 * size; the cap panel is a share of the height below the top face.
 	 */
-	function paintSlab(c, w, y0, h, back, dx, dy)
-	{
-		c.begin();
-		c.moveTo(0, y0 + dy);
-		c.lineTo(w - dx, y0 + dy);
-		c.lineTo(w - dx, y0 + h);
-		c.lineTo(0, y0 + h);
-		c.close();
-		c.moveTo(w, y0 + h - dy);
-		c.lineTo(w, y0);
-		c.lineTo(w - dx, y0 + dy);
-		c.lineTo(w - dx, y0 + h);
-		c.close();
-		c.moveTo(back, y0);
-		c.lineTo(0, y0 + dy);
-		c.lineTo(w - dx, y0 + dy);
-		c.lineTo(w, y0);
-		c.close();
-		c.fillAndStroke();
-	};
-
-	mxShapeOliabakSpineSwitch.prototype.getCap = function(style, h)
+	mxShapeOliabakSpineSwitch.prototype.getStack = function(style, w, h)
 	{
 		var f = parseFloat(mxUtils.getValue(style, 'capSize', this.capSize));
+		f = Math.max(0.1, Math.min(0.5, isNaN(f) ? this.capSize : f));
+		var dy = Math.min(h * 0.3, w * 4.67 / L3_W);
 
-		return h * Math.max(0.1, Math.min(0.5, isNaN(f) ? this.capSize : f));
+		return {dx: w * 4.66 / L3_W, dy: dy, back: w * 6.33 / L3_W,
+			split: dy + h * f};
 	};
 
 	mxShapeOliabakSpineSwitch.prototype.paintVertexShape = function(c, x, y, w, h)
@@ -3988,23 +3972,60 @@
 			return;
 		}
 
-		var cap = this.getCap(this.style, h);
-		var gap = Math.max(1, h * 0.03);
-		var top = cap + gap, bh = h - top;
-		var sx = w / L3_W, sy = bh / L3_H;
-		var dx = 4.66 * sx, dy = 4.67 * sy, back = 6.33 * sx;
+		var g = this.getStack(this.style, w, h);
+		var dx = g.dx, dy = g.dy, split = Math.min(g.split, h - 1);
+		var fw = w - dx;
 		var mark = mxUtils.getValue(this.style, 'strokeColor2', '#CC0000');
 		var fill = mxUtils.getValue(this.style, 'fillColor', '#C8C8C8');
 
 		c.translate(x, y);
+		// Round joins, as the stencil sets, so the sharp corners where the
+		// right face meets the top do not spike past the outline.
+		c.setLineJoin('round');
 
-		// Cap and cube, the same depth so they read as one stack.
-		paintSlab(c, w, 0, cap, back, dx, Math.min(dy, cap * 0.45));
+		// Front panels, cap then switch.
+		c.begin();
+		c.moveTo(0, dy);
+		c.lineTo(fw, dy);
+		c.lineTo(fw, split);
+		c.lineTo(0, split);
+		c.close();
+		c.moveTo(0, split);
+		c.lineTo(fw, split);
+		c.lineTo(fw, h);
+		c.lineTo(0, h);
+		c.close();
+		c.fillAndStroke();
 		c.setShadow(false);
-		paintSlab(c, w, top, bh, back, dx, dy);
 
+		// Right face, split at the same height so the seam runs round.
+		c.begin();
+		c.moveTo(fw, dy);
+		c.lineTo(w, 0);
+		c.lineTo(w, split - dy);
+		c.lineTo(fw, split);
+		c.close();
+		c.moveTo(fw, split);
+		c.lineTo(w, split - dy);
+		c.lineTo(w, h - dy);
+		c.lineTo(fw, h);
+		c.close();
+		c.fillAndStroke();
+
+		// One top face for the whole stack.
+		c.begin();
+		c.moveTo(g.back, 0);
+		c.lineTo(0, dy);
+		c.lineTo(fw, dy);
+		c.lineTo(w, 0);
+		c.close();
+		c.fillAndStroke();
+
+		// Switch markings: the stencil's front face (x 0 to 35.67, y 4.67
+		// to 40) mapped onto the switch panel.
+		var sx = fw / 35.67, sy = (h - split) / (L3_H - 4.67);
 		var px = function(u) { return u * sx; };
-		var py = function(v) { return top + v * sy; };
+		var py = function(v) { return split + (v - 4.67) * sy; };
 
 		c.setFillColor(mark);
 
@@ -4039,12 +4060,11 @@
 		c.setStrokeWidth(Math.max(0.5, 0.67 * Math.min(sx, sy)));
 		c.fillAndStroke();
 
-		// The fabric mark, centered on the cap's front face.
-		var capDy = Math.min(dy, cap * 0.45);
-		var fw = w - dx, fh = cap - capDy;
-		var gh = fh * 0.76;
+		// The fabric mark, centered on the cap panel.
+		var fh = split - dy;
+		var gh = fh * 0.7;
 		var gw = Math.min(fw * 0.8, gh * 2.4);
-		var gx = (fw - gw) / 2, gy = capDy + (fh - gh) / 2;
+		var gx = (fw - gw) / 2, gy = dy + (fh - gh) / 2;
 		var nw = gw * 0.2, nh = gh * 0.32;
 		var upper = [0.3, 0.7], lower = [0.1, 0.5, 0.9];
 
@@ -4082,8 +4102,9 @@
 	};
 
 	/**
-	 * The stack's outline: cap top, cube sides and base, so links can land
-	 * on the cap from above and on the cube from the sides and below.
+	 * The stack's outline, plus the middle of the switch panel on each side,
+	 * so links can land on the cap from above and on the switch from the
+	 * sides and below.
 	 */
 	mxShapeOliabakSpineSwitch.prototype.getConstraints = function(style, w, h)
 	{
@@ -4092,16 +4113,11 @@
 			return [];
 		}
 
-		var cap = this.getCap(style, h);
-		var top = cap + Math.max(1, h * 0.03);
-		var bh = h - top;
-		var dx = 4.66 * w / L3_W;
-		var dy = 4.67 * bh / L3_H;
-		var back = 6.33 * w / L3_W;
+		var g = this.getStack(style, w, h);
 
-		return outlineConstraints([[0, Math.min(dy, cap * 0.45)], [back, 0], [w, 0],
-			[w, h - dy], [w - dx, h], [0, h]], w, h).concat(
-			[cp(0, (top + dy + h) / 2 / h), cp(1, (top + h - dy) / 2 / h)]);
+		return outlineConstraints([[0, g.dy], [g.back, 0], [w, 0],
+			[w, h - g.dy], [w - g.dx, h], [0, h]], w, h).concat(
+			[cp(0, (g.split + h) / 2 / h), cp(1, (g.split + h) / 2 / h - g.dy / 2 / h)]);
 	};
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.spineSwitch', mxShapeOliabakSpineSwitch);
@@ -5382,12 +5398,14 @@
 		{
 			return [Graph.createHandle(state, ['capSize'], function(bounds)
 			{
-				return new mxPoint(bounds.x, bounds.y + mxShapeOliabakSpineSwitch.
-					prototype.getCap(this.state.style, bounds.height));
+				return new mxPoint(bounds.x, bounds.y + mxShapeOliabakSpineSwitch.prototype.
+					getStack(this.state.style, bounds.width, bounds.height).split);
 			}, function(bounds, pt)
 			{
+				var dy = mxShapeOliabakSpineSwitch.prototype.getStack(
+					this.state.style, bounds.width, bounds.height).dy;
 				this.state.style['capSize'] = Math.round(Math.max(0.1, Math.min(0.5,
-					(pt.y - bounds.y) / bounds.height)) * 100) / 100;
+					(pt.y - bounds.y - dy) / bounds.height)) * 100) / 100;
 			}, true)];
 		};
 
