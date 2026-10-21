@@ -3898,6 +3898,214 @@
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.switch', mxShapeOliabakSwitch);
 
+	/**
+	 * A spine switch: the Layer 3 Switch cube with a fabric cap on top, one
+	 * cell, so it moves, resizes and connects as a single device.
+	 *
+	 * The cube is the stencil's own geometry, redrawn here because a stencil
+	 * cannot carry a second part. The cap is a thin slab of the same depth
+	 * with the fabric mark on its front: two nodes above, three below, every
+	 * upper node joined to every lower one. 'capSize' is the cap's share of
+	 * the height and has a handle on the left edge.
+	 */
+	function mxShapeOliabakSpineSwitch(bounds, fill, stroke, strokewidth)
+	{
+		mxShape.call(this);
+		this.bounds = bounds;
+		this.fill = fill;
+		this.stroke = stroke;
+		this.strokewidth = (strokewidth != null) ? strokewidth : 1;
+	};
+
+	mxUtils.extend(mxShapeOliabakSpineSwitch, mxShape);
+
+	mxShapeOliabakSpineSwitch.prototype.capSize = 0.27;
+
+	mxShapeOliabakSpineSwitch.prototype.customProperties = [
+		{name: 'capSize', dispName: 'Cap Height', type: 'float', min: 0.1, max: 0.5,
+			step: 0.01, defVal: 0.27},
+		{name: 'strokeColor2', dispName: 'Marking Color', type: 'color',
+			defVal: '#CC0000'}
+	];
+
+	// The cube in stencil units, from stencils/cisco/switches.xml,
+	// "Layer 3 Switch" (40.33 by 40): its eight arrows, filled, and the
+	// center disc as cubic segments.
+	var L3_W = 40.33, L3_H = 40;
+	var L3_ARROWS = [
+		[[18.67,17],[18.67,9.34],[20,9.34],[18,6.67],[16.33,9.34],[17.33,9.34],[17.33,17]],
+		[[14.67,18.34],[9.33,12.67],[10.33,12],[7,11.34],[7.67,14.67],[8.33,13.67],[14,19]],
+		[[12.67,22],[5,22],[5,20.67],[2.33,22.34],[5,24.34],[5,23],[12.67,23]],
+		[[14,25.67],[8.33,31.34],[7.67,30.34],[7,33.67],[10.33,33],[9.33,32],[14.67,26.67]],
+		[[17.33,27.67],[17.33,35.34],[16.33,35.34],[18,38.34],[20,35.34],[18.67,35.34],[18.67,27.67]],
+		[[21.33,26.67],[27,32],[26,33],[29.33,33.67],[28.67,30.34],[27.67,31.34],[22.33,25.67]],
+		[[23.33,23],[31,23],[31,24.34],[34,22.34],[31,20.67],[31,22],[23.33,22]],
+		[[22.33,19],[27.67,13.67],[28.67,14.67],[29.33,11.34],[26,12],[27,12.67],[21.33,18.34]]
+	];
+	var L3_DISC = [[22.67,29],
+		[26.33,26.34,27.33,21.34,24.67,17.67],
+		[22.33,14,17.33,13.34,13.67,15.67],
+		[10,18.34,9,23.34,11.67,27],
+		[14.33,30.67,19.33,31.67,22.67,29]];
+
+	/**
+	 * Front, right and top faces of an isometric slab at (0, y0) of size
+	 * w by h, with the stencil's offsets: 'back' to the top face's back-left
+	 * corner, 'dx' and 'dy' for the depth.
+	 */
+	function paintSlab(c, w, y0, h, back, dx, dy)
+	{
+		c.begin();
+		c.moveTo(0, y0 + dy);
+		c.lineTo(w - dx, y0 + dy);
+		c.lineTo(w - dx, y0 + h);
+		c.lineTo(0, y0 + h);
+		c.close();
+		c.moveTo(w, y0 + h - dy);
+		c.lineTo(w, y0);
+		c.lineTo(w - dx, y0 + dy);
+		c.lineTo(w - dx, y0 + h);
+		c.close();
+		c.moveTo(back, y0);
+		c.lineTo(0, y0 + dy);
+		c.lineTo(w - dx, y0 + dy);
+		c.lineTo(w, y0);
+		c.close();
+		c.fillAndStroke();
+	};
+
+	mxShapeOliabakSpineSwitch.prototype.getCap = function(style, h)
+	{
+		var f = parseFloat(mxUtils.getValue(style, 'capSize', this.capSize));
+
+		return h * Math.max(0.1, Math.min(0.5, isNaN(f) ? this.capSize : f));
+	};
+
+	mxShapeOliabakSpineSwitch.prototype.paintVertexShape = function(c, x, y, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return;
+		}
+
+		var cap = this.getCap(this.style, h);
+		var gap = Math.max(1, h * 0.03);
+		var top = cap + gap, bh = h - top;
+		var sx = w / L3_W, sy = bh / L3_H;
+		var dx = 4.66 * sx, dy = 4.67 * sy, back = 6.33 * sx;
+		var mark = mxUtils.getValue(this.style, 'strokeColor2', '#CC0000');
+		var fill = mxUtils.getValue(this.style, 'fillColor', '#C8C8C8');
+
+		c.translate(x, y);
+
+		// Cap and cube, the same depth so they read as one stack.
+		paintSlab(c, w, 0, cap, back, dx, Math.min(dy, cap * 0.45));
+		c.setShadow(false);
+		paintSlab(c, w, top, bh, back, dx, dy);
+
+		var px = function(u) { return u * sx; };
+		var py = function(v) { return top + v * sy; };
+
+		c.setFillColor(mark);
+
+		for (var i = 0; i < L3_ARROWS.length; i++)
+		{
+			var poly = L3_ARROWS[i];
+			c.begin();
+			c.moveTo(px(poly[0][0]), py(poly[0][1]));
+
+			for (var k = 1; k < poly.length; k++)
+			{
+				c.lineTo(px(poly[k][0]), py(poly[k][1]));
+			}
+
+			c.close();
+			c.fill();
+		}
+
+		// The disc is ringed in the body color, as the stencil does, so it
+		// stands clear of the arrow tails.
+		c.begin();
+		c.moveTo(px(L3_DISC[0][0]), py(L3_DISC[0][1]));
+
+		for (var j = 1; j < L3_DISC.length; j++)
+		{
+			var s = L3_DISC[j];
+			c.curveTo(px(s[0]), py(s[1]), px(s[2]), py(s[3]), px(s[4]), py(s[5]));
+		}
+
+		c.close();
+		c.setStrokeColor(fill);
+		c.setStrokeWidth(Math.max(0.5, 0.67 * Math.min(sx, sy)));
+		c.fillAndStroke();
+
+		// The fabric mark, centered on the cap's front face.
+		var capDy = Math.min(dy, cap * 0.45);
+		var fw = w - dx, fh = cap - capDy;
+		var gh = fh * 0.76;
+		var gw = Math.min(fw * 0.8, gh * 2.4);
+		var gx = (fw - gw) / 2, gy = capDy + (fh - gh) / 2;
+		var nw = gw * 0.2, nh = gh * 0.32;
+		var upper = [0.3, 0.7], lower = [0.1, 0.5, 0.9];
+
+		c.setStrokeColor(mark);
+		c.setStrokeWidth(Math.max(0.75, gh * 0.09));
+
+		for (var a = 0; a < upper.length; a++)
+		{
+			for (var b = 0; b < lower.length; b++)
+			{
+				c.begin();
+				c.moveTo(gx + upper[a] * gw, gy + nh);
+				c.lineTo(gx + lower[b] * gw, gy + gh - nh);
+				c.stroke();
+			}
+		}
+
+		var nodes = [];
+
+		for (a = 0; a < upper.length; a++)
+		{
+			nodes.push([gx + upper[a] * gw, gy + nh / 2]);
+		}
+
+		for (b = 0; b < lower.length; b++)
+		{
+			nodes.push([gx + lower[b] * gw, gy + gh - nh / 2]);
+		}
+
+		for (var n = 0; n < nodes.length; n++)
+		{
+			c.rect(nodes[n][0] - nw / 2, nodes[n][1] - nh / 2, nw, nh);
+			c.fill();
+		}
+	};
+
+	/**
+	 * The stack's outline: cap top, cube sides and base, so links can land
+	 * on the cap from above and on the cube from the sides and below.
+	 */
+	mxShapeOliabakSpineSwitch.prototype.getConstraints = function(style, w, h)
+	{
+		if (!(w > 0) || !(h > 0))
+		{
+			return [];
+		}
+
+		var cap = this.getCap(style, h);
+		var top = cap + Math.max(1, h * 0.03);
+		var bh = h - top;
+		var dx = 4.66 * w / L3_W;
+		var dy = 4.67 * bh / L3_H;
+		var back = 6.33 * w / L3_W;
+
+		return outlineConstraints([[0, Math.min(dy, cap * 0.45)], [back, 0], [w, 0],
+			[w, h - dy], [w - dx, h], [0, h]], w, h).concat(
+			[cp(0, (top + dy + h) / 2 / h), cp(1, (top + h - dy) / 2 / h)]);
+	};
+
+	mxCellRenderer.registerShape('mxgraph.oliabak.spineSwitch', mxShapeOliabakSpineSwitch);
+
 	// ---------------------------------------------------------------------
 	// Boxes
 	// ---------------------------------------------------------------------
@@ -5165,6 +5373,21 @@
 			{
 				this.state.style['depth'] = Math.round(Math.max(0,
 					Math.min(bounds.width * 0.9, pt.x - bounds.x)));
+			}, true)];
+		};
+
+		// Cap height rides the left edge and is dragged down, like the
+		// switch's own top face.
+		Graph.handleFactory['mxgraph.oliabak.spineSwitch'] = function(state)
+		{
+			return [Graph.createHandle(state, ['capSize'], function(bounds)
+			{
+				return new mxPoint(bounds.x, bounds.y + mxShapeOliabakSpineSwitch.
+					prototype.getCap(this.state.style, bounds.height));
+			}, function(bounds, pt)
+			{
+				this.state.style['capSize'] = Math.round(Math.max(0.1, Math.min(0.5,
+					(pt.y - bounds.y) / bounds.height)) * 100) / 100;
 			}, true)];
 		};
 
