@@ -269,6 +269,41 @@
     img: document.getElementById('sheet-preview-img')
   };
 
+  // Default paper. A choice the reader made earlier wins; otherwise the
+  // region of the browser language decides, using the US-Letter territories
+  // from Unicode CLDR supplementalData.xml (checked 2026-10-21). Nothing is
+  // sent anywhere, and every other region gets A4.
+  var PAPER_KEY = 'qr-sheet-paper';
+  var LETTER_REGIONS = ['BZ', 'CA', 'CL', 'CO', 'CR', 'GT', 'MX', 'NI', 'PA', 'PH', 'PR', 'SV', 'US', 'VE'];
+
+  function browserRegion() {
+    var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language];
+    for (var i = 0; i < langs.length; i++) {
+      try {
+        var loc = new Intl.Locale(langs[i]);
+        if (loc.region) return loc.region;
+      } catch (e) { /* skip a malformed tag */ }
+    }
+    try {
+      return new Intl.Locale(langs[0]).maximize().region || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function defaultPaper() {
+    try {
+      var saved = localStorage.getItem(PAPER_KEY);
+      if (saved && (saved === 'custom' || PAPERS[saved])) return saved;
+    } catch (e) { /* storage blocked */ }
+    return LETTER_REGIONS.indexOf(browserRegion()) >= 0 ? 'letter' : 'a4';
+  }
+
+  sheet.paper.value = defaultPaper();
+  sheet.paper.addEventListener('change', function () {
+    try { localStorage.setItem(PAPER_KEY, sheet.paper.value); } catch (e) { /* storage blocked */ }
+  });
+
   var current = null;       // { text, layout } for the sheet now on screen
   var previewUrl = null;    // owned by setPreview and revokePreview
 
