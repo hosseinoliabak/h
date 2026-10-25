@@ -4952,6 +4952,33 @@
 	rectProto.customProperties = (rectProto.customProperties || []).concat(
 		lineProps(SIDES, SIDE_NAMES));
 
+	// Subclasses that declare their own property list (label, process,
+	// internal storage and the like) shadow the rectangle's, so the panel
+	// would not show the switch although the painter honours it. Append it
+	// to each such list once.
+	for (var name in mxCellRenderer.defaultShapes)
+	{
+		var proto = mxCellRenderer.defaultShapes[name].prototype;
+
+		if (proto instanceof mxRectangleShape && proto != rectProto &&
+			Object.prototype.hasOwnProperty.call(proto, 'customProperties') &&
+			proto.customProperties != null)
+		{
+			var seen = false;
+
+			for (var i = 0; i < proto.customProperties.length; i++)
+			{
+				seen = seen || proto.customProperties[i].name == 'top';
+			}
+
+			if (!seen)
+			{
+				proto.customProperties = proto.customProperties.concat(
+					lineProps(SIDES, SIDE_NAMES));
+			}
+		}
+	}
+
 	// ---------------------------------------------------------------------
 	// Handles
 	// ---------------------------------------------------------------------
