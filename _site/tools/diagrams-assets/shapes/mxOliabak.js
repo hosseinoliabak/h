@@ -20,7 +20,8 @@
  *                              head, band and head-size handles
  *   mxgraph.oliabak.ribbonArrow folded ribbon with a shaded underside
  *   mxgraph.oliabak.cornerRect rectangle whose four corners are set one at a
- *                              time: square, rounded, snipped or scooped
+ *                              time: square, rounded, snipped or scooped;
+ *                              each edge's line can be switched off
  *
  * Every shape here carries fixed connection points. The drawn ones are read
  * from the same geometry the painter walks, so they follow the handles; see
@@ -4155,6 +4156,13 @@
 	 * makes a box with two rounded corners read as one object. It is clamped
 	 * to half the shorter side, so two corners on the same edge can meet but
 	 * never overrun each other.
+	 *
+	 * Each edge's line can be switched off on its own, under the same 'top',
+	 * 'right', 'bottom' and 'left' keys draw.io's Partial Rectangle uses, so a
+	 * tab can sit on a card without a double line where they meet. The fill
+	 * keeps the whole outline; only the stroke skips the hidden edges. A
+	 * corner is drawn while either of its edges is, so a visible line curves
+	 * off and ends rather than stopping short of its own corner.
 	 */
 	function mxShapeOliabakCornerRect()
 	{
@@ -4174,7 +4182,11 @@
 		{name: 'cornerBR', dispName: 'Bottom Right', type: 'enum', defVal: 'round',
 			enumList: CORNER_KINDS},
 		{name: 'cornerBL', dispName: 'Bottom Left', type: 'enum', defVal: 'round',
-			enumList: CORNER_KINDS}
+			enumList: CORNER_KINDS},
+		{name: 'top', dispName: 'Top Line', type: 'bool', defVal: true},
+		{name: 'right', dispName: 'Right Line', type: 'bool', defVal: true},
+		{name: 'bottom', dispName: 'Bottom Line', type: 'bool', defVal: true},
+		{name: 'left', dispName: 'Left Line', type: 'bool', defVal: true}
 	];
 
 	/**
@@ -4203,7 +4215,33 @@
 		}
 	};
 
-	mxShapeOliabakCornerRect.prototype.redrawPath = function(c, x, y, w, h)
+	// Which of the four edges are drawn, clockwise from the top. The outline
+	// pass (selection preview, highlight) always shows every edge.
+	mxShapeOliabakCornerRect.prototype.getEdges = function()
+	{
+		var keys = ['top', 'right', 'bottom', 'left'];
+		var edges = [];
+
+		for (var i = 0; i < 4; i++)
+		{
+			edges[i] = this.outline ||
+				mxUtils.getValue(this.style, keys[i], '1') != '0';
+		}
+
+		return edges;
+	};
+
+	/**
+	 * Walks the outline clockwise from the top edge: run along an edge, turn
+	 * the corner at its end, four times. A square corner leaves nothing to
+	 * turn, which is why the same four steps draw every combination.
+	 *
+	 * With 'edges' the pen lifts over each hidden edge and over any corner
+	 * both of whose edges are hidden, and the path is left open, since a
+	 * close would join the last visible run back to wherever the pen last
+	 * came down. Without it the full outline is drawn and closed.
+	 */
+	mxShapeOliabakCornerRect.prototype.walk = function(c, w, h, edges)
 	{
 		var size = Math.max(0, Math.min(w / 2, h / 2, parseFloat(
 			mxUtils.getValue(this.style, 'size', this.size))));
@@ -4217,19 +4255,74 @@
 			r[i] = (kind[i] == 'square') ? 0 : size;
 		}
 
-		// Clockwise from the top edge: run along an edge, turn the corner at
-		// its end, four times. A square corner leaves nothing to turn, which
-		// is why the same four steps draw every combination.
+		// Each edge's far end, then the corner's far end, clockwise. Corner i
+		// sits between edge i - 1 and edge i.
+		var ends = [
+			[w - r[1], 0], [w, r[1]],
+			[w, h - r[2]], [w - r[2], h],
+			[r[3], h], [0, h - r[3]],
+			[0, r[0]], [r[0], 0]
+		];
+
 		c.moveTo(r[0], 0);
-		c.lineTo(w - r[1], 0);
-		this.paintCorner(c, kind[1], r[1], w, r[1]);
-		c.lineTo(w, h - r[2]);
-		this.paintCorner(c, kind[2], r[2], w - r[2], h);
-		c.lineTo(r[3], h);
-		this.paintCorner(c, kind[3], r[3], 0, h - r[3]);
-		c.lineTo(0, r[0]);
-		this.paintCorner(c, kind[0], r[0], r[0], 0);
-		c.close();
+
+		for (var i = 0; i < 4; i++)
+		{
+			var e = ends[i * 2];
+			var k = ends[i * 2 + 1];
+			var ci = (i + 1) % 4;
+
+			if (edges == null || edges[i])
+			{
+				c.lineTo(e[0], e[1]);
+			}
+			else
+			{
+				c.moveTo(e[0], e[1]);
+			}
+
+			if (edges == null || edges[i] || edges[ci])
+			{
+				this.paintCorner(c, kind[ci], r[ci], k[0], k[1]);
+			}
+			else
+			{
+				c.moveTo(k[0], k[1]);
+			}
+		}
+
+		if (edges == null)
+		{
+			c.close();
+		}
+	};
+
+	mxShapeOliabakCornerRect.prototype.redrawPath = function(c, x, y, w, h)
+	{
+		this.walk(c, w, h, null);
+	};
+
+	mxShapeOliabakCornerRect.prototype.paintVertexShape = function(c, x, y, w, h)
+	{
+		var edges = this.getEdges();
+
+		if (edges[0] && edges[1] && edges[2] && edges[3])
+		{
+			mxActor.prototype.paintVertexShape.apply(this, arguments);
+
+			return;
+		}
+
+		// Fill the whole box first, then stroke only the edges that are on.
+		// Two passes rather than one, since a filled path strokes every
+		// segment it has.
+		c.translate(x, y);
+		c.begin();
+		this.walk(c, w, h, null);
+		c.fill();
+		c.begin();
+		this.walk(c, w, h, edges);
+		c.stroke();
 	};
 
 	mxShapeOliabakCornerRect.prototype.constraints = null;
