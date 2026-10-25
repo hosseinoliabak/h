@@ -23,6 +23,10 @@
  *                              time: square, rounded, snipped or scooped;
  *                              each edge's line can be switched off
  *
+ * The file also gives draw.io's own Rectangle, Parallelogram, Trapezoid,
+ * Diamond, Hexagon and Triangle the same per-edge line switch; see the
+ * Edge lines on stock shapes section.
+ *
  * Every shape here carries fixed connection points. The drawn ones are read
  * from the same geometry the painter walks, so they follow the handles; see
  * the Connection points section below for the shared helpers.
@@ -4700,6 +4704,253 @@
 
 	mxCellRenderer.registerShape('mxgraph.oliabak.cylinderLabel',
 		mxShapeOliabakCylinderLabel);
+
+	// ---------------------------------------------------------------------
+	// Edge lines on stock shapes
+	// ---------------------------------------------------------------------
+
+	/**
+	 * The per-edge line switch the Box shapes have, added to draw.io's own
+	 * polygons: Rectangle and Rounded Rectangle, Parallelogram, Trapezoid,
+	 * Diamond, Hexagon and Triangle.
+	 *
+	 * Every one of them is a closed polygon walked through mxShape.addPoints,
+	 * which rounds each corner with one quadratic when 'rounded' is on. The
+	 * walk below is the same geometry with a pen that lifts: the fill pass
+	 * closes the whole outline, the stroke pass skips any edge whose key is
+	 * 0 and any corner both of whose edges are hidden. A corner with one edge
+	 * showing is drawn, so a visible line curves off and ends rather than
+	 * stopping short of its own corner.
+	 *
+	 * The keys name the edges as the shape sits in its palette orientation,
+	 * before any 'direction' or rotation: 'top', 'right', 'bottom' and 'left'
+	 * for the four-sided shapes, the same keys draw.io's Partial Rectangle
+	 * uses, and 'topRight', 'bottomRight', 'bottomLeft' and 'topLeft' for the
+	 * slanted edges of a diamond or hexagon. Nothing changes until a key is
+	 * set to 0, so every diagram saved before this looks as it did.
+	 *
+	 * Wired by patching addPoints on each shape's prototype, under a guard
+	 * that fires only for a closed walk with no excluded corners: the shape's
+	 * own redrawPath still supplies the points, so slope, size, fixedSize and
+	 * arcSize keep working, and the fillAndStroke the shape calls afterwards
+	 * meets an empty path and adds nothing. The rectangle does not go through
+	 * addPoints, so its paintBackground is wrapped instead and the corner
+	 * radius is worked out the way the original does.
+	 */
+
+	// Returns the visibility of each edge in key order, or null when every
+	// edge is on (or this is the outline pass) and the stock painter should
+	// run untouched.
+	function hiddenEdges(shape, keys)
+	{
+		if (shape.outline || shape.style == null)
+		{
+			return null;
+		}
+
+		var edges = [];
+		var any = false;
+
+		for (var i = 0; i < keys.length; i++)
+		{
+			edges[i] = mxUtils.getValue(shape.style, keys[i], '1') != '0';
+			any = any || !edges[i];
+		}
+
+		return (any) ? edges : null;
+	};
+
+	/**
+	 * Emits the closed polygon pts, with each corner rounded by arcSize when
+	 * rounded is set, exactly as mxShape.addPoints would. With edges the pen
+	 * lifts over hidden edges and the path is left open; without it the path
+	 * is closed.
+	 */
+	function edgePath(c, pts, rounded, arcSize, edges)
+	{
+		var n = pts.length;
+		var a = [];
+		var b = [];
+
+		// Where each corner's arc starts (a, on the incoming edge) and ends
+		// (b, on the outgoing edge). A square corner has both on the point.
+		for (var i = 0; i < n; i++)
+		{
+			var p = pts[i];
+			var prev = pts[(i + n - 1) % n];
+			var next = pts[(i + 1) % n];
+			var d1 = Math.sqrt(Math.pow(prev.x - p.x, 2) + Math.pow(prev.y - p.y, 2));
+			var d2 = Math.sqrt(Math.pow(next.x - p.x, 2) + Math.pow(next.y - p.y, 2));
+
+			if (rounded && d1 > 0 && d2 > 0)
+			{
+				var r1 = Math.min(arcSize, d1 / 2) / d1;
+				var r2 = Math.min(arcSize, d2 / 2) / d2;
+				a[i] = new mxPoint(p.x + (prev.x - p.x) * r1, p.y + (prev.y - p.y) * r1);
+				b[i] = new mxPoint(p.x + (next.x - p.x) * r2, p.y + (next.y - p.y) * r2);
+			}
+			else
+			{
+				a[i] = p;
+				b[i] = p;
+			}
+		}
+
+		c.moveTo(b[0].x, b[0].y);
+
+		for (var i = 0; i < n; i++)
+		{
+			var j = (i + 1) % n;
+
+			// Edge i runs from corner i's arc end to corner j's arc start.
+			if (edges == null || edges[i])
+			{
+				c.lineTo(a[j].x, a[j].y);
+			}
+			else
+			{
+				c.moveTo(a[j].x, a[j].y);
+			}
+
+			// Corner j sits between edge i and edge j.
+			if (a[j] != b[j])
+			{
+				if (edges == null || edges[i] || edges[j])
+				{
+					c.quadTo(pts[j].x, pts[j].y, b[j].x, b[j].y);
+				}
+				else
+				{
+					c.moveTo(b[j].x, b[j].y);
+				}
+			}
+		}
+
+		if (edges == null)
+		{
+			c.close();
+		}
+	};
+
+	// Fill the whole polygon, then stroke only the edges that are on. The
+	// canvas is left on a fresh empty path so a fillAndStroke that follows
+	// adds nothing.
+	function paintEdges(c, pts, rounded, arcSize, edges)
+	{
+		c.begin();
+		edgePath(c, pts, rounded, arcSize, null);
+		c.fill();
+		c.begin();
+		edgePath(c, pts, rounded, arcSize, edges);
+		c.stroke();
+		c.begin();
+	};
+
+	function lineProps(keys, names)
+	{
+		var props = [];
+
+		for (var i = 0; i < keys.length; i++)
+		{
+			props.push({name: keys[i], dispName: names[i] + ' Line', type: 'bool',
+				defVal: true});
+		}
+
+		return props;
+	};
+
+	// Gives a stock shape the switch: its addPoints does the two passes when
+	// an edge is off, and its Property panel lists the keys. Skipped quietly
+	// when the shape is not registered, as in a trimmed embed build.
+	function addEdgeLines(shapeName, keys, names)
+	{
+		var ctor = mxCellRenderer.defaultShapes[shapeName];
+
+		if (ctor == null)
+		{
+			return;
+		}
+
+		var proto = ctor.prototype;
+		var addPoints0 = proto.addPoints;
+
+		proto.addPoints = function(c, pts, rounded, arcSize, close, exclude, initialMove)
+		{
+			var edges = (close && exclude == null && pts != null &&
+				pts.length == keys.length) ? hiddenEdges(this, keys) : null;
+
+			if (edges == null)
+			{
+				addPoints0.apply(this, arguments);
+			}
+			else
+			{
+				paintEdges(c, pts, rounded, arcSize, edges);
+			}
+		};
+
+		proto.customProperties = (proto.customProperties || []).concat(
+			lineProps(keys, names));
+	};
+
+	var SIDES = ['top', 'right', 'bottom', 'left'];
+	var SIDE_NAMES = ['Top', 'Right', 'Bottom', 'Left'];
+
+	// Point order is each shape's own, from its redrawPath, so the keys are
+	// listed in that order rather than clockwise from the top.
+	addEdgeLines('parallelogram', ['left', 'top', 'right', 'bottom'],
+		['Left', 'Top', 'Right', 'Bottom']);
+	addEdgeLines('trapezoid', ['left', 'top', 'right', 'bottom'],
+		['Left', 'Top', 'Right', 'Bottom']);
+	addEdgeLines('rhombus', ['topRight', 'bottomRight', 'bottomLeft', 'topLeft'],
+		['Top Right', 'Bottom Right', 'Bottom Left', 'Top Left']);
+	addEdgeLines('hexagon', ['top', 'topRight', 'bottomRight', 'bottom',
+		'bottomLeft', 'topLeft'],
+		['Top', 'Top Right', 'Bottom Right', 'Bottom', 'Bottom Left', 'Top Left']);
+	addEdgeLines('triangle', ['top', 'bottom', 'left'], ['Top', 'Bottom', 'Left']);
+
+	// The rectangle draws itself with rect or roundrect rather than a point
+	// walk, so its background painter is wrapped. The radius repeats the
+	// original's arithmetic: a share of the shorter side, or the arcSize
+	// itself when it is absolute. Subclasses that reuse this painter (label,
+	// process, internal storage and others) inherit the switch unchanged.
+	var rectPaintBackground0 = mxRectangleShape.prototype.paintBackground;
+
+	mxRectangleShape.prototype.paintBackground = function(c, x, y, w, h)
+	{
+		var edges = hiddenEdges(this, SIDES);
+
+		if (edges == null)
+		{
+			rectPaintBackground0.apply(this, arguments);
+
+			return;
+		}
+
+		var r = 0;
+
+		if (this.isRounded)
+		{
+			if (mxUtils.getValue(this.style, mxConstants.STYLE_ABSOLUTE_ARCSIZE, 0) == '1')
+			{
+				r = Math.min(w / 2, Math.min(h / 2, mxUtils.getValue(this.style,
+					mxConstants.STYLE_ARCSIZE, mxConstants.LINE_ARCSIZE) / 2));
+			}
+			else
+			{
+				var f = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE,
+					mxConstants.RECTANGLE_ROUNDING_FACTOR * 100) / 100;
+				r = Math.min(w * f, h * f);
+			}
+		}
+
+		paintEdges(c, [new mxPoint(x, y), new mxPoint(x + w, y),
+			new mxPoint(x + w, y + h), new mxPoint(x, y + h)], r > 0, r, edges);
+	};
+
+	var rectProto = mxCellRenderer.prototype.defaultVertexShape.prototype;
+	rectProto.customProperties = (rectProto.customProperties || []).concat(
+		lineProps(SIDES, SIDE_NAMES));
 
 	// ---------------------------------------------------------------------
 	// Handles
