@@ -5,11 +5,13 @@
   const pathPattern = /^(?:[a-z0-9][a-z0-9_-]{0,39}\/){0,2}[a-z0-9][a-z0-9_-]{0,59}\.(?:tex|qmd|bib|sty|cls|yml|md)$/;
   let project = null, selected = 'plan.qmd', dirty = false, generation = 0, session = 0, currentUid = null, saving = false, compiling = false;
   let pdf = null, compiledGeneration = -1, urls = new Set();
+  let reading = true, reader = null, viewSerial = 0, formatting = null;
   const message = text => { el('status').textContent = text; };
-  function stopCompiler() { if (window.thesisCompiler) window.thesisCompiler.cancel(); }
+  function closeReader() { viewSerial++; if (reader) reader.dispose(); reader = null; el('reading').replaceChildren(); }
+  function stopCompiler() { if (formatting) formatting.cancel(); formatting = null; if (window.thesisCompiler) window.thesisCompiler.cancel(); }
   function release() { for (const url of urls) URL.revokeObjectURL(url); urls.clear(); }
   function clear() {
-    session++; stopCompiler(); release(); pdf = null; project = null; dirty = false; saving = false; compiling = false;
+    session++; stopCompiler(); closeReader(); release(); pdf = null; project = null; dirty = false; saving = false; compiling = false; reading = true;
     el('source').value = ''; el('files').replaceChildren(); el('history').replaceChildren(); el('log').textContent = '';
     el('project').hidden = true; el('pdf').disabled = true; el('cancel').hidden = true; el('compile').disabled = false; el('save').disabled = false; el('delete').disabled = false;
     el('compile-status').textContent = 'Ready to compile.'; el('delete-confirm').value = ''; el('new-path').value = ''; el('import').value = '';
@@ -38,10 +40,32 @@
     dirty = true; generation++; revision();
     if (pdf && compiledGeneration !== generation) el('compile-status').textContent = 'Source changed since the last PDF. Compile again to update it.';
   }
+  function view() {
+    closeReader();
+    el('read').setAttribute('aria-pressed', String(reading)); el('edit').setAttribute('aria-pressed', String(!reading));
+    el('reading').hidden = !reading; el('source-pane').hidden = reading;
+    if (!reading || !project) return;
+    if (!window.ThesisPreview) { el('reading').textContent = 'The reading view is unavailable. Use Edit source or download the file.'; return; }
+    const file = project.files.find(item => item.path === selected);
+    if (/\.(?:md|qmd|bib)$/.test(selected)) {
+      reader = window.ThesisPreview.mount(el('reading'), { kind: selected.endsWith('.bib') ? 'bibliography' : 'document', text: file.content });
+    } else if (selected.endsWith('.tex')) {
+      if (pdf && compiledGeneration === generation) {
+        const expected = session, path = selected, sourceGeneration = generation, serial = viewSerial;
+        pdf.arrayBuffer().then(bytes => {
+          if (expected === session && serial === viewSerial && project && reading && selected === path && generation === sourceGeneration) reader = window.ThesisPreview.mount(el('reading'), { kind: 'pdf', bytes });
+        }).catch(() => { if (expected === session) el('reading').textContent = 'The PDF could not be opened. Compile it again or download it.'; });
+      } else {
+        el('reading').textContent = compiling ? 'Compiling your thesis for reading.' : 'Compile the thesis to read this chapter in the full document. The PDF includes main.tex and its chapter files.';
+        if (!compiling) el('compile').click();
+      }
+    } else el('reading').textContent = 'This file contains project settings or a LaTeX support package. Use Edit source to inspect it.';
+  }
   function select(path) {
     selected = path; el('filename').textContent = path; el('source').value = project.files.find(file => file.path === path).content;
     el('remove').disabled = ['main.tex', 'plan.qmd'].includes(path);
     for (const button of el('files').children) button.setAttribute('aria-current', String(button.dataset.path === path));
+    view();
   }
   function display() {
     const buttons = project.files.map(file => {
@@ -69,7 +93,7 @@
       const result = await call({ action: 'load' });
       if (expected !== session) return;
       if (generation !== initialGeneration && dirty) { message('Edits changed while reloading. Export them before reloading again.'); return; }
-      validFiles(result.files); project = result; dirty = false; display(); message('Private workspace ready.');
+      validFiles(result.files); stopCompiler(); pdf = null; generation++; el('pdf').disabled = true; project = result; dirty = false; display(); message('Private workspace ready.');
     } catch (error) { if (expected === session) { message(error.message || 'The workspace could not be opened.'); el('retry').hidden = false; } }
   }
   async function save() {
@@ -96,6 +120,8 @@
     if (!project) return;
     project.files.find(file => file.path === selected).content = el('source').value; changed();
   });
+  el('read').addEventListener('click', () => { reading = true; view(); });
+  el('edit').addEventListener('click', () => { reading = false; view(); el('source').focus(); });
   el('save').addEventListener('click', save);
   el('reload').addEventListener('click', () => { if (!saving && (!dirty || window.confirm('Discard the unsaved edits in this tab and reload the saved project?'))) load(); });
   el('retry').addEventListener('click', load);
@@ -131,15 +157,28 @@
     if (!project || compiling) return;
     const expected = session, sourceGeneration = generation; compiling = true; el('compile').disabled = true; el('cancel').hidden = false;
     pdf = null; el('pdf').disabled = true; el('log').textContent = '';
+    if (reading && selected.endsWith('.tex')) { closeReader(); el('reading').textContent = 'Compiling your thesis for reading.'; }
     try {
       validFiles(project.files);
       if (!window.thesisCompiler) throw new Error('The PDF compiler is unavailable. Reload the page to try again. Your source files remain editable.');
-      const result = await window.thesisCompiler.compile(structuredClone(project.files), text => { if (expected === session) el('compile-status').textContent = text; });
+      const files = structuredClone(project.files);
+      if (/\\bibliography\s*\{references\}/.test(files.find(file => file.path === 'main.tex').content.replace(/(?<!\\)%[^\n]*/g, ''))) {
+        const references = files.find(file => file.path === 'references.bib');
+        if (!references || !window.ThesisPreview) throw new Error('Keep references.bib and reload the reading tools to compile the APA 6 bibliography.');
+        el('compile-status').textContent = 'Formatting APA 6 references.';
+        formatting = window.ThesisPreview.formatBibliography(references.content);
+        let bibliography;
+        try { bibliography = await formatting.promise; } finally { formatting = null; }
+        if (expected !== session) return;
+        files.push({ path: 'main.bbl', content: bibliography });
+      }
+      const result = await window.thesisCompiler.compile(files, text => { if (expected === session) el('compile-status').textContent = text; });
       if (expected !== session) return;
       pdf = new Blob([result.bytes], { type: 'application/pdf' }); compiledGeneration = sourceGeneration;
       el('log').textContent = result.log; el('pdf').disabled = false;
       el('compile-status').textContent = generation === sourceGeneration ? 'PDF ready to download. Compiled from the current source.' : 'PDF ready. Source changed during compilation; compile again for the latest edits.';
-    } catch (error) { if (expected === session) { el('compile-status').textContent = error.message; el('log').textContent = error.log || ''; } }
+      if (reading && selected.endsWith('.tex') && generation === sourceGeneration) view();
+    } catch (error) { if (expected === session) { el('compile-status').textContent = error.message; el('log').textContent = error.log || ''; if (reading && selected.endsWith('.tex')) el('reading').textContent = error.message + ' Use Edit source to revise the document, then compile again.'; } }
     finally { if (expected === session) { compiling = false; el('compile').disabled = false; el('cancel').hidden = true; } }
   });
   el('cancel').addEventListener('click', stopCompiler);
@@ -156,7 +195,7 @@
   });
   window.addEventListener('keydown', event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's' && project) { event.preventDefault(); save(); } });
   window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
-  window.addEventListener('pagehide', () => { stopCompiler(); release(); });
+  window.addEventListener('pagehide', () => { stopCompiler(); closeReader(); release(); });
   function connect() {
     if (!window.siteAuth) { message('Sign-in is unavailable. Reload this page to try again.'); return; }
     window.siteAuth.onChange(user => {

@@ -46,6 +46,12 @@ let log = '';
 Object.defineProperty(self, 'memlog', { configurable: true, get: () => log, set: value => { if (typeof value !== 'string' || value.length > 262144) throw new Error('Compiler log limit exceeded.'); log = value; } });
 importScripts('swiftlatexpdftex.js');
 self.importScripts = () => { throw new Error('The compiler cannot import additional scripts.'); };
+// The APA 6 formatter supplies main.bbl before the first LaTeX pass. Do not
+// let the vendor's automatic BibTeX run replace it between subsequent passes.
+// Other projects keep the original BibTeX behavior. The vendor bytes stay pinned.
+let preparedBibliography = false;
+const engineBibtex = self._compileBibtex;
+self._compileBibtex = () => preparedBibliography ? 0 : engineBibtex();
 const engineMessage = self.onmessage;
 self.onmessage = event => {
   const data = event.data;
@@ -53,5 +59,6 @@ self.onmessage = event => {
   if (data.cmd === 'setmainfile' && data.url !== 'main.tex') throw new Error('Unsupported entry file.');
   if (['mkdir', 'writefile'].includes(data.cmd) && (typeof data.url !== 'string' || data.url.length > 180 || !/^[a-z0-9][a-z0-9_./-]*$/.test(data.url) || data.url.includes('..') || data.url.endsWith('/'))) throw new Error('Invalid compiler path.');
   if (data.cmd === 'writefile' && (typeof data.src !== 'string' || new TextEncoder().encode(data.src).length > 262144)) throw new Error('Invalid source file.');
+  if (data.cmd === 'writefile' && data.url === 'main.bbl') preparedBibliography = true;
   engineMessage(event);
 };
