@@ -1052,16 +1052,19 @@
         return n > 0 && n < 0.0001 ? '< $0.0001' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(n);
       }
       content.appendChild(node('p', result.project + ' · Total reported cost ' + money(result.totalUsd)));
-      content.appendChild(node('p', 'Period ' + result.start + ' through ' + result.end + ' (end date excluded, UTC). Checked ' + when(result.updatedAt) + '.', 'tool-note'));
+      content.appendChild(node('p', 'Period ' + result.start + ' through ' + result.end + ' (end date excluded, UTC).', 'tool-note'));
+      var checked = node('p', 'Checked ', 'tool-note msg-bill-checked');
+      var checkedTime = node('time', when(result.updatedAt)); checkedTime.dateTime = new Date(result.updatedAt).toISOString();
+      checked.appendChild(checkedTime); content.appendChild(checked);
       if (result.refresh != null) {
         if (!Number.isSafeInteger(result.refresh.nextRefreshAt) || result.refresh.nextRefreshAt <= 0
-            || result.refresh.nextRefreshAt > Date.now() + 2 * 86400000 || result.refresh.timeZone !== 'UTC'
-            || typeof result.refresh.dailyAtUTC !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(result.refresh.dailyAtUTC)) throw new Error('Invalid refresh schedule.');
+            || result.refresh.nextRefreshAt > Date.now() + 50 * 3600000 + 300000 || result.refresh.timeZone !== 'UTC'
+            || result.refresh.intervalHours !== 50) throw new Error('Invalid refresh schedule.');
         var next = new Intl.DateTimeFormat([], { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(result.refresh.nextRefreshAt));
         var time = node('time', next); time.dateTime = new Date(result.refresh.nextRefreshAt).toISOString();
         var schedule = node('p', 'Next refresh, estimated: ', 'tool-note msg-bill-next-refresh');
-        schedule.appendChild(time); schedule.appendChild(document.createTextNode('. Checked daily at ' + result.refresh.dailyAtUTC + ' UTC, even when your computer is off. New reports appear automatically here.'));
-        content.appendChild(schedule);
+        schedule.appendChild(time); content.appendChild(schedule);
+        content.appendChild(node('p', 'Checked automatically every 50 hours, even when your computer is off. The time of day changes with each refresh. Times are shown in your local time zone. New reports appear automatically here.', 'tool-note'));
       } else content.appendChild(node('p', 'Automatic refresh is not active for this linked report.', 'tool-note'));
       var list = node('ul');
       result.services.forEach(function (service) {
@@ -1069,7 +1072,7 @@
         list.appendChild(node('li', service.name + ' · ' + money(service.usd)));
       });
       content.appendChild(list);
-      content.appendChild(node('p', (result.stale ? 'This report is older than 36 hours. ' : '') + (result.estimated ? 'AWS marks these charges as estimated. ' : '') + 'Billing can lag by 24 hours or more. Costs exclude credits, refunds, and tax. This is not a final invoice or an amount you owe.', 'tool-note'));
+      content.appendChild(node('p', (result.stale ? 'This report is older than the expected refresh interval and grace period. ' : '') + (result.estimated ? 'AWS marks these charges as estimated. ' : '') + 'Billing can lag by 24 hours or more. Costs exclude credits, refunds, and tax. This is not a final invoice or an amount you owe.', 'tool-note'));
     }
     $('bill').replaceChildren(content); $('bill').hidden = false;
     billVersion = result.available === true ? result.updatedAt : 0;
